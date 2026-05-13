@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Lacquer Book — UI Kit</title>
+<link rel="stylesheet" href="book.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="BookComponents.jsx"></script>
+<script type="text/babel" src="DiscoverScreen.jsx"></script>
+<script type="text/babel" src="BookingScreen.jsx"></script>
+<script type="text/babel" src="AppointmentScreen.jsx"></script>
+<script type="text/babel">
+const { useState } = React;
+function Phone({ label, children }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+      <IOSDevice width={360} height={760}>
+        <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+          <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>{children}</div>
+        </div>
+      </IOSDevice>
+      <div style={{ fontSize: 11, color: "var(--muted-foreground)", letterSpacing: "0.04em", textTransform: "uppercase", fontWeight: 500 }}>{label}</div>
+    </div>
+  );
+}
+
+function App() {
+  const [stage, setStage] = useState("flow"); // discover -> booking -> appointment
+  const [tab, setTab] = useState("discover");
+
+  return (
+    <div style={{ display: "flex", gap: 28, alignItems: "flex-start", flexWrap: "wrap", padding: "20px 0" }}>
+      <Phone label="01 Discover">
+        <DiscoverScreen onPickService={() => {}} />
+        <MTabs active="discover" onChange={() => {}} />
+      </Phone>
+      <Phone label="02 Booking">
+        <BookingScreen onBack={() => {}} onConfirm={() => {}} />
+      </Phone>
+      <Phone label="03 Confirmed">
+        <AppointmentScreen onDone={() => {}} />
+        <MTabs active="bookings" onChange={() => {}} />
+      </Phone>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

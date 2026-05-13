@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Lacquer — Quick walk-in waitlist</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="walkin.css" />
+<style>
+  html, body, #root { height: 100%; margin: 0; }
+  body { background: #f0eee9; }
+  .phone-shell { height: 100%; display: flex; flex-direction: column; background: var(--background); border-radius: 0 0 44px 44px; overflow: hidden; position: relative; }
+  .tablet-bezel { background: #1a1a1a; border-radius: 22px; padding: 14px; box-shadow: 0 24px 60px rgba(0,0,0,0.18); }
+  .tablet-screen { border-radius: 10px; overflow: hidden; background: var(--background); height: 100%; }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<!-- Shared scaffolding from transaction prototype -->
+<script type="text/babel" src="../transaction/design-canvas.jsx"></script>
+<script type="text/babel" src="../transaction/tweaks-panel.jsx"></script>
+<script type="text/babel" src="../transaction/ios-frame.jsx"></script>
+<script type="text/babel" src="../transaction/data.jsx"></script>
+<script type="text/babel" src="../transaction/components.jsx"></script>
+<script type="text/babel" src="../transaction/TechPicker.jsx"></script>
+
+<!-- Walk-in screens -->
+<script type="text/babel" src="walkin-data.jsx"></script>
+<script type="text/babel" src="StaffWaitlist.jsx"></script>
+<script type="text/babel" src="KioskSignIn.jsx"></script>
+<script type="text/babel" src="PhoneWaitlist.jsx"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "density": "regular",
+  "showStaff": true,
+  "showKiosk": true,
+  "showPhone": true
+}/*EDITMODE-END*/;
+
+function TabletArtboard({ children }) {
+  return (
+    <div className="tablet-bezel" style={{ width: 1180, height: 820 }}>
+      <div className="tablet-screen">{children}</div>
+    </div>
+  );
+}
+
+function PhoneArtboard({ children }) {
+  return (
+    <IOSDevice width={402} height={874} dark={false}>
+      <div className="phone-shell">{children}</div>
+    </IOSDevice>
+  );
+}
+
+function App() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+  return (
+    <>
+      <DesignCanvas
+        title="Lacquer · Quick walk-in"
+        subtitle="The Yelp-Waitlist-for-nails sign-in sheet. Three takes: front-desk staff view, customer kiosk, and phone-as-clipboard.">
+
+        {t.showStaff && (
+          <DCSection id="staff" title="Front-desk waitlist (tablet)" subtitle="The digital sign-in sheet. Add a walk-in on the left, work the queue on the right. Customers move Waiting → In chair → Done (crossed off).">
+            <DCArtboard id="staff-tablet" label="A · Front-desk view — sign-in sheet + queue" width={1212} height={852}>
+              <TabletArtboard>
+                <StaffWaitlist density={t.density} />
+              </TabletArtboard>
+            </DCArtboard>
+          </DCSection>
+        )}
+
+        {t.showKiosk && (
+          <DCSection id="kiosk" title="Self-serve kiosk (tablet)" subtitle="Stand a tablet at the front door. Customers sign themselves in: name, party size, services. Confirmation tells them their place in line and the estimated wait — same data the staff view sees.">
+            <DCArtboard id="kiosk-tablet" label="B · Kiosk — customer self sign-in" width={1212} height={852}>
+              <TabletArtboard>
+                <KioskSignIn />
+              </TabletArtboard>
+            </DCArtboard>
+          </DCSection>
+        )}
+
+        {t.showPhone && (
+          <DCSection id="phone" title="Phone — working the list" subtitle="Same queue, pocketable. For a tech checking 'who's next' between clients or a manager away from the desk.">
+            <DCArtboard id="phone-list" label="C · Phone — tabbed queue" width={460} height={920}>
+              <PhoneArtboard><PhoneWaitlist /></PhoneArtboard>
+            </DCArtboard>
+          </DCSection>
+        )}
+
+        <DCPostIt left={40} top={40} width={340}>
+          <b>Quick Walk-in — the digital sign-in sheet</b><br/><br/>
+          Replaces the paper waitlist clipboard with a structured queue. Each walk-in gets a row with name, services, and a wait timer; staff <i>Call</i> them (one tap; SMS if there's a phone number) and <i>Seat</i> them to start service — the equivalent of crossing them off the sheet.<br/><br/>
+          The three artboards are the three places the same data lives:<br/>
+          <b>A.</b> Front-desk tablet — full queue + add form.<br/>
+          <b>B.</b> Door-side kiosk — customers self-serve sign-in.<br/>
+          <b>C.</b> Phone — tabbed view for everyone else.<br/><br/>
+          Use the Tweaks panel to switch density or hide lanes you don't care to look at.
+        </DCPostIt>
+      </DesignCanvas>
+
+      <TweaksPanel>
+        <TweakSection label="Tablet density" />
+        <TweakRadio label="Tap targets" value={t.density}
+          options={["compact", "regular", "big"]}
+          onChange={(v) => setTweak("density", v)} />
+
+        <TweakSection label="Variations" />
+        <TweakToggle label="A · Staff front-desk view" value={t.showStaff} onChange={(v) => setTweak("showStaff", v)} />
+        <TweakToggle label="B · Customer kiosk"         value={t.showKiosk} onChange={(v) => setTweak("showKiosk", v)} />
+        <TweakToggle label="C · Phone"                  value={t.showPhone} onChange={(v) => setTweak("showPhone", v)} />
+
+
+      </TweaksPanel>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

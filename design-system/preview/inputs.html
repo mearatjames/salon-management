@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  .row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;align-items:flex-end}
+  .field{display:flex;flex-direction:column;gap:6px;min-width:180px}
+  label{font-size:12px;font-weight:500}
+  .input{height:36px;padding:0 12px;border:1px solid var(--input);border-radius:6px;background:var(--card);font-size:13px;font-family:var(--font-sans);color:var(--foreground);outline:none}
+  .input:focus{border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in oklch, var(--ring) 20%, transparent)}
+  .input.err{border-color:var(--destructive)}
+  .hint{font-size:11px;color:var(--muted-foreground)}
+  .err-msg{font-size:11px;color:var(--destructive)}
+  .with-icon{position:relative}
+  .with-icon svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;color:var(--muted-foreground)}
+  .with-icon .input{padding-left:32px}
+</style></head>
+<body>
+  <div class="row">
+    <div class="field"><label>Client name</label><input class="input" value="Maya Patel"></div>
+    <div class="field"><label>Email</label><div class="with-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg><input class="input" placeholder="name@example.com"></div></div>
+    <div class="field"><label>Phone</label><input class="input err" value="555-01"><span class="err-msg">Enter a valid phone number.</span></div>
+  </div>
+  <div class="row">
+    <div class="field" style="min-width:120px"><label>Service</label>
+      <select class="input"><option>Gel polish</option><option>Manicure</option></select>
+    </div>
+    <div class="field" style="min-width:240px"><label>Notes</label><input class="input" placeholder="Allergic to acetone"></div>
+    <div class="field" style="min-width:80px"><label>Disabled</label><input class="input" value="Read-only" disabled style="background:var(--muted);color:var(--muted-foreground)"></div>
+  </div>
+</body></html>

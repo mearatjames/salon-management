@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  body{padding:30px 24px}
+  .grid{display:flex;gap:32px}
+  .item{display:flex;flex-direction:column;align-items:center;gap:10px}
+  .box{width:96px;height:64px;background:var(--card);border-radius:12px;border:1px solid var(--border)}
+  .lbl{font-size:11px;color:var(--muted-foreground);font-family:var(--font-mono)}
+  .name{font-size:12px;font-weight:500}
+</style></head>
+<body>
+  <div class="grid">
+    <div class="item"><div class="box"></div><div class="name">none</div><div class="lbl">resting</div></div>
+    <div class="item"><div class="box" style="box-shadow:var(--shadow-xs)"></div><div class="name">xs</div><div class="lbl">card</div></div>
+    <div class="item"><div class="box" style="box-shadow:var(--shadow-sm)"></div><div class="name">sm</div><div class="lbl">popover</div></div>
+    <div class="item"><div class="box" style="box-shadow:var(--shadow-md)"></div><div class="name">md</div><div class="lbl">dialog</div></div>
+    <div class="item"><div class="box" style="box-shadow:var(--shadow-lg)"></div><div class="name">lg</div><div class="lbl">overlay</div></div>
+  </div>
+</body></html>

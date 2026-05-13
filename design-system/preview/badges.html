@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+  .lbl{font-size:11px;color:var(--muted-foreground);font-family:var(--font-mono);width:80px;text-transform:uppercase;letter-spacing:0.04em}
+  .badge{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;border-radius:9999px;font-size:11px;font-weight:500;border:1px solid transparent}
+  .b-default{background:var(--secondary);color:var(--secondary-foreground);border-color:var(--border)}
+  .b-primary{background:color-mix(in oklch, var(--primary) 15%, transparent);color:var(--rose-700);border-color:color-mix(in oklch, var(--primary) 30%, transparent)}
+  .b-success{background:color-mix(in oklch, var(--success) 15%, transparent);color:oklch(0.42 0.13 150)}
+  .b-warn{background:color-mix(in oklch, var(--warning) 18%, transparent);color:oklch(0.45 0.14 75)}
+  .b-error{background:color-mix(in oklch, var(--destructive) 13%, transparent);color:var(--destructive)}
+  .b-info{background:color-mix(in oklch, var(--info) 13%, transparent);color:oklch(0.42 0.13 240)}
+  .dot{width:6px;height:6px;border-radius:9999px}
+</style></head>
+<body>
+  <div class="row"><span class="lbl">status</span>
+    <span class="badge b-success"><span class="dot" style="background:var(--success)"></span>Booked</span>
+    <span class="badge b-warn"><span class="dot" style="background:var(--warning)"></span>Pending</span>
+    <span class="badge b-error"><span class="dot" style="background:var(--destructive)"></span>No-show</span>
+    <span class="badge b-info"><span class="dot" style="background:var(--info)"></span>Walk-in</span>
+    <span class="badge b-default">Completed</span>
+  </div>
+  <div class="row"><span class="lbl">tags</span>
+    <span class="badge b-primary">VIP</span>
+    <span class="badge b-default">Allergies</span>
+    <span class="badge b-default">First visit</span>
+    <span class="badge b-default">+ 2 more</span>
+  </div>
+</body></html>

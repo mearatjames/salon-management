@@ -1,0 +1,29 @@
+@import url("../../colors_and_type.css");
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; background: var(--neutral-100); font-family: var(--font-sans); }
+body { display: flex; align-items: center; justify-content: center; padding: 20px; }
+#root { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; gap: 24px; flex-wrap: wrap; }
+
+/* mobile screen styles */
+.m-screen { background: var(--background); color: var(--foreground); height: 100%; display: flex; flex-direction: column; font-size: 15px; }
+.m-header { padding: 8px 20px 12px; display: flex; align-items: center; justify-content: space-between; }
+.m-h1 { font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
+.m-h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+.m-content { flex: 1; overflow: auto; padding: 0 20px 20px; }
+.m-tabs { display: flex; padding: 8px 20px 28px; border-top: 1px solid var(--border); background: var(--card); justify-content: space-around; }
+.m-tab { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; color: var(--muted-foreground); cursor: pointer; padding: 4px 8px; }
+.m-tab.active { color: var(--primary); }
+.m-tab svg { width: 22px; height: 22px; stroke-width: 1.5; }
+
+.m-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.m-pill { display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 11px; border-radius: 9999px; font-size: 12px; border: 1px solid var(--border); background: var(--card); white-space: nowrap; }
+.m-pill.active { background: var(--foreground); color: var(--background); border-color: var(--foreground); }
+
+.m-btn { width: 100%; height: 50px; border-radius: 12px; background: var(--primary); color: var(--primary-foreground); border: none; font-size: 15px; font-weight: 500; font-family: var(--font-sans); cursor: pointer; }
+.m-btn-secondary { background: var(--secondary); color: var(--secondary-foreground); border: 1px solid var(--border); }
+
+/* service tile imagery — using gradient-filled SVG placeholders */
+.m-img { background: linear-gradient(135deg, var(--rose-200), var(--rose-400)); height: 110px; display:flex; align-items:flex-end; padding:10px; }
+.m-img.b { background: linear-gradient(135deg, oklch(0.92 0.02 200), oklch(0.74 0.06 240)); }
+.m-img.c { background: linear-gradient(135deg, oklch(0.94 0.025 75), oklch(0.78 0.10 60)); }
+.m-img.d { background: linear-gradient(135deg, oklch(0.92 0.025 150), oklch(0.74 0.08 160)); }

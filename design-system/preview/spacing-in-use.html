@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  body{padding:16px 20px}
+  .demo{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;display:flex;flex-direction:column;gap:16px;max-width:560px}
+  .demo .head{display:flex;justify-content:space-between;align-items:center}
+  .demo h3{font-size:14px;font-weight:600}
+  .demo .row{display:flex;gap:8px;align-items:center;font-size:13px;color:var(--muted-foreground)}
+  .anno{position:relative}
+  .anno::before{content:attr(data-px);position:absolute;font-family:var(--font-mono);font-size:10px;color:var(--rose-500);background:color-mix(in oklch,var(--rose-500) 12%,transparent);padding:1px 4px;border-radius:3px;white-space:nowrap}
+  .pad-anno::before{top:2px;left:2px}
+  .gap-anno::before{top:-14px;left:50%;transform:translateX(-50%)}
+  .btn{display:inline-flex;height:30px;align-items:center;padding:0 12px;background:var(--primary);color:white;border-radius:6px;font-size:12px;font-weight:500;border:none}
+</style></head>
+<body>
+  <div class="demo anno pad-anno" data-px="padding 24">
+    <div class="head"><h3>Today's bookings</h3><button class="btn">New</button></div>
+    <div class="row anno gap-anno" data-px="gap 16" style="padding-top:8px"><span>9:00 AM</span><span>·</span><span>Maya P.</span><span>·</span><span>Gel polish</span></div>
+    <div class="row"><span>10:30 AM</span><span>·</span><span>Jules L.</span><span>·</span><span>Russian manicure</span></div>
+  </div>
+</body></html>

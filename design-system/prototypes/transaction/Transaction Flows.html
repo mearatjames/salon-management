@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Lacquer — Transaction flow prototypes</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="transaction.css" />
+<style>
+  html, body, #root { height: 100%; margin: 0; }
+  body { background: #f0eee9; }
+  /* Phone-shell wrapper for our app inside iOS frame */
+  .phone-shell { height: 100%; display: flex; flex-direction: column; background: var(--background); border-radius: 0 0 44px 44px; overflow: hidden; }
+  /* Tablet artboard chrome */
+  .tablet-bezel { background: #1a1a1a; border-radius: 22px; padding: 14px; box-shadow: 0 24px 60px rgba(0,0,0,0.18); }
+  .tablet-screen { border-radius: 10px; overflow: hidden; background: var(--background); height: 100%; }
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="components.jsx"></script>
+<script type="text/babel" src="TechPicker.jsx"></script>
+<script type="text/babel" src="Landing.jsx"></script>
+<script type="text/babel" src="FlowSingle.jsx"></script>
+<script type="text/babel" src="FlowWizard.jsx"></script>
+<script type="text/babel" src="FlowPOS.jsx"></script>
+<script type="text/babel" src="FlowSingleExtras.jsx"></script>
+<script type="text/babel" src="PhoneFlows.jsx"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+// Default tweak values — kept in sync with the panel and the file via the EDITMODE markers.
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "density": "compact",
+  "phoneDensity": "compact",
+  "showNumpad": true,
+  "showWizard": false,
+  "showSingle": true,
+  "showPos": false,
+  "showRecents": true,
+  "period": "today",
+  "showLanding": true,
+  "showSingleExtras": true
+}/*EDITMODE-END*/;
+
+function TabletArtboard({ title, children }) {
+  return (
+    <div className="tablet-bezel" style={{ width: 1024, height: 720 }}>
+      <div className="tablet-screen">{children}</div>
+    </div>
+  );
+}
+
+function PhoneArtboard({ children }) {
+  // IOSDevice from ios-frame.jsx (402×874 default).
+  return (
+    <IOSDevice width={402} height={874} dark={false}>
+      <div className="phone-shell">{children}</div>
+    </IOSDevice>
+  );
+}
+
+function App() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const noop = () => {};
+
+  return (
+    <>
+      <DesignCanvas
+        title="Lacquer · Transaction flow"
+        subtitle="Landing page → new transaction. Three landing variations + three flow shapes × tablet & phone.">
+
+        {t.showLanding && (
+          <DCSection id="landing" title="Landing page (tablet)" subtitle="Salon owner / front desk lands here — at-a-glance stats and a giant New transaction CTA">
+            <DCArtboard id="land-minimal" label="A · Minimal — CTA-first" width={1056} height={752}>
+              <TabletArtboard><LandingMinimal density={t.density} showRecents={t.showRecents} period={t.period} onPeriod={(v) => setTweak("period", v)} onNew={() => {}} /></TabletArtboard>
+            </DCArtboard>
+            <DCArtboard id="land-stats" label="B · Stats-rich — dashboard-led" width={1056} height={752}>
+              <TabletArtboard><LandingStats density={t.density} showRecents={t.showRecents} period={t.period} onPeriod={(v) => setTweak("period", v)} onNew={() => {}} /></TabletArtboard>
+            </DCArtboard>
+            <DCArtboard id="land-cal" label="C · Calendar-led" width={1056} height={752}>
+              <TabletArtboard><LandingCalendar density={t.density} showRecents={t.showRecents} period={t.period} onPeriod={(v) => setTweak("period", v)} onNew={() => {}} /></TabletArtboard>
+            </DCArtboard>
+          </DCSection>
+        )}
+
+        {t.showLanding && (
+          <DCSection id="landing-phone" title="Landing page (phone)" subtitle="Same data, single column — for chair-side or owner-on-the-go">
+            <DCArtboard id="land-phone" label="Phone — stats + recent" width={460} height={920}>
+              <PhoneArtboard><PhoneLanding density={t.phoneDensity} showRecents={t.showRecents} period={t.period} onPeriod={(v) => setTweak("period", v)} onNew={() => {}} /></PhoneArtboard>
+            </DCArtboard>
+          </DCSection>
+        )}
+
+        <DCSection id="tablet" title="New transaction — tablet (front desk)" subtitle="iPad-style 1024×720 — starts with a tech assigned, override per-line as needed">
+          {t.showSingle && (
+            <DCArtboard id="tab-single" label="A · Single-screen cart" width={1056} height={752}>
+              <TabletArtboard title="Single-screen"><FlowSingle density={t.density} onDone={noop} /></TabletArtboard>
+            </DCArtboard>
+          )}
+          {t.showWizard && (
+            <DCArtboard id="tab-wizard" label="B · 3-step wizard" width={1056} height={752}>
+              <TabletArtboard title="Wizard"><FlowWizard density={t.density} onDone={noop} /></TabletArtboard>
+            </DCArtboard>
+          )}
+          {t.showPos && (
+            <DCArtboard id="tab-pos" label="C · POS numpad" width={1056} height={752}>
+              <TabletArtboard title="POS"><FlowPOS density={t.density} onDone={noop} /></TabletArtboard>
+            </DCArtboard>
+          )}
+        </DCSection>
+
+        {t.showSingleExtras && (
+          <DCSection id="single-extras" title="Single-screen cart · bill preview" subtitle="Restaurant-style 'drop the bill' — print or email an itemized bill before payment is taken. Tap the Bill button in the cart footer of the live single-screen cart to open this sheet.">
+            <DCArtboard id="tab-bill-preview" label="Bill preview — open over the cart" width={1056} height={752}>
+              <TabletArtboard><BillPreviewArtboard density={t.density} /></TabletArtboard>
+            </DCArtboard>
+          </DCSection>
+        )}
+
+        <DCSection id="phone" title="Phone (mobile / on-the-go)" subtitle="iPhone — for chair-side checkout, mobile stylists, or owner running solo">
+          {t.showSingle && (
+            <DCArtboard id="ph-single" label="A · Two-pane (services → review)" width={460} height={920}>
+              <PhoneArtboard><PhoneSingle density={t.phoneDensity} onDone={noop} /></PhoneArtboard>
+            </DCArtboard>
+          )}
+          {t.showWizard && (
+            <DCArtboard id="ph-wizard" label="B · 3-step wizard" width={460} height={920}>
+              <PhoneArtboard><PhoneWizard density={t.phoneDensity} onDone={noop} /></PhoneArtboard>
+            </DCArtboard>
+          )}
+          {t.showPos && (
+            <DCArtboard id="ph-pos" label="C · Numpad-first" width={460} height={920}>
+              <PhoneArtboard><PhonePOS density={t.phoneDensity} onDone={noop} /></PhoneArtboard>
+            </DCArtboard>
+          )}
+        </DCSection>
+
+        <DCPostIt left={40} top={40} width={320}>
+          <b>What to look at</b><br/>
+          Start at the <b>Landing page</b> section — three takes on the salon dashboard with the same data. Each surfaces today's transactions, services rendered, tips, revenue, and the cash/card/gift mix.<br/><br/>
+          Below that the <b>New transaction</b> flows now show the <b>tech assignment row</b> at the top (tap to add or remove techs — first one becomes the default). Once services are in the cart, each line shows a tech chip you can tap to override per-service.<br/><br/>
+          Use the Tweaks panel to flip period (today / week / month), hide the recent-transactions feed, change density, or hide variations.
+        </DCPostIt>
+      </DesignCanvas>
+
+      <TweaksPanel>
+        <TweakSection label="Landing page" />
+        <TweakRadio label="Time window" value={t.period}
+          options={["today", "week", "month"]}
+          onChange={(v) => setTweak("period", v)} />
+        <TweakToggle label="Show recent transactions" value={t.showRecents} onChange={(v) => setTweak("showRecents", v)} />
+        <TweakToggle label="Show landing pages" value={t.showLanding} onChange={(v) => setTweak("showLanding", v)} />
+
+        <TweakSection label="Tablet density" />
+        <TweakRadio label="Tap targets" value={t.density}
+          options={["compact", "regular", "big"]}
+          onChange={(v) => setTweak("density", v)} />
+
+        <TweakSection label="Phone density" />
+        <TweakRadio label="Tap targets" value={t.phoneDensity}
+          options={["compact", "regular", "big"]}
+          onChange={(v) => setTweak("phoneDensity", v)} />
+
+        <TweakSection label="Flow variations" />
+        <TweakToggle label="A · Single-screen cart" value={t.showSingle} onChange={(v) => setTweak("showSingle", v)} />
+        <TweakToggle label="B · 3-step wizard"      value={t.showWizard} onChange={(v) => setTweak("showWizard", v)} />
+        <TweakToggle label="C · POS numpad"         value={t.showPos}    onChange={(v) => setTweak("showPos", v)} />
+        <TweakToggle label="A · Bill preview artboard"          value={t.showSingleExtras} onChange={(v) => setTweak("showSingleExtras", v)} />
+      </TweaksPanel>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

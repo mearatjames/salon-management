@@ -1,0 +1,39 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  .row{display:flex;gap:24px;align-items:center;margin-bottom:14px;flex-wrap:wrap}
+  .lbl{font-size:11px;color:var(--muted-foreground);font-family:var(--font-mono);width:80px;text-transform:uppercase;letter-spacing:0.04em}
+  /* switch */
+  .sw{width:32px;height:18px;border-radius:9999px;background:var(--neutral-200);position:relative;display:inline-block;cursor:pointer;transition:all 150ms var(--ease-out)}
+  .sw::after{content:"";position:absolute;width:14px;height:14px;border-radius:9999px;background:white;top:2px;left:2px;box-shadow:0 1px 2px rgb(0 0 0/0.15);transition:all 150ms var(--ease-out)}
+  .sw.on{background:var(--primary)}
+  .sw.on::after{left:16px}
+  /* checkbox */
+  .cb{width:16px;height:16px;border-radius:4px;border:1px solid var(--border);background:var(--card);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+  .cb.on{background:var(--primary);border-color:var(--primary)}
+  .cb.on svg{color:white}
+  /* radio */
+  .rad{width:16px;height:16px;border-radius:9999px;border:1px solid var(--border);background:var(--card);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+  .rad.on{border-color:var(--primary);border-width:5px}
+  .item{display:inline-flex;align-items:center;gap:8px;font-size:13px}
+  /* segmented */
+  .seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;padding:2px;background:var(--muted)}
+  .seg button{height:26px;padding:0 12px;border:none;background:transparent;font-size:12px;font-weight:500;border-radius:4px;cursor:pointer;color:var(--muted-foreground);font-family:var(--font-sans)}
+  .seg button.active{background:var(--card);color:var(--foreground);box-shadow:var(--shadow-xs)}
+</style></head>
+<body>
+  <div class="row"><span class="lbl">switch</span>
+    <span class="item"><span class="sw on"></span>Email reminders</span>
+    <span class="item"><span class="sw"></span>SMS reminders</span>
+  </div>
+  <div class="row"><span class="lbl">checkbox</span>
+    <span class="item"><span class="cb on"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M5 12l5 5L20 7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>Auto-confirm</span>
+    <span class="item"><span class="cb"></span>Allow walk-ins</span>
+  </div>
+  <div class="row"><span class="lbl">radio</span>
+    <span class="item"><span class="rad on"></span>Charge now</span>
+    <span class="item"><span class="rad"></span>Charge at checkout</span>
+  </div>
+  <div class="row"><span class="lbl">segmented</span>
+    <span class="seg"><button class="active">Day</button><button>Week</button><button>Month</button></span>
+  </div>
+</body></html>

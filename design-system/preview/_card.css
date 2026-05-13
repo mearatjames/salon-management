@@ -1,0 +1,46 @@
+/* Shared shell for design-system preview cards.
+   Cards are small (700×~150 default). The asset name renders OUTSIDE,
+   so the card itself just shows tokens/specimens.
+*/
+@import url("../colors_and_type.css");
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  background: var(--background);
+  color: var(--foreground);
+  padding: 20px 24px;
+  min-height: 100%;
+}
+
+.card-row { display: flex; gap: 12px; align-items: stretch; flex-wrap: wrap; }
+.card-col { display: flex; flex-direction: column; gap: 8px; }
+
+.swatch {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  min-width: 92px;
+  background: var(--card);
+}
+.swatch .chip {
+  height: 56px;
+  border-bottom: 1px solid var(--border);
+}
+.swatch .meta {
+  padding: 6px 8px 8px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.swatch .meta .name { font-weight: 500; color: var(--foreground); }
+.swatch .meta .val  { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 10px; }
+
+.label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  font-weight: 500;
+  margin-bottom: 8px;
+}

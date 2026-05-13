@@ -1,0 +1,29 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  .row{display:flex;gap:14px;align-items:center}
+  .av{display:inline-flex;align-items:center;justify-content:center;border-radius:9999px;background:var(--muted);color:var(--muted-foreground);font-weight:500;border:1px solid var(--border);font-size:12px;letter-spacing:-0.01em}
+  .av.primary{background:color-mix(in oklch, var(--primary) 15%, transparent);color:var(--rose-700);border-color:transparent}
+  .stack{display:inline-flex}
+  .stack .av{margin-left:-8px;border:2px solid var(--background)}
+  .stack .av:first-child{margin-left:0}
+  .lbl{font-size:11px;color:var(--muted-foreground);font-family:var(--font-mono);width:80px;text-transform:uppercase;letter-spacing:0.04em}
+  .group{display:flex;gap:14px;margin-bottom:14px;align-items:center}
+</style></head>
+<body>
+  <div class="group"><span class="lbl">sizes</span>
+    <span class="av" style="width:24px;height:24px;font-size:10px">MP</span>
+    <span class="av" style="width:32px;height:32px">MP</span>
+    <span class="av" style="width:40px;height:40px;font-size:13px">MP</span>
+    <span class="av" style="width:56px;height:56px;font-size:18px">MP</span>
+    <span class="av primary" style="width:40px;height:40px;font-size:13px">JL</span>
+  </div>
+  <div class="group"><span class="lbl">stack</span>
+    <span class="stack">
+      <span class="av primary" style="width:32px;height:32px">MP</span>
+      <span class="av" style="width:32px;height:32px">JL</span>
+      <span class="av" style="width:32px;height:32px">SK</span>
+      <span class="av" style="width:32px;height:32px">+3</span>
+    </span>
+    <span style="font-size:13px;color:var(--muted-foreground)">7 staff today</span>
+  </div>
+</body></html>

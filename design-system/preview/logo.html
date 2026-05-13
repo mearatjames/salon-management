@@ -1,0 +1,28 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  body{padding:24px}
+  .row{display:flex;gap:32px;align-items:center;flex-wrap:wrap}
+  .item{display:flex;flex-direction:column;align-items:center;gap:10px}
+  .lbl{font-size:11px;color:var(--muted-foreground);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.04em}
+  .surface{padding:18px 24px;border:1px solid var(--border);border-radius:12px;background:var(--card)}
+  .surface.dark{background:var(--neutral-900);border-color:transparent}
+  .lockup{display:flex;align-items:center;gap:10px;font-size:24px;font-weight:600;letter-spacing:-0.02em;color:var(--foreground)}
+  .lockup img{width:28px;height:28px}
+  .lockup.inverse{color:var(--neutral-50)}
+</style></head>
+<body>
+  <div class="row">
+    <div class="item">
+      <div class="surface"><div class="lockup"><img src="../assets/lacquer-mark.svg" alt="">lacquer</div></div>
+      <div class="lbl">light</div>
+    </div>
+    <div class="item">
+      <div class="surface dark"><div class="lockup inverse"><img src="../assets/lacquer-mark.svg" alt="">lacquer</div></div>
+      <div class="lbl">dark</div>
+    </div>
+    <div class="item">
+      <div class="surface" style="padding:14px"><img src="../assets/lacquer-mark.svg" alt="" style="width:48px;height:48px;display:block"></div>
+      <div class="lbl">mark only</div>
+    </div>
+  </div>
+</body></html>

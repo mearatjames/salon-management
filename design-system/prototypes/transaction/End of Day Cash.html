@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Lacquer — End of Day · Cash Count</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="transaction.css" />
+<style>
+/* ── Layout ─────────────────────────────────────────────────────── */
+html, body, #root { height: 100%; margin: 0; }
+body { background: #f0eee9; }
+
+.tablet-bezel  { background: #1a1a1a; border-radius: 22px; padding: 14px; box-shadow: 0 24px 60px rgba(0,0,0,0.18); }
+.tablet-screen { border-radius: 10px; overflow: hidden; background: var(--background); height: 100%; }
+
+/* ── EOD app shell ───────────────────────────────────────────────── */
+.eod-app { background: var(--background); }
+
+.eod-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ── Left: cash list ─────────────────────────────────────────────── */
+.eod-left {
+  width: 348px;
+  flex-shrink: 0;
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.eod-panel-head {
+  padding: 13px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.eod-panel-title { font-size: 13px; font-weight: 600; }
+.eod-count-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 9999px;
+  background: var(--muted); font-size: 11px; font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.eod-tx-scroll { flex: 1; overflow-y: auto; }
+
+.eod-tx-row {
+  display: grid;
+  grid-template-columns: 66px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 11px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.eod-tx-time  { font-size: 11px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; padding-top: 2px; }
+.eod-tx-client { font-size: 13px; font-weight: 500; line-height: 1.25; }
+.eod-tx-meta  { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
+.eod-tx-svc   { font-size: 11px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.eod-tx-sep   { font-size: 10px; color: var(--neutral-300); }
+.eod-tx-amt-col { text-align: right; }
+.eod-tx-total { font-size: 14px; font-weight: 600; }
+.eod-tx-tip   { font-size: 10px; color: var(--success); margin-top: 2px; }
+
+.eod-list-foot {
+  flex-shrink: 0;
+  padding: 14px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--card);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.eod-foot-label  { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-foreground); }
+.eod-foot-sub    { font-size: 11px; color: var(--muted-foreground); margin-top: 2px; }
+.eod-foot-amount { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+
+/* ── Right: count panel ──────────────────────────────────────────── */
+.eod-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 22px 18px;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+/* Amount display */
+.eod-display {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 10px 16px;
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: 14px;
+  transition: border-color 180ms var(--ease-out), background 180ms var(--ease-out);
+  flex-shrink: 0;
+}
+.eod-display.match { border-color: var(--success);     background: color-mix(in oklch, var(--success)     6%, var(--card)); }
+.eod-display.short { border-color: var(--destructive); background: color-mix(in oklch, var(--destructive) 5%, var(--card)); }
+.eod-display.over  { border-color: var(--warning);     background: color-mix(in oklch, var(--warning)     6%, var(--card)); }
+
+.eod-display-sym {
+  font-size: 26px; font-weight: 600;
+  color: var(--muted-foreground);
+  letter-spacing: -0.01em; line-height: 1;
+}
+.eod-display-val {
+  font-size: 48px; font-weight: 700;
+  letter-spacing: -0.03em; line-height: 1;
+  color: var(--foreground);
+  flex: 1;
+}
+
+/* Numpad */
+.eod-numpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  flex-shrink: 0;
+}
+.eod-nk {
+  height: 44px;
+  border-radius: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  font-size: 20px; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  color: var(--foreground);
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 100ms var(--ease-out);
+}
+.eod-nk:hover  { background: var(--accent); }
+.eod-nk:active { transform: scale(0.97); }
+.eod-nk.fn     { background: var(--muted); font-size: 16px; }
+
+/* Comparison block */
+.eod-comparison {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  transition: border-color 180ms var(--ease-out);
+}
+.eod-comparison.match { border-color: color-mix(in oklch, var(--success)     35%, var(--border)); }
+.eod-comparison.short { border-color: color-mix(in oklch, var(--destructive) 35%, var(--border)); }
+.eod-comparison.over  { border-color: color-mix(in oklch, var(--warning)     35%, var(--border)); }
+
+.eod-comp-row  { display: flex; align-items: center; justify-content: space-between; }
+.eod-comp-lbl  { font-size: 13px; color: var(--muted-foreground); }
+.eod-comp-num  { font-size: 15px; font-weight: 600; }
+.eod-comp-divider { height: 1px; background: var(--border); margin: 2px 0; }
+
+.eod-diff-row  { padding-top: 2px; }
+.eod-diff-lbl  { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
+.eod-diff-num  { font-size: 20px; font-weight: 700; letter-spacing: -0.01em; }
+
+.eod-diff-exact { display: flex; align-items: center; gap: 4px; color: var(--success); }
+.eod-diff-over  { color: var(--warning); }
+.eod-diff-short { color: var(--destructive); }
+
+/* Note textarea */
+.eod-note {
+  padding: 10px 12px;
+  border: 1px solid var(--input);
+  border-radius: 10px;
+  background: var(--card);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--foreground);
+  resize: none;
+  outline: none;
+  line-height: 1.5;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 120ms var(--ease-out), box-shadow 120ms var(--ease-out);
+}
+.eod-note:focus {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 20%, transparent);
+}
+.eod-note::placeholder { color: var(--muted-foreground); }
+
+/* Status pill */
+.eod-status-pill {
+  display: inline-flex; align-items: center;
+  padding: 3px 11px; border-radius: 9999px;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.03em; text-transform: uppercase;
+  flex-shrink: 0;
+}
+.eod-open   { background: color-mix(in oklch, var(--success) 14%, transparent); color: oklch(0.37 0.10 150); }
+.eod-closed { background: var(--muted); color: var(--muted-foreground); }
+
+/* ── Done screen ──────────────────────────────────────────────────── */
+.eod-done {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 60px;
+  text-align: center;
+}
+.eod-done-icon {
+  width: 68px; height: 68px;
+  border-radius: 9999px;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 4px;
+}
+.eod-done-icon.match { background: color-mix(in oklch, var(--success)     16%, transparent); color: var(--success); }
+.eod-done-icon.short { background: color-mix(in oklch, var(--destructive) 14%, transparent); color: var(--destructive); }
+.eod-done-icon.over  { background: color-mix(in oklch, var(--warning)     14%, transparent); color: var(--warning); }
+
+.eod-done-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 24px;
+  display: flex; flex-direction: column; gap: 8px;
+  min-width: 320px;
+  text-align: left;
+  margin-top: 8px;
+}
+.eod-done-row {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 14px; color: var(--muted-foreground);
+}
+.eod-done-row .tnum { font-weight: 600; color: var(--foreground); }
+.eod-done-diff.match .tnum { color: var(--success); }
+.eod-done-diff.short .tnum { color: var(--destructive); }
+.eod-done-diff.over  .tnum { color: var(--warning); }
+.eod-done-note {
+  margin-top: 2px;
+  padding: 10px 12px;
+  background: var(--muted);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-style: italic;
+  line-height: 1.5;
+}
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="components.jsx"></script>
+<script type="text/babel" src="EndOfDay.jsx"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "preset": "none"
+}/*EDITMODE-END*/;
+
+function TabletArtboard({ children }) {
+  return (
+    <div className="tablet-bezel" style={{ width: 1024, height: 720 }}>
+      <div className="tablet-screen">{children}</div>
+    </div>
+  );
+}
+
+function App() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+  return (
+    <>
+      <DesignCanvas
+        title="Lacquer · End of Day Cash Count"
+        subtitle="Tablet (1024×720) — count the drawer, compare to expected, flag any discrepancy">
+        <DCSection id="eod" title="End of Day · Cash Count" subtitle="Staff count the cash drawer at close; the screen shows today's cash transactions and flags any over/short">
+          <DCArtboard id="eod-tablet" label="Tablet — cash count" width={1056} height={752}>
+            <TabletArtboard>
+              <EndOfDayCash preset={t.preset === "none" ? null : t.preset} />
+            </TabletArtboard>
+          </DCArtboard>
+        </DCSection>
+
+        <DCPostIt left={40} top={40} width={300}>
+          <b>End of Day · Cash Count</b><br /><br />
+          Left panel shows every <b>cash transaction</b> from today with the expected total at the bottom.<br /><br />
+          Right panel: enter the counted amount via the numpad. The comparison block updates live — <b>green</b> for exact, <b>amber</b> for over, <b>red</b> for short.<br /><br />
+          A discrepancy requires a note before "Close Out Day" is enabled.<br /><br />
+          Use Tweaks to try the <b>short</b> and <b>over</b> presets.
+        </DCPostIt>
+      </DesignCanvas>
+
+      <TweaksPanel>
+        <TweakSection label="Preset state" />
+        <TweakRadio
+          label="Prefill counted amount"
+          value={t.preset}
+          options={["none", "short", "over"]}
+          onChange={v => setTweak("preset", v)}
+        />
+      </TweaksPanel>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

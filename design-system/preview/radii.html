@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  .grid{display:flex;gap:16px;align-items:flex-end}
+  .item{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .box{width:72px;height:72px;background:var(--card);border:1px solid var(--border)}
+  .lbl{font-size:11px;color:var(--muted-foreground);font-family:var(--font-mono)}
+  .name{font-size:12px;font-weight:500}
+</style></head>
+<body>
+  <div class="grid">
+    <div class="item"><div class="box" style="border-radius:4px"></div><div class="name">xs</div><div class="lbl">4px · input</div></div>
+    <div class="item"><div class="box" style="border-radius:6px"></div><div class="name">sm</div><div class="lbl">6px · button</div></div>
+    <div class="item"><div class="box" style="border-radius:8px"></div><div class="name">md</div><div class="lbl">8px · chip</div></div>
+    <div class="item"><div class="box" style="border-radius:12px"></div><div class="name">lg</div><div class="lbl">12px · card</div></div>
+    <div class="item"><div class="box" style="border-radius:16px"></div><div class="name">xl</div><div class="lbl">16px · sheet</div></div>
+    <div class="item"><div class="box" style="border-radius:9999px"></div><div class="name">full</div><div class="lbl">pill · avatar</div></div>
+  </div>
+</body></html>
