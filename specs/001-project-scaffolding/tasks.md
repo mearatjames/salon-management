@@ -22,12 +22,12 @@ layout, no `src/` directory.
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Generate the Next.js 15 base project with official tooling.
+**Purpose**: Generate the Next.js 16 base project with official tooling.
 
-- [ ] T001 Generate the Next.js base. The repo root is non-empty (`design-system/`, `docs/`, `specs/`, `.specify/`, `.claude/`, `.agents/`, `CLAUDE.md`, `SKILL.md`, `skills-lock.json`, `.gitignore`), so `create-next-app` in place will abort its empty-folder check — **scaffold into a temp dir as the primary method**: run `npx create-next-app@latest /tmp/tn-scaffold --typescript --tailwind --eslint --app --no-src-dir --import-alias "@/*" --use-npm --no-turbopack`, then copy `app/`, `package.json`, `package-lock.json`, `tsconfig.json`, `next.config.ts`, `postcss.config.mjs`, `eslint.config.mjs`, `.gitignore` (merge with the existing one rather than overwrite), and any generated `app/globals.css` / `public/` assets into the repo root. (If a future create-next-app version supports adopting a non-empty directory cleanly, that may be used instead — same flags, target `.`.)
-- [ ] T002 Verify the base boots: run `npm run dev`, confirm the default page renders at `http://localhost:3000` with no errors, then stop the server
+- [X] T001 Generate the Next.js base. The repo root is non-empty (`design-system/`, `docs/`, `specs/`, `.specify/`, `.claude/`, `.agents/`, `CLAUDE.md`, `SKILL.md`, `skills-lock.json`, `.gitignore`), so `create-next-app` in place will abort its empty-folder check — **scaffold into a temp dir as the primary method**: run `npx create-next-app@latest /tmp/tn-scaffold --typescript --tailwind --eslint --app --no-src-dir --import-alias "@/*" --use-npm --no-turbopack`, then copy `app/`, `package.json`, `package-lock.json`, `tsconfig.json`, `next.config.ts`, `postcss.config.mjs`, `eslint.config.mjs`, `.gitignore` (merge with the existing one rather than overwrite), and any generated `app/globals.css` / `public/` assets into the repo root. (If a future create-next-app version supports adopting a non-empty directory cleanly, that may be used instead — same flags, target `.`.)
+- [X] T002 Verify the base boots: run `npm run dev`, confirm the default page renders at `http://localhost:3000` with no errors, then stop the server
 
-**Checkpoint**: A runnable Next.js 15 project exists at the repo root.
+**Checkpoint**: A runnable Next.js 16 project exists at the repo root.
 
 ---
 
@@ -38,9 +38,9 @@ runtime stack present (FR-002, US1 scenario 1), US2 needs the test runners.
 
 **⚠️ CRITICAL**: No user story work begins until this phase is complete.
 
-- [ ] T003 Install the runtime dependency stack with a single `npm install` command: `@supabase/supabase-js @supabase/ssr square @tanstack/react-query zustand lucide-react` (Next.js, React, Tailwind v4 are already present from T001)
-- [ ] T004 Install the dev / test dependency stack with `npm install -D`: `vitest @vitejs/plugin-react jsdom @testing-library/react @testing-library/jest-dom @testing-library/user-event @playwright/test prettier eslint-config-prettier`
-- [ ] T005 Confirm `package.json` and `package-lock.json` were updated only by the npm CLI (no hand edits) and stage both; verify `npm ci` reinstalls cleanly from the lockfile
+- [X] T003 Install the runtime dependency stack with a single `npm install` command: `@supabase/supabase-js @supabase/ssr square @tanstack/react-query zustand lucide-react` (Next.js, React, Tailwind v4 are already present from T001)
+- [X] T004 Install the dev / test dependency stack with `npm install -D`: `vitest @vitejs/plugin-react jsdom @testing-library/react @testing-library/jest-dom @testing-library/user-event @playwright/test prettier eslint-config-prettier`
+- [X] T005 Confirm `package.json` and `package-lock.json` were updated only by the npm CLI (no hand edits) and stage both; verify `npm ci` reinstalls cleanly from the lockfile
 
 **Checkpoint**: Full v1 dependency stack installed and lockfile authoritative — user stories can begin.
 
@@ -56,11 +56,11 @@ page; run `npm run build` and get a clean build.
 
 ### Implementation for User Story 1
 
-- [ ] T006 [P] [US1] Replace `app/page.tsx` with an explicit Tang Nails placeholder landing page (a single calm heading + one line noting the app is scaffolded; no real features, no design tokens — plain styling only, per FR-019)
-- [ ] T007 [P] [US1] Create `.nvmrc` at the repo root containing `24`
-- [ ] T008 [P] [US1] Add dependency/build artifacts to `.gitignore` if not already covered by the create-next-app output: `node_modules/`, `.next/`, `out/`, `.env*.local`, `playwright-report/`, `test-results/`, `coverage/`
-- [ ] T009 [US1] Set the runtime version constraint with `npm pkg set engines.node=">=24 <25"` (do not hand-edit `package.json`)
-- [ ] T010 [US1] Verify US1: `npm ci` succeeds, `npm run dev` serves the placeholder page **with no `.env.local` present** (the placeholder reads no env vars, so it must boot cleanly — spec Edge Case "missing env file"), `npm run build` completes with no errors, and an unsupported Node version surfaces the `engines` constraint
+- [X] T006 [P] [US1] Replace `app/page.tsx` with an explicit Tang Nails placeholder landing page (a single calm heading + one line noting the app is scaffolded; no real features, no design tokens — plain styling only, per FR-019)
+- [X] T007 [P] [US1] Create `.nvmrc` at the repo root containing `24`
+- [X] T008 [P] [US1] Add dependency/build artifacts to `.gitignore` if not already covered by the create-next-app output: `node_modules/`, `.next/`, `out/`, `.env*.local`, `playwright-report/`, `test-results/`, `coverage/`
+- [X] T009 [US1] Set the runtime version constraint with `npm pkg set engines.node=">=24 <25"` (do not hand-edit `package.json`)
+- [X] T010 [US1] Verify US1: `npm ci` succeeds, `npm run dev` serves the placeholder page **with no `.env.local` present** (the placeholder reads no env vars, so it must boot cleanly — spec Edge Case "missing env file"), `npm run build` completes with no errors, and an unsupported Node version surfaces the `engines` constraint
 
 **Checkpoint**: The app installs, runs to a placeholder page, and builds — MVP is functional.
 
@@ -76,14 +76,14 @@ configured and pass on the untouched scaffold; CI runs them on every change.
 
 ### Implementation for User Story 2
 
-- [ ] T011 [P] [US2] Create `vitest.config.ts` at the repo root: `@vitejs/plugin-react`, `jsdom` environment, `globals: true`, a setup file `tests/setup.ts` importing `@testing-library/jest-dom`, and `include: ['tests/unit/**/*.test.{ts,tsx}']`
-- [ ] T012 [P] [US2] Create `.prettierrc` (agreed style) and `.prettierignore` (`.next/`, `node_modules/`, `package-lock.json`, `playwright-report/`, `test-results/`); wire `eslint-config-prettier` into `eslint.config.mjs` so ESLint and Prettier do not conflict
-- [ ] T013 [US2] Initialize Playwright by running `npm init playwright@latest` (TypeScript, tests dir `tests/e2e`, no GitHub Actions from the wizard); edit the generated `playwright.config.ts` so `testDir` is `tests/e2e` and `webServer` runs `npm run dev` against `http://localhost:3000`
-- [ ] T014 [P] [US2] Create the sample unit test `tests/unit/sample.test.ts` — a trivial passing assertion that proves the Vitest runner works (FR-008)
-- [ ] T015 [P] [US2] Create the sample e2e test `tests/e2e/placeholder.spec.ts` — navigates to `/` and asserts the placeholder landing page heading is visible (FR-009)
-- [ ] T016 [US2] Add the remaining npm scripts with `npm pkg set` (do not hand-edit `package.json`): `typecheck` = `tsc --noEmit`, `test` = `vitest run`, `test:watch` = `vitest`, `test:e2e` = `playwright test`, `format` = `prettier --write .`, `format:check` = `prettier --check .` (`dev`, `build`, `start`, `lint` already exist from create-next-app)
-- [ ] T017 [US2] Run `npm run format` once so the whole scaffold is Prettier-clean, then verify all eight gates green: `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run test:e2e`, `npm run build`
-- [ ] T018 [US2] Create `.github/workflows/ci.yml`: trigger on `push` and `pull_request`; steps — checkout, `actions/setup-node` with Node 24 + npm cache, `npm ci`, `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`, `npx playwright install --with-deps`, `npm run test:e2e`. Add a comment in the workflow noting it activates once a GitHub remote is added. **Verification limitation**: the repo has no git remote, so FR-015 / SC-004 (CI runs on every pushed change) cannot be verified within this feature — verify only that the workflow file is valid YAML and its commands match the local gates; full CI verification is deferred until a remote exists.
+- [X] T011 [P] [US2] Create `vitest.config.ts` at the repo root: `@vitejs/plugin-react`, `jsdom` environment, `globals: true`, a setup file `tests/setup.ts` importing `@testing-library/jest-dom`, and `include: ['tests/unit/**/*.test.{ts,tsx}']`
+- [X] T012 [P] [US2] Create `.prettierrc` (agreed style) and `.prettierignore` (`.next/`, `node_modules/`, `package-lock.json`, `playwright-report/`, `test-results/`); wire `eslint-config-prettier` into `eslint.config.mjs` so ESLint and Prettier do not conflict
+- [X] T013 [US2] Initialize Playwright by running `npm init playwright@latest` (TypeScript, tests dir `tests/e2e`, no GitHub Actions from the wizard); edit the generated `playwright.config.ts` so `testDir` is `tests/e2e` and `webServer` runs `npm run dev` against `http://localhost:3000`
+- [X] T014 [P] [US2] Create the sample unit test `tests/unit/sample.test.ts` — a trivial passing assertion that proves the Vitest runner works (FR-008)
+- [X] T015 [P] [US2] Create the sample e2e test `tests/e2e/placeholder.spec.ts` — navigates to `/` and asserts the placeholder landing page heading is visible (FR-009)
+- [X] T016 [US2] Add the remaining npm scripts with `npm pkg set` (do not hand-edit `package.json`): `typecheck` = `tsc --noEmit`, `test` = `vitest run`, `test:watch` = `vitest`, `test:e2e` = `playwright test`, `format` = `prettier --write .`, `format:check` = `prettier --check .` (`dev`, `build`, `start`, `lint` already exist from create-next-app)
+- [X] T017 [US2] Run `npm run format` once so the whole scaffold is Prettier-clean, then verify all eight gates green: `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run test:e2e`, `npm run build`
+- [X] T018 [US2] Create `.github/workflows/ci.yml`: trigger on `push` and `pull_request`; steps — checkout, `actions/setup-node` with Node 24 + npm cache, `npm ci`, `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`, `npm run build`, `npx playwright install --with-deps`, `npm run test:e2e`. Add a comment in the workflow noting it activates once a GitHub remote is added. **Verification limitation**: the repo has no git remote, so FR-015 / SC-004 (CI runs on every pushed change) cannot be verified within this feature — verify only that the workflow file is valid YAML and its commands match the local gates; full CI verification is deferred until a remote exists.
 
 **Checkpoint**: All quality gates pass locally and a CI pipeline is committed.
 
@@ -99,12 +99,12 @@ confirm `.env.example`, `.editorconfig`, and `README.md` are present and accurat
 
 ### Implementation for User Story 3
 
-- [ ] T019 [P] [US3] Create the directory skeleton from plan.md / `docs/system-design.md`, holding each empty directory with a `.gitkeep` file: `app/(auth)/{login,select-staff}/`, `app/(studio)/{calendar,clients,checkout,walkin,end-of-day,settings}/`, `app/kiosk/[token]/`, `app/api/webhooks/square/`, `app/api/square/`, `components/ui/`, `components/lacquer/`, `lib/{db,square,auth,realtime,time}/`, `supabase/migrations/`, `public/icons/`
-- [ ] T020 [P] [US3] Create `.env.example` listing every v1 environment variable with placeholder (non-secret) values and one-line descriptions: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SQUARE_APPLICATION_ID`, `SQUARE_APPLICATION_SECRET`, `SQUARE_ENVIRONMENT`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, `ACTING_AS_COOKIE_SECRET`, `SALON_TZ`
-- [ ] T021 [P] [US3] Create `.editorconfig` at the repo root with shared editor settings (UTF-8, LF, final newline, 2-space indent) consistent with the Prettier config
-- [ ] T022 [US3] Relocate global styling to match the repo layout: move create-next-app's `app/globals.css` to `styles/globals.css`, create a placeholder `styles/tokens.css` (a comment block stating Lacquer tokens are vendored by the later styling-foundation feature) imported from `styles/globals.css`, update the import in `app/layout.tsx` to `@/styles/globals.css`, and confirm `npm run dev` + `npm run build` still pass
-- [ ] T023 [US3] Initialize shadcn/ui by running `npx shadcn@latest init` (style: default, base color: neutral, CSS file: `styles/globals.css`, CSS variables: yes); verify `components.json` resolves UI components to `components/ui` and the `cn` helper to `lib/utils.ts`. Then prove the add workflow: run `npx shadcn@latest add button`, confirm it succeeds, and fully revert it — `add` also mutates `package.json`/`package-lock.json` with Radix deps and writes `components/ui/button.tsx`, so revert **all** of it (`git checkout -- package.json package-lock.json` and `rm components/ui/button.tsx`, then `npm install` to resync the lockfile). Only the workflow is being proven; no components ship per FR-018/FR-019. Leave the tree clean.
-- [ ] T024 [US3] Write `README.md` at the repo root covering: prerequisites (Node 24), setup steps (`npm ci`, `cp .env.example .env.local`, `npm run dev`), the eight npm commands and what each checks, and the project structure (mirroring `quickstart.md`)
+- [X] T019 [P] [US3] Create the directory skeleton from plan.md / `docs/system-design.md`, holding each empty directory with a `.gitkeep` file: `app/(auth)/{login,select-staff}/`, `app/(studio)/{calendar,clients,checkout,walkin,end-of-day,settings}/`, `app/kiosk/[token]/`, `app/api/webhooks/square/`, `app/api/square/`, `components/ui/`, `components/lacquer/`, `lib/{db,square,auth,realtime,time}/`, `supabase/migrations/`, `public/icons/`
+- [X] T020 [P] [US3] Create `.env.example` listing every v1 environment variable with placeholder (non-secret) values and one-line descriptions: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SQUARE_APPLICATION_ID`, `SQUARE_APPLICATION_SECRET`, `SQUARE_ENVIRONMENT`, `SQUARE_WEBHOOK_SIGNATURE_KEY`, `ACTING_AS_COOKIE_SECRET`, `SALON_TZ`
+- [X] T021 [P] [US3] Create `.editorconfig` at the repo root with shared editor settings (UTF-8, LF, final newline, 2-space indent) consistent with the Prettier config
+- [X] T022 [US3] Relocate global styling to match the repo layout: move create-next-app's `app/globals.css` to `styles/globals.css`, create a placeholder `styles/tokens.css` (a comment block stating Lacquer tokens are vendored by the later styling-foundation feature) imported from `styles/globals.css`, update the import in `app/layout.tsx` to `@/styles/globals.css`, and confirm `npm run dev` + `npm run build` still pass
+- [X] T023 [US3] Initialize shadcn/ui by running `npx shadcn@latest init` (style: default, base color: neutral, CSS file: `styles/globals.css`, CSS variables: yes); verify `components.json` resolves UI components to `components/ui` and the `cn` helper to `lib/utils.ts`. Then prove the add workflow: run `npx shadcn@latest add button`, confirm it succeeds, and fully revert it — `add` also mutates `package.json`/`package-lock.json` with Radix deps and writes `components/ui/button.tsx`, so revert **all** of it (`git checkout -- package.json package-lock.json` and `rm components/ui/button.tsx`, then `npm install` to resync the lockfile). Only the workflow is being proven; no components ship per FR-018/FR-019. Leave the tree clean.
+- [X] T024 [US3] Write `README.md` at the repo root covering: prerequisites (Node 24), setup steps (`npm ci`, `cp .env.example .env.local`, `npm run dev`), the eight npm commands and what each checks, and the project structure (mirroring `quickstart.md`)
 
 **Checkpoint**: Structure matches the system design; styling and component workflows are wired;
 conventional files are in place.
@@ -115,9 +115,9 @@ conventional files are in place.
 
 **Purpose**: Final verification that the whole scaffold satisfies the spec.
 
-- [ ] T025 Run the full `quickstart.md` walkthrough end to end on a clean state (`npm ci` → `cp .env.example .env.local` → `npm run dev` → all eight gates) and confirm every step passes
-- [ ] T026 Verify reproducibility (SC-006): on a second clean checkout/clone, `npm ci` produces an unchanged `package-lock.json`
-- [ ] T027 Verify SC-003: every top-level directory in `docs/system-design.md` §"Repo layout" exists in the scaffold; run `npm run format:check` one final time to confirm the tree is clean
+- [X] T025 Run the full `quickstart.md` walkthrough end to end on a clean state (`npm ci` → `cp .env.example .env.local` → `npm run dev` → all eight gates) and confirm every step passes
+- [X] T026 Verify reproducibility (SC-006): on a second clean checkout/clone, `npm ci` produces an unchanged `package-lock.json`
+- [X] T027 Verify SC-003: every top-level directory in `docs/system-design.md` §"Repo layout" exists in the scaffold; run `npm run format:check` one final time to confirm the tree is clean
 
 ---
 

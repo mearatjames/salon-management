@@ -13,7 +13,7 @@ by hand."**
 **Decision**: Build the project by running official generators and `npm install`, never by writing
 `package.json` or lockfiles by hand:
 
-1. `npx create-next-app@latest` (non-interactive, flags below) to produce the Next.js 15 base,
+1. `npx create-next-app@latest` (non-interactive, flags below) to produce the Next.js 16 base,
    `package.json`, `package-lock.json`, `tsconfig.json`, ESLint flat config, and Tailwind v4.
 2. `npm install <pkg>...` for each additional runtime/dev dependency from the system design stack.
 3. `npx shadcn@latest init` to generate `components.json` and the `cn` utility.
@@ -28,6 +28,13 @@ config files match each tool's current expectations rather than stale hand-copie
 **create-next-app flags**: `--typescript --tailwind --eslint --app --no-src-dir --import-alias
 "@/*" --use-npm --no-turbopack`. `--no-src-dir` is required because the system design repo layout
 places `app/`, `components/`, `lib/`, `styles/` at the repository root, not under `src/`.
+
+**Version note (implementation)**: `create-next-app@latest` now resolves to **Next.js 16**
+(installed: 16.2.6, React 19.2.4), not 15 — Next 16 is the current stable and `@latest` is what
+the user directive ("proper npm install") implies. The App Router, RSC, and Server Actions model
+this feature wires up is unchanged. One flag fell away: `--no-turbopack` is no longer honored by
+create-next-app for Next 16 — Turbopack is the default builder for both `dev` and `build`, and the
+scaffold runs clean on it.
 
 **Alternatives considered**: Hand-authoring `package.json` (rejected — violates the user directive
 and drifts from tool defaults); a monorepo tool like Turborepo/Nx (rejected — single deployable
@@ -73,6 +80,16 @@ in this feature — only prove `npx shadcn@latest add <component>` works.
 setup. System design mandates the `components/ui` (primitives) + `components/lacquer` (composed)
 split and forbids a second component library.
 
+**CLI note (implementation)**: `npx shadcn@latest` resolves to **CLI v4.7.0**, which replaced the
+old `--style default` flag with a template/base/preset system. The init command run was
+`npx shadcn@latest init --template next --base radix --preset nova --css-variables --yes`. The
+resulting `components.json` still satisfies every requirement above: `baseColor: "neutral"`,
+`cssVariables: true`, `css: "styles/globals.css"`, `iconLibrary: "lucide"`, `ui: "@/components/ui"`,
+`utils: "@/lib/utils"`. Its `style` field reads `"radix-nova"` (the preset name) rather than
+`"default"` — cosmetic only, the generation behaviour is unchanged. Note v4.7.0's `init` now writes
+a sample `components/ui/button.tsx` itself; per FR-018/FR-019 no components ship, so that file is
+removed after the `add` workflow is proven, leaving the tree clean.
+
 **Alternatives considered**: Adding the full component list from the system design now (rejected —
 that is the styling-foundation/feature work, not scaffolding).
 
@@ -93,7 +110,7 @@ Scripts: `test` (Vitest run), `test:watch`, `test:e2e` (Playwright).
 suites CI gates. Vitest pairs naturally with a Vite-aware Next.js project; Playwright is named
 directly in the system design.
 
-**Alternatives considered**: Jest (rejected — heavier config with Next 15 / ESM, Vitest is the
+**Alternatives considered**: Jest (rejected — heavier config with Next 16 / ESM, Vitest is the
 current default for new Next projects); Cypress (rejected — system design specifies Playwright).
 
 ## Decision 6: Lint and format
