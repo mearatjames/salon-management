@@ -90,6 +90,6 @@ ships placeholders only. These arrive in their own later features:
 
 ## Stack
 
-Next.js 15 (App Router, RSC + Server Actions) · Vercel · Supabase (Postgres/RLS, Auth, Realtime,
+Next.js 16 (App Router, RSC + Server Actions) · Vercel · Supabase (Postgres/RLS, Auth, Realtime,
 Storage) · Square SDK (server-side) · shadcn/ui + Tailwind v4 + Lucide. See
 [`docs/system-design.md`](docs/system-design.md) for the full picture.
