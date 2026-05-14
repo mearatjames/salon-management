@@ -10,7 +10,6 @@ user-invocable: true
 disable-model-invocation: false
 ---
 
-
 ## User Input
 
 ```text
@@ -22,6 +21,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 ## Pre-Execution Checks
 
 **Check for extension hooks (before implementation)**:
+
 - Check if `.specify/extensions.yml` exists in the project root.
 - If it exists, read it and look for entries under the `hooks.before_implement` key
 - If the YAML cannot be parsed or is invalid, skip hook checking silently and continue normally
@@ -32,6 +32,7 @@ You **MUST** consider the user input before proceeding (if not empty).
 - When constructing slash commands from hook command names, replace dots (`.`) with hyphens (`-`). For example, `speckit.git.commit` → `/speckit-git-commit`.
 - For each executable hook, output the following based on its `optional` flag:
   - **Optional hook** (`optional: true`):
+
     ```
     ## Extension Hooks
 
@@ -42,16 +43,19 @@ You **MUST** consider the user input before proceeding (if not empty).
     Prompt: {prompt}
     To execute: `/{command}`
     ```
+
   - **Mandatory hook** (`optional: false`):
+
     ```
     ## Extension Hooks
 
     **Automatic Pre-Hook**: {extension}
     Executing: `/{command}`
     EXECUTE_COMMAND: {command}
-    
+
     Wait for the result of the hook command before proceeding to the Outline.
     ```
+
 - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently
 
 ## Outline
@@ -108,12 +112,12 @@ You **MUST** consider the user input before proceeding (if not empty).
      git rev-parse --git-dir 2>/dev/null
      ```
 
-   - Check if Dockerfile* exists or Docker in plan.md → create/verify .dockerignore
-   - Check if .eslintrc* exists → create/verify .eslintignore
-   - Check if eslint.config.* exists → ensure the config's `ignores` entries cover required patterns
-   - Check if .prettierrc* exists → create/verify .prettierignore
+   - Check if Dockerfile\* exists or Docker in plan.md → create/verify .dockerignore
+   - Check if .eslintrc\* exists → create/verify .eslintignore
+   - Check if eslint.config.\* exists → ensure the config's `ignores` entries cover required patterns
+   - Check if .prettierrc\* exists → create/verify .prettierignore
    - Check if .npmrc or package.json exists → create/verify .npmignore (if publishing)
-   - Check if terraform files (*.tf) exist → create/verify .terraformignore
+   - Check if terraform files (\*.tf) exist → create/verify .terraformignore
    - Check if .helmignore needed (helm charts present) → create/verify .helmignore
 
    **If ignore file already exists**: Verify it contains essential patterns, append missing critical patterns only
@@ -150,10 +154,30 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 6. Execute implementation following the task plan:
    - **Phase-by-phase execution**: Complete each phase before moving to the next
-   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together  
+   - **Respect dependencies**: Run sequential tasks in order, parallel tasks [P] can run together
    - **Follow TDD approach**: Execute test tasks before their corresponding implementation tasks
    - **File-based coordination**: Tasks affecting the same files must run sequentially
    - **Validation checkpoints**: Verify each phase completion before proceeding
+
+   **Context management — delegate to subagents (IMPORTANT)**:
+   Implementation generates large volumes of output (generators, `npm install`, build/test
+   runs, file edits). Running it all in this conversation risks hitting the context limit
+   mid-feature. Act as an **orchestrator**, not the executor:
+   - For each phase in tasks.md, dispatch a **`speckit-phase-executor`** subagent. Pass it:
+     the absolute FEATURE_DIR, the phase name, the **verbatim text of every task** in that
+     phase (IDs, `[P]` markers, file paths), and any hard user directives or constitution
+     principles in play for that phase. It executes the phase, marks tasks `[X]`, runs the
+     checkpoint, and returns a concise report. Keep only that report in your context.
+   - Dispatch phases **sequentially** (each depends on the prior phase's checkpoint), unless
+     tasks.md explicitly marks whole phases as independent.
+   - For build/test/lint verification — phase checkpoints and step 9 — use the
+     **`speckit-gate-runner`** subagent (read-only) so verbose command output never lands
+     in this context.
+   - For features that build UI surfaces, after the relevant phase dispatch a
+     **`speckit-design-auditor`** subagent to verify Lacquer design-system compliance
+     (constitution Principle I) before treating that UI work as complete.
+   - If a phase-executor reports BLOCKED, resolve the blocker (dispatch a focused fix or
+     handle it directly) before dispatching the next phase. Do not skip ahead.
 
 7. Implementation execution rules:
    - **Setup first**: Initialize project structure, dependencies, configuration
@@ -189,6 +213,7 @@ Note: This command assumes a complete task breakdown exists in tasks.md. If task
     - When constructing slash commands from hook command names, replace dots (`.`) with hyphens (`-`). For example, `speckit.git.commit` → `/speckit-git-commit`.
     - For each executable hook, output the following based on its `optional` flag:
       - **Optional hook** (`optional: true`):
+
         ```
         ## Extension Hooks
 
@@ -199,7 +224,9 @@ Note: This command assumes a complete task breakdown exists in tasks.md. If task
         Prompt: {prompt}
         To execute: `/{command}`
         ```
+
       - **Mandatory hook** (`optional: false`):
+
         ```
         ## Extension Hooks
 
@@ -207,4 +234,5 @@ Note: This command assumes a complete task breakdown exists in tasks.md. If task
         Executing: `/{command}`
         EXECUTE_COMMAND: {command}
         ```
+
     - If no hooks are registered or `.specify/extensions.yml` does not exist, skip silently

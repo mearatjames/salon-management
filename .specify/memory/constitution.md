@@ -1,6 +1,13 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change: 1.0.0 → 1.0.1
+Bump rationale: PATCH — non-semantic factual correction. The preamble named the
+  web framework as "Next.js 15"; the scaffolding feature (001) generated the repo
+  with `create-next-app@latest`, which now resolves to Next.js 16. No principle,
+  section, or governance rule changed. No dependent templates require updates.
+
+--- Prior entry (1.0.0) -------------------------------------------------------
 Version change: (none) → 1.0.0
 Bump rationale: Initial ratification of the Tang Nails project constitution.
   No prior versioned constitution existed; the file held only template placeholders.
@@ -36,7 +43,7 @@ Follow-up TODOs: none — all placeholders resolved.
 # Tang Nails Constitution
 
 Tang Nails is a single-salon management web app (Calendar, Clients, Checkout/POS,
-Walk-in/Kiosk, End of Day) built on Next.js 15, Supabase, and the Square SDK, dressed
+Walk-in/Kiosk, End of Day) built on Next.js 16, Supabase, and the Square SDK, dressed
 in the Lacquer design system. This constitution governs how the v1 build is specified,
 implemented, reviewed, and shipped. `docs/system-design.md` is the approved technical
 source of truth; this document is the set of non-negotiable rules that protect it.
@@ -197,4 +204,4 @@ creep is the primary risk to shipping a single integrated tool the salon can ado
 - **Runtime guidance.** Use `CLAUDE.md` and `docs/system-design.md` for day-to-day
   implementation guidance; this constitution is the stable layer above them.
 
-**Version**: 1.0.0 | **Ratified**: 2026-05-13 | **Last Amended**: 2026-05-13
+**Version**: 1.0.1 | **Ratified**: 2026-05-13 | **Last Amended**: 2026-05-13

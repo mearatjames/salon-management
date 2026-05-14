@@ -56,11 +56,11 @@ The visual language, tokens, components, and reference layouts live in [`design-
 
 ## Architecture
 
-**Stack:** Next.js 15 (App Router, RSC + Server Actions) on Vercel, Supabase (Postgres + Auth + Realtime + Storage), Square SDK on the server, shadcn/ui + Tailwind + Lucide.
+**Stack:** Next.js 16 (App Router, RSC + Server Actions) on Vercel, Supabase (Postgres + Auth + Realtime + Storage), Square SDK on the server, shadcn/ui + Tailwind + Lucide.
 
 ```
                    ┌────────────────────────────┐
-                   │    Vercel (Next.js 15)     │
+                   │    Vercel (Next.js 16)     │
    Browser ────────│   App Router · RSC · SA    │──── Square Node SDK ──► Square Terminal API
  (iPad/laptop)     │   API routes (webhooks)    │                         Square Gift Cards API
                    │   Edge: middleware/auth    │◄─── Square webhooks ───

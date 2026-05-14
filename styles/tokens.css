@@ -1,0 +1,11 @@
+/*
+ * Lacquer design tokens — PLACEHOLDER.
+ *
+ * This file intentionally contains no token values yet. The Lacquer design
+ * system (colors, type, spacing, radii, shadows) is vendored here by the later
+ * styling-foundation feature, which will copy `design-system/colors_and_type.css`
+ * into this file. Until then it exists only so `styles/globals.css` can import
+ * it and the import chain is wired for that future drop-in.
+ *
+ * Do not add token values here as part of the scaffolding feature.
+ */
