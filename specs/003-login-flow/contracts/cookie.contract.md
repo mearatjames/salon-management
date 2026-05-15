@@ -38,7 +38,7 @@ Compact JWT (HS256), per `jose.SignJWT`:
   No `exp` claim — we verify expiry from `iat` directly so a tampered `exp`
   cannot extend the lifetime.
 - **Signature**: HS256 over the encoded header + payload, using a 32-byte
-  secret read from `process.env.AUTH_COOKIE_SECRET`.
+  secret read from `process.env.ACTING_AS_COOKIE_SECRET`.
 
 ## API
 
@@ -80,7 +80,7 @@ to a `/select-staff` redirect.
 
 ## Secret management
 
-- `AUTH_COOKIE_SECRET` lives in `.env.local` (dev), Vercel project env
+- `ACTING_AS_COOKIE_SECRET` lives in `.env.local` (dev), Vercel project env
   (preview/prod). Generated as `openssl rand -base64 32`.
 - The secret is **server-only**. It is never exposed via
   `NEXT_PUBLIC_*`.
@@ -101,7 +101,7 @@ to a `/select-staff` redirect.
 ## Test fixtures
 
 - A test helper at `tests/unit/auth/_fixtures.ts` exposes a known
-  `TEST_AUTH_COOKIE_SECRET` and helpers `mintCookie({ sid, iatOffsetSec })`
+  `TEST_ACTING_AS_COOKIE_SECRET` and helpers `mintCookie({ sid, iatOffsetSec })`
   and `mintExpiredCookie({ sid })`. The Vitest suite uses these to drive
   cookie verification in isolation; the Playwright suite uses them via a
   test-only Server Action `__test_set_cookie__` (registered only when

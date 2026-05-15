@@ -92,7 +92,7 @@ in middleware).
   `device.signed_out`, `staff.signed_in`, `staff.pin_failed`, `staff.switched`
   (FR-016, Constitution III).
 - **Cookie hygiene**: `acting_as_staff_id` is `HttpOnly`, `Secure`,
-  `SameSite=Lax`, signed with HS256 over a server-only `AUTH_COOKIE_SECRET`,
+  `SameSite=Lax`, signed with HS256 over a server-only `ACTING_AS_COOKIE_SECRET`,
   carrying `Max-Age=43200` with **no** sliding extension (FR-008).
 - **No PII in cookie payload**: cookie carries `staff.id` + issued-at only;
   display name / role / color are looked up server-side per request so

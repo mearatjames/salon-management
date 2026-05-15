@@ -1,0 +1,244 @@
+/* ==========================================================================
+   Tang Nails — Auth surfaces (`/login`, `/select-staff`, studio operator chip)
+   Every value MUST resolve to a `var(--*)` from `styles/tokens.css`.
+   Spacing scale: 4/8/12/16/20/24/32/40/48/64. Radii: 4 inputs, 6 buttons,
+   8 chips, 12 cards, 16 sheets/dialogs, 999 pills. Constitution Principle I.
+   ========================================================================== */
+
+/* ---------- Shell ---------- */
+.auth-shell {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* ---------- Card ---------- */
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl); /* 16 — sheets/dialogs/cards */
+  box-shadow: var(--shadow-md);
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+
+/* ---------- Headline ---------- */
+.auth-headline {
+  font-size: var(--text-2xl);
+  line-height: var(--leading-snug);
+  letter-spacing: var(--tracking-snug);
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0;
+}
+
+/* ---------- Form layout ---------- */
+.auth-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.auth-form-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+/* ---------- Divider ("or" badge between password and providers) ---------- */
+.auth-divider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--space-5);
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.auth-divider > span {
+  padding: 0 var(--space-3);
+  background: var(--card);
+}
+
+/* ---------- Subordinate magic-link control ---------- */
+.auth-magic-link {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  text-align: center;
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+  background: transparent;
+  border: 0;
+  padding: var(--space-2);
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.auth-magic-link:hover {
+  color: var(--foreground);
+}
+
+/* `<summary>` overrides — strip the default disclosure triangle so the
+   subordinate text-link looks visually unified across browsers. */
+.auth-magic-link-details > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.auth-magic-link-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* When the form is revealed, give it a calm vertical rhythm matching
+   `.auth-form-row` spacing in `LoginForm`. */
+.auth-magic-link-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* "Check your email" confirmation card — same border + radius family as
+   `.auth-card` but inset so it visually nests inside the parent card. */
+.auth-magic-sent {
+  border: 1px solid var(--border);
+  background: var(--muted);
+  color: var(--foreground);
+  border-radius: var(--radius-lg); /* 12 — small card */
+  padding: var(--space-4);
+}
+
+/* ---------- Provider button (Google "Continue with") ---------- */
+.auth-provider-btn {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--space-10);
+}
+
+/* ---------- Roster (responsive grid of staff tiles) ---------- */
+.auth-roster {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-3);
+  width: 100%;
+}
+
+/* ---------- Staff tile (iPad-sized tap target) ---------- */
+.auth-staff-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 88px;
+  min-width: 160px;
+  padding: var(--space-4);
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg); /* 12 — small card */
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.auth-staff-tile:hover {
+  border-color: var(--ring);
+  background: var(--accent);
+}
+
+.auth-staff-tile.selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+/* ---------- Keypad (3x4 grid) ---------- */
+.auth-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.auth-keypad-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 64px;
+  padding: var(--space-4);
+  font-size: var(--text-2xl);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md); /* 8 — chip-class */
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.auth-keypad-key:hover {
+  background: var(--accent);
+  border-color: var(--ring);
+}
+
+.auth-keypad-key:active {
+  background: var(--muted);
+}
+
+.auth-keypad-clear {
+  color: var(--muted-foreground);
+  font-size: var(--text-base);
+}
+
+.auth-keypad-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  height: var(--space-10);
+  margin-bottom: var(--space-4);
+}
+
+.auth-keypad-display > span {
+  display: inline-block;
+  width: var(--space-3);
+  height: var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--border);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.auth-keypad-display > span[data-filled="true"] {
+  background: var(--primary);
+}
