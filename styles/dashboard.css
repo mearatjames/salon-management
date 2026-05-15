@@ -1,0 +1,408 @@
+/*
+ * Dashboard (Variation-B) chrome — Lacquer tokens only.
+ *
+ * Sourced verbatim from `design-system/prototypes/transaction/transaction.css`,
+ * scoped to the classes the dashboard surface actually uses. All raw OKLCH
+ * literals in the source (rose/green/amber payment colors) were swapped for
+ * the matching semantic / palette tokens from `styles/tokens.css`. See the
+ * inline notes on `.tx-method-bar`, `.tx-method-row .dot.*`, and `.tx-meth-pill.*`.
+ *
+ * Constitution Principle I (Design System Fidelity): every property value
+ * resolves to a `var(--*)` token.
+ */
+
+/* ---------- Landing chrome ---------- */
+.tx-landing {
+  background: var(--background);
+  color: var(--foreground);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tx-landing-top {
+  padding: 18px 24px 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid transparent;
+}
+.tx-landing-top h1 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+.tx-landing-top .sub {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+/* ---------- Period toggle ---------- */
+.tx-period {
+  display: inline-flex;
+  padding: 3px;
+  background: var(--muted);
+  border-radius: 9999px;
+  border: 1px solid var(--border);
+}
+.tx-period button {
+  height: 28px;
+  padding: 0 14px;
+  border-radius: 9999px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  color: var(--muted-foreground);
+}
+.tx-period button.active {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-xs);
+}
+
+/* ---------- Stat card ---------- */
+.tx-stat-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 86px;
+}
+.tx-stat-card .lbl {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+.tx-stat-card .val {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.05;
+}
+.tx-stat-card .delta {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tx-stat-card .delta.up { color: var(--success); }
+.tx-stat-card .delta.down { color: var(--destructive); }
+
+/* ---------- Primary CTA ---------- */
+.tx-cta-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: none;
+  border-radius: 14px;
+  padding: 18px 22px;
+  font-family: var(--font-sans);
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  transition: background 120ms var(--ease-out);
+  box-shadow: 0 6px 20px -8px color-mix(in oklch, var(--primary) 60%, transparent);
+}
+.tx-cta-primary:hover { background: color-mix(in oklch, var(--primary) 92%, black); }
+/* Inline icon badge is a translucent-white-on-primary inset; there is no
+   semantic token for "18% white on primary", so the rgba literal stays.
+   Foreground glyph color flows from the parent's `var(--primary-foreground)`. */
+.tx-cta-primary .icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tx-cta-primary .sub {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.85;
+  margin-top: 2px;
+  letter-spacing: 0;
+}
+
+/* ---------- Secondary actions ---------- */
+.tx-secondary-action {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  color: var(--foreground);
+  text-align: left;
+  transition: border-color 120ms var(--ease-out), background 120ms var(--ease-out);
+}
+.tx-secondary-action:hover { border-color: var(--ring); }
+.tx-secondary-action svg { color: var(--muted-foreground); flex-shrink: 0; }
+.tx-secondary-action .lbl { font-size: 13px; font-weight: 500; }
+.tx-secondary-action .h { font-size: 11px; color: var(--muted-foreground); margin-top: 1px; }
+
+/* ---------- Payment-mix bar ---------- */
+/* Segment colors map to Lacquer palette tokens:
+   .card → --rose-500   (oklch(0.55 0.12 12)  in tokens.css)
+   .cash → --green-500  (oklch(0.62 0.13 150) in tokens.css)
+   .gift → --amber-500  (oklch(0.76 0.14 75)  in tokens.css)
+*/
+.tx-method-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 9999px;
+  overflow: hidden;
+  background: var(--muted);
+}
+.tx-method-bar > span { display: block; height: 100%; }
+.tx-method-bar > .card { background: var(--rose-500); }
+.tx-method-bar > .cash { background: var(--green-500); }
+.tx-method-bar > .gift { background: var(--amber-500); }
+
+.tx-method-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+.tx-method-row .nm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+}
+.tx-method-row .dot { width: 8px; height: 8px; border-radius: 9999px; }
+.tx-method-row .dot.card { background: var(--rose-500); }
+.tx-method-row .dot.cash { background: var(--green-500); }
+.tx-method-row .dot.gift { background: var(--amber-500); }
+.tx-method-row .num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+/* ---------- Recent transactions feed ---------- */
+.tx-feed {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.tx-feed-h {
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+.tx-feed-h .ttl { font-size: 13px; font-weight: 600; }
+.tx-feed-list { display: flex; flex-direction: column; }
+.tx-feed-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1.2fr) minmax(0, 1.4fr) auto auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.tx-feed-row:last-child { border-bottom: none; }
+.tx-feed-row .time {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+  font-size: 11px;
+}
+.tx-feed-row .client {
+  font-weight: 500;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tx-feed-row .svc {
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tx-feed-row .amt { font-variant-numeric: tabular-nums; font-weight: 600; }
+.tx-feed-row .meth {
+  color: var(--muted-foreground);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
+/* ---------- Method pill (used inside the feed) ---------- */
+/* Tints derived from the same palette tokens used in the bar/dot variants. */
+.tx-meth-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 9999px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.tx-meth-pill.card {
+  background: color-mix(in oklch, var(--rose-500) 12%, transparent);
+  color: var(--rose-700);
+}
+.tx-meth-pill.cash {
+  background: color-mix(in oklch, var(--green-500) 14%, transparent);
+  color: oklch(0.40 0.10 150);
+}
+.tx-meth-pill.gift {
+  background: color-mix(in oklch, var(--amber-500) 16%, transparent);
+  color: oklch(0.42 0.10 75);
+}
+
+/* ---------- Tech avatars (stack + overflow) ---------- */
+.tx-tech-avatars {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tx-tech-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--neutral-200);
+  color: var(--neutral-700);
+}
+.tx-tech-overflow {
+  min-width: 36px;
+  height: 36px;
+  padding: 0 8px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+}
+
+/* ---------- Lower split (quick actions / techs / feed) ---------- */
+.tx-landing-bottom {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 16px;
+  padding: 0 24px 24px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.tx-landing-bottom .tx-landing-bottom-left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.tx-landing-bottom .muted {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+
+/* ---------- Inline link button (Recent transactions "View all") ---------- */
+.tx-link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--primary);
+  cursor: pointer;
+}
+.tx-link:hover { text-decoration: underline; }
+
+/* ---------- Utilities ---------- */
+.tnum { font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted-foreground); }
+.sub { font-size: 12px; color: var(--muted-foreground); margin-top: 2px; }
+
+/* ---------- Responsive (FR-019, SC-006) ----------
+ * Phone breakpoint: collapse the 6-col stat grid to 2 columns, the lower
+ * split to a single column, and stack the header. The stat-grid override
+ * uses `!important` because `grid-template-columns` is set inline on
+ * `<div className="tx-stat-grid" style={{ ... }}>` in `period-summary.client.tsx`
+ * (the inline style is intentional — it keeps the stat layout co-located
+ * with the JSX that emits it). All values resolve to tokens or the
+ * explicit `22px` font-size requested by the task.
+ */
+@media (max-width: 720px) {
+  .tx-stat-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  .tx-landing-bottom {
+    grid-template-columns: 1fr;
+  }
+  .tx-landing-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .tx-stat-card .val {
+    font-size: 22px;
+  }
+}
+
+/* ---------- Studio shell chrome ---------- */
+/* Placeholders for the auth feature ("Switch staff") and realtime-presence
+ * feature ("Reconnecting…"). Rendered disabled / hidden in v1; the markup
+ * contract is here so later features wire behavior, not layout. */
+.tx-studio-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 8px 24px 0;
+  min-height: 0;
+}
+.tx-studio-switch-staff {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: not-allowed;
+  opacity: 0.6;
+  text-decoration: none;
+}
+.tx-studio-reconnect {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 12px;
+}

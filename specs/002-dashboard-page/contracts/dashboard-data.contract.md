@@ -72,9 +72,15 @@ export function buildDashboardData(): DashboardData;
 export function formatCurrency(amount: number): string;        // "$1,240"
 export function formatPercent(fraction: number): string;       // 0.18 → "18%"
 export function formatCount(n: number): string;                // 12 → "12"
-export function formatServiceLabel(items: readonly TxLineItem[]): string;
+export function formatServiceLabel(
+  items: readonly TxLineItem[],
+  services: readonly Service[],
+): string;
 //   ≤2 items → "Classic mani, Paraffin (feet)"
 //   ≥3 items → "Classic mani +2 more"
+//   Takes `services` as an explicit parameter (rather than importing
+//   `SERVICES` from `mock-data.ts`) so `format.ts` stays decoupled from
+//   the data source — the Supabase-wiring feature passes the live catalog.
 export function paymentMixWidths(
   byMethod: { card: number; cash: number; gift: number },
   total: number,

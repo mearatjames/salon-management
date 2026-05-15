@@ -1,3 +1,8 @@
+/* Google Fonts must precede every other @import (PostCSS rule). The font
+   import lives here — not in `tokens.css` — so downstream `@import` chains
+   in globals.css don't push it past the tailwindcss declaration. The token
+   stylesheet still consumes the font via `var(--font-sans)`. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 @import "./tokens.css";
 @import "tw-animate-css";

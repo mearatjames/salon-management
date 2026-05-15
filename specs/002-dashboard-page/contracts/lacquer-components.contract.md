@@ -102,35 +102,56 @@ type RecentTransactionsFeedProps = {
 - Method pill class derived from `row.method` (`.tx-meth-pill.card |
   .cash | .gift`).
 
-## `<PeriodToggle />` (client)
+## Period island (client)
+
+The active-period state is shared across the header band (where the toggle
+lives) and the stat grid (where the values render). Both consumers read from
+a single React Context owned by `<PeriodProvider />`. All three exports below
+live in **`components/lacquer/period-toggle.tsx`** (one client module — keeps
+the island self-contained and avoids a circular import between sibling files).
 
 ```ts
 "use client";
-type PeriodToggleProps = {
-  value: DashboardPeriod;
-  onChange: (next: DashboardPeriod) => void;
+
+// (a) Provider — wraps both consumers in the page.
+type PeriodProviderProps = {
+  summaries: Record<DashboardPeriod, DashboardSummary>;
+  comparisons: DashboardData["comparisons"];
+  children: ReactNode;
 };
+export function PeriodProvider(props: PeriodProviderProps): JSX.Element;
+
+// (b) Hook — used by every consumer.
+type PeriodContextValue = {
+  period: DashboardPeriod;
+  setPeriod: (next: DashboardPeriod) => void;
+  summary: DashboardSummary;                  // = summaries[period]
+  comparisons: DashboardData["comparisons"];
+};
+export function usePeriod(): PeriodContextValue;  // throws if outside provider
+
+// (c) Toggle — header consumer. No props.
+export function PeriodToggle(): JSX.Element;
+//   Three buttons `Today / Week / Month`; exactly one carries `.active`.
+//   onClick handler short-circuits when `next === period` (Edge case
+//   "Period switch during slow render").
+//   Each button is a native <button>; focus-visible inherits from the shadcn
+//   primitive used as a base.
 ```
-- Three buttons (`Today / Week / Month`); exactly one carries `.active`.
-- Implementation guard: `if (next === value) return;` so re-clicks are no-ops
-  (Edge case).
-- Keyboard: each button is a native `<button>` and inherits focus-visible
-  from the shadcn primitive.
 
 ## `<PeriodSummary />` (client)
 
 ```ts
 "use client";
-type PeriodSummaryProps = {
-  summaries: Record<DashboardPeriod, DashboardSummary>;
-  comparisons: DashboardData["comparisons"];
-};
+// No props — reads from `usePeriod()`.
+export function PeriodSummary(): JSX.Element;
 ```
-- Holds the active-period state and renders four `<StatCard />` + one
-  `<PaymentMixCard />`. Receives the precomputed summaries as props (the page
-  computes once on the server), so toggling is a pure render swap.
-- Mounts `<PeriodToggle />` as a sibling so the header band sees the same
-  state via prop drilling (or a tiny shared context confined to this island).
+- Lives in `components/lacquer/period-summary.client.tsx`.
+- Renders four `<StatCard />` + one `<PaymentMixCard />`, reading the active
+  `summary` from `usePeriod()`. Toggling is a pure render swap (no network).
+- Passes `comparisons.transactionsVsAvg` / `comparisons.revenueDelta` to the
+  Transactions / Revenue card `delta` props **only when `period === "today"`**;
+  passes `null` otherwise (FR-006).
 
 ## Stability commitment
 

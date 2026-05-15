@@ -148,10 +148,10 @@ type DashboardData = {
   summaries: Record<DashboardPeriod, DashboardSummary>;  // FR-004, FR-005
   staff: Technician[];                          // FR-010 (everyone on shift)
   recent: TransactionRow[];                     // FR-011, FR-012 — exactly 7 rows, newest first
-  comparisons: {                                // FR-006 — only populated when period === "today"
-    transactionsVsAvg: "+3 vs avg";
-    revenueDelta: "+12%";
-  } | null;
+  comparisons: {                                // FR-006 — always the literal static object below;
+    transactionsVsAvg: "+3 vs avg";             // <PeriodSummary /> decides display per active period
+    revenueDelta: "+12%";                       // (renders only when period === "today").
+  };
   quickActions: QuickAction[];                  // FR-009 — fixed 4-item list
 };
 ```
