@@ -16,6 +16,15 @@ The two layers are intentionally separate. The **device user** is a Supabase ide
 
 This feature ships only the login gate. **Kiosk pairing** (the separate JWT-based path at `/kiosk/[token]`) and the **manager-PIN inline override** used to authorize refunds, voids, and settings edits are explicit out-of-scope deferrals — they share helpers from `lib/auth/*` but are not part of the login flow itself.
 
+## Clarifications
+
+### Session 2026-05-15
+
+- Q: When Supabase Auth or the database is briefly unreachable mid-shift for an already-pinned-in operator, what is the failure mode? → A: Soft-degrade — render the existing "Reconnecting…" banner; refuse mutations (Server Actions short-circuit with a retryable error toast); reads using the cached RSC payload remain visible.
+- Q: After a wrong PIN, should the keypad add a cosmetic cooldown? → A: None — rely solely on bcrypt's intrinsic latency (~100–300 ms per attempt). No UI delay, no escalating throttle.
+- Q: What is the password complexity floor for owner/manager Supabase accounts? → A: NIST 800-63B style — 8+ characters, no character-class rules, allow passphrases and spaces.
+- Q: Should Supabase magic-link / OTP-email sign-in be allowed? → A: Allowed as a fallback — leave Supabase's magic-link enabled so an owner who forgets their password can still get in via email. (Replaces an explicit password-reset link on `/login`.)
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Owner signs in with email and password (Priority: P1)
@@ -124,6 +133,7 @@ Less common but necessary: an owner needs to sign the device out entirely (e.g.,
 - **Kiosk routes.** Requests to `/kiosk/[token]` MUST bypass this gate entirely — the kiosk pairing JWT is a different auth path and is not affected by either the device session or the operator cookie.
 - **Manager-PIN inline override.** Refunds, voids, and settings edits prompt for a fresh manager PIN at the moment of submission. That dialog reuses bcrypt PIN-checking helpers from this feature but is **not** part of the login flow — it is invoked mid-action and does not change the operator cookie.
 - **Network failure mid sign-in.** If Supabase Auth times out or Google OAuth fails, surface a single calm message ("Couldn't sign you in. Check your connection and try again.") and leave the form ready to retry.
+- **Supabase unreachable mid-shift (already pinned in).** The studio shell renders the existing "Reconnecting…" banner (Lacquer `notice` token, per the dashboard feature's app-shell pattern). Server Actions short-circuit with a retryable error toast — no mutation is allowed against a stale connection. Reads served from the cached RSC payload remain visible so the operator keeps context until Supabase returns. The operator cookie is **not** invalidated; once the connection recovers, the next request resumes normally.
 - **PIN provisioning before Settings exists.** Until Settings → Staff is built, PINs are seeded via `supabase/seed.sql` (bcrypt-hashed) for development and via direct SQL/Studio for production bootstrap. No temporary admin UI is introduced.
 
 ## Requirements *(mandatory)*
@@ -132,7 +142,7 @@ Less common but necessary: an owner needs to sign the device out entirely (e.g.,
 
 #### Routes & redirects
 
-- **FR-001**: System MUST expose a public `/login` route that authenticates a device user against Supabase Auth using either an email + password form or a "Continue with Google" OAuth button.
+- **FR-001**: System MUST expose a public `/login` route that authenticates a device user against Supabase Auth via three supported methods: (a) an email + password form, (b) a "Continue with Google" OAuth button (when Google is configured for the Supabase project), and (c) a "Email me a sign-in link" magic-link fallback for owners who have forgotten their password. The magic-link control MUST be visually subordinate to the password form (smaller text-link styling, not a primary button) so it remains a recovery path rather than the headline option.
 - **FR-002**: System MUST expose a `/select-staff` route, behind device-auth, that lists every staff record where `active = true` and `pin_hash IS NOT NULL` as a roster of tappable tiles.
 - **FR-003**: System MUST install Next.js middleware that intercepts every request to a `(studio)` route and: (a) redirects to `/login` when the request has no Supabase session, (b) redirects to `/select-staff` when the session exists but the `acting_as_staff_id` cookie is missing or expired, and (c) preserves the originally requested URL as a `?next=` parameter so the user lands on the intended page after the gate clears.
 - **FR-004**: System MUST exempt `/kiosk/[token]`, `/login`, `/select-staff`, the Supabase auth callback route, and `/api/webhooks/*` from the studio middleware redirects.
@@ -145,7 +155,7 @@ Less common but necessary: an owner needs to sign the device out entirely (e.g.,
 - **FR-008**: On a correct PIN, system MUST set a cookie named `acting_as_staff_id` containing the signed `staff.id`. The cookie MUST be `HttpOnly`, `Secure`, `SameSite=Lax`, signed with the server cookie secret, and carry a hard `Max-Age` of 43,200 seconds (12 hours) with **no** sliding extension.
 - **FR-009**: On a correct PIN, system MUST redirect the user to the `?next=` URL supplied by middleware, defaulting to `/dashboard` when absent or when `next` points outside the `(studio)` route group.
 - **FR-010**: On an incorrect PIN, system MUST surface a calm inline error, clear the keypad, leave the staff tile tappable (no lockout), and write a `staff.pin_failed` event to `audit_log` containing the device user id, the targeted `staff_id`, and the timestamp.
-- **FR-011**: System MUST NOT lock or rate-limit staff tiles in v1. Repeated PIN failures continue to be logged but never deny further attempts (rationale: device-login is the security boundary; PIN is identity selection — see system design § Risks).
+- **FR-011**: System MUST NOT lock or rate-limit staff tiles in v1. Repeated PIN failures continue to be logged but never deny further attempts (rationale: device-login is the security boundary; PIN is identity selection — see system design § Risks). System MUST NOT introduce any UI cooldown, escalating delay, or submit-disable after a wrong PIN — the only attempt-cost is bcrypt's intrinsic verify latency (~100–300 ms at cost 10–12).
 
 #### Switch staff & sign out
 
@@ -156,6 +166,7 @@ Less common but necessary: an owner needs to sign the device out entirely (e.g.,
 
 - **FR-014**: System MUST provide a server-side helper `requireStudioSession()` (in `lib/auth/*`) that, when called from a Server Component or Server Action, resolves the current device user and the operator from the `acting_as_staff_id` cookie, and returns a typed object containing at minimum: `{ deviceUserId, staff: { id, display_name, role, color_token } }`. When either layer is unresolved, the helper MUST throw a typed redirect that middleware/Server-Action plumbing translates into the appropriate `/login` or `/select-staff` redirect (preserving the originating URL).
 - **FR-015**: System MUST replace the dashboard feature's stub `requireStudioSession()` (specs/002-dashboard-page) with the real implementation from FR-014 in the same change set, without altering the helper's call signature.
+- **FR-015a**: When Supabase Auth or the database is unreachable, `requireStudioSession()` and Server Actions MUST soft-degrade rather than fail-closed: the studio shell continues to render the existing "Reconnecting…" banner, Server Actions short-circuit with a retryable error toast (no mutation against a stale connection), and reads served from the cached RSC payload remain visible. The `acting_as_staff_id` cookie MUST NOT be cleared by transient outages; the next successful request resumes normally.
 
 #### Audit log
 
@@ -171,7 +182,8 @@ Less common but necessary: an owner needs to sign the device out entirely (e.g.,
 
 - **FR-020**: The kiosk pairing flow (`/kiosk/[token]`) and the long-lived kiosk JWT path are explicitly **out of scope** for this feature; the studio middleware MUST exempt `/kiosk/*` so kiosk auth can be built later without coupling.
 - **FR-021**: The manager-PIN inline override (used to authorize refunds, voids, settings edits) is explicitly **out of scope** for this feature. The override MAY share bcrypt PIN-checking helpers from `lib/auth/*`, but its UI/Server-Action plumbing belongs to the features that invoke it.
-- **FR-022**: Password reset, email verification, MFA, and self-service account creation are explicitly **out of scope** for v1. Owners reset passwords directly in the Supabase Auth dashboard; staff PINs are seeded via `supabase/seed.sql` for development and via SQL/Studio for production bootstrap until Settings → Staff is built.
+- **FR-022**: A traditional password-reset email flow, email verification on first sign-in, MFA, and self-service account creation are explicitly **out of scope** for v1. The magic-link fallback (FR-001(c)) is the supported recovery path when an owner forgets their password — they receive a one-time sign-in link by email and, once in, can update their password from the Supabase Auth dashboard or any password manager. Staff PINs are seeded via `supabase/seed.sql` for development and via SQL/Studio for production bootstrap until Settings → Staff is built.
+- **FR-023**: System MUST configure the Supabase Auth password policy to require a minimum of **8 characters** with **no character-class rules** (no required mixed case, digits, or symbols). Passphrases and spaces MUST be permitted. Rationale: NIST 800-63B guidance — length beats composition rules, and strict character-class requirements push users toward predictable patterns. The 8-character floor sits above Supabase's default of 6 and is the only knob protecting the device-login layer in the absence of MFA.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -196,7 +208,7 @@ Less common but necessary: an owner needs to sign the device out entirely (e.g.,
 
 ## Assumptions
 
-- Supabase Auth is the only identity provider for the device layer. Email/password is enabled in v1; Google OAuth is enabled when the salon owner has supplied OAuth credentials in the Supabase dashboard. No additional OAuth providers (GitHub, Apple, etc.) are introduced in v1.
+- Supabase Auth is the only identity provider for the device layer. Email/password is enabled in v1; Google OAuth is enabled when the salon owner has supplied OAuth credentials in the Supabase dashboard; magic-link / OTP-email is enabled as a recovery fallback (per the Q4 clarification). No additional OAuth providers (GitHub, Apple, etc.) are introduced in v1.
 - PIN length is **4 digits** for v1, matching the iPad-style staff selector pattern referenced in the system design. The schema column `staff.pin_hash` is a bcrypt hash and stays length-agnostic so a future bump to 6 digits requires no migration.
 - bcrypt cost factor follows the salon-realistic default (10–12 rounds) — high enough to defeat brute force at human PIN entry rates, low enough that a tile tap + PIN keystroke loop feels instantaneous on a counter-class device.
 - The `acting_as_staff_id` cookie is signed with a server-only secret (already part of the Next.js environment) and carries the `staff.id`. No PII (name, role) is encoded in the cookie value — those are looked up server-side in `requireStudioSession()` from a fresh DB read so deactivation takes effect on the next request.
