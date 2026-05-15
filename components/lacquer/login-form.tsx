@@ -24,13 +24,7 @@ export function LoginForm({ next }: LoginFormProps) {
     <form action={signInWithPassword}>
       <div className="auth-form-row">
         <Label htmlFor="email">Email</Label>
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="username"
-          required
-        />
+        <Input id="email" name="email" type="email" autoComplete="username" required />
       </div>
       <div className="auth-form-row" style={{ marginTop: "var(--space-3)" }}>
         <Label htmlFor="password">Password</Label>

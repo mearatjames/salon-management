@@ -35,7 +35,7 @@ function secretKey(): Uint8Array {
   const raw = process.env.ACTING_AS_COOKIE_SECRET;
   if (!raw || raw.length < 16) {
     throw new Error(
-      "ACTING_AS_COOKIE_SECRET is not set or is too short (must be a base64-encoded 32-byte secret)",
+      "ACTING_AS_COOKIE_SECRET is not set or is too short (must be a base64-encoded 32-byte secret)"
     );
   }
   // Force a fresh Uint8Array so jose's `instanceof` check passes even when
@@ -79,7 +79,7 @@ export async function verifyOperatorCookie(value: string): Promise<OperatorCooki
   const now = Math.floor(Date.now() / 1000);
   if (iat + COOKIE_TTL_SECONDS < now) {
     throw new OperatorCookieExpiredError(
-      `operator cookie expired (iat=${iat}, now=${now}, ttl=${COOKIE_TTL_SECONDS}s)`,
+      `operator cookie expired (iat=${iat}, now=${now}, ttl=${COOKIE_TTL_SECONDS}s)`
     );
   }
 

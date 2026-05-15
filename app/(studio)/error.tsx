@@ -14,7 +14,8 @@ export default function StudioError({
   // Auth redirects are translated into Next.js redirect() calls upstream; if
   // one leaks this far, the navigation is in flight — render nothing so the
   // user doesn't see a flicker of the error placeholder.
-  const isAuthRedirect = typeof error.message === "string" && error.message.includes("auth-redirect:");
+  const isAuthRedirect =
+    typeof error.message === "string" && error.message.includes("auth-redirect:");
 
   useEffect(() => {
     if (isAuthRedirect) return;
@@ -34,7 +35,8 @@ export default function StudioError({
       }}
     >
       <p style={{ marginBottom: "var(--space-3)" }}>
-        Couldn&apos;t complete that. The salon shell is still here — try again from the previous screen.
+        Couldn&apos;t complete that. The salon shell is still here — try again from the previous
+        screen.
       </p>
       <button
         type="button"

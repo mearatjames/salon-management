@@ -17,11 +17,7 @@ import { expect, test } from "@playwright/test";
 
 import { mintExpiredCookie } from "../unit/auth/_fixtures";
 
-import {
-  getAuditLogRows,
-  getAuthUserByEmail,
-  getStaffByDisplayName,
-} from "./_db";
+import { getAuditLogRows, getAuthUserByEmail, getStaffByDisplayName } from "./_db";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -59,7 +55,7 @@ test.describe("US1: owner signs in with password", () => {
     if (!supabaseUp) {
       test.skip(
         true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping US1 auth specs (Docker unavailable).",
+        "Supabase not reachable at 127.0.0.1:54321 — skipping US1 auth specs (Docker unavailable)."
       );
       return;
     }
@@ -170,7 +166,7 @@ test.describe("US2: staff selects identity with a PIN", () => {
     if (!supabaseUp) {
       test.skip(
         true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping US2 auth specs (Docker unavailable).",
+        "Supabase not reachable at 127.0.0.1:54321 — skipping US2 auth specs (Docker unavailable)."
       );
       return;
     }
@@ -192,9 +188,7 @@ test.describe("US2: staff selects identity with a PIN", () => {
     await expect(page.getByRole("button", { name: /Sam Chen/ })).toBeVisible();
   });
 
-  test("(b) tapping Maya reveals the keypad with 4 empty dots + 11 buttons", async ({
-    page,
-  }) => {
+  test("(b) tapping Maya reveals the keypad with 4 empty dots + 11 buttons", async ({ page }) => {
     await signInOwner(page);
     await page.getByRole("button", { name: /Maya Patel/ }).click();
     await page.waitForURL(/selectedTileId=/);
@@ -209,9 +203,7 @@ test.describe("US2: staff selects identity with a PIN", () => {
     await expect(page.getByRole("button", { name: "Clear" })).toBeVisible();
   });
 
-  test("(c) Maya + correct PIN 1234 lands on /dashboard with the chip", async ({
-    page,
-  }) => {
+  test("(c) Maya + correct PIN 1234 lands on /dashboard with the chip", async ({ page }) => {
     await signInOwner(page);
     await page.getByRole("button", { name: /Maya Patel/ }).click();
     await page.waitForURL(/selectedTileId=/);
@@ -222,14 +214,10 @@ test.describe("US2: staff selects identity with a PIN", () => {
     await page.waitForURL(/\/dashboard($|\?)/);
     expect(new URL(page.url()).pathname).toBe("/dashboard");
     // Topbar operator chip shows Maya.
-    await expect(page.locator("[data-slot='operator-chip']")).toContainText(
-      "Maya Patel",
-    );
+    await expect(page.locator("[data-slot='operator-chip']")).toContainText("Maya Patel");
   });
 
-  test("(d) Maya + wrong PIN 0000 surfaces calm error + audit row", async ({
-    page,
-  }) => {
+  test("(d) Maya + wrong PIN 0000 surfaces calm error + audit row", async ({ page }) => {
     await signInOwner(page);
     await page.getByRole("button", { name: /Maya Patel/ }).click();
     await page.waitForURL(/selectedTileId=/);
@@ -245,7 +233,7 @@ test.describe("US2: staff selects identity with a PIN", () => {
       (row) =>
         row.entity_id === MAYA_ID &&
         row.payload !== null &&
-        (row.payload as Record<string, unknown>).reason === "mismatch",
+        (row.payload as Record<string, unknown>).reason === "mismatch"
     );
     expect(mismatch).toBeTruthy();
   });
@@ -259,9 +247,7 @@ test.describe("US2: staff selects identity with a PIN", () => {
     expect(new URL(page.url()).pathname).toBe("/dashboard");
   });
 
-  test("(f) refreshing the keypad page collapses back to the roster", async ({
-    page,
-  }) => {
+  test("(f) refreshing the keypad page collapses back to the roster", async ({ page }) => {
     await signInOwner(page);
     await page.getByRole("button", { name: /Maya Patel/ }).click();
     await page.waitForURL(/selectedTileId=/);
@@ -296,7 +282,7 @@ test.describe("US3: switch staff at shift change", () => {
     if (!supabaseUp) {
       test.skip(
         true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping US3 auth specs (Docker unavailable).",
+        "Supabase not reachable at 127.0.0.1:54321 — skipping US3 auth specs (Docker unavailable)."
       );
       return;
     }
@@ -351,9 +337,7 @@ test.describe("US3: switch staff at shift change", () => {
     await expect(mayaTile).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("(c) tap Jordan + PIN 5678 → /dashboard with Jordan in the topbar", async ({
-    page,
-  }) => {
+  test("(c) tap Jordan + PIN 5678 → /dashboard with Jordan in the topbar", async ({ page }) => {
     await signInAsMaya(page);
     await page.locator("[data-slot='operator-chip']").click();
     await page.getByRole("menuitem", { name: /Switch staff/ }).click();
@@ -368,9 +352,7 @@ test.describe("US3: switch staff at shift change", () => {
 
     await page.waitForURL(/\/dashboard($|\?)/);
     expect(new URL(page.url()).pathname).toBe("/dashboard");
-    await expect(page.locator("[data-slot='operator-chip']")).toContainText(
-      "Jordan Lee",
-    );
+    await expect(page.locator("[data-slot='operator-chip']")).toContainText("Jordan Lee");
   });
 
   test("(d) one staff.switched audit row (acting_as=Maya) + staff.signed_in with previous_staff_id=Maya", async ({
@@ -394,8 +376,7 @@ test.describe("US3: switch staff at shift change", () => {
     // The most recent signed_in is Jordan's, with previous_staff_id=Maya.
     const jordanSignIn = signedIn.find(
       (r) =>
-        r.payload !== null &&
-        (r.payload as Record<string, unknown>).previous_staff_id === MAYA_ID,
+        r.payload !== null && (r.payload as Record<string, unknown>).previous_staff_id === MAYA_ID
     );
     expect(jordanSignIn).toBeTruthy();
   });
@@ -438,7 +419,7 @@ type InbucketMessageBody = {
  */
 async function fetchLatestMagicLinkEmail(
   mailbox: string,
-  timeoutMs = 5000,
+  timeoutMs = 5000
 ): Promise<InbucketMessageBody | null> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -449,9 +430,7 @@ async function fetchLatestMagicLinkEmail(
         if (messages.length > 0) {
           // Inbucket orders messages oldest-first; the latest is the tail.
           const latest = messages[messages.length - 1];
-          const bodyRes = await fetch(
-            `${INBUCKET_BASE}/api/v1/mailbox/${mailbox}/${latest.id}`,
-          );
+          const bodyRes = await fetch(`${INBUCKET_BASE}/api/v1/mailbox/${mailbox}/${latest.id}`);
           if (bodyRes.ok) {
             return (await bodyRes.json()) as InbucketMessageBody;
           }
@@ -484,16 +463,13 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
     if (!supabaseUp) {
       test.skip(
         true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping US4 auth specs (Docker unavailable).",
+        "Supabase not reachable at 127.0.0.1:54321 — skipping US4 auth specs (Docker unavailable)."
       );
       return;
     }
     inbucketUp = await inbucketIsReachable();
     if (!inbucketUp) {
-      test.skip(
-        true,
-        "Inbucket not reachable at 127.0.0.1:54324 — skipping US4 magic-link specs.",
-      );
+      test.skip(true, "Inbucket not reachable at 127.0.0.1:54324 — skipping US4 magic-link specs.");
       return;
     }
     const ok = tryResetSupabase();
@@ -525,7 +501,7 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
     // Confirmation card visible. The form is collapsed inside the
     // "Send another link" details element, so we look for the strong tag.
     await expect(page.locator("[data-slot='magic-link-sent']")).toContainText(
-      "owner@tangnails.dev",
+      "owner@tangnails.dev"
     );
   });
 
@@ -553,9 +529,7 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
     // Exactly one device.signed_in row with method='magic_link'.
     const signedIn = await getAuditLogRows("device.signed_in");
     const magicRows = signedIn.filter(
-      (r) =>
-        r.payload !== null &&
-        (r.payload as Record<string, unknown>).method === "magic_link",
+      (r) => r.payload !== null && (r.payload as Record<string, unknown>).method === "magic_link"
     );
     expect(magicRows.length).toBe(1);
   });
@@ -576,9 +550,7 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
 
     // The email input reports invalid state via the constraints API.
     const input = page.getByLabel("Email", { exact: true }).nth(1);
-    const validity = await input.evaluate(
-      (el) => (el as HTMLInputElement).validity.valueMissing,
-    );
+    const validity = await input.evaluate((el) => (el as HTMLInputElement).validity.valueMissing);
     expect(validity).toBe(true);
   });
 
@@ -595,9 +567,7 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
     await expect(googleButton).toBeVisible();
     // Intercept the Server Action's redirect destination.
     const [response] = await Promise.all([
-      page.waitForResponse((res) =>
-        res.url().includes("accounts.google.com"),
-      ),
+      page.waitForResponse((res) => res.url().includes("accounts.google.com")),
       googleButton.click(),
     ]);
     expect(response.url()).toContain("accounts.google.com");
@@ -628,7 +598,7 @@ test.describe("US5: operator session expiry", () => {
     if (!supabaseUp) {
       test.skip(
         true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping US5 auth specs (Docker unavailable).",
+        "Supabase not reachable at 127.0.0.1:54321 — skipping US5 auth specs (Docker unavailable)."
       );
       return;
     }
@@ -636,7 +606,7 @@ test.describe("US5: operator session expiry", () => {
     if (!cookieSecret) {
       test.skip(
         true,
-        "ACTING_AS_COOKIE_SECRET is not set — Playwright spec cannot mint a cookie the dev server will recognize.",
+        "ACTING_AS_COOKIE_SECRET is not set — Playwright spec cannot mint a cookie the dev server will recognize."
       );
       return;
     }
@@ -726,11 +696,11 @@ test.describe("US5: operator session expiry", () => {
         /acting_as_staff_id=/i.test(v) &&
         /max-age=0/i.test(v) &&
         // The value following the equals sign must be empty.
-        /acting_as_staff_id=\s*;/i.test(v),
+        /acting_as_staff_id=\s*;/i.test(v)
     );
     expect(
       cleared,
-      `expected a Set-Cookie clearing acting_as_staff_id; saw: ${JSON.stringify(setCookieHeaders)}`,
+      `expected a Set-Cookie clearing acting_as_staff_id; saw: ${JSON.stringify(setCookieHeaders)}`
     ).toBeTruthy();
   });
 
@@ -787,7 +757,7 @@ test.describe.serial("US6: sign out the device", () => {
     if (!supabaseUp) {
       test.skip(
         true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping US6 auth specs (Docker unavailable).",
+        "Supabase not reachable at 127.0.0.1:54321 — skipping US6 auth specs (Docker unavailable)."
       );
       return;
     }
@@ -802,9 +772,7 @@ test.describe.serial("US6: sign out the device", () => {
     tryResetSupabase();
   });
 
-  test("(a) operator menu → Sign out from /dashboard lands on /login", async ({
-    page,
-  }) => {
+  test("(a) operator menu → Sign out from /dashboard lands on /login", async ({ page }) => {
     await signInAsMaya(page);
     expect(new URL(page.url()).pathname).toBe("/dashboard");
 
@@ -820,9 +788,7 @@ test.describe.serial("US6: sign out the device", () => {
     expect(new URL(page.url()).pathname).toBe("/login");
   });
 
-  test("(b) hard reload after sign-out keeps the user on /login", async ({
-    page,
-  }) => {
+  test("(b) hard reload after sign-out keeps the user on /login", async ({ page }) => {
     await signInAsMaya(page);
     await page.locator("[data-slot='operator-chip']").click();
     await page.getByRole("menuitem", { name: /Sign out/ }).click();
@@ -836,9 +802,7 @@ test.describe.serial("US6: sign out the device", () => {
     await expect(page.getByLabel("Password")).toBeVisible();
   });
 
-  test("(c) one device.signed_out audit row with Maya's auth user + staff id", async ({
-    page,
-  }) => {
+  test("(c) one device.signed_out audit row with Maya's auth user + staff id", async ({ page }) => {
     await signInAsMaya(page);
     await page.locator("[data-slot='operator-chip']").click();
     await page.getByRole("menuitem", { name: /Sign out/ }).click();
@@ -853,14 +817,13 @@ test.describe.serial("US6: sign out the device", () => {
     // staff.id.
     const signedOut = await getAuditLogRows("device.signed_out");
     const row = signedOut.find(
-      (r) => r.actor_user_id === mayaUser.id && r.acting_as_staff_id === maya.id,
+      (r) => r.actor_user_id === mayaUser.id && r.acting_as_staff_id === maya.id
     );
     expect(row).toBeTruthy();
     // Exactly one such row — sign-out should not loop.
     expect(
-      signedOut.filter(
-        (r) => r.actor_user_id === mayaUser.id && r.acting_as_staff_id === maya.id,
-      ).length,
+      signedOut.filter((r) => r.actor_user_id === mayaUser.id && r.acting_as_staff_id === maya.id)
+        .length
     ).toBe(1);
   });
 });
@@ -887,16 +850,13 @@ test.describe.serial("US-soft-degrade: Supabase outage", () => {
     if (!supabaseUp) {
       test.skip(
         true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping soft-degrade spec (Docker unavailable).",
+        "Supabase not reachable at 127.0.0.1:54321 — skipping soft-degrade spec (Docker unavailable)."
       );
       return;
     }
     const ok = tryResetSupabase();
     if (!ok) {
-      test.skip(
-        true,
-        "`supabase db reset` failed — skipping soft-degrade spec.",
-      );
+      test.skip(true, "`supabase db reset` failed — skipping soft-degrade spec.");
     }
   });
 
@@ -912,9 +872,7 @@ test.describe.serial("US-soft-degrade: Supabase outage", () => {
     // (a) Sign in + pin in as Maya. The operator cookie is set here.
     await signInAsMaya(page);
     expect(new URL(page.url()).pathname).toBe("/dashboard");
-    await expect(page.locator("[data-slot='operator-chip']")).toContainText(
-      "Maya Patel",
-    );
+    await expect(page.locator("[data-slot='operator-chip']")).toContainText("Maya Patel");
 
     // (b) Intercept every Supabase call (REST, Auth, Realtime) with a 503.
     //     The /api/health route also calls Supabase server-side, so this
@@ -924,7 +882,7 @@ test.describe.serial("US-soft-degrade: Supabase outage", () => {
         status: 503,
         contentType: "application/json",
         body: JSON.stringify({ error: "service_unavailable" }),
-      }),
+      })
     );
 
     // (c) Reload /dashboard. The studio shell still renders because
@@ -935,10 +893,9 @@ test.describe.serial("US-soft-degrade: Supabase outage", () => {
     // Shell present: topbar is rendered by the layout.
     await expect(page.locator(".studio-topbar")).toBeVisible();
     // Chip placeholder appears under degraded session.
-    await expect(page.locator("[data-slot='operator-chip']")).toContainText(
-      "…",
-      { timeout: 12_000 },
-    );
+    await expect(page.locator("[data-slot='operator-chip']")).toContainText("…", {
+      timeout: 12_000,
+    });
     // Reconnecting banner visible (banner polls /api/health every 10s).
     await expect(page.getByText("Reconnecting…")).toBeVisible({
       timeout: 12_000,
@@ -971,18 +928,14 @@ test.describe.serial("US-soft-degrade: Supabase outage", () => {
     await expect(page.getByText("Reconnecting…")).toHaveCount(0, {
       timeout: 12_000,
     });
-    await expect(page.locator("[data-slot='operator-chip']")).toContainText(
-      "Maya Patel",
-      { timeout: 12_000 },
-    );
+    await expect(page.locator("[data-slot='operator-chip']")).toContainText("Maya Patel", {
+      timeout: 12_000,
+    });
 
     // (f) The operator cookie was never cleared during the outage.
     const cookies = await context.cookies();
     const actingAs = cookies.find((c) => c.name === "acting_as_staff_id");
-    expect(
-      actingAs,
-      "operator cookie must survive Supabase outage",
-    ).toBeTruthy();
+    expect(actingAs, "operator cookie must survive Supabase outage").toBeTruthy();
     expect(actingAs!.value.length).toBeGreaterThan(0);
   });
 });

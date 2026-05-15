@@ -50,12 +50,7 @@ export function StaffRoster({ staff, selectedId, next }: StaffRosterProps) {
   return (
     <div className="auth-roster" role="group" aria-label="Staff roster">
       {ordered.map((row) => (
-        <form
-          key={row.id}
-          method="get"
-          action="/select-staff"
-          style={{ display: "contents" }}
-        >
+        <form key={row.id} method="get" action="/select-staff" style={{ display: "contents" }}>
           <input type="hidden" name="selectedTileId" value={row.id} />
           <input type="hidden" name="next" value={next ?? ""} />
           <StaffTile staff={row} selected={selectedId === row.id} />

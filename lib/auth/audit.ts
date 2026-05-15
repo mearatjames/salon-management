@@ -21,7 +21,7 @@ export async function recordAuth(
   action: AuthAction,
   deviceUserId: string | null,
   staffId: string | null = null,
-  payload: Record<string, unknown> = {},
+  payload: Record<string, unknown> = {}
 ): Promise<void> {
   try {
     const supabase = createSupabaseServiceRoleClient();

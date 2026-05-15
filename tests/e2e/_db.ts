@@ -19,7 +19,7 @@ function client(): SupabaseClient {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
     throw new Error(
-      "tests/e2e/_db.ts: NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY must be set (typically in .env.local)",
+      "tests/e2e/_db.ts: NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY must be set (typically in .env.local)"
     );
   }
   cached = createClient(url, key, {
@@ -41,7 +41,9 @@ export type AuditRow = {
 export async function getAuditLogRows(action?: string): Promise<AuditRow[]> {
   let query = client()
     .from("audit_log")
-    .select("action, actor_user_id, acting_as_staff_id, entity_type, entity_id, payload, created_at")
+    .select(
+      "action, actor_user_id, acting_as_staff_id, entity_type, entity_id, payload, created_at"
+    )
     .order("created_at", { ascending: true });
   if (action) {
     query = query.eq("action", action);

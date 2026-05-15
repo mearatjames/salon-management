@@ -105,7 +105,7 @@ export async function submitPin(formData: FormData): Promise<void> {
     "staff.signed_in",
     deviceUser!.id,
     staffId,
-    previousSid ? { previous_staff_id: previousSid } : {},
+    previousSid ? { previous_staff_id: previousSid } : {}
   );
 
   redirect(sanitizeNext(next));

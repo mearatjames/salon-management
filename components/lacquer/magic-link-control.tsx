@@ -34,8 +34,8 @@ export function MagicLinkControl({ next, sentTo }: MagicLinkControlProps) {
     return (
       <div className="auth-magic-sent" data-slot="magic-link-sent">
         <p style={{ margin: 0, fontSize: "var(--text-sm)" }}>
-          We sent a sign-in link to <strong>{sentTo}</strong>. You can close this
-          tab and click the link from your inbox.
+          We sent a sign-in link to <strong>{sentTo}</strong>. You can close this tab and click the
+          link from your inbox.
         </p>
         <details className="auth-magic-link-details" style={{ marginTop: "var(--space-3)" }}>
           <summary className="auth-magic-link">Send another link</summary>
@@ -58,13 +58,7 @@ function MagicLinkForm({ next }: { next?: string }) {
     <form action={signInWithMagicLink} className="auth-magic-link-form">
       <div className="auth-form-row" style={{ marginTop: "var(--space-3)" }}>
         <Label htmlFor="magic-email">Email</Label>
-        <Input
-          id="magic-email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-        />
+        <Input id="magic-email" name="email" type="email" autoComplete="email" required />
       </div>
       <input type="hidden" name="next" value={next ?? ""} />
       <div className="auth-form-actions">

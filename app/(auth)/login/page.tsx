@@ -117,9 +117,7 @@ export default async function LoginPage({
     <>
       <h1 className="auth-headline">Sign in to Tang Nails Studio</h1>
 
-      {error === "invalid" && (
-        <Alert variant="destructive">Email or password is incorrect.</Alert>
-      )}
+      {error === "invalid" && <Alert variant="destructive">Email or password is incorrect.</Alert>}
       {error === "network" && (
         <Alert variant="destructive">
           Couldn&apos;t sign you in. Check your connection and try again.

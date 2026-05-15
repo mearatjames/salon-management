@@ -20,7 +20,7 @@ export async function createSupabaseServerClient(): Promise<SupabaseClient<Datab
 
   if (!url || !anonKey) {
     throw new Error(
-      "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY env vars — required by lib/db/server.ts",
+      "Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY env vars — required by lib/db/server.ts"
     );
   }
 

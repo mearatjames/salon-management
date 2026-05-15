@@ -14,7 +14,7 @@ describe("lib/auth/next-url", () => {
           "/walkin",
           "/end-of-day",
           "/settings",
-        ]),
+        ])
       );
     });
   });

@@ -7,9 +7,7 @@ import { createSupabaseServerClient } from "@/lib/db/server";
 export async function GET() {
   try {
     const supabase = await createSupabaseServerClient();
-    const { error } = await supabase
-      .from("staff")
-      .select("id", { count: "exact", head: true });
+    const { error } = await supabase.from("staff").select("id", { count: "exact", head: true });
     if (error) {
       return Response.json({ ok: false }, { status: 503 });
     }

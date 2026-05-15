@@ -52,11 +52,11 @@ Open `http://localhost:3000/dashboard` — middleware will bounce you through th
 
 After `supabase db reset`, three staff exist with PIN hashes:
 
-| Display name | Email (Supabase user)     | Password         | PIN    |
-| ------------ | ------------------------- | ---------------- | ------ |
-| Maya Patel   | `owner@tangnails.dev`     | `tang-nails-dev` | `1234` |
-| Jordan Lee   | `manager@tangnails.dev`   | `tang-nails-dev` | `5678` |
-| Sam Chen     | _(PIN-only, no email)_    | —                | `9999` |
+| Display name | Email (Supabase user)   | Password         | PIN    |
+| ------------ | ----------------------- | ---------------- | ------ |
+| Maya Patel   | `owner@tangnails.dev`   | `tang-nails-dev` | `1234` |
+| Jordan Lee   | `manager@tangnails.dev` | `tang-nails-dev` | `5678` |
+| Sam Chen     | _(PIN-only, no email)_  | —                | `9999` |
 
 Magic-link emails (the fallback link on `/login`) land in Inbucket at
 `http://127.0.0.1:54324`.

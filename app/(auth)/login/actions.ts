@@ -164,7 +164,5 @@ export async function signInWithMagicLink(formData: FormData): Promise<void> {
   // matched. With `shouldCreateUser: false`, Supabase returns success for
   // unknown emails too — so this code path is correct on the happy path,
   // and we mirror it for failures above.
-  redirect(
-    `/login?magic_sent=${encodeURIComponent(email)}&next=${encodeNext(next)}`,
-  );
+  redirect(`/login?magic_sent=${encodeURIComponent(email)}&next=${encodeNext(next)}`);
 }

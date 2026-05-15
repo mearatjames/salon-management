@@ -86,9 +86,7 @@ export default async function SelectStaffPage({
     );
   }
 
-  const selectedRow = selectedTileId
-    ? roster.find((r) => r.id === selectedTileId)
-    : undefined;
+  const selectedRow = selectedTileId ? roster.find((r) => r.id === selectedTileId) : undefined;
 
   return (
     <>
@@ -100,9 +98,7 @@ export default async function SelectStaffPage({
 
       <StaffRoster staff={roster} selectedId={selectedRow?.id} next={next} />
 
-      {selectedRow && (
-        <PinKeypad staffId={selectedRow.id} next={next ?? ""} />
-      )}
+      {selectedRow && <PinKeypad staffId={selectedRow.id} next={next ?? ""} />}
     </>
   );
 }

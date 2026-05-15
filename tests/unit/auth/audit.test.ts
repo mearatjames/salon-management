@@ -56,9 +56,8 @@ describe("lib/auth/audit", () => {
 
   it.each(ALL_ACTIONS)("writes an audit row for action %s", async (action) => {
     const { insertSpy } = mockClient(async () => ({ error: null }));
-    const staffId = action === "device.signed_in" || action === "device.signed_out"
-      ? null
-      : "staff-xyz";
+    const staffId =
+      action === "device.signed_in" || action === "device.signed_out" ? null : "staff-xyz";
 
     await recordAuth(action, "device-1", staffId, { foo: "bar" });
 
@@ -84,7 +83,7 @@ describe("lib/auth/audit", () => {
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     await expect(
-      recordAuth("staff.pin_failed", "device-1", "staff-1", { reason: "mismatch" }),
+      recordAuth("staff.pin_failed", "device-1", "staff-1", { reason: "mismatch" })
     ).resolves.toBeUndefined();
     expect(errorSpy).toHaveBeenCalled();
   });

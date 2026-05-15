@@ -31,7 +31,6 @@
   gap: var(--space-6);
 }
 
-
 /* ---------- Headline ---------- */
 .auth-headline {
   font-size: var(--text-2xl);

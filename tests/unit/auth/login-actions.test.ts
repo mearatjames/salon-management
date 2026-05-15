@@ -66,7 +66,7 @@ function mockSupabase(
   otpImpl: (args: unknown) => Promise<{ data: unknown; error: unknown }> = async () => ({
     data: { user: null, session: null },
     error: null,
-  }),
+  })
 ) {
   const signInWithOtp = vi.fn(async (args: unknown) => otpImpl(args));
   (createSupabaseServerClient as unknown as Mocked<() => Promise<unknown>>).mockResolvedValue({
@@ -136,7 +136,7 @@ describe("signInWithMagicLink — FR-022: shouldCreateUser MUST be false", () =>
       options?: { emailRedirectTo?: string };
     };
     expect(callArg.options?.emailRedirectTo).toMatch(
-      /^http:\/\/localhost:3000\/auth\/callback\?next=/,
+      /^http:\/\/localhost:3000\/auth\/callback\?next=/
     );
     expect(callArg.options?.emailRedirectTo).toContain(encodeURIComponent("/dashboard"));
   });

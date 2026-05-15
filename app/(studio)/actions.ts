@@ -8,10 +8,7 @@ import { redirect } from "next/navigation";
 
 import { recordAuth } from "@/lib/auth/audit";
 import { sanitizeNext } from "@/lib/auth/next-url";
-import {
-  getStudioSessionOrDegraded,
-  requireStudioSession,
-} from "@/lib/auth/session";
+import { getStudioSessionOrDegraded, requireStudioSession } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/db/server";
 
 const COOKIE_NAME = "acting_as_staff_id";
@@ -57,7 +54,7 @@ export async function switchStaff(): Promise<void> {
   //    the previous tile while the new operator pins in (orchestrator
   //    contract refinement on top of the original task text).
   redirect(
-    `/select-staff?next=${encodeURIComponent(sanitizedNext)}&selectedTileId=${encodeURIComponent(previousSid)}`,
+    `/select-staff?next=${encodeURIComponent(sanitizedNext)}&selectedTileId=${encodeURIComponent(previousSid)}`
   );
 }
 
@@ -72,19 +69,9 @@ export async function signOut(): Promise<void> {
   //    - Degraded: actor_user_id = null (we don't know the device user
   //      without Supabase), acting_as = best-effort cookieStaffId.
   if ("degraded" in viewer) {
-    await recordAuth(
-      "device.signed_out",
-      null,
-      viewer.cookieStaffId,
-      {},
-    );
+    await recordAuth("device.signed_out", null, viewer.cookieStaffId, {});
   } else {
-    await recordAuth(
-      "device.signed_out",
-      viewer.deviceUserId,
-      viewer.staff.id,
-      {},
-    );
+    await recordAuth("device.signed_out", viewer.deviceUserId, viewer.staff.id, {});
   }
 
   // 3. Clear the operator cookie. The contract reserves cookie-clearing to

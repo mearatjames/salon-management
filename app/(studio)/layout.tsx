@@ -11,9 +11,7 @@ import { ReconnectingBanner } from "@/components/lacquer/reconnecting-banner";
 import { Toaster } from "@/components/ui/sonner";
 import { getStudioSessionOrDegraded } from "@/lib/auth/session";
 
-export default async function StudioLayout({
-  children,
-}: Readonly<{ children: ReactNode }>) {
+export default async function StudioLayout({ children }: Readonly<{ children: ReactNode }>) {
   const session = await getStudioSessionOrDegraded();
   const degraded = "degraded" in session;
 

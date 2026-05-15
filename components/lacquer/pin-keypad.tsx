@@ -53,7 +53,7 @@ export function PinKeypad({ staffId, next }: PinKeypadProps) {
         return next;
       });
     },
-    [submitForm],
+    [submitForm]
   );
 
   const removeLast = useCallback(() => {
@@ -121,12 +121,7 @@ export function PinKeypad({ staffId, next }: PinKeypadProps) {
         style={{ width: "100%", display: "flex", justifyContent: "center" }}
       >
         <input type="hidden" name="staffId" value={staffId} />
-        <input
-          type="hidden"
-          name="pin"
-          ref={pinInputRef}
-          defaultValue={pinValue}
-        />
+        <input type="hidden" name="pin" ref={pinInputRef} defaultValue={pinValue} />
         <input type="hidden" name="next" value={next} />
 
         <div className="auth-keypad" role="group" aria-label="PIN keypad">

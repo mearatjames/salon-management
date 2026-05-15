@@ -88,10 +88,7 @@ export async function requireStudioSession(): Promise<StudioViewer> {
   // /login. Production deploys always have these set; this branch covers
   // local dev where the developer hasn't yet wired Supabase, and prevents a
   // 500 cascade from blocking the studio shell entirely.
-  if (
-    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  ) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     throw new AuthRedirectError("/login", currentPath);
   }
 
@@ -116,10 +113,7 @@ export async function requireStudioSession(): Promise<StudioViewer> {
     const payload = await verifyOperatorCookie(cookieValue);
     sid = payload.sid;
   } catch (err) {
-    if (
-      err instanceof OperatorCookieInvalidError ||
-      err instanceof OperatorCookieExpiredError
-    ) {
+    if (err instanceof OperatorCookieInvalidError || err instanceof OperatorCookieExpiredError) {
       throw new AuthRedirectError("/select-staff", currentPath);
     }
     throw err;
@@ -150,9 +144,7 @@ export async function requireStudioSession(): Promise<StudioViewer> {
   };
 }
 
-export async function getStudioSessionOrDegraded(): Promise<
-  StudioViewer | DegradedSession
-> {
+export async function getStudioSessionOrDegraded(): Promise<StudioViewer | DegradedSession> {
   try {
     return await requireStudioSession();
   } catch (err) {

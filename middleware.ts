@@ -78,10 +78,7 @@ export async function middleware(request: NextRequest) {
   try {
     await verifyOperatorCookie(operatorCookie);
   } catch (err) {
-    if (
-      err instanceof OperatorCookieInvalidError ||
-      err instanceof OperatorCookieExpiredError
-    ) {
+    if (err instanceof OperatorCookieInvalidError || err instanceof OperatorCookieExpiredError) {
       const redirectUrl = new URL(`/select-staff?next=${nextEncoded}`, request.url);
       const redirect = NextResponse.redirect(redirectUrl, { status: 307 });
       // Clear the cookie so the next request doesn't loop.

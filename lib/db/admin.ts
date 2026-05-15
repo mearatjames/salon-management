@@ -18,7 +18,7 @@ export function createSupabaseServiceRoleClient(): SupabaseClient<Database> {
 
   if (!url || !serviceRoleKey) {
     throw new Error(
-      "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars — required by lib/db/admin.ts",
+      "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars — required by lib/db/admin.ts"
     );
   }
 

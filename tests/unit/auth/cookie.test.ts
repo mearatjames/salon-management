@@ -41,12 +41,9 @@ describe("lib/auth/cookie", () => {
     // Mutate the middle (payload) segment.
     const [header, payload, sig] = token.split(".");
     // Flip the last character of the payload (still base64url-ish).
-    const flipped =
-      payload.slice(0, -1) + (payload.endsWith("a") ? "b" : "a");
+    const flipped = payload.slice(0, -1) + (payload.endsWith("a") ? "b" : "a");
     const tampered = `${header}.${flipped}.${sig}`;
-    await expect(verifyOperatorCookie(tampered)).rejects.toBeInstanceOf(
-      OperatorCookieInvalidError,
-    );
+    await expect(verifyOperatorCookie(tampered)).rejects.toBeInstanceOf(OperatorCookieInvalidError);
   });
 
   it("rejects a tampered signature segment", async () => {
@@ -54,16 +51,12 @@ describe("lib/auth/cookie", () => {
     const [header, payload, sig] = token.split(".");
     const flipped = sig.slice(0, -1) + (sig.endsWith("a") ? "b" : "a");
     const tampered = `${header}.${payload}.${flipped}`;
-    await expect(verifyOperatorCookie(tampered)).rejects.toBeInstanceOf(
-      OperatorCookieInvalidError,
-    );
+    await expect(verifyOperatorCookie(tampered)).rejects.toBeInstanceOf(OperatorCookieInvalidError);
   });
 
   it("rejects a cookie whose iat is more than 12h in the past", async () => {
     const token = await mintExpiredCookie({ sid: SID });
-    await expect(verifyOperatorCookie(token)).rejects.toBeInstanceOf(
-      OperatorCookieExpiredError,
-    );
+    await expect(verifyOperatorCookie(token)).rejects.toBeInstanceOf(OperatorCookieExpiredError);
   });
 
   it("rejects a cookie missing the iat claim", async () => {
@@ -74,9 +67,7 @@ describe("lib/auth/cookie", () => {
     const token = await new SignJWT({ sid: SID })
       .setProtectedHeader({ alg: "HS256", typ: "JWT" })
       .sign(key);
-    await expect(verifyOperatorCookie(token)).rejects.toBeInstanceOf(
-      OperatorCookieInvalidError,
-    );
+    await expect(verifyOperatorCookie(token)).rejects.toBeInstanceOf(OperatorCookieInvalidError);
   });
 
   it("throws when signing a payload with an empty sid", async () => {
