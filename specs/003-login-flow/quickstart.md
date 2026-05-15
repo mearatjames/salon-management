@@ -1,0 +1,165 @@
+# Quickstart: Login Flow
+
+A minimal end-to-end path to (a) get a fresh checkout running with this
+feature, (b) verify the gate works as designed, and (c) run the test suite.
+
+## Prerequisites
+
+- Node.js 24 (matches `package.json` `engines`).
+- Supabase CLI installed locally (`brew install supabase/tap/supabase`).
+- The dashboard feature already merged on `main` (provides the studio shell
+  layout this feature augments and the design tokens this feature relies on).
+
+## 1 · Environment
+
+Add to `.env.local` (create if missing):
+
+```bash
+# Supabase — local
+NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<from `supabase status`>
+SUPABASE_SERVICE_ROLE_KEY=<from `supabase status`>
+
+# Operator cookie signing
+AUTH_COOKIE_SECRET=$(openssl rand -base64 32)
+
+# Provider toggles
+NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED=false   # set to "true" only when Google credentials are configured in the Supabase dashboard
+```
+
+The magic-link / OTP-email provider is **enabled by default** in Supabase —
+no env flag needed. In local dev, magic-link emails land in the Supabase
+Inbucket UI at `http://127.0.0.1:54324`.
+
+## 2 · Database
+
+```bash
+supabase start                       # boots Postgres + Auth + Inbucket
+supabase db reset                    # applies 0001_auth_schema.sql + seed.sql
+npx supabase gen types typescript --local > lib/db/types.ts
+```
+
+After `db reset`, three staff exist in the `staff` table with PIN hashes:
+
+| Display name | Email (Supabase user) | PIN |
+|--------------|-----------------------|-----|
+| Maya Patel | `owner@tangnails.dev` | `1234` |
+| Jordan Lee | `manager@tangnails.dev` | `5678` |
+| Sam Chen | (PIN-only, no email) | `9999` |
+
+The Supabase users `owner@tangnails.dev` and `manager@tangnails.dev` are
+seeded with password `tang-nails-dev`. (Both are 14 characters — comfortably
+above the 8-char floor from FR-023.)
+
+## 3 · Run
+
+```bash
+npm install                          # picks up bcryptjs + jose
+npm run dev
+```
+
+Open `http://localhost:3000/dashboard`. Expected sequence:
+
+1. Middleware sees no Supabase session → 307 to
+   `/login?next=%2Fdashboard`.
+2. Sign in with `owner@tangnails.dev` / `tang-nails-dev`.
+3. Middleware sees a session but no operator cookie → 307 to
+   `/select-staff?next=%2Fdashboard`.
+4. Tap the Maya Patel tile → keypad appears.
+5. Enter `1234`. The keypad auto-submits on the 4th digit.
+6. Land on `/dashboard`. The studio topbar shows `Maya Patel · Owner`
+   with the rose accent on the operator chip.
+
+## 4 · Verify the spec scenarios
+
+### US1 — wrong password
+
+- Sign out (operator menu → Sign out).
+- Sign in with `owner@tangnails.dev` / `wrong`.
+- Expect: `/login?error=invalid&next=...` with the inline alert
+  "Email or password is incorrect." — the message must be identical for
+  unknown emails (FR-019).
+
+### US2 — wrong PIN
+
+- After sign-in, on `/select-staff`, tap Maya Patel and enter `0000`.
+- Expect: keypad clears, alert shows "PIN didn't match. Try again.", the
+  tile remains tappable.
+- Verify the audit row:
+
+  ```sql
+  select action, acting_as_staff_id, entity_id, payload
+  from audit_log where action = 'staff.pin_failed' order by ts desc limit 1;
+  ```
+
+### US3 — switch staff
+
+- From `/dashboard`, open the operator chip dropdown → "Switch staff".
+- Expect: 307 to `/select-staff` (the Supabase session is preserved — the
+  email + password form is **not** shown again).
+- Pin in as Jordan Lee (`5678`). The topbar reflects `Jordan Lee · Manager`
+  on the next render.
+
+### US4 — Google OAuth (only if configured)
+
+- Set `NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED=true` and restart `npm run dev`.
+- The "Continue with Google" button renders on `/login`.
+- Without the env flag, the button is hidden and the email/password form
+  remains the only primary path.
+
+### US5 — session expiry
+
+- After signing in and pinning in, expire the operator cookie:
+
+  ```bash
+  npm exec -- tsx scripts/dev/expire-operator-cookie.ts
+  ```
+
+  (This script is a tiny dev helper that reads the cookie from a fresh
+  Playwright context, sets `iat = now - 13h`, re-signs, and writes it
+  back. The script lives under `scripts/dev/` and is excluded from prod
+  builds.)
+- Visit `/calendar` — expect 307 to `/select-staff?next=%2Fcalendar`.
+- Pin in again — land on `/calendar`.
+
+### US6 — sign out
+
+- Operator menu → Sign out.
+- Expect: 307 to `/login`. The Supabase session is destroyed; a hard
+  refresh stays on `/login`.
+
+### Soft-degrade (Q1 / FR-015a)
+
+- Stop the local Supabase: `supabase stop --no-backup`.
+- Reload `/dashboard`. Expect the studio shell to render with the
+  Reconnecting banner visible. Try clicking a Server-Action-bound button
+  (the operator menu's Switch staff) — expect a retryable toast, **not** a
+  redirect to `/login`.
+- `supabase start` again — the next request resumes normally; the banner
+  disappears.
+
+## 5 · Run the tests
+
+```bash
+npm test                             # Vitest unit
+npm run test:e2e                     # Playwright (boots a fresh dev server + Supabase reset)
+npm run typecheck
+npm run lint
+```
+
+The Vitest suite covers the contract-level helpers (cookie sign/verify,
+PIN verify, session resolution, ?next sanitizer, audit writer). The
+Playwright suite covers the user-facing scenarios above.
+
+## 6 · CI gate
+
+The PR for this feature must pass all four:
+
+- `npm run lint`
+- `npm run typecheck`
+- `npm test`
+- `npm run test:e2e`
+
+Plus a manual reviewer check for Constitution principles II, III, and IV
+(per the constitution's "PRs touching payments, auth, or audit logging
+additionally require a reviewer to confirm Principles II, III, and IV").
