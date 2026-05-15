@@ -1,11 +1,5 @@
 import { formatServiceLabel } from "@/lib/dashboard/format";
-import {
-  PERIOD_FACTOR,
-  SERVICES,
-  STAFF,
-  TAX_RATE,
-  TX_HISTORY,
-} from "@/lib/dashboard/mock-data";
+import { PERIOD_FACTOR, SERVICES, STAFF, TAX_RATE, TX_HISTORY } from "@/lib/dashboard/mock-data";
 import type {
   DashboardPeriod,
   PaymentMethod,
@@ -161,10 +155,7 @@ function emptySummary(period: DashboardPeriod): DashboardSummary {
   };
 }
 
-export function applyPeriodFactor(
-  base: TxAggregate,
-  period: DashboardPeriod,
-): DashboardSummary {
+export function applyPeriodFactor(base: TxAggregate, period: DashboardPeriod): DashboardSummary {
   if (base.count === 0) {
     return emptySummary(period);
   }

@@ -22,11 +22,7 @@ export function PaymentMixCard({ byMethod, total }: PaymentMixCardProps) {
   const isNeutral = widths.neutral === 100;
 
   return (
-    <div
-      className="tx-stat-card"
-      data-slot="payment-mix-card"
-      style={{ minHeight: 0 }}
-    >
+    <div className="tx-stat-card" data-slot="payment-mix-card" style={{ minHeight: 0 }}>
       <div
         style={{
           display: "flex",
@@ -44,11 +40,7 @@ export function PaymentMixCard({ byMethod, total }: PaymentMixCardProps) {
           <span style={{ width: "100%", background: "var(--muted)" }} />
         ) : (
           METHODS.map((m) => (
-            <span
-              key={m.id}
-              className={m.id}
-              style={{ width: `${widths[m.id]}%` }}
-            />
+            <span key={m.id} className={m.id} style={{ width: `${widths[m.id]}%` }} />
           ))
         )}
       </div>

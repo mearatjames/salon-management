@@ -31,11 +31,9 @@ test.describe("US1: at-a-glance dashboard", () => {
 
     // Header text (FR-003)
     await expect(page.getByText("Lacquer Studio · Front desk")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "Today at the salon" })).toBeVisible();
     await expect(
-      page.getByRole("heading", { level: 1, name: "Today at the salon" }),
-    ).toBeVisible();
-    await expect(
-      page.getByText(/^Tuesday, May 12 · \d+ techs on shift · Last sale 4:14 PM$/),
+      page.getByText(/^Tuesday, May 12 · \d+ techs on shift · Last sale 4:14 PM$/)
     ).toBeVisible();
 
     // The five tile labels (FR-005, FR-007).
@@ -218,9 +216,7 @@ test.describe("US3: quick actions, techs on shift, recent transactions", () => {
     // only the URL change is asserted (the navigation must fire).
     for (const action of ACTIONS) {
       await page.goto("/dashboard");
-      await page
-        .locator(`.tx-secondary-action[data-action-id="${action.id}"]`)
-        .click();
+      await page.locator(`.tx-secondary-action[data-action-id="${action.id}"]`).click();
       await page.waitForURL((url) => url.pathname === action.pathname);
       const url = new URL(page.url());
       expect(url.pathname + url.search).toBe(action.pathname + action.search);
@@ -232,9 +228,7 @@ test.describe("US3: quick actions, techs on shift, recent transactions", () => {
     // FR-010: techs-on-shift tile contains exactly STAFF.length (= 8) avatars.
     const techTile = page.locator('[data-slot="techs-on-shift-tile"]');
     await expect(techTile).toBeVisible();
-    await expect(
-      techTile.locator('> div > [data-slot="tech-avatar"]'),
-    ).toHaveCount(8);
+    await expect(techTile.locator('> div > [data-slot="tech-avatar"]')).toHaveCount(8);
 
     // FR-011: exactly 7 `.tx-feed-row`s.
     const rows = page.locator(".tx-feed-row");

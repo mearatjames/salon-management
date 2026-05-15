@@ -98,8 +98,12 @@
   align-items: center;
   gap: 4px;
 }
-.tx-stat-card .delta.up { color: var(--success); }
-.tx-stat-card .delta.down { color: var(--destructive); }
+.tx-stat-card .delta.up {
+  color: var(--success);
+}
+.tx-stat-card .delta.down {
+  color: var(--destructive);
+}
 
 /* ---------- Primary CTA ---------- */
 .tx-cta-primary {
@@ -119,7 +123,9 @@
   transition: background 120ms var(--ease-out);
   box-shadow: 0 6px 20px -8px color-mix(in oklch, var(--primary) 60%, transparent);
 }
-.tx-cta-primary:hover { background: color-mix(in oklch, var(--primary) 92%, black); }
+.tx-cta-primary:hover {
+  background: color-mix(in oklch, var(--primary) 92%, black);
+}
 /* Inline icon badge is a translucent-white-on-primary inset; there is no
    semantic token for "18% white on primary", so the rgba literal stays.
    Foreground glyph color flows from the parent's `var(--primary-foreground)`. */
@@ -159,12 +165,26 @@
   font-family: var(--font-sans);
   color: var(--foreground);
   text-align: left;
-  transition: border-color 120ms var(--ease-out), background 120ms var(--ease-out);
+  transition:
+    border-color 120ms var(--ease-out),
+    background 120ms var(--ease-out);
 }
-.tx-secondary-action:hover { border-color: var(--ring); }
-.tx-secondary-action svg { color: var(--muted-foreground); flex-shrink: 0; }
-.tx-secondary-action .lbl { font-size: 13px; font-weight: 500; }
-.tx-secondary-action .h { font-size: 11px; color: var(--muted-foreground); margin-top: 1px; }
+.tx-secondary-action:hover {
+  border-color: var(--ring);
+}
+.tx-secondary-action svg {
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+.tx-secondary-action .lbl {
+  font-size: 13px;
+  font-weight: 500;
+}
+.tx-secondary-action .h {
+  font-size: 11px;
+  color: var(--muted-foreground);
+  margin-top: 1px;
+}
 
 /* ---------- Payment-mix bar ---------- */
 /* Segment colors map to Lacquer palette tokens:
@@ -179,10 +199,19 @@
   overflow: hidden;
   background: var(--muted);
 }
-.tx-method-bar > span { display: block; height: 100%; }
-.tx-method-bar > .card { background: var(--rose-500); }
-.tx-method-bar > .cash { background: var(--green-500); }
-.tx-method-bar > .gift { background: var(--amber-500); }
+.tx-method-bar > span {
+  display: block;
+  height: 100%;
+}
+.tx-method-bar > .card {
+  background: var(--rose-500);
+}
+.tx-method-bar > .cash {
+  background: var(--green-500);
+}
+.tx-method-bar > .gift {
+  background: var(--amber-500);
+}
 
 .tx-method-row {
   display: flex;
@@ -196,10 +225,20 @@
   gap: 6px;
   color: var(--muted-foreground);
 }
-.tx-method-row .dot { width: 8px; height: 8px; border-radius: 9999px; }
-.tx-method-row .dot.card { background: var(--rose-500); }
-.tx-method-row .dot.cash { background: var(--green-500); }
-.tx-method-row .dot.gift { background: var(--amber-500); }
+.tx-method-row .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+}
+.tx-method-row .dot.card {
+  background: var(--rose-500);
+}
+.tx-method-row .dot.cash {
+  background: var(--green-500);
+}
+.tx-method-row .dot.gift {
+  background: var(--amber-500);
+}
 .tx-method-row .num {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
@@ -220,8 +259,14 @@
   justify-content: space-between;
   border-bottom: 1px solid var(--border);
 }
-.tx-feed-h .ttl { font-size: 13px; font-weight: 600; }
-.tx-feed-list { display: flex; flex-direction: column; }
+.tx-feed-h .ttl {
+  font-size: 13px;
+  font-weight: 600;
+}
+.tx-feed-list {
+  display: flex;
+  flex-direction: column;
+}
 .tx-feed-row {
   display: grid;
   grid-template-columns: 56px minmax(0, 1.2fr) minmax(0, 1.4fr) auto auto auto;
@@ -231,7 +276,9 @@
   border-bottom: 1px solid var(--border);
   font-size: 12px;
 }
-.tx-feed-row:last-child { border-bottom: none; }
+.tx-feed-row:last-child {
+  border-bottom: none;
+}
 .tx-feed-row .time {
   font-variant-numeric: tabular-nums;
   color: var(--muted-foreground);
@@ -250,7 +297,10 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.tx-feed-row .amt { font-variant-numeric: tabular-nums; font-weight: 600; }
+.tx-feed-row .amt {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
 .tx-feed-row .meth {
   color: var(--muted-foreground);
   display: inline-flex;
@@ -279,11 +329,11 @@
 }
 .tx-meth-pill.cash {
   background: color-mix(in oklch, var(--green-500) 14%, transparent);
-  color: oklch(0.40 0.10 150);
+  color: oklch(0.4 0.1 150);
 }
 .tx-meth-pill.gift {
   background: color-mix(in oklch, var(--amber-500) 16%, transparent);
-  color: oklch(0.42 0.10 75);
+  color: oklch(0.42 0.1 75);
 }
 
 /* ---------- Tech avatars (stack + overflow) ---------- */
@@ -351,12 +401,22 @@
   color: var(--primary);
   cursor: pointer;
 }
-.tx-link:hover { text-decoration: underline; }
+.tx-link:hover {
+  text-decoration: underline;
+}
 
 /* ---------- Utilities ---------- */
-.tnum { font-variant-numeric: tabular-nums; }
-.muted { color: var(--muted-foreground); }
-.sub { font-size: 12px; color: var(--muted-foreground); margin-top: 2px; }
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+.muted {
+  color: var(--muted-foreground);
+}
+.sub {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  margin-top: 2px;
+}
 
 /* ---------- Responsive (FR-019, SC-006) ----------
  * Phone breakpoint: collapse the 6-col stat grid to 2 columns, the lower
@@ -382,4 +442,3 @@
     font-size: 22px;
   }
 }
-

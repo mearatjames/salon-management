@@ -29,7 +29,7 @@ export function formatCount(n: number): string {
 
 export function formatServiceLabel(
   items: readonly TxLineItem[],
-  services: readonly Service[],
+  services: readonly Service[]
 ): string {
   if (items.length === 0) return "";
   const nameFor = (id: string): string => {
@@ -44,7 +44,7 @@ export function formatServiceLabel(
 
 export function paymentMixWidths(
   byMethod: { card: number; cash: number; gift: number },
-  total: number,
+  total: number
 ): { card: number; cash: number; gift: number; neutral: number } {
   if (total === 0) {
     return { card: 0, cash: 0, gift: 0, neutral: 100 };

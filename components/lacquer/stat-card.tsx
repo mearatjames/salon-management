@@ -39,15 +39,10 @@ export function StatCard({ label, value, sub, delta, icon }: StatCardProps) {
       </div>
       <div className="val tnum">{value}</div>
       {sub || delta ? (
-        <div
-          className="delta"
-          style={{ display: "flex", justifyContent: "space-between" }}
-        >
+        <div className="delta" style={{ display: "flex", justifyContent: "space-between" }}>
           <span>{sub ?? ""}</span>
           {delta ? (
-            <span className={deltaTone ? `delta ${deltaTone}` : "delta"}>
-              {delta}
-            </span>
+            <span className={deltaTone ? `delta ${deltaTone}` : "delta"}>{delta}</span>
           ) : null}
         </div>
       ) : null}

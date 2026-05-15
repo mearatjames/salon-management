@@ -14,10 +14,7 @@ export default async function DashboardPage() {
   const data = buildDashboardData();
 
   return (
-    <PeriodProvider
-      summaries={data.summaries}
-      comparisons={data.comparisons}
-    >
+    <PeriodProvider summaries={data.summaries} comparisons={data.comparisons}>
       <div className="tx-landing">
         <div
           className="tx-landing-top"

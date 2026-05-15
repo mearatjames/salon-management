@@ -30,12 +30,7 @@ export function SecondaryActions({ actions, cols = 1 }: SecondaryActionsProps) {
             className="tx-secondary-action"
             data-action-id={action.id}
           >
-            <Icon
-              size={18}
-              color="var(--muted-foreground)"
-              strokeWidth={1.5}
-              aria-hidden="true"
-            />
+            <Icon size={18} color="var(--muted-foreground)" strokeWidth={1.5} aria-hidden="true" />
             <span style={{ display: "flex", flexDirection: "column" }}>
               <span className="lbl">{action.label}</span>
               <span className="h">{action.hint}</span>

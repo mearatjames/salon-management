@@ -63,10 +63,7 @@ describe("formatServiceLabel", () => {
 
 describe("paymentMixWidths", () => {
   it("returns percentages summing to 100 for a happy path", () => {
-    const widths = paymentMixWidths(
-      { card: 60, cash: 30, gift: 10 },
-      100,
-    );
+    const widths = paymentMixWidths({ card: 60, cash: 30, gift: 10 }, 100);
     expect(widths).toEqual({ card: 60, cash: 30, gift: 10, neutral: 0 });
   });
 

@@ -2,10 +2,7 @@
 
 import { createContext, useCallback, useContext, useState } from "react";
 import type { ReactNode } from "react";
-import type {
-  DashboardData,
-  DashboardSummary,
-} from "@/lib/dashboard/aggregate";
+import type { DashboardData, DashboardSummary } from "@/lib/dashboard/aggregate";
 import type { DashboardPeriod } from "@/lib/dashboard/mock-data";
 
 type Summaries = Record<DashboardPeriod, DashboardSummary>;
@@ -29,11 +26,7 @@ export type PeriodProviderProps = {
 // Island root — owns the active-period state shared by `<PeriodToggle />`
 // (header) and `<PeriodSummary />` (stat grid). Both consumers read from the
 // same React Context; toggling is a pure render swap (no network).
-export function PeriodProvider({
-  summaries,
-  comparisons,
-  children,
-}: PeriodProviderProps) {
+export function PeriodProvider({ summaries, comparisons, children }: PeriodProviderProps) {
   const [period, setPeriodState] = useState<DashboardPeriod>("today");
 
   const setPeriod = useCallback(
@@ -43,7 +36,7 @@ export function PeriodProvider({
       if (next === period) return;
       setPeriodState(next);
     },
-    [period],
+    [period]
   );
 
   const value: PeriodContextValue = {
@@ -53,16 +46,14 @@ export function PeriodProvider({
     comparisons,
   };
 
-  return (
-    <PeriodContext.Provider value={value}>{children}</PeriodContext.Provider>
-  );
+  return <PeriodContext.Provider value={value}>{children}</PeriodContext.Provider>;
 }
 
 export function usePeriod(): PeriodContextValue {
   const ctx = useContext(PeriodContext);
   if (ctx === null) {
     throw new Error(
-      "usePeriod() must be called inside <PeriodProvider />. Ensure the dashboard page renders this consumer under <PeriodProvider />.",
+      "usePeriod() must be called inside <PeriodProvider />. Ensure the dashboard page renders this consumer under <PeriodProvider />."
     );
   }
   return ctx;

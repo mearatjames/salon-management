@@ -19,8 +19,7 @@ const PERIOD_SUB: Record<"today" | "week" | "month", string> = {
 export function PeriodSummary() {
   const { period, summary, comparisons } = usePeriod();
 
-  const transactionsDelta =
-    period === "today" ? comparisons.transactionsVsAvg : null;
+  const transactionsDelta = period === "today" ? comparisons.transactionsVsAvg : null;
   const revenueDelta = period === "today" ? comparisons.revenueDelta : null;
 
   // `avgServicesPerSale` is a real number (e.g. 1.41); the prototype renders

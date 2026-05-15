@@ -16,18 +16,12 @@ export function TechStack({ ids, size = 20, max = 3 }: TechStackProps) {
   const overlapPx = Math.round(size * 0.35);
 
   return (
-    <span
-      data-slot="tech-stack"
-      style={{ display: "inline-flex", alignItems: "center" }}
-    >
+    <span data-slot="tech-stack" style={{ display: "inline-flex", alignItems: "center" }}>
       {visible.map((id, index) => {
         const tech = STAFF.find((s) => s.id === id);
         if (!tech) return null;
         return (
-          <span
-            key={id}
-            style={{ marginLeft: index === 0 ? 0 : -overlapPx }}
-          >
+          <span key={id} style={{ marginLeft: index === 0 ? 0 : -overlapPx }}>
             <TechAvatar tech={tech} size={size} />
           </span>
         );
