@@ -35,16 +35,24 @@ export type AuditRow = {
   entity_type: string | null;
   entity_id: string | null;
   payload: Record<string, unknown> | null;
-  created_at: string;
+  ts: string;
 };
+
+// Wipes the audit_log table. Use in `beforeEach` to keep per-test audit
+// assertions deterministic without paying the ~30s cost of a full
+// `supabase db reset`. Runs against the service-role client, which bypasses
+// RLS. The `.not("id", "is", null)` filter is the standard supabase-js
+// idiom for "delete all rows" (the SDK refuses an unconditional delete).
+export async function truncateAuditLog(): Promise<void> {
+  const { error } = await client().from("audit_log").delete().not("id", "is", null);
+  if (error) throw new Error(`audit_log truncate failed: ${error.message}`);
+}
 
 export async function getAuditLogRows(action?: string): Promise<AuditRow[]> {
   let query = client()
     .from("audit_log")
-    .select(
-      "action, actor_user_id, acting_as_staff_id, entity_type, entity_id, payload, created_at"
-    )
-    .order("created_at", { ascending: true });
+    .select("action, actor_user_id, acting_as_staff_id, entity_type, entity_id, payload, ts")
+    .order("ts", { ascending: true });
   if (action) {
     query = query.eq("action", action);
   }

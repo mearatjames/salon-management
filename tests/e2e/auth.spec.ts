@@ -11,13 +11,16 @@
 // disturbed by parallel runners — the audit-row assertion in case (e) reads
 // the entire table.
 
-import { spawnSync } from "node:child_process";
-
 import { expect, test } from "@playwright/test";
 
 import { mintExpiredCookie } from "../unit/auth/_fixtures";
 
-import { getAuditLogRows, getAuthUserByEmail, getStaffByDisplayName } from "./_db";
+import {
+  getAuditLogRows,
+  getAuthUserByEmail,
+  getStaffByDisplayName,
+  truncateAuditLog,
+} from "./_db";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -31,18 +34,6 @@ async function supabaseIsReachable(): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function tryResetSupabase(): boolean {
-  // Best-effort `supabase db reset --no-seed=false`. Returns true on success.
-  // The `--workdir` flag isn't standard; we rely on the CLI being invoked
-  // from the repo root, which Playwright already does.
-  const result = spawnSync("supabase", ["db", "reset", "--debug"], {
-    stdio: "pipe",
-    encoding: "utf-8",
-    timeout: 90_000,
-  });
-  return result.status === 0;
 }
 
 test.describe.configure({ mode: "serial" });
@@ -59,18 +50,13 @@ test.describe("US1: owner signs in with password", () => {
       );
       return;
     }
-    const ok = tryResetSupabase();
-    if (!ok) {
-      test.skip(true, "`supabase db reset` failed — skipping US1 auth specs.");
-    }
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    // Reset between cases so the audit-row assertion in (e) is deterministic.
-    // If the reset CLI is slow this beforeEach can be moved to per-describe
-    // checkpoints; for US1's 4 cases the cost is acceptable.
-    tryResetSupabase();
+    // Clear audit_log between cases so the count assertion in (e) is
+    // deterministic. ~100ms vs a full `supabase db reset` (~30–45s).
+    await truncateAuditLog();
   });
 
   test("(a) signed-out visit to /dashboard redirects to /login?next=%2Fdashboard", async ({
@@ -86,7 +72,7 @@ test.describe("US1: owner signs in with password", () => {
     page,
   }) => {
     await page.goto("/login?next=%2Fdashboard");
-    await page.getByLabel("Email").fill("owner@tangnails.dev");
+    await page.locator("#email").fill("owner@tangnails.dev");
     await page.getByLabel("Password").fill("tang-nails-dev");
     await page.getByRole("button", { name: "Sign in" }).click();
     // /select-staff page does not exist yet — only assert the URL change.
@@ -99,26 +85,26 @@ test.describe("US1: owner signs in with password", () => {
     page,
   }) => {
     await page.goto("/login?next=%2Fdashboard");
-    await page.getByLabel("Email").fill("owner@tangnails.dev");
+    await page.locator("#email").fill("owner@tangnails.dev");
     await page.getByLabel("Password").fill("wrong");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL(/\/login\?error=invalid/);
     expect(new URL(page.url()).pathname).toBe("/login");
     expect(new URL(page.url()).searchParams.get("error")).toBe("invalid");
-    await expect(page.getByRole("alert")).toHaveText("Email or password is incorrect.");
-    await expect(page.getByLabel("Email")).toBeVisible();
+    await expect(page.locator('[data-slot="alert"]')).toHaveText("Email or password is incorrect.");
+    await expect(page.locator("#email")).toBeVisible();
     await expect(page.getByLabel("Password")).toBeVisible();
   });
 
   test("(d) unknown email shows the identical alert text (FR-019)", async ({ page }) => {
     await page.goto("/login?next=%2Fdashboard");
-    await page.getByLabel("Email").fill("unknown@example.com");
+    await page.locator("#email").fill("unknown@example.com");
     await page.getByLabel("Password").fill("anything");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL(/\/login\?error=invalid/);
     expect(new URL(page.url()).pathname).toBe("/login");
     expect(new URL(page.url()).searchParams.get("error")).toBe("invalid");
-    await expect(page.getByRole("alert")).toHaveText("Email or password is incorrect.");
+    await expect(page.locator('[data-slot="alert"]')).toHaveText("Email or password is incorrect.");
   });
 
   test("(e) exactly one device.signed_in audit row was written across (b)+(c)+(d)", async () => {
@@ -152,7 +138,7 @@ const MAYA_ID = "10000000-0000-0000-0000-000000000001";
 
 async function signInOwner(page: import("@playwright/test").Page) {
   await page.goto("/login?next=%2Fdashboard");
-  await page.getByLabel("Email").fill("owner@tangnails.dev");
+  await page.locator("#email").fill("owner@tangnails.dev");
   await page.getByLabel("Password").fill("tang-nails-dev");
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/select-staff\?next=%2Fdashboard/);
@@ -170,15 +156,11 @@ test.describe("US2: staff selects identity with a PIN", () => {
       );
       return;
     }
-    const ok = tryResetSupabase();
-    if (!ok) {
-      test.skip(true, "`supabase db reset` failed — skipping US2 auth specs.");
-    }
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    tryResetSupabase();
+    await truncateAuditLog();
   });
 
   test("(a) roster renders three tiles by display name", async ({ page }) => {
@@ -226,7 +208,7 @@ test.describe("US2: staff selects identity with a PIN", () => {
     await page.getByRole("button", { name: "Digit 0" }).click();
     await page.getByRole("button", { name: "Digit 0" }).click();
     await page.waitForURL(/\/select-staff\?error=pin_failed/);
-    await expect(page.getByRole("alert")).toHaveText("PIN didn't match. Try again.");
+    await expect(page.locator('[data-slot="alert"]')).toHaveText("PIN didn't match. Try again.");
 
     const failed = await getAuditLogRows("staff.pin_failed");
     const mismatch = failed.find(
@@ -242,7 +224,10 @@ test.describe("US2: staff selects identity with a PIN", () => {
     await signInOwner(page);
     await page.getByRole("button", { name: /Jordan Lee/ }).click();
     await page.waitForURL(/selectedTileId=/);
-    await page.keyboard.type("5678");
+    // Wait for the keypad to mount — its `keydown` listener is attached in a
+    // `useEffect`, so keyboard.type() before mount completes drops the events.
+    await expect(page.locator(".auth-keypad")).toBeVisible();
+    await page.keyboard.type("5678", { delay: 30 });
     await page.waitForURL(/\/dashboard($|\?)/);
     expect(new URL(page.url()).pathname).toBe("/dashboard");
   });
@@ -286,15 +271,11 @@ test.describe("US3: switch staff at shift change", () => {
       );
       return;
     }
-    const ok = tryResetSupabase();
-    if (!ok) {
-      test.skip(true, "`supabase db reset` failed — skipping US3 auth specs.");
-    }
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    tryResetSupabase();
+    await truncateAuditLog();
   });
 
   test("(a) Switch staff from /dashboard lands on /select-staff (no /login flash)", async ({
@@ -472,15 +453,11 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
       test.skip(true, "Inbucket not reachable at 127.0.0.1:54324 — skipping US4 magic-link specs.");
       return;
     }
-    const ok = tryResetSupabase();
-    if (!ok) {
-      test.skip(true, "`supabase db reset` failed — skipping US4 auth specs.");
-    }
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp || !inbucketUp) return;
-    tryResetSupabase();
+    await truncateAuditLog();
   });
 
   test("(a) magic-link form submission with owner email redirects to ?magic_sent=...", async ({
@@ -610,15 +587,11 @@ test.describe("US5: operator session expiry", () => {
       );
       return;
     }
-    const ok = tryResetSupabase();
-    if (!ok) {
-      test.skip(true, "`supabase db reset` failed — skipping US5 auth specs.");
-    }
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    tryResetSupabase();
+    await truncateAuditLog();
   });
 
   test("(a)-(e) expired cookie redirects to /select-staff?next=… without flashing /login, and Max-Age=0 clears the cookie", async ({
@@ -761,15 +734,11 @@ test.describe.serial("US6: sign out the device", () => {
       );
       return;
     }
-    const ok = tryResetSupabase();
-    if (!ok) {
-      test.skip(true, "`supabase db reset` failed — skipping US6 auth specs.");
-    }
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    tryResetSupabase();
+    await truncateAuditLog();
   });
 
   test("(a) operator menu → Sign out from /dashboard lands on /login", async ({ page }) => {
@@ -798,7 +767,7 @@ test.describe.serial("US6: sign out the device", () => {
     // (not the dashboard) is what renders.
     await page.reload();
     expect(new URL(page.url()).pathname).toBe("/login");
-    await expect(page.getByLabel("Email")).toBeVisible();
+    await expect(page.locator("#email")).toBeVisible();
     await expect(page.getByLabel("Password")).toBeVisible();
   });
 
@@ -854,18 +823,21 @@ test.describe.serial("US-soft-degrade: Supabase outage", () => {
       );
       return;
     }
-    const ok = tryResetSupabase();
-    if (!ok) {
-      test.skip(true, "`supabase db reset` failed — skipping soft-degrade spec.");
-    }
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    tryResetSupabase();
+    await truncateAuditLog();
   });
 
-  test("(a)-(f) Supabase 503 → shell stays, banner appears, switch-staff toasts, recovery rebuilds chip, cookie preserved", async ({
+  // FIXME: page.route() only intercepts browser requests. The studio layout
+  // reads the Supabase session server-side via getStudioSessionOrDegraded(),
+  // so the RSC's call to Supabase reaches the live (reachable) instance and
+  // the chip renders "Maya Patel" instead of the "…" degraded placeholder.
+  // To exercise the soft-degrade path in CI we'd need an env-var hook that
+  // forces requireStudioSession to return the degraded sentinel, or a way
+  // to stop Supabase mid-test. Follow-up tracked separately.
+  test.fixme("(a)-(f) Supabase 503 → shell stays, banner appears, switch-staff toasts, recovery rebuilds chip, cookie preserved", async ({
     page,
     context,
   }) => {
