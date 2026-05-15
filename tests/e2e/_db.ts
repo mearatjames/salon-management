@@ -35,16 +35,14 @@ export type AuditRow = {
   entity_type: string | null;
   entity_id: string | null;
   payload: Record<string, unknown> | null;
-  created_at: string;
+  ts: string;
 };
 
 export async function getAuditLogRows(action?: string): Promise<AuditRow[]> {
   let query = client()
     .from("audit_log")
-    .select(
-      "action, actor_user_id, acting_as_staff_id, entity_type, entity_id, payload, created_at"
-    )
-    .order("created_at", { ascending: true });
+    .select("action, actor_user_id, acting_as_staff_id, entity_type, entity_id, payload, ts")
+    .order("ts", { ascending: true });
   if (action) {
     query = query.eq("action", action);
   }

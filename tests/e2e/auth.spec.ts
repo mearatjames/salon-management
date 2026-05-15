@@ -86,7 +86,7 @@ test.describe("US1: owner signs in with password", () => {
     page,
   }) => {
     await page.goto("/login?next=%2Fdashboard");
-    await page.getByLabel("Email").fill("owner@tangnails.dev");
+    await page.locator("#email").fill("owner@tangnails.dev");
     await page.getByLabel("Password").fill("tang-nails-dev");
     await page.getByRole("button", { name: "Sign in" }).click();
     // /select-staff page does not exist yet — only assert the URL change.
@@ -99,26 +99,26 @@ test.describe("US1: owner signs in with password", () => {
     page,
   }) => {
     await page.goto("/login?next=%2Fdashboard");
-    await page.getByLabel("Email").fill("owner@tangnails.dev");
+    await page.locator("#email").fill("owner@tangnails.dev");
     await page.getByLabel("Password").fill("wrong");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL(/\/login\?error=invalid/);
     expect(new URL(page.url()).pathname).toBe("/login");
     expect(new URL(page.url()).searchParams.get("error")).toBe("invalid");
-    await expect(page.getByRole("alert")).toHaveText("Email or password is incorrect.");
-    await expect(page.getByLabel("Email")).toBeVisible();
+    await expect(page.locator('[data-slot="alert"]')).toHaveText("Email or password is incorrect.");
+    await expect(page.locator("#email")).toBeVisible();
     await expect(page.getByLabel("Password")).toBeVisible();
   });
 
   test("(d) unknown email shows the identical alert text (FR-019)", async ({ page }) => {
     await page.goto("/login?next=%2Fdashboard");
-    await page.getByLabel("Email").fill("unknown@example.com");
+    await page.locator("#email").fill("unknown@example.com");
     await page.getByLabel("Password").fill("anything");
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL(/\/login\?error=invalid/);
     expect(new URL(page.url()).pathname).toBe("/login");
     expect(new URL(page.url()).searchParams.get("error")).toBe("invalid");
-    await expect(page.getByRole("alert")).toHaveText("Email or password is incorrect.");
+    await expect(page.locator('[data-slot="alert"]')).toHaveText("Email or password is incorrect.");
   });
 
   test("(e) exactly one device.signed_in audit row was written across (b)+(c)+(d)", async () => {
@@ -152,7 +152,7 @@ const MAYA_ID = "10000000-0000-0000-0000-000000000001";
 
 async function signInOwner(page: import("@playwright/test").Page) {
   await page.goto("/login?next=%2Fdashboard");
-  await page.getByLabel("Email").fill("owner@tangnails.dev");
+  await page.locator("#email").fill("owner@tangnails.dev");
   await page.getByLabel("Password").fill("tang-nails-dev");
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/select-staff\?next=%2Fdashboard/);
@@ -226,7 +226,7 @@ test.describe("US2: staff selects identity with a PIN", () => {
     await page.getByRole("button", { name: "Digit 0" }).click();
     await page.getByRole("button", { name: "Digit 0" }).click();
     await page.waitForURL(/\/select-staff\?error=pin_failed/);
-    await expect(page.getByRole("alert")).toHaveText("PIN didn't match. Try again.");
+    await expect(page.locator('[data-slot="alert"]')).toHaveText("PIN didn't match. Try again.");
 
     const failed = await getAuditLogRows("staff.pin_failed");
     const mismatch = failed.find(
@@ -798,7 +798,7 @@ test.describe.serial("US6: sign out the device", () => {
     // (not the dashboard) is what renders.
     await page.reload();
     expect(new URL(page.url()).pathname).toBe("/login");
-    await expect(page.getByLabel("Email")).toBeVisible();
+    await expect(page.locator("#email")).toBeVisible();
     await expect(page.getByLabel("Password")).toBeVisible();
   });
 
