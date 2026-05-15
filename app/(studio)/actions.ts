@@ -41,13 +41,13 @@ export async function switchStaff(): Promise<void> {
   //    "you were Maya" affordance via the `selectedTileId` query param.
   const previousSid = viewer.staff.id;
 
-  // 4. Clear the operator cookie. The Supabase session is untouched — the
-  //    device user stays signed in; only the operator changes.
-  const cookieStore = await cookies();
-  cookieStore.delete(COOKIE_NAME);
-
-  // 5. Audit. The acting_as_staff_id captures the OUTGOING operator (the
-  //    one who initiated the switch), per the contract.
+  // 4. Audit. The acting_as_staff_id captures the OUTGOING operator (the
+  //    one who initiated the switch), per the contract. The cookie itself
+  //    is left in place so `submitPin` can read it as `previousSid` and
+  //    write `payload.previous_staff_id` on the next `staff.signed_in`
+  //    audit row (audit.contract.md). `submitPin` overwrites the cookie
+  //    with the new operator's sid on success — so an aborted switch
+  //    leaves the prior operator in effect, which matches user intent.
   await recordAuth("staff.switched", viewer.deviceUserId, previousSid, {});
 
   // 6. Bounce to /select-staff. `selectedTileId` lets the page highlight

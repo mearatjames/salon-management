@@ -11,13 +11,16 @@
 // disturbed by parallel runners — the audit-row assertion in case (e) reads
 // the entire table.
 
-import { spawnSync } from "node:child_process";
-
 import { expect, test } from "@playwright/test";
 
 import { mintExpiredCookie } from "../unit/auth/_fixtures";
 
-import { getAuditLogRows, getAuthUserByEmail, getStaffByDisplayName } from "./_db";
+import {
+  getAuditLogRows,
+  getAuthUserByEmail,
+  getStaffByDisplayName,
+  truncateAuditLog,
+} from "./_db";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -31,18 +34,6 @@ async function supabaseIsReachable(): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-function tryResetSupabase(): boolean {
-  // Best-effort `supabase db reset --no-seed=false`. Returns true on success.
-  // The `--workdir` flag isn't standard; we rely on the CLI being invoked
-  // from the repo root, which Playwright already does.
-  const result = spawnSync("supabase", ["db", "reset", "--debug"], {
-    stdio: "pipe",
-    encoding: "utf-8",
-    timeout: 90_000,
-  });
-  return result.status === 0;
 }
 
 test.describe.configure({ mode: "serial" });
@@ -59,18 +50,13 @@ test.describe("US1: owner signs in with password", () => {
       );
       return;
     }
-    const ok = tryResetSupabase();
-    if (!ok) {
-      test.skip(true, "`supabase db reset` failed — skipping US1 auth specs.");
-    }
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    // Reset between cases so the audit-row assertion in (e) is deterministic.
-    // If the reset CLI is slow this beforeEach can be moved to per-describe
-    // checkpoints; for US1's 4 cases the cost is acceptable.
-    tryResetSupabase();
+    // Clear audit_log between cases so the count assertion in (e) is
+    // deterministic. ~100ms vs a full `supabase db reset` (~30–45s).
+    await truncateAuditLog();
   });
 
   test("(a) signed-out visit to /dashboard redirects to /login?next=%2Fdashboard", async ({
@@ -170,15 +156,11 @@ test.describe("US2: staff selects identity with a PIN", () => {
       );
       return;
     }
-    const ok = tryResetSupabase();
-    if (!ok) {
-      test.skip(true, "`supabase db reset` failed — skipping US2 auth specs.");
-    }
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    tryResetSupabase();
+    await truncateAuditLog();
   });
 
   test("(a) roster renders three tiles by display name", async ({ page }) => {
@@ -286,15 +268,11 @@ test.describe("US3: switch staff at shift change", () => {
       );
       return;
     }
-    const ok = tryResetSupabase();
-    if (!ok) {
-      test.skip(true, "`supabase db reset` failed — skipping US3 auth specs.");
-    }
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    tryResetSupabase();
+    await truncateAuditLog();
   });
 
   test("(a) Switch staff from /dashboard lands on /select-staff (no /login flash)", async ({
@@ -472,15 +450,11 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
       test.skip(true, "Inbucket not reachable at 127.0.0.1:54324 — skipping US4 magic-link specs.");
       return;
     }
-    const ok = tryResetSupabase();
-    if (!ok) {
-      test.skip(true, "`supabase db reset` failed — skipping US4 auth specs.");
-    }
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp || !inbucketUp) return;
-    tryResetSupabase();
+    await truncateAuditLog();
   });
 
   test("(a) magic-link form submission with owner email redirects to ?magic_sent=...", async ({
@@ -610,15 +584,11 @@ test.describe("US5: operator session expiry", () => {
       );
       return;
     }
-    const ok = tryResetSupabase();
-    if (!ok) {
-      test.skip(true, "`supabase db reset` failed — skipping US5 auth specs.");
-    }
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    tryResetSupabase();
+    await truncateAuditLog();
   });
 
   test("(a)-(e) expired cookie redirects to /select-staff?next=… without flashing /login, and Max-Age=0 clears the cookie", async ({
@@ -761,15 +731,11 @@ test.describe.serial("US6: sign out the device", () => {
       );
       return;
     }
-    const ok = tryResetSupabase();
-    if (!ok) {
-      test.skip(true, "`supabase db reset` failed — skipping US6 auth specs.");
-    }
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    tryResetSupabase();
+    await truncateAuditLog();
   });
 
   test("(a) operator menu → Sign out from /dashboard lands on /login", async ({ page }) => {
@@ -854,15 +820,11 @@ test.describe.serial("US-soft-degrade: Supabase outage", () => {
       );
       return;
     }
-    const ok = tryResetSupabase();
-    if (!ok) {
-      test.skip(true, "`supabase db reset` failed — skipping soft-degrade spec.");
-    }
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    tryResetSupabase();
+    await truncateAuditLog();
   });
 
   test("(a)-(f) Supabase 503 → shell stays, banner appears, switch-staff toasts, recovery rebuilds chip, cookie preserved", async ({
