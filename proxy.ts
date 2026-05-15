@@ -1,4 +1,4 @@
-// Edge middleware — runs on every request not explicitly excluded by the
+// Edge proxy — runs on every request not explicitly excluded by the
 // matcher below. Reads the Supabase session via @supabase/ssr and verifies
 // the operator cookie's signature + Max-Age. Redirects on either failure,
 // preserving the original path through `?next=`.
@@ -15,7 +15,7 @@ import {
   verifyOperatorCookie,
 } from "@/lib/auth/cookie";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const url = new URL(request.url);
   const pathname = url.pathname;
   const nextHref = pathname + url.search;
@@ -100,7 +100,7 @@ export async function middleware(request: NextRequest) {
 export const config = {
   // Matcher excludes the public auth surfaces, the kiosk path, Square
   // webhook endpoint, Next.js internals, the favicon, and anything with a
-  // file extension (static assets). Anything else hits the middleware.
+  // file extension (static assets). Anything else hits the proxy.
   matcher: [
     "/((?!login|select-staff|auth/.*|kiosk/.*|api/webhooks/.*|_next/.*|favicon.ico|.*\\..*).*)",
   ],
