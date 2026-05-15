@@ -224,7 +224,10 @@ test.describe("US2: staff selects identity with a PIN", () => {
     await signInOwner(page);
     await page.getByRole("button", { name: /Jordan Lee/ }).click();
     await page.waitForURL(/selectedTileId=/);
-    await page.keyboard.type("5678");
+    // Wait for the keypad to mount — its `keydown` listener is attached in a
+    // `useEffect`, so keyboard.type() before mount completes drops the events.
+    await expect(page.locator(".auth-keypad")).toBeVisible();
+    await page.keyboard.type("5678", { delay: 30 });
     await page.waitForURL(/\/dashboard($|\?)/);
     expect(new URL(page.url()).pathname).toBe("/dashboard");
   });
