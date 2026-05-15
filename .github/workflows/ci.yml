@@ -77,7 +77,14 @@ jobs:
         if: steps.supabase-image-cache.outputs.cache-hit != 'true'
         run: |
           mkdir -p ~/.cache
-          images=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "public.ecr.aws/supabase/" | tr '\n' ' ')
+          # setup-cli redirects pulls to ghcr.io in CI; locally images come from
+          # public.ecr.aws/supabase. Match the /supabase/ path on either registry.
+          images=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -E "/supabase/" | tr '\n' ' ')
+          if [ -z "$images" ]; then
+            echo "No Supabase images found to cache — skipping save."
+            docker images
+            exit 0
+          fi
           docker save $images -o ~/.cache/supabase-images.tar
 
       - name: Export Supabase env for tests
