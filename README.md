@@ -2,20 +2,20 @@
 
 Salon management web app for a single nail salon, built on the **Lacquer** design system.
 
-This repository is currently **scaffolding only** — a runnable, conventional Next.js project with
-the full v1 dependency stack, test harnesses, lint/format, CI, and the directory skeleton in place.
-It renders a placeholder landing page; real features arrive in later specs.
-
 - Architecture and scope: [`docs/system-design.md`](docs/system-design.md)
 - Design system: [`design-system/`](design-system/) (read its `README.md` and `SKILL.md` before
   writing any UI)
-- Active feature plan: [`specs/001-project-scaffolding/`](specs/001-project-scaffolding/)
+- Feature specs: [`specs/`](specs/) — scaffolding (001), dashboard (002), login flow (003)
 
 ## Prerequisites
 
 - **Node.js 24 LTS** — pinned in [`.nvmrc`](.nvmrc); the `engines` field requires `>=24 <25`.
   With nvm: `nvm use`.
 - **npm 10+** (ships with Node 24).
+- **Supabase CLI** — `brew install supabase/tap/supabase`. Required to boot the local Postgres +
+  Auth stack the login flow reads from.
+- **Docker Desktop** (running) — the Supabase CLI launches Postgres, Auth, and Inbucket as
+  containers.
 - A modern browser.
 
 ## Setup
@@ -26,13 +26,43 @@ npm ci
 
 # 2. Create your local environment file from the template
 cp .env.example .env.local
-#    Placeholder values are enough to boot the scaffold; real services come later.
 
-# 3. Start the development server
+# 3. Boot Supabase locally (first run pulls Docker images — a few minutes)
+supabase start
+supabase status        # prints API URL, anon key, service_role key
+
+# 4. Fill in .env.local
+#    - NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54321
+#    - NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key from `supabase status`>
+#    - SUPABASE_SERVICE_ROLE_KEY=<service_role key from `supabase status`>
+#    - ACTING_AS_COOKIE_SECRET=$(openssl rand -base64 32)
+#    Leave Square placeholders as-is — they aren't exercised by the login flow.
+
+# 5. Apply migrations + seed dev accounts, then regenerate Supabase types
+supabase db reset
+npx supabase gen types typescript --local > lib/db/types.ts
+
+# 6. Start the development server
 npm run dev
 ```
 
-Open the printed URL (default `http://localhost:3000`) to see the Tang Nails placeholder page.
+Open `http://localhost:3000/dashboard` — middleware will bounce you through the gate.
+
+### Seeded dev accounts
+
+After `supabase db reset`, three staff exist with PIN hashes:
+
+| Display name | Email (Supabase user)     | Password         | PIN    |
+| ------------ | ------------------------- | ---------------- | ------ |
+| Maya Patel   | `owner@tangnails.dev`     | `tang-nails-dev` | `1234` |
+| Jordan Lee   | `manager@tangnails.dev`   | `tang-nails-dev` | `5678` |
+| Sam Chen     | _(PIN-only, no email)_    | —                | `9999` |
+
+Magic-link emails (the fallback link on `/login`) land in Inbucket at
+`http://127.0.0.1:54324`.
+
+For per-scenario walkthroughs (wrong password, wrong PIN, switch staff, sign out, soft-degrade
+when Supabase is down) see [`specs/003-login-flow/quickstart.md`](specs/003-login-flow/quickstart.md).
 
 ## npm commands
 
@@ -57,11 +87,12 @@ activates once a GitHub remote is added.
 ## Project structure
 
 ```
-app/         Next.js App Router — route groups (auth), (studio), plus kiosk/ and api/
+app/         Next.js App Router — route groups (auth), (studio), plus kiosk/, auth/, api/
 components/  ui/ (shadcn primitives)  ·  lacquer/ (composed project components)
-lib/         db/ square/ auth/ realtime/ time/  ·  utils.ts (cn helper)
-styles/      globals.css  ·  tokens.css (placeholder — Lacquer tokens vendored later)
-supabase/    migrations/ (empty — schema is a later feature)
+lib/         db/ auth/  ·  utils.ts (cn helper) — square/, realtime/, time/ arrive with later features
+middleware.ts  Edge: Supabase session + operator-cookie gate; preserves ?next=
+styles/      globals.css  ·  tokens.css  ·  auth.css  ·  dashboard.css  ·  studio.css
+supabase/    migrations/0001_auth_schema.sql  ·  seed.sql (dev accounts above)
 public/      icons/
 tests/       unit/ (Vitest)  ·  e2e/ (Playwright)
 docs/        system-design.md — source of truth for the build
@@ -69,24 +100,18 @@ design-system/  vendored Lacquer brand & component library
 specs/       feature specs, plans, and tasks
 ```
 
-Empty directories are held by `.gitkeep` so the structure is version-controlled. The tree mirrors
-`docs/system-design.md` §"Repo layout".
+The tree mirrors `docs/system-design.md` §"Repo layout".
 
 Conventional files at the root: `.env.example` (every v1 environment variable, documented),
 `.editorconfig` (shared editor settings), `.nvmrc` (runtime pin), `.prettierrc` /
 `.prettierignore` (formatting), `components.json` (shadcn/ui config).
 
-## What this scaffold is NOT
+## What's shipped vs. what's coming
 
-Per [`specs/001-project-scaffolding/spec.md`](specs/001-project-scaffolding/spec.md), the scaffold
-ships placeholders only. These arrive in their own later features:
-
-- Lacquer design-token values in `styles/tokens.css`
-- Real shadcn/ui components and `components/lacquer/*`
-- The database schema (`supabase/migrations/`)
-- Square SDK wrappers, auth, and realtime helpers
-- The PWA manifest and service worker
-- Any real application surface (calendar, clients, checkout, walk-in, end-of-day)
+Shipped through feature 003: the project scaffold, the Lacquer dashboard surface, and the
+two-layer login gate (Supabase device session + staff PIN with HMAC-signed operator cookie and
+audit logging). Still to come in their own features: calendar, clients, checkout, walk-in,
+end-of-day, Square SDK wrappers, realtime helpers, and the PWA manifest/service worker.
 
 ## Stack
 

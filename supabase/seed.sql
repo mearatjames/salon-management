@@ -9,6 +9,8 @@
 -- The Supabase CLI uses pgcrypto's crypt() with a bcrypt salt for password
 -- hashing — mirror the same call here.
 -- ---------------------------------------------------------------------------
+-- Note: GoTrue's Go scanner rejects NULL for the *_token text columns
+-- (it can't convert NULL → string). Seed them as '' explicitly.
 insert into auth.users (
   id,
   instance_id,
@@ -20,7 +22,15 @@ insert into auth.users (
   raw_app_meta_data,
   raw_user_meta_data,
   created_at,
-  updated_at
+  updated_at,
+  confirmation_token,
+  recovery_token,
+  email_change_token_new,
+  email_change,
+  email_change_token_current,
+  reauthentication_token,
+  phone_change,
+  phone_change_token
 )
 values (
   '00000000-0000-0000-0000-000000000001',
@@ -33,7 +43,8 @@ values (
   '{"provider":"email","providers":["email"]}'::jsonb,
   '{}'::jsonb,
   now(),
-  now()
+  now(),
+  '', '', '', '', '', '', '', ''
 ),
 (
   '00000000-0000-0000-0000-000000000002',
@@ -46,7 +57,8 @@ values (
   '{"provider":"email","providers":["email"]}'::jsonb,
   '{}'::jsonb,
   now(),
-  now()
+  now(),
+  '', '', '', '', '', '', '', ''
 )
 on conflict (id) do nothing;
 
