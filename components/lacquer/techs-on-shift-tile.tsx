@@ -26,12 +26,14 @@ export function TechsOnShiftTile({ staff }: TechsOnShiftTileProps) {
       {staff.map((tech) => (
         <div
           key={tech.id}
+          title={tech.full}
           style={{
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            gap: 4,
-            minWidth: 44,
+            gap: 3,
+            padding: 4,
+            minWidth: 56,
           }}
         >
           <TechAvatar tech={tech} size={32} />

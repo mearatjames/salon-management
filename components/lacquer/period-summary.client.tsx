@@ -34,7 +34,6 @@ export function PeriodSummary() {
         display: "grid",
         gridTemplateColumns: "repeat(6, 1fr)",
         gap: 12,
-        padding: "12px 24px 0",
       }}
     >
       <StatCard

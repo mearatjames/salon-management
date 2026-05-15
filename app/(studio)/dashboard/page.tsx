@@ -9,10 +9,6 @@ import { RecentTransactionsFeed } from "@/components/lacquer/recent-transactions
 import { SecondaryActions } from "@/components/lacquer/secondary-actions";
 import { TechsOnShiftTile } from "@/components/lacquer/techs-on-shift-tile";
 
-// Dashboard route — `/dashboard`. Server Component; the only "use client"
-// boundaries live in `period-toggle.tsx` and `period-summary.client.tsx`.
-// The lower split (quick actions, techs on shift, recent feed) is
-// intentionally empty in this phase — Phase 5 (T026) fills it.
 export default async function DashboardPage() {
   await requireStudioSession();
   const data = buildDashboardData();
@@ -23,35 +19,61 @@ export default async function DashboardPage() {
       comparisons={data.comparisons}
     >
       <div className="tx-landing">
-        <div className="tx-landing-top">
+        <div
+          className="tx-landing-top"
+          style={{ paddingBottom: 14, borderBottomColor: "var(--border)" }}
+        >
           <div>
-            <div className="muted" style={{ fontSize: 11, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+            <div
+              className="muted"
+              style={{
+                fontSize: 11,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                fontWeight: 500,
+              }}
+            >
               {data.greeting.eyebrow}
             </div>
-            <h1>{data.greeting.title}</h1>
-            <div className="sub">{data.greeting.subtitle}</div>
+            <h1 style={{ marginTop: 4 }}>{data.greeting.title}</h1>
+            <div className="sub" style={{ marginTop: 6 }}>
+              {data.greeting.subtitle}
+            </div>
           </div>
           <div
             style={{
               display: "flex",
               flexDirection: "column",
               alignItems: "flex-end",
-              gap: 12,
+              gap: 10,
             }}
           >
             <PeriodToggle />
             <NewTransactionCTA />
           </div>
         </div>
-        <PeriodSummary />
-        <div className="tx-landing-bottom">
-          <div className="tx-landing-bottom-left">
-            <div className="muted">Quick actions</div>
-            <SecondaryActions actions={data.quickActions} cols={1} />
-            <div className="muted">Techs on shift</div>
-            <TechsOnShiftTile staff={data.staff} />
+
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            padding: "16px 24px 20px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+            overflow: "auto",
+          }}
+        >
+          <PeriodSummary />
+          <div className="tx-landing-bottom">
+            <div className="tx-landing-bottom-left">
+              <div className="muted">Quick actions</div>
+              <SecondaryActions actions={data.quickActions} cols={1} />
+              <div className="muted">Techs on shift</div>
+              <TechsOnShiftTile staff={data.staff} />
+            </div>
+            <RecentTransactionsFeed rows={data.recent} />
           </div>
-          <RecentTransactionsFeed rows={data.recent} />
         </div>
       </div>
     </PeriodProvider>
