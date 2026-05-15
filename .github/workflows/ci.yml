@@ -5,8 +5,11 @@
 #
 # The job boots a real Supabase stack (Postgres + GoTrue + PostgREST +
 # Realtime + Storage + Mailpit) via the official supabase/setup-cli action,
-# applies migrations + seed, then runs Playwright against it. The Supabase
-# Docker images are cached between runs to keep cold-start manageable.
+# applies migrations + seed, then runs Playwright against it.
+#
+# Note: Docker image caching was tried but blew past the runner's 14 GB disk
+# limit (images are ~4 GB on disk + ~4 GB tarball). Cold pull each run is
+# ~3 min, which is acceptable.
 name: CI
 
 on:
@@ -55,37 +58,10 @@ jobs:
         with:
           version: latest
 
-      - name: Cache Supabase Docker images
-        id: supabase-image-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/supabase-images.tar
-          key: supabase-images-v1-${{ hashFiles('supabase/config.toml') }}
-          restore-keys: |
-            supabase-images-v1-
-
-      - name: Load cached Supabase images
-        if: steps.supabase-image-cache.outputs.cache-hit == 'true'
-        run: docker load -i ~/.cache/supabase-images.tar
-
       - name: Start Supabase + apply migration + seed
         run: |
           supabase start
           supabase db reset
-
-      - name: Save Supabase images on cache miss
-        if: steps.supabase-image-cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p ~/.cache
-          # setup-cli redirects pulls to ghcr.io in CI; locally images come from
-          # public.ecr.aws/supabase. Match the /supabase/ path on either registry.
-          images=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -E "/supabase/" | tr '\n' ' ')
-          if [ -z "$images" ]; then
-            echo "No Supabase images found to cache — skipping save."
-            docker images
-            exit 0
-          fi
-          docker save $images -o ~/.cache/supabase-images.tar
 
       - name: Export Supabase env for tests
         run: |
