@@ -46,7 +46,7 @@ npx supabase gen types typescript --local > lib/db/types.ts
 npm run dev
 ```
 
-Open `http://localhost:3000/dashboard` — middleware will bounce you through the gate.
+Open `http://localhost:3000/dashboard` — the edge proxy will bounce you through the gate.
 
 ### Seeded dev accounts
 
@@ -90,7 +90,7 @@ activates once a GitHub remote is added.
 app/         Next.js App Router — route groups (auth), (studio), plus kiosk/, auth/, api/
 components/  ui/ (shadcn primitives)  ·  lacquer/ (composed project components)
 lib/         db/ auth/  ·  utils.ts (cn helper) — square/, realtime/, time/ arrive with later features
-middleware.ts  Edge: Supabase session + operator-cookie gate; preserves ?next=
+proxy.ts       Edge: Supabase session + operator-cookie gate; preserves ?next=
 styles/      globals.css  ·  tokens.css  ·  auth.css  ·  dashboard.css  ·  studio.css
 supabase/    migrations/0001_auth_schema.sql  ·  seed.sql (dev accounts above)
 public/      icons/
