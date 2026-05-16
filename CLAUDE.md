@@ -53,6 +53,6 @@ All five MUST be green locally. Constitution v1.0.2 § Development Workflow
 Next.js 16 (App Router, RSC + Server Actions) · Vercel · Supabase (Postgres/RLS, Auth, Realtime, Storage) · Square SDK (server-side) · shadcn/ui + Tailwind + Lucide. See `docs/system-design.md` for the full picture.
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/006-staff-management/plan.md` — read it for the
+Active feature plan: `specs/007-left-panel-nav/plan.md` — read it for the
 current feature's technical context, project structure, and build steps.
 <!-- SPECKIT END -->
