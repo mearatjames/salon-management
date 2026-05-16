@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Lacquer — User Management</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="user-management.css" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="Components.jsx"></script>
+<script type="text/babel" src="PinModal.jsx"></script>
+<script type="text/babel" src="StaffManagement.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "showInactive": true,
+  "defaultTab": "staff",
+  "startSelected": true
+}/*EDITMODE-END*/;
+
+function App() {
+  const [tweaks, setTweaks] = useState(TWEAK_DEFAULTS);
+  const [tweakOpen, setTweakOpen] = useState(false);
+
+  // Register tweaks panel availability
+  React.useEffect(() => {
+    function onMsg(e) {
+      if (e.data?.type === '__activate_edit_mode')   setTweakOpen(true);
+      if (e.data?.type === '__deactivate_edit_mode') setTweakOpen(false);
+    }
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  function setTweak(key, val) {
+    const next = typeof key === 'object' ? { ...tweaks, ...key } : { ...tweaks, [key]: val };
+    setTweaks(next);
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: next }, '*');
+  }
+
+  return (
+    <div className="app">
+      <UMSidebar />
+      <div className="app-main">
+        <UMTopBar />
+        <div className="app-content">
+          <StaffSettings key={JSON.stringify(tweaks)} initialTweaks={tweaks} />
+        </div>
+      </div>
+
+      {tweakOpen && (
+        <TweaksPanel
+          onClose={() => {
+            setTweakOpen(false);
+            window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
+          }}
+        >
+          <TweakSection title="Display">
+            <TweakToggle
+              label="Show inactive staff"
+              value={tweaks.showInactive}
+              onChange={v => setTweak('showInactive', v)}
+            />
+            <TweakRadio
+              label="Starting tab"
+              value={tweaks.defaultTab}
+              options={['staff', 'general']}
+              onChange={v => setTweak('defaultTab', v)}
+            />
+          </TweakSection>
+          <TweakSection title="Edit panel">
+            <TweakToggle
+              label="Pre-select first row"
+              value={tweaks.startSelected}
+              onChange={v => setTweak('startSelected', v)}
+            />
+          </TweakSection>
+        </TweaksPanel>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
