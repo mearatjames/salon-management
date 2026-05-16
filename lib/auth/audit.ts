@@ -46,9 +46,18 @@ export type AuditAction =
   | "service.added"
   | "service.updated"
   | "service.archived"
-  | "service.restored";
+  | "service.restored"
+  // Added by feature 012 (entity_type "user")
+  | "user.invited"
+  | "user.invite_resent"
+  | "user.invite_cancelled"
+  | "user.offboarded"
+  | "user.reactivated"
+  | "user.removed"
+  | "user.pin_reset";
 
-function deriveEntityType(action: AuditAction): "service" | "staff" | "auth" {
+export function deriveEntityType(action: AuditAction): "service" | "staff" | "auth" | "user" {
+  if (action.startsWith("user.")) return "user";
   if (action.startsWith("service.")) return "service";
   if (
     action === "staff.added" ||

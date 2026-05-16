@@ -1,11 +1,17 @@
-// `/reset-password` — the final UI surface in the US3 password-reset flow
-// (010-login-redesign). Server Component. Renders one of two states:
+// `/reset-password` — the final UI surface in the password-setup flow.
+//
+// Two flow types share this page:
+//   • `?type=recovery` (default) — 010-login-redesign US3 password reset.
+//   • `?type=invite`             — 012-user-onboarding invite acceptance,
+//                                  where the staff row exists in `state='invited'`
+//                                  and the user is finishing onboarding by
+//                                  setting their first password.
+//
+// Server Component. Renders one of two states per flow:
 //
 //   1. **Expired state** — when there is no Supabase user session OR
-//      `?error=expired` is present. The user arrived via a stale/already-used
-//      recovery link OR `updatePassword` redirected here because the
-//      session was wiped between PKCE exchange and form submit. Renders
-//      a confirm-card with copy + a "Request a new link" button.
+//      `?error=expired` is present. Recovery: copy + "Request a new link".
+//      Invite: copy + (no CTA) — owner has to send a fresh invite.
 //
 //   2. **Form state** — the new-password form (`<ResetPasswordForm>`).
 //      Conditionally renders an `.auth-alert.auth-alert-error` above the
@@ -21,6 +27,7 @@ import { createSupabaseServerClient } from "@/lib/db/server";
 
 type ResetPasswordSearchParams = {
   error?: string | string[];
+  type?: string | string[];
 };
 
 function pickString(value: string | string[] | undefined): string | undefined {
@@ -35,6 +42,8 @@ export default async function ResetPasswordPage({
 }) {
   const params = await searchParams;
   const error = pickString(params.error);
+  const typeRaw = pickString(params.type);
+  const type: "recovery" | "invite" = typeRaw === "invite" ? "invite" : "recovery";
 
   // Session probe. The PKCE exchange in /auth/callback set the cookies just
   // before redirecting here; if `getUser()` returns no user, the link was
@@ -53,6 +62,21 @@ export default async function ResetPasswordPage({
   }
 
   if (!hasSession || error === "expired") {
+    if (type === "invite") {
+      return (
+        <div className="auth-view-pane" key="invite-expired">
+          <div className="auth-form-header">
+            <h1 className="auth-form-title">Invite link expired</h1>
+          </div>
+          <div className="auth-confirm-card">
+            <p>
+              This invite link has expired or has already been used. Ask the owner to send a fresh
+              one.
+            </p>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="auth-view-pane" key="reset-expired">
         <div className="auth-form-header">
@@ -89,7 +113,7 @@ export default async function ResetPasswordPage({
           Couldn&apos;t update your password. Check your connection and try again.
         </div>
       )}
-      <ResetPasswordForm />
+      <ResetPasswordForm type={type} />
     </>
   );
 }

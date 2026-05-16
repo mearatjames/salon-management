@@ -156,6 +156,51 @@ describe("updatePassword — validation branches", () => {
   });
 });
 
+describe("updatePassword — method=invite leg (012-user-onboarding)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("tags the audit row with payload.method='invite' when the form supplies method=invite", async () => {
+    mockSupabase();
+
+    try {
+      await updatePassword(
+        formData({
+          password: "tang-nails-dev-new",
+          confirm: "tang-nails-dev-new",
+          method: "invite",
+        })
+      );
+    } catch {
+      // expected NEXT_REDIRECT to /select-staff
+    }
+
+    expect(recordAuth).toHaveBeenCalledWith("device.password_reset", "user-123", null, {
+      method: "invite",
+    });
+  });
+
+  it("defaults payload.method to 'recovery' when no method field is present", async () => {
+    mockSupabase();
+
+    try {
+      await updatePassword(
+        formData({ password: "tang-nails-dev-new", confirm: "tang-nails-dev-new" })
+      );
+    } catch {
+      // expected NEXT_REDIRECT to /select-staff
+    }
+
+    expect(recordAuth).toHaveBeenCalledWith("device.password_reset", "user-123", null, {
+      method: "recovery",
+    });
+  });
+});
+
 describe("updatePassword — session + network branches", () => {
   beforeEach(() => {
     vi.clearAllMocks();
