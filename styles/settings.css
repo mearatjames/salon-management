@@ -1,53 +1,59 @@
 /* ==========================================================================
    Lacquer — Settings shell layout
-   Skeleton hooks for the Settings surface (sidebar + content + tab bar +
-   staff edit-panel column). Every value resolves to a `var(--*)` token from
-   `styles/tokens.css`. No magic numbers above the 4px scale.
+   Mirrors `design-system/prototypes/user-management/user-management.css`
+   (single-column shell, tabs across the top, then a 2-col staff layout).
+   Every value resolves to a `var(--*)` token from `styles/tokens.css`.
    ========================================================================== */
 
-/* Outer shell: a thin left rail (settings sub-nav) + the main content column.
-   The rail is sized in `--space-*` multiples to stay on the 4px grid. */
+/* Outer shell: full-height single column. Tabs sit at the top; the content
+   slot below them takes the remaining height. No left rail — the prototype
+   uses the tab bar as the only settings nav. */
 .settings-shell {
-  display: grid;
-  grid-template-columns: calc(var(--space-16) * 3 + var(--space-12)) 1fr;
-  gap: var(--space-8);
-  padding: var(--space-8);
-  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   background: var(--background);
   color: var(--foreground);
 }
 
-/* Horizontal tab bar (Staff / General / Notifications / Billing). */
-.settings-tab-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  border-bottom: 1px solid var(--border);
-  padding: 0 var(--space-1) var(--space-3);
-  margin-bottom: var(--space-6);
-}
-
-.settings-tab-bar > * + * {
-  margin-left: var(--space-1);
-}
-
-/* Single content column under the tab bar, comfortable reading width. */
+/* Single content column under the tab bar. `min-height: 0` lets the inner
+   `.settings-staff-grid` (which itself uses `flex: 1`) reclaim height; the
+   horizontal padding matches the prototype's `.content-pad`. */
 .settings-content {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
-  max-width: calc(var(--space-16) * 18);
-  width: 100%;
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-8);
+  overflow: auto;
 }
 
-/* Staff page two-column layout: roster table on the left, edit panel on the right.
-   Panel column is fixed at 24rem-equivalent (on the 4px scale) to keep the table
-   from collapsing as the panel content grows. */
+/* Horizontal tab bar (General · Staff · Notifications · Billing). Matches
+   `.settings-tabs` in the prototype. Lives ABOVE `.settings-content`, so
+   tabs span the full width while the content column gets its own padding. */
+.settings-tab-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 0 var(--space-8);
+  background: var(--card);
+  flex-shrink: 0;
+}
+
+/* Staff page two-column layout: roster table on the left, edit panel on the
+   right. `minmax(0, 1fr)` on the roster column is load-bearing — without
+   the explicit `0` floor the column would grow to fit its widest descendant
+   (e.g. a long row) and squash the panel column. */
 .settings-staff-grid {
   display: grid;
-  grid-template-columns: 1fr calc(var(--space-16) * 6);
-  gap: var(--space-6);
+  grid-template-columns: minmax(0, 1fr) calc(var(--space-16) * 5);
+  gap: var(--space-4);
   align-items: start;
+  flex: 1;
+  min-height: 0;
 }
 
 /* Roster column wrapper. */
@@ -58,17 +64,19 @@
   min-width: 0;
 }
 
-/* Edit-panel column wrapper. Sticky so it stays in view as the roster scrolls. */
+/* Edit-panel column wrapper. Sticky so it stays in view as the roster scrolls.
+   Background/border come from `var(--card)` so the column reads as a single
+   surface, matching the prototype's `.card`. */
 .settings-staff-panel {
   position: sticky;
-  top: var(--space-6);
+  top: var(--space-2);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-6);
+  padding: var(--space-5);
   background: var(--card);
   color: var(--card-foreground);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-xs);
 }

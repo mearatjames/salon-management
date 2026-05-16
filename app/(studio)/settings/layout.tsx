@@ -24,10 +24,8 @@ export default async function SettingsLayout({ children }: Readonly<{ children: 
 
   return (
     <div className="settings-shell">
-      <div className="settings-content">
-        <TabBar />
-        {children}
-      </div>
+      <TabBar />
+      <div className="settings-content">{children}</div>
     </div>
   );
 }

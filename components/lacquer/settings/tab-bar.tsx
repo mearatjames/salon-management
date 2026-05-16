@@ -39,14 +39,23 @@ export function TabBar() {
             aria-current={isActive ? "page" : undefined}
             data-active={isActive ? "true" : "false"}
             style={{
-              padding: "var(--space-2) var(--space-3)",
-              borderRadius: "var(--radius-sm)",
-              color: isActive ? "var(--foreground)" : "var(--muted-foreground)",
-              fontWeight: isActive ? 600 : 500,
+              // Mirror prototype `.settings-tab` — fixed 46px height, the
+              // active underline aligns with the bar's bottom border via
+              // `margin-bottom: -1px` so it cleanly replaces the divider.
+              height: "calc(var(--space-12) - var(--space-1) * 0.5)",
+              padding: "0 var(--space-4)",
+              display: "inline-flex",
+              alignItems: "center",
               fontSize: "var(--text-sm, 14px)",
+              fontWeight: isActive ? 600 : 500,
+              color: isActive ? "var(--foreground)" : "var(--muted-foreground)",
               textDecoration: "none",
-              borderBottom: isActive ? "2px solid var(--primary)" : "2px solid transparent",
-              transition: "color 150ms var(--ease-out, ease-out), border-color 150ms var(--ease-out, ease-out)",
+              borderBottom: isActive
+                ? "2px solid var(--primary)"
+                : "2px solid transparent",
+              marginBottom: "-1px",
+              transition:
+                "color 150ms var(--ease-out, ease-out), border-color 150ms var(--ease-out, ease-out)",
             }}
           >
             {tab.label}
