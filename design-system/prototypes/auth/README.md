@@ -20,12 +20,21 @@ Source: Claude Design handoff bundle, file `Login Screen.html` from project
 ## How this maps to spec `010-login-redesign`
 
 The redesign adopts the **two-panel shell** (brand panel + form panel,
-collapsing to form-only at ≤720px), the **view-pane transition**, the
-**password reveal toggle**, and the **dark-mode tokens** verbatim. It does
-**not** add a separate password-reset email flow — the existing
-`003-login-flow` FR-022 keeps password reset out of scope and magic-link
-as the only recovery path, so the prototype's "Forgot password?" link is
-rebound to the magic-link view in the implementation.
+collapsing to form-only at ≤720px), all **five view panes**
+(signin / forgot / forgot-sent / magic / magic-sent), the
+**password reveal toggle**, and the **dark-mode tokens** verbatim.
+
+**Password reset is in scope** (override recorded in
+`specs/010-login-redesign/spec.md` Clarifications session 2026-05-16,
+and a "Superseded" note on `specs/003-login-flow/spec.md` § FR-022).
+The "Reset password" view triggers Supabase
+`resetPasswordForEmail`; the emailed link lands on a new
+`/reset-password` page that exchanges the PKCE code and calls
+`updateUser({ password })`. Magic-link recovery is preserved as a
+second on-ramp ("Email me a sign-in link instead" below Google).
+
+Tweaks panel (`tweaks-panel.jsx`) is design-canvas chrome only and is
+not implemented.
 
 When the design changes again, re-export the handoff zip and replace this
 folder; the implementation reads `design-system/prototypes/auth/` as the

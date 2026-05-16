@@ -13,34 +13,78 @@ it in our design system / prototypes folder."
 
 ## Overview
 
-This feature re-skins the existing login surface (`/login` from
-`003-login-flow`) to match the new Lacquer prototype shipped in the design
-handoff (`design-system/prototypes/auth/Login Screen.html`). The behavioural
-contract from `003-login-flow` is unchanged — every functional requirement
-in that spec (FR-001 through FR-023) still holds. What changes is the
-visual presentation: a **two-panel layout** with a Lacquer-branded left
-panel and a focused form panel on the right, a **view-based flow** that
-swaps the form pane between sign-in, magic-link request, and magic-link
-confirmation (replacing the inline `<details>` expand pattern), a
-**password reveal toggle**, and **dark-mode honouring** at the shell
-level. The Google button, magic-link recovery, error alerts, redirect
-semantics, audit-log events, and the pre-redirect logic at `/login` all
-remain identical.
+This feature does two things to the existing login surface (`/login` from
+`003-login-flow`):
 
-The new prototype also includes a separate "Reset password" / "Check your
-email" flow that would send a password-reset link. That flow is **not**
-adopted because `003-login-flow` FR-022 explicitly keeps the traditional
-password-reset email path out of scope; the magic-link variant is the
-supported recovery (FR-001(c) of `003-login-flow`). The prototype's
-"Forgot password?" link is therefore re-bound to the magic-link request
-view in this implementation. The prototype's tweaks panel
-(`tweaks-panel.jsx`) is a design-canvas artefact and is not implemented.
+1. **Re-skins it to the new Lacquer prototype** at
+   `design-system/prototypes/auth/Login Screen.html` — a **two-panel layout**
+   (Lacquer-branded left panel + focused form panel on the right), a
+   **view-based flow** that swaps the form pane between sign-in,
+   forgot-password, magic-link, and the two "Check your email"
+   confirmations (replacing the inline `<details>` expand pattern), a
+   **password reveal toggle**, and **dark-mode honouring** at the shell
+   level.
+2. **Adds a real password-reset flow** — separately from magic-link.
+   Clicking the inline "Forgot password?" link opens a "Reset password"
+   view that calls Supabase's `resetPasswordForEmail` and shows a "Check
+   your email" confirmation. The emailed link lands on a new
+   `/reset-password` page where the user sets a new password and is
+   signed in to `/select-staff`. This **explicitly overrides
+   `003-login-flow` FR-022**, which had deferred the traditional
+   password-reset path in favour of magic-link only.
 
-This is a **visual / UX redesign**, not a behavioural change. No new
-Supabase configuration, migrations, or environment variables are
-introduced. Existing E2E flows and unit tests continue to pass — only
-selectors/DOM structure may shift to accommodate the new layout, and any
-visual snapshot expectations are refreshed against the new prototype.
+Magic-link recovery survives as a **second on-ramp** — both because the
+prototype shows them as peer first-class views and because an owner who
+no longer has access to their email password manager benefits from a
+no-password alternative. The pre-redirect logic, error alerts,
+audit-log events, redirect semantics, and the Google sign-in button at
+`/login` all remain identical.
+
+The prototype's tweaks panel (`tweaks-panel.jsx`) is a design-canvas
+artefact and is not implemented.
+
+This is a **visual / UX redesign plus one new recovery flow**. The new
+flow introduces (a) Supabase Auth's `resetPasswordForEmail` configuration
+(redirect target, email template), and (b) a new `/reset-password` page
+that exchanges the PKCE code and updates the password. No new
+environment variables or DB migrations are required. Existing E2E flows
+and unit tests continue to pass against the redesigned `/login` with
+selectors-only updates; new tests cover the reset flow end-to-end.
+
+## Clarifications
+
+### Session 2026-05-16
+
+- Q: Should the spec adopt the prototype's "Reset password" /
+  "Check your email" views and override `003-login-flow` FR-022? →
+  A: Yes — adopt both views and ship a real Supabase
+  `resetPasswordForEmail` flow. The override is recorded in this
+  spec (FR-018) and a "Superseded by 010" note is added to
+  `003-login-flow` § FR-022 so the audit trail stays visible.
+- Q: After forgot-password is added, what is the magic-link's role
+  on `/login`? → A: **Keep both** as peer recovery paths.
+  Forgot-password sits as the inline "Forgot password?" link beside
+  the password field; magic-link stays as the "Email me a sign-in
+  link instead" subordinate link below Google. The prototype shows
+  both as separate first-class views; this matches.
+- Q: Can a Gmail-based owner created via email/password be merged
+  with their Google sign-in into a single user, and is Google OAuth
+  on the Supabase free tier? → A: Yes to both. Supabase Auth's
+  default **automatic identity linking by verified email** attaches
+  the new Google identity to the existing user record when the
+  emails match and the existing user has `email_confirmed_at` set —
+  no second user is created. Social OAuth providers (Google
+  included) are part of the free tier alongside the 50,000-MAU
+  allowance; no upcharge. Practical consequence: the seeded
+  bootstrap owner row must have `email_confirmed_at` populated so
+  the link fires safely (recorded as an assumption + a seed-file
+  requirement in this spec).
+- Q: Where does the user land after a successful password reset? →
+  A: `/select-staff`. The `updateUser({ password })` call signs the
+  user in (PKCE flow), so they pick up at the operator step instead
+  of being bounced back to `/login`.
+- Q: Reset link TTL? → A: Supabase default (1 hour). No deviation
+  needed.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -130,22 +174,88 @@ press Enter, and confirm the same toggle works.
 
 ---
 
-### User Story 3 - Request a magic sign-in link from a dedicated view (Priority: P1)
+### User Story 3 - Reset a forgotten password from a dedicated view (Priority: P1)
 
-When an owner forgets their password, the existing "Email me a sign-in
-link instead" subordinate link now leads to a dedicated view — not an
-inline-expanding `<details>`. The form panel swaps with a 200ms fade-in
-to a focused "Sign in with a link" surface that shows a back button, a
-single email field, and a "Send link" primary button. On submit, the
-same surface swaps to a "Check your email" confirmation card. The
-underlying Supabase magic-link request (`signInWithOtp`) and the
-`?magic_sent=` URL contract are unchanged.
+When an owner forgets their password, an inline **"Forgot password?"**
+link sits beside the password field. Clicking it swaps the form panel
+to a "Reset password" view: back button, single email field,
+"Send reset link" primary button. On submit, the panel swaps to a
+"Check your email" confirmation card. The email contains a one-time
+link that opens a new `/reset-password` page where the owner enters and
+confirms a new password, and is signed in to `/select-staff` on success.
 
-**Why this priority**: The magic-link recovery path is the only password
-recovery in v1 (per `003-login-flow` FR-022). The redesign elevates it
-from a small text link into a full view, which makes it more discoverable
-and easier to use on an iPad. Same priority as the sign-in view because
-the redesign isn't complete without it.
+**Why this priority**: Adds a first-class recovery path for the most
+common failure mode ("I forgot my password"). Magic-link still exists
+as a second on-ramp (US4), but a dedicated reset flow is what most
+users reach for first and the prototype elevates it accordingly. This
+story **overrides `003-login-flow` FR-022**, which had deferred this
+flow in v1.
+
+**Independent Test**: On `/login`, click the "Forgot password?" link
+inline with the password field. Confirm the form panel swaps to a view
+titled "Reset password" with a back button ("Back to sign in"), a
+single email input, and a "Send reset link" button. Type the seeded
+owner's email and press "Send reset link". Confirm the panel swaps to
+a "Check your email" confirmation showing the email and a
+"send another link" link. Open the link in the test email inbox.
+Confirm it lands on `/reset-password` with a new-password + confirm
+form. Set a new password, submit. Confirm redirect to `/select-staff`
+and the new password works on the next sign-in.
+
+**Acceptance Scenarios**:
+
+1. **Given** the user is on the sign-in view, **When** they click
+   "Forgot password?", **Then** the form panel transitions (200ms
+   fade + 8px translate-up, `viewIn` keyframe) to the "Reset
+   password" view with the prototype's `forgot` copy verbatim
+   ("Reset password" heading, "Enter your email and we'll send a
+   reset link." subtitle).
+2. **Given** the user is on the "Reset password" view, **When**
+   they enter an email and submit, **Then** a Server Action calls
+   `supabase.auth.resetPasswordForEmail(email, { redirectTo: '<origin>/reset-password' })`
+   and on success the panel swaps to the "Check your email"
+   confirmation showing the entered email.
+3. **Given** the email has been sent, **When** the user opens the
+   reset link in their inbox, **Then** they land on `/reset-password`
+   with the PKCE code already exchanged for a session, and see two
+   inputs ("New password" + "Confirm password") and a "Set new
+   password" primary button.
+4. **Given** the user submits two matching passwords meeting the
+   8-character floor (per `003-login-flow` FR-023), **When**
+   the Server Action calls `supabase.auth.updateUser({ password })`,
+   **Then** the user is signed in by that update and is redirected
+   to `/select-staff`.
+5. **Given** the user submits mismatched passwords or a password
+   under 8 characters, **When** validation fires, **Then** a calm
+   inline error appears in the form panel ("Passwords don't match."
+   / "Password must be at least 8 characters.") without revealing
+   any account state.
+6. **Given** the reset link is expired (older than the Supabase
+   default 1-hour TTL) or has already been used, **When** the user
+   opens it, **Then** `/reset-password` renders a calm
+   "This link has expired or has already been used." message with a
+   button to request a new one (links back to `/login?reset_intent=1`).
+
+---
+
+### User Story 4 - Request a magic sign-in link from a dedicated view (Priority: P2)
+
+When an owner prefers passwordless access — or when they can't
+remember their password and want a quick one-time entry instead of
+choosing a new one — the "Email me a sign-in link instead"
+subordinate link below the Google button leads to a dedicated view.
+The form panel swaps with a 200ms fade-in to a focused "Sign in with
+a link" surface: back button, single email field, "Send link" primary
+button. On submit, the same surface swaps to a "Check your email"
+confirmation card. The underlying Supabase magic-link request
+(`signInWithOtp`) and the `?magic_sent=` URL contract are unchanged.
+
+**Why this priority**: Magic-link is now a **second** recovery
+on-ramp alongside forgot-password (US3). P2 because forgot-password
+covers the same blocked-on-password scenario; magic-link is the
+fallback for owners who don't want to choose a new password mid-shift.
+The redesign elevates the existing inline `<details>` control into a
+full view to match the prototype.
 
 **Independent Test**: On `/login`, click the "Email me a sign-in link
 instead" text link below the Google button. Confirm the form panel
@@ -160,9 +270,9 @@ swaps back to the sign-in view.
 
 1. **Given** the user is on the sign-in view, **When** they click
    "Email me a sign-in link instead", **Then** the form panel
-   transitions (200ms fade + 8px translate-up, per the
-   `viewIn` keyframe in the prototype) to the "Sign in with a link"
-   view.
+   transitions to the "Sign in with a link" view (heading "Sign in
+   with a link", subtitle "We'll email you a one-time sign-in link
+   — no password needed.").
 2. **Given** the user is on the "Sign in with a link" view, **When**
    they enter an email and submit, **Then** the existing magic-link
    Server Action (`sendMagicLink` from `app/(auth)/login/actions.ts`)
@@ -175,42 +285,8 @@ swaps back to the sign-in view.
    pre-populated so they can adjust and resubmit.
 4. **Given** the user is on either the request or confirmation view,
    **When** they click "Back to sign in", **Then** the panel swaps
-   back to the sign-in view and the URL drops the `magic_sent` query
-   parameter if present.
-
----
-
-### User Story 4 - "Forgot password?" routes to the magic-link view (Priority: P2)
-
-When the owner sees the password field, a small "Forgot password?" link
-sits inline with the field's label. Clicking it opens the same magic-link
-request view from Story 3 (not a separate password-reset email flow). The
-copy on that view stays "Sign in with a link" so the owner understands
-they're getting a one-time sign-in link, not a reset link.
-
-**Why this priority**: Improves discoverability of recovery for owners
-who are blocked on a forgotten password. P2 because the same recovery
-path is already reachable from the "Email me a sign-in link instead"
-link below Google — the inline link is a second on-ramp, not a new
-capability.
-
-**Independent Test**: On `/login`, locate the password field. Confirm a
-small "Forgot password?" text link sits on the right end of the password
-label row (the label "Password" is left-aligned, the link is
-right-aligned in the same row). Click it. Confirm the same magic-link
-request view from Story 3 appears.
-
-**Acceptance Scenarios**:
-
-1. **Given** the user is on the sign-in view, **When** the password
-   field renders, **Then** an inline "Forgot password?" text link
-   appears at the right end of the password label row, styled as a
-   Lacquer subordinate link (`--muted-foreground`, underlined on
-   hover only, 12px text).
-2. **Given** the user clicks "Forgot password?", **When** the
-   transition fires, **Then** the form panel swaps to the same
-   "Sign in with a link" view used by the link below Google
-   (identical heading, copy, fields, and submit behaviour).
+   back to the sign-in view and the URL drops the `magic_sent` /
+   `magic_intent` query parameter if present.
 
 ---
 
@@ -295,13 +371,46 @@ the email exists; the Google button hides when its flag is off; the
   with `?magic_sent=...` renders the confirmation view directly,
   matching the existing behaviour.
 - **JS-disabled / hydration failure.** The sign-in view (form fields,
-  primary button, Google button, magic-link link) MUST render and be
-  submittable without JavaScript — the eye toggle, view swaps, and
-  reduced-motion gating may be no-ops, but the password form posts
-  to its existing Server Action and the magic-link link navigates to
-  a `?magic_sent_intent=1` query state that the page reads server-
-  side to render the magic-link view as the initial pane. (This
-  preserves the no-JS path that `003-login-flow` already supports.)
+  primary button, Google button, magic-link link, forgot-password
+  link) MUST render and be submittable without JavaScript — the eye
+  toggle, view swaps, and reduced-motion gating may be no-ops, but
+  the password form posts to its existing Server Action and the
+  recovery links navigate to `?magic_intent=1` / `?reset_intent=1`
+  query states that the page reads server-side to render the
+  corresponding view as the initial pane.
+- **Password reset for a non-existent email.** Supabase's
+  `resetPasswordForEmail` resolves successfully whether or not the
+  email is registered (it's silent on miss to defeat enumeration).
+  The page MUST therefore always show the `forgot-sent` confirmation
+  on a successful action, never a "no such email" error. The only
+  error path on `forgot` is a network/Supabase outage.
+- **Reset link expired or already used.** When the user opens an
+  expired or already-redeemed reset link, `/reset-password` MUST
+  render a calm "This link has expired or has already been used."
+  state with a "Request a new link" button that returns to
+  `/login?reset_intent=1`. The user is not signed in by an expired
+  link; no partial session is created.
+- **PKCE code already exchanged in a different tab.** A reset link
+  is single-use; the second tab to open it lands on the expired
+  state above. No data is mutated by the second tab.
+- **Reset submitted with mismatched passwords.** The `/reset-password`
+  Server Action MUST refuse to call `updateUser` until both fields
+  match and the new password is ≥ 8 characters. Validation errors
+  render inline in the form panel; the PKCE session remains valid
+  for retry within its 1-hour window.
+- **Google sign-in for an existing email/password user.** Supabase
+  auto-links the new Google identity to the existing user record
+  when the emails match and the existing email is confirmed (see
+  FR-022). On subsequent sign-ins the user can use either
+  password OR Google interchangeably; `auth.uid()` is stable
+  across both. No duplicate user row, no duplicate audit-log
+  attribution.
+- **Google sign-in for an email that has an unconfirmed
+  email/password user.** Supabase refuses to auto-link to defeat
+  takeover. The Google sign-in succeeds but creates a separate
+  user. This is an operational concern: the seeded bootstrap owner
+  MUST be created with `email_confirmed_at` populated (FR-022) so
+  this case cannot arise for production owners.
 
 ## Requirements *(mandatory)*
 
@@ -337,25 +446,26 @@ the email exists; the Google button hides when its flag is off; the
 
 #### View flow & transitions
 
-- **FR-006**: System MUST render the form panel as one of three
-  in-page views: `signin` (default), `magic` (request a sign-in
-  link), and `magic-sent` (confirmation). The legacy two-view
-  `<details>`-based magic-link control from `003-login-flow` MUST
-  be removed.
+- **FR-006**: System MUST render the form panel as one of five
+  in-page views on `/login`: `signin` (default), `forgot` (request
+  a password-reset link), `forgot-sent` (reset-link confirmation),
+  `magic` (request a sign-in link), and `magic-sent` (magic-link
+  confirmation). The legacy `<details>`-based magic-link control
+  from `003-login-flow` MUST be removed.
 - **FR-007**: System MUST animate each view swap with a 200ms
   fade + 8px translate-up (`viewIn` keyframe, ease-out-expo), and
   MUST omit the animation when `prefers-reduced-motion: reduce` is
   set.
-- **FR-008**: System MUST seed the initial view from the URL: the
-  page MUST render the `magic-sent` view when `?magic_sent=` is
-  present (with the email shown in the confirmation card), and
-  the `magic` view when a separate `?magic_intent=1` query is
-  present (the JS-no-JS bridge path); otherwise it MUST render
-  `signin`.
+- **FR-008**: System MUST seed the initial view from the URL:
+  `?magic_sent=<email>` → `magic-sent`;
+  `?magic_intent=1` → `magic`;
+  `?reset_sent=<email>` → `forgot-sent`;
+  `?reset_intent=1` → `forgot`; otherwise → `signin`.
 - **FR-009**: System MUST provide a "Back to sign in" control on
   every non-`signin` view (a chevron-left + text button styled as
-  `.back-btn`) that swaps back to `signin` and clears `magic_sent`
-  / `magic_intent` from the URL.
+  `.back-btn`) that swaps back to `signin` and clears
+  `magic_sent` / `magic_intent` / `reset_sent` / `reset_intent`
+  from the URL.
 
 #### Sign-in view
 
@@ -385,68 +495,140 @@ the email exists; the Google button hides when its flag is off; the
   / `?error=network` / `?error=oauth_failed` mappings) is
   unchanged.
 
-#### Magic-link recovery
+#### Password reset (overrides `003-login-flow` FR-022)
 
-- **FR-014**: System MUST route both the "Forgot password?" inline
-  link and the "Email me a sign-in link instead" subordinate link
-  to the same `magic` view. The view's heading MUST be "Sign in
-  with a link" (not "Reset password") and the subtitle MUST be
+- **FR-014**: System MUST route the inline "Forgot password?" link
+  beside the password field to the `forgot` view. The view MUST
+  show heading "Reset password" and subtitle "Enter your email and
+  we'll send a reset link." — the prototype's copy verbatim.
+- **FR-015**: System MUST submit the password-reset request through
+  a new Server Action `sendPasswordReset(email)` in
+  `app/(auth)/login/actions.ts` that calls
+  `supabase.auth.resetPasswordForEmail(email, { redirectTo: '<origin>/reset-password' })`.
+  On success the action MUST redirect to
+  `/login?reset_sent=<encoded-email>` (the page seeds the
+  `forgot-sent` view from that query). On failure (network /
+  Supabase outage) the action MUST surface a calm inline error on
+  the `forgot` view; it MUST NOT reveal whether the email is
+  registered.
+- **FR-016**: System MUST render the `forgot-sent` confirmation
+  as a card styled with the prototype's `.confirm-card` rules
+  (`--muted` background, 1px border, 12px radius, 20px padding),
+  containing: a heading "Check your email", a subtitle "A reset
+  link is on its way.", a paragraph naming the email address in
+  `<strong>` and "Click it to set a new password.", and a
+  secondary line "Didn't get it? Check your spam folder, or
+  [send another link]." where the send-another link swaps back
+  to the `forgot` view with the email pre-filled.
+- **FR-017**: System MUST expose a new page at `/reset-password`
+  (in `app/(auth)/reset-password/page.tsx`) that the emailed link
+  lands on. The page MUST:
+  (a) Exchange the PKCE code on first paint via
+  `supabase.auth.exchangeCodeForSession(code)` to establish a
+  session.
+  (b) Render two password fields ("New password", "Confirm
+  password") and a "Set new password" primary button — same
+  Lacquer field/button styling as the sign-in view, with the
+  password reveal toggle on both fields.
+  (c) Validate (1) both fields match, (2) the new password is at
+  least 8 characters (per `003-login-flow` FR-023 — no
+  character-class rules). Show calm inline errors on failure.
+  (d) On submit, call `supabase.auth.updateUser({ password })`
+  inside a Server Action, write a `device.password_reset` row to
+  `audit_log` (new controlled-vocabulary value extending the union
+  defined in `003-login-flow` FR-016), and redirect to
+  `/select-staff`.
+  (e) Render a calm "This link has expired or has already been
+  used." state with a "Request a new link" button (linking to
+  `/login?reset_intent=1`) when the PKCE exchange fails or the
+  session is absent.
+- **FR-018**: This feature **explicitly overrides `003-login-flow`
+  FR-022**. The traditional password-reset email flow is now in
+  scope. The override is recorded in this spec's Clarifications
+  block and a "Superseded by 010-login-redesign FR-017/FR-018"
+  note MUST be added to `specs/003-login-flow/spec.md` § FR-022
+  in the same change set so the audit trail stays visible.
+
+#### Magic-link recovery (preserved as second on-ramp)
+
+- **FR-019**: System MUST route the "Email me a sign-in link
+  instead" subordinate link below Google to the `magic` view.
+  The view MUST show heading "Sign in with a link" and subtitle
   "We'll email you a one-time sign-in link — no password needed."
-- **FR-015**: System MUST submit the magic-link request through
+- **FR-020**: System MUST submit the magic-link request through
   the existing `sendMagicLink` Server Action from
   `app/(auth)/login/actions.ts` (or its successor of identical
   signature). The action contract — including `?next=`
   preservation, the `?magic_sent=<email>` redirect on success,
   and inline error rendering on failure — is unchanged.
-- **FR-016**: System MUST render the `magic-sent` confirmation as
-  a card styled with the prototype's `.confirm-card` rules
-  (`--muted` background, 1px border, 12px radius, 20px padding),
+- **FR-021**: System MUST render the `magic-sent` confirmation
+  as a card styled with the prototype's `.confirm-card` rules,
   containing: a heading "Check your email", a subtitle "A sign-in
   link is on its way.", a paragraph naming the email address in
-  `<strong>`, and a secondary line "Didn't get it? Check your
-  spam folder, or [send another link]." where the send-another
-  link rebinds to the `magic` view with the email pre-filled.
+  `<strong>` and "Click it from your inbox — you can close this
+  tab.", and a "send another link" link that swaps back to the
+  `magic` view with the email pre-filled.
+
+#### Google identity linking (research outcome)
+
+- **FR-022**: System MUST rely on Supabase Auth's **default
+  automatic identity linking by verified email** to merge a
+  Google OAuth identity with an existing email/password user
+  that shares the same email address. No additional Supabase
+  Auth config change is required — auto-linking is on by
+  default. The seeded owner row in `supabase/seed.sql` (and the
+  production bootstrap one-off SQL) MUST set `email_confirmed_at`
+  to a non-NULL timestamp so the link fires safely (Supabase
+  refuses to auto-link to an unconfirmed identity to defeat
+  takeover via OAuth). This requirement amends — and is the
+  single deviation from — the seed-data assumption in
+  `003-login-flow`.
 
 #### Out of scope (explicit)
 
-- **FR-017**: A separate password-reset email flow (Supabase
-  `resetPasswordForEmail` + a `/reset-password/[token]` route) is
-  explicitly **out of scope**. This preserves `003-login-flow`
-  FR-022. The prototype's `forgot` / `forgot-sent` views are
-  **not** implemented; their inline copy (`"Reset password"`,
-  `"Send reset link"`) is replaced by the magic-link copy.
-- **FR-018**: The prototype's tweaks panel (`tweaks-panel.jsx`)
+- **FR-023**: The prototype's tweaks panel (`tweaks-panel.jsx`)
   is a design-canvas artefact and is **not** implemented. It is
-  kept alongside `Login Screen.html` in `design-system/prototypes/auth/`
-  so the prototype HTML still renders untouched in a browser.
-- **FR-019**: No user-controlled theme toggle is added on
-  `/login`. Dark mode is honoured only via
+  kept alongside `Login Screen.html` in
+  `design-system/prototypes/auth/` so the prototype HTML still
+  renders untouched in a browser.
+- **FR-024**: No user-controlled theme toggle is added on
+  `/login` or `/reset-password`. Dark mode is honoured only via
   `prefers-color-scheme: dark`. A future Settings → Appearance
   feature MAY add a manual toggle; this feature does not.
-- **FR-020**: `/select-staff`, the PIN keypad, the studio
+- **FR-025**: Self-service account creation, email-change
+  flows, and MFA remain **out of scope**. The owner is still
+  seeded via SQL (`supabase/seed.sql` for dev, Supabase Studio
+  for production bootstrap) per `003-login-flow`. This feature
+  only adds the password-reset recovery on top of the existing
+  seeded-owner model.
+- **FR-026**: `/select-staff`, the PIN keypad, the studio
   topbar's "Switch staff" / "Sign out" controls, and the
   middleware redirect contract are explicitly **out of scope**.
-  This feature touches only the `/login` surface and its
-  supporting components / styles.
+  This feature touches only `/login`, the new `/reset-password`
+  page, and their supporting components / styles.
 
 #### Visual & content
 
-- **FR-021**: All visual values on the new `/login` MUST trace to
-  Lacquer design tokens (`styles/tokens.css`). No raw hex codes,
-  off-scale spacing, custom font weights, or one-off shadows are
-  permitted. The `speckit-design-auditor` MUST pass with zero
-  violations.
-- **FR-022**: System MUST adapt the prototype at
+- **FR-027**: All visual values on the new `/login` and
+  `/reset-password` MUST trace to Lacquer design tokens
+  (`styles/tokens.css`). No raw hex codes, off-scale spacing,
+  custom font weights, or one-off shadows are permitted. The
+  `speckit-design-auditor` MUST pass with zero violations.
+- **FR-028**: System MUST adapt the prototype at
   `design-system/prototypes/auth/Login Screen.html` as the visual
   source of truth. No new component library is introduced;
   layout primitives (panels, buttons, inputs, alerts, dividers)
   are composed from `components/ui/*` shadcn primitives and
   Lacquer-scoped components in `components/lacquer/*`.
-- **FR-023**: All copy on the new views MUST be the prototype's
+- **FR-029**: All copy on the new views MUST be the prototype's
   copy verbatim where Lacquer content fundamentals apply (calm,
-  specific, second-person, sentence case). Error copy from
-  `003-login-flow` is preserved unchanged (it already follows
-  the same rules).
+  specific, second-person, sentence case). The `/reset-password`
+  page MUST follow the same content rules; suggested copy: page
+  heading "Set a new password", subtitle "Pick something you'll
+  remember — 8 characters or more.", primary button "Set new
+  password", success state inherits the `/select-staff` shell
+  on redirect. Error copy from `003-login-flow` is preserved
+  unchanged.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -506,6 +688,17 @@ No new data entities are introduced. The feature reuses:
   (`format:check`, `lint`, `typecheck`, `test`, `test:e2e`)
   is green on the redesign branch before any push. CI
   reproduces the same green pass on the PR.
+- **SC-009**: An owner who has forgotten their password can
+  request a reset, open the emailed link, set a new password,
+  and reach `/select-staff` in **under 60 seconds** of wall-clock
+  time (excluding email-delivery latency). 100% of successful
+  resets write a `device.password_reset` row to `audit_log`.
+- **SC-010**: A Google sign-in by an owner whose email already
+  has a confirmed email/password user produces **a single
+  Supabase user row** with two entries in `user.identities`
+  (`email` + `google`). Verified by running the flow against a
+  preview Supabase project and inspecting `auth.users` +
+  `auth.identities` directly.
 
 ## Assumptions
 
@@ -516,34 +709,32 @@ No new data entities are introduced. The feature reuses:
   `design-system/prototypes/auth/Login Screen.html`; future updates
   re-export and replace that file (matching the existing
   `design-system/` vendoring pattern in `CLAUDE.md`).
-- The prototype's `forgot` / `forgot-sent` views are **not** adopted
-  because `003-login-flow` FR-022 keeps a traditional password-reset
-  email flow out of v1 scope. Magic-link is the only recovery path,
-  so the prototype's "Forgot password?" link is re-bound to the
-  magic-link request view and the prototype's "Reset password" copy
-  is replaced with the magic-link copy.
 - The prototype's tweaks panel (`tweaks-panel.jsx`) is a
   design-canvas artefact (dark-mode toggle, force-error toggle,
   view picker) and is not part of the implementation surface.
 - The breakpoint at which the brand panel hides matches the
   prototype's 720px. No additional breakpoint is introduced.
 - Dark mode is honoured at the OS level only via
-  `prefers-color-scheme: dark`. No manual toggle is added on
-  `/login`; a future Settings → Appearance feature may add one.
+  `prefers-color-scheme: dark`. No manual toggle is added; a
+  future Settings → Appearance feature may add one.
 - The existing `LoginForm`, `GoogleSignInButton`, and
   `MagicLinkControl` components in `components/lacquer/` are
-  refactored (not re-built) to fit the new layout. The Server
-  Actions and `next-url` sanitiser they call are unchanged.
+  refactored (not re-built) to fit the new layout. The
+  existing Server Actions and the `next-url` sanitiser they
+  call are unchanged; a new `sendPasswordReset` action and a
+  new `/reset-password` Server Action are added alongside.
 - The `?magic_sent=<email>` URL contract from `003-login-flow` is
-  preserved as the initial-view seed for the `magic-sent` view. A
-  new `?magic_intent=1` query (read server-side) seeds the `magic`
-  view on first paint for the no-JS path; it has no other effect.
+  preserved. Three new query params are introduced for view
+  seeding only: `?magic_intent=1`, `?reset_sent=<email>`,
+  `?reset_intent=1`. None of them changes authentication
+  semantics — they only select which view paints first.
 - The redesigned page continues to render without JavaScript: the
-  password form posts to its existing Server Action, the
-  "Continue with Google" button is a regular form submit, and the
-  magic-link link is a regular anchor to `/login?magic_intent=1`.
-  The eye toggle and view-swap animation degrade to no-ops without
-  JS.
+  sign-in form posts to its existing Server Action, the
+  "Continue with Google" button is a regular form submit, the
+  magic-link link is a regular anchor to `/login?magic_intent=1`,
+  and the "Forgot password?" link is a regular anchor to
+  `/login?reset_intent=1`. The eye toggle and view-swap
+  animation degrade to no-ops without JS.
 - The `styles/auth.css` rules introduced by `003-login-flow` are
   extended and partly superseded — specifically, the centred
   `.auth-shell` + `.auth-card` block becomes a two-panel shell,
@@ -552,7 +743,35 @@ No new data entities are introduced. The feature reuses:
   keypad-related rules (`.auth-keypad*`, `.auth-staff-tile`,
   `.auth-roster`) belong to `/select-staff` and are left
   untouched.
-- No new environment variables, Supabase config, or migrations
-  are introduced. The only build-time signal that changes
-  behaviour remains `NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED`,
-  unchanged in semantics.
+- **Supabase configuration**: One Supabase Auth setting must be
+  confirmed at deploy time — the **Site URL** and the
+  `redirectTo` allowlist must include `<origin>/reset-password`
+  so the reset email's deep link is accepted. The Google OAuth
+  provider must be enabled in Supabase Dashboard → Auth →
+  Providers (Google client ID + secret pasted from Google
+  Cloud Console). Both are operator actions, not code changes.
+- **Free tier confirmed**: Google OAuth, magic-link OTP, and
+  `resetPasswordForEmail` are all included in the Supabase free
+  tier. The 50,000 MAU allowance vastly exceeds the single-salon
+  workload. The only relevant gotcha is the 7-day inactivity
+  project pause; the dual-project setup
+  (`project_supabase_dual_project` memory) already keeps preview
+  + prod warm via CI-driven migration runs.
+- **Account linking**: Supabase's default automatic identity
+  linking by verified email is **left ON**. The seeded owner row
+  (in `supabase/seed.sql` for dev, and the production bootstrap
+  SQL) MUST set `email_confirmed_at` so Google sign-in by the
+  same email merges into the existing user record instead of
+  creating a second one. No call to `linkIdentity()` is needed
+  for this case; it remains available for future cross-email
+  linking but is out of scope for this feature.
+- **No new env vars** are introduced. The build-time
+  `NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED` flag is unchanged. The new
+  `/reset-password` page derives its origin from
+  `request.url` and does not need a separate env var.
+- **No new DB migrations** are required for the reset flow.
+  `device.password_reset` is added to the controlled-vocabulary
+  union in `lib/auth/audit.ts` and inserted via the same
+  `audit_log` table introduced by `003-login-flow`. The seed-file
+  amendment (`email_confirmed_at`) is a one-line `UPDATE` in
+  `supabase/seed.sql`.

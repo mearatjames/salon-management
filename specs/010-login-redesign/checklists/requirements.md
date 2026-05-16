@@ -31,11 +31,13 @@
 
 ## Notes
 
-- The spec is a **visual / UX redesign** layered on top of `003-login-flow`.
-  All behavioural FRs from `003-login-flow` (FR-001..FR-023) carry over
-  unchanged; this spec only adds presentation-layer requirements and
-  explicitly preserves the existing pre-redirect, error, audit-log, and
-  redirect-target contracts (US5).
+- The spec is a **visual / UX redesign** plus **one new recovery flow**
+  (password reset) layered on top of `003-login-flow`. All behavioural FRs
+  from `003-login-flow` (FR-001..FR-023) carry over; FR-022 is partially
+  superseded by FR-014..FR-018 of this spec to bring traditional
+  password-reset back into scope. The override is recorded in both
+  specs (see `specs/003-login-flow/spec.md` § FR-022 for the
+  back-pointer).
 - The spec references existing files and component names (e.g.
   `app/(auth)/login/page.tsx`, `sendMagicLink` Server Action,
   `styles/auth.css`) to make the scope precise. These references are
@@ -43,11 +45,13 @@
   does not dictate how the components are refactored, only that their
   external contracts (Server Action signature, URL params, copy) stay
   fixed.
-- The prototype's `forgot` / `forgot-sent` views are intentionally **not**
-  adopted (see FR-017 and Overview). The decision is grounded in
-  `003-login-flow` FR-022 and recorded in both the Assumptions block and
-  the prototype's vendored README at
-  `design-system/prototypes/auth/README.md` so future readers see the
-  rationale next to the source file.
-- Items marked incomplete require spec updates before `/speckit-clarify`
-  or `/speckit-plan`. This spec has no incomplete items.
+- The Clarifications session (2026-05-16) records five resolved
+  decisions: (1) adopt the reset views and override FR-022 of
+  `003-login-flow`, (2) keep magic-link as a peer recovery alongside
+  password-reset, (3) rely on Supabase's default automatic identity
+  linking by verified email (Google + email/password merge into one
+  user), (4) reset success lands on `/select-staff`, (5) reset link
+  TTL stays at Supabase's 1-hour default. No `[NEEDS CLARIFICATION]`
+  markers remain.
+- Items marked incomplete require spec updates before `/speckit-plan`.
+  This spec has no incomplete items.
