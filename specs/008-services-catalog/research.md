@@ -128,7 +128,7 @@ Each entry follows: **Decision** · **Rationale** · **Alternatives considered**
 
 **Decision**: The drawer is a single client island with five primary states (`closed`, `add-clean`, `add-dirty`, `edit-clean`, `edit-dirty`) plus an overlay state (`confirm-discard`) and the (rare) `confirm-archive`. Transitions:
 
-- `closed` → `add-clean` on "Add service" click; baseline = factory defaults (category=Other, duration=30, color=Rose, taxable=true, variable=false, no staff).
+- `closed` → `add-clean` on "Add service" click; baseline = factory defaults (category=Other, duration=30, color=Rose, taxable=false, variable=false, no staff).
 - `closed` → `edit-clean` on row click; baseline = saved service + assignments.
 - Any form change marks the state `*-dirty`; comparing to baseline drives the Save button's enabled state.
 - Save → server round-trip → on success, the URL changes via `redirect(?selected=<id>&toast=...)`, the page re-renders, and the drawer re-mounts in `edit-clean` for the now-saved row.

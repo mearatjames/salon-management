@@ -74,7 +74,7 @@ export function makeDefaultDraft(): ServiceDraft {
     duration_min: "30",
     price: "",
     color_token: "--avatar-rose",
-    taxable: true,
+    taxable: false,
     variable_price: false,
     price_from: "",
     price_to: "",

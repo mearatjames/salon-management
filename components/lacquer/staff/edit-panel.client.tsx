@@ -400,46 +400,28 @@ export function EditPanel({ viewer, target, isLastOwner }: EditPanelProps) {
           </button>
         </div>
 
-        {/* Footer: Save changes (left) + Deactivate/Reactivate + Remove (right).
-          The deactivate/reactivate label flips on target.active. Deactivate
-          and Remove open confirm dialogs (US5 destructive variants).
-          Reactivate is a single click — no confirm dialog per ui.contract.md. */}
+        {/* Footer: two rows. Top row is the lifecycle pair (Deactivate or
+          Reactivate on the left, Remove on the right, space-between).
+          Bottom row is the primary Save changes CTA, right-aligned as the
+          final action. Deactivate and Remove open confirm dialogs (US5
+          destructive variants); Reactivate is a single click — no confirm
+          per ui.contract.md. */}
         <footer
           data-slot="edit-panel-footer"
           style={{
             display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "var(--space-3)",
+            flexDirection: "column",
+            gap: "var(--space-5)",
             marginTop: "var(--space-2)",
             paddingTop: "var(--space-4)",
             borderTop: "1px solid var(--border)",
           }}
         >
-          <button
-            type="submit"
-            data-slot="edit-panel-save"
-            disabled={!canSave}
-            style={{
-              padding: "var(--space-2) var(--space-4)",
-              background: "var(--primary)",
-              color: "var(--primary-foreground)",
-              border: "none",
-              borderRadius: "var(--radius-sm)",
-              fontSize: "var(--text-sm)",
-              fontWeight: 600,
-              cursor: canSave ? "pointer" : "not-allowed",
-              opacity: canSave ? 1 : 0.5,
-              transition: "opacity 150ms var(--ease-out)",
-            }}
-          >
-            Save changes
-          </button>
-
           <div
             style={{
-              display: "inline-flex",
+              display: "flex",
               alignItems: "center",
+              justifyContent: "space-between",
               gap: "var(--space-3)",
             }}
           >
@@ -503,6 +485,28 @@ export function EditPanel({ viewer, target, isLastOwner }: EditPanelProps) {
               <span>Remove</span>
             </button>
           </div>
+
+          <button
+            type="submit"
+            data-slot="edit-panel-save"
+            disabled={!canSave}
+            style={{
+              alignSelf: "flex-end",
+              padding: "var(--space-2) var(--space-4)",
+              background: "var(--primary)",
+              color: "var(--primary-foreground)",
+              border: "none",
+              borderRadius: "var(--radius-sm)",
+              fontSize: "var(--text-sm)",
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              cursor: canSave ? "pointer" : "not-allowed",
+              opacity: canSave ? 1 : 0.5,
+              transition: "opacity 150ms var(--ease-out)",
+            }}
+          >
+            Save changes
+          </button>
         </footer>
       </form>
 
@@ -602,6 +606,7 @@ const linkButtonStyle = {
   border: "none",
   fontSize: "var(--text-sm)",
   fontWeight: 500,
+  whiteSpace: "nowrap" as const,
   cursor: "not-allowed",
   opacity: 0.6,
 };

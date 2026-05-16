@@ -146,23 +146,19 @@ test.describe("US1: see the services catalog at a glance", () => {
       .allTextContents();
     expect(pedicureNames).toEqual(["Classic pedicure", "Spa pedicure"]);
 
-    // Row composition spot-check (Classic manicure — fixed price + 2 techs):
+    // Row composition spot-check (Classic manicure — fixed price). The
+    // tech-count pill is deferred to a later phase; assertions are paused.
     const classicMani = page.locator(
       `[data-slot='service-row'][data-service-id='20000000-0000-0000-0000-000000000001']`
     );
     await expect(classicMani.locator("[data-slot='service-duration-pill']")).toHaveText("30 min");
     await expect(classicMani.locator("[data-slot='service-price-pill']")).toHaveText("$25");
-    await expect(classicMani.locator("[data-slot='service-tech-pill']")).toHaveText("2 techs");
 
-    // Nail art is variable-price with `from=$15`, `to=null` → "From $15"
-    // and has no techs assigned → warning pill.
+    // Nail art is variable-price with `from=$15`, `to=null` → "From $15".
     const nailArt = page.locator(
       `[data-slot='service-row'][data-service-id='20000000-0000-0000-0000-000000000005']`
     );
     await expect(nailArt.locator("[data-slot='service-price-pill']")).toHaveText("From $15");
-    const techPill = nailArt.locator("[data-slot='service-tech-pill']");
-    await expect(techPill).toHaveText("No techs");
-    await expect(techPill).toHaveAttribute("data-tone", "warning");
   });
 
   test("(b) search 'mani' narrows the catalog to manicure rows only", async ({ page }) => {
@@ -381,9 +377,7 @@ test.describe("US2: add a new service via the drawer", () => {
     await c.from("services").delete().in("id", createdIds);
   });
 
-  test("(a) Add service with one tech → drawer flips to Edit, toast + row appear", async ({
-    page,
-  }) => {
+  test("(a) Add service → drawer flips to Edit, toast + row appear", async ({ page }) => {
     await signInAsMaya(page);
 
     // Click the Add service link in the catalog list.
@@ -407,13 +401,8 @@ test.describe("US2: add a new service via the drawer", () => {
     await page.locator("[data-slot='service-form-duration-input']").fill("20");
     await page.locator("[data-slot='service-form-price-input']").fill("18");
 
-    // Tick the first staff row (Jordan).
-    const jordanRow = page.locator(
-      "[data-slot='staff-assignment-row'][data-staff-id='10000000-0000-0000-0000-000000000002']"
-    );
-    await jordanRow.locator("[data-slot='staff-assignment-checkbox']").check();
-
-    // Save.
+    // Staff-assignment UI is deferred to a later phase — service is created
+    // with zero assignments here. Save.
     await page.locator("[data-slot='services-drawer-save']").click();
 
     // Redirect lands on `?selected=<newId>&toast=service_added&name=Polish%20change`.
@@ -446,10 +435,12 @@ test.describe("US2: add a new service via the drawer", () => {
     await expect(newRow).toBeVisible();
     await expect(newRow.locator("[data-slot='service-name']")).toHaveText("Polish change");
     await expect(newRow.locator("[data-slot='service-price-pill']")).toHaveText("$18");
-    await expect(newRow.locator("[data-slot='service-tech-pill']")).toHaveText("1 tech");
   });
 
-  test("(b) Add service with zero techs → secondary no_techs_assigned param fires", async ({
+  // Staff-assignment UI (and the `&secondary=no_techs_assigned` toast it
+  // nudged the operator to address) is deferred to a later phase. Re-enable
+  // this test when the assignment UI is reintroduced.
+  test.skip("(b) Add service with zero techs → secondary no_techs_assigned param fires", async ({
     page,
   }) => {
     await signInAsMaya(page);
@@ -509,7 +500,11 @@ const CLASSIC_PEDICURE_ID = "20000000-0000-0000-0000-000000000003";
 const JORDAN_ID = "10000000-0000-0000-0000-000000000002";
 const SAM_ID = "10000000-0000-0000-0000-000000000003";
 
-test.describe("US3: edit a service's details and per-tech assignments", () => {
+// US3 covers per-tech assignment editing — every test in this describe drives
+// the StaffAssignmentList UI and reads `staff_services`/audit rows produced by
+// it. The UI is deferred to a later phase; skip the whole block until it's
+// reintroduced.
+test.describe.skip("US3: edit a service's details and per-tech assignments", () => {
   let supabaseUp = false;
 
   test.beforeAll(async () => {
@@ -1250,20 +1245,7 @@ test.describe("US6: restrict who can manage the catalog", () => {
       await expect(swatchInputs.nth(i)).toBeDisabled();
     }
 
-    // Every staff-assignment checkbox is disabled. Classic manicure has 2
-    // techs assigned in the seed → the override inputs for those rows are
-    // also disabled (the row is ticked, but read-only forces the field off).
-    const checkboxes = page.locator("[data-slot='staff-assignment-checkbox']");
-    const checkboxCount = await checkboxes.count();
-    expect(checkboxCount).toBeGreaterThan(0);
-    for (let i = 0; i < checkboxCount; i++) {
-      await expect(checkboxes.nth(i)).toBeDisabled();
-    }
-    const overrideInputs = page.locator("[data-slot='staff-assignment-override-input']");
-    const overrideCount = await overrideInputs.count();
-    for (let i = 0; i < overrideCount; i++) {
-      await expect(overrideInputs.nth(i)).toBeDisabled();
-    }
+    // Staff-assignment read-only assertions are deferred along with the UI.
 
     // The footer renders the "View only" chip in place of the Save button.
     // Cancel stays visible so the operator can close the drawer.
@@ -1401,13 +1383,9 @@ test.describe("US7: get clear feedback after every action", () => {
     await page.locator("[data-slot='service-form-duration-input']").fill("15");
     await page.locator("[data-slot='service-form-price-input']").fill("12");
 
-    // Tick Jordan so the secondary `no_techs_assigned` toast does NOT fire
-    // — this step asserts the singular success-toast case.
-    const jordanRow = page.locator(
-      "[data-slot='staff-assignment-row'][data-staff-id='10000000-0000-0000-0000-000000000002']"
-    );
-    await jordanRow.locator("[data-slot='staff-assignment-checkbox']").check();
-
+    // Staff-assignment UI deferred; the no_techs_assigned secondary toast
+    // was removed alongside it, so this step now asserts the singular
+    // success-toast case without any tech ticking.
     await page.locator("[data-slot='services-drawer-save']").click();
 
     // Toast fires + params get stripped. Assert the toast first (it appears
@@ -1537,7 +1515,11 @@ test.describe("US7: get clear feedback after every action", () => {
     await expect(page.locator("[data-sonner-toast][data-visible='true']")).toHaveCount(1);
   });
 
-  test("(c) add with zero techs → success + secondary warning both render", async ({ page }) => {
+  // The `&secondary=no_techs_assigned` warning toast was removed alongside
+  // the staff-assignment UI. Re-enable when the assignment UI is reintroduced.
+  test.skip("(c) add with zero techs → success + secondary warning both render", async ({
+    page,
+  }) => {
     await signInAsMaya(page);
 
     await page.locator("[data-slot='services-add-button']").click();

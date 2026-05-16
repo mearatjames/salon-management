@@ -9,6 +9,36 @@ description: "Task list for 008-services-catalog"
 
 **Prerequisites**: plan.md (required), spec.md (required), research.md, data-model.md, contracts/, quickstart.md (all present)
 
+## Scope amendment — 2026-05-16
+
+Per-tech staff assignment UI is deferred to a later phase. Every task
+below was completed in code as originally written; the amendment below
+records which tasks delivered UI/server output that has since been
+**partially or fully hidden**. Re-enabling those tasks for the next phase
+is mechanical (un-skip e2e blocks, re-import `<StaffAssignmentList>`,
+re-add `&secondary=no_techs_assigned` suffix — see
+`spec.md § Scope amendment` for the full checklist).
+
+| Task  | Status                 | Note                                                                                                |
+| ----- | ---------------------- | --------------------------------------------------------------------------------------------------- |
+| T003  | [X] partially deferred | `.service-tech-pill` CSS rules retained but the pill is no longer rendered (`catalog-row.tsx`).     |
+| T023  | [X] partially deferred | `page.tsx` no longer maps `AssignableStaff[]` or passes `assignableStaff` to `<Drawer>`.            |
+| T026  | [X] partially deferred | `catalog-row.tsx` no longer renders the tech-count pill.                                            |
+| T028  | [X] partially deferred | US1 e2e (a) — tech-pill assertions removed.                                                         |
+| T029  | [X] partially deferred | `addService` no longer appends `&secondary=no_techs_assigned`.                                      |
+| T031  | [X] fully deferred     | `staff-assignment-list.client.tsx` file kept intact but no longer imported or rendered.             |
+| T033  | [X] partially deferred | `drawer.client.tsx` — `<StaffAssignmentList>`, `assignableStaff` prop, and tick/override handlers removed. |
+| T035  | [X] partially deferred | US2 e2e (a) — Jordan-tick + tech-pill assertion removed. US2 (b) `test.skip`'d.                     |
+| T036  | [X] partially deferred | `updateService` no longer appends `&secondary=no_techs_assigned`.                                   |
+| T038  | [X] fully deferred     | US3 e2e — entire `test.describe` skipped (per-tech assignment editing).                             |
+| T046  | [X] partially deferred | Read-only plumbing through `staff-assignment-list.client.tsx` is dormant alongside the component.   |
+| T048  | [X] partially deferred | US6 e2e (b) — `staff-assignment-checkbox` + override read-only assertions removed.                  |
+| T051  | [X] partially deferred | US7 e2e (a) — Jordan-tick step removed. US7 (c) `test.skip`'d (zero-techs secondary toast).         |
+
+Tasks not listed are unaffected. Pure-helper tasks T009–T013 and T015–T021
+(including `_diff.ts` and its tests) remain valid and tested; the
+`_diff` helper is dormant code until the assignment UI returns.
+
 **Tests**: Constitution IV requires Vitest unit tests for the pure helpers (`_validation`, `_sort`, `_format`, `_diff`, `permissions`) and the audit-vocabulary widen, plus one Playwright spec covering the seven user stories end-to-end. These appear before their corresponding implementation tasks (test-first for the pure helpers; story-by-story for the Playwright spec). This feature does not touch money/auth/refund critical paths, so the "test MUST FAIL first" discipline is not constitutionally mandated — but pure-helper tests are still written first so the helper implementations get an explicit contract to satisfy.
 
 **Organization**: Phases follow plan.md § Phase outputs. User stories run in priority order (P1 → P2 → P3) and are independently testable per spec.md.

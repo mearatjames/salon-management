@@ -22,11 +22,7 @@ import { useRouter } from "next/navigation";
 import { ROLE_LABEL } from "./_role-label";
 import { addService, restoreService, updateService } from "@/app/(studio)/services/actions";
 import { formatPriceLabel } from "@/app/(studio)/services/_format";
-import type {
-  AssignableStaff,
-  ServiceAssignment,
-  ServiceDraftBaseline,
-} from "@/app/(studio)/services/_types";
+import type { ServiceAssignment, ServiceDraftBaseline } from "@/app/(studio)/services/_types";
 import { canWriteCatalog, type StudioRole } from "@/app/(studio)/services/permissions";
 
 import { ArchiveDialog } from "./archive-dialog.client";
@@ -38,14 +34,15 @@ import {
   makeDraftFromBaseline,
   type ServiceDraft,
 } from "./service-form.client";
-import { StaffAssignmentList } from "./staff-assignment-list.client";
+// `StaffAssignmentList` (Who-can-perform-this-service UI) and the
+// `assignableStaff` prop are deferred to a later phase — see the
+// commented-out site in the form body below.
 
 export type DrawerMode = "closed" | "add" | "edit";
 
 export type DrawerProps = {
   mode: DrawerMode;
   baseline: ServiceDraftBaseline | null;
-  assignableStaff: AssignableStaff[];
   categories: string[];
   operatorRole: StudioRole;
 };
@@ -98,7 +95,7 @@ function isDraftDirty(draft: ServiceDraft, baseline: ServiceDraftBaseline | null
   );
 }
 
-export function Drawer({ mode, baseline, assignableStaff, categories, operatorRole }: DrawerProps) {
+export function Drawer({ mode, baseline, categories, operatorRole }: DrawerProps) {
   const router = useRouter();
   const isOpen = mode !== "closed";
   const canWrite = canWriteCatalog(operatorRole);
@@ -136,35 +133,10 @@ export function Drawer({ mode, baseline, assignableStaff, categories, operatorRo
     setDraft((d) => ({ ...d, ...patch }));
   }, []);
 
-  const handleToggleStaff = useCallback((staffId: string, ticked: boolean) => {
-    setDraft((d) => {
-      if (ticked) {
-        if (d.assignments.some((a) => a.staff_id === staffId)) return d;
-        return {
-          ...d,
-          assignments: [...d.assignments, { staff_id: staffId, duration_min_override: null }],
-        };
-      }
-      return {
-        ...d,
-        assignments: d.assignments.filter((a) => a.staff_id !== staffId),
-      };
-    });
-  }, []);
-
-  const handleOverrideChange = useCallback((staffId: string, raw: string) => {
-    setDraft((d) => {
-      const trimmed = raw.trim();
-      const parsed = trimmed.length === 0 ? null : Number.parseInt(trimmed, 10);
-      const next = Number.isFinite(parsed) ? parsed : null;
-      return {
-        ...d,
-        assignments: d.assignments.map((a) =>
-          a.staff_id === staffId ? { staff_id: staffId, duration_min_override: next } : a
-        ),
-      };
-    });
-  }, []);
+  // `handleToggleStaff` / `handleOverrideChange` were removed alongside
+  // `StaffAssignmentList`. The draft still carries `assignments` (so the
+  // hidden inputs preserve existing rows on edit) — they're just no longer
+  // mutated from the UI.
 
   const isDirty = useMemo(() => isDraftDirty(draft, baseline), [draft, baseline]);
   const draftHasErrors = useMemo(() => hasFormErrors(draft), [draft]);
@@ -384,13 +356,9 @@ export function Drawer({ mode, baseline, assignableStaff, categories, operatorRo
             disabled={readOnly}
           />
 
-          <StaffAssignmentList
-            assignableStaff={assignableStaff}
-            draftAssignments={draft.assignments}
-            onToggle={handleToggleStaff}
-            onOverrideChange={handleOverrideChange}
-            disabled={readOnly}
-          />
+          {/* Staff assignment UI (StaffAssignmentList) is deferred to a later
+              phase. The hidden inputs above still preserve any existing
+              assignments on edit so the server-action payload is unchanged. */}
 
           {/* Edit-mode bottom action — Archive (opens confirm dialog) or
               Restore (submits restoreService directly). Owner/manager only;
