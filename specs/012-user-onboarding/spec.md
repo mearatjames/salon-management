@@ -8,6 +8,15 @@
 
 **Input**: User description: "Fetch this design file, read its readme, and implement the relevant aspects of the design. https://api.anthropic.com/v1/design/h/sgLd4id9ddU2t5y3cnS01A?open_file=prototypes%2Fonboarding%2FUser+Onboarding.html — Implement: prototypes/onboarding/User Onboarding.html. Also import that prototype and relevant aspects of the design of our design-system prototypes folder as well."
 
+## Clarifications
+
+### Session 2026-05-16
+
+- Q: What should the "Reset PIN" row action (Active section) do? → A: Open an admin PIN-set sheet — owner enters a new 4-digit PIN inline, the user is informed on their next sign-in. (Owner accepts that they now know the user's PIN.)
+- Q: What should the "Send password reset" row action (Active section) do? → A: Reuse the spec 010 password-reset flow — server triggers the same self-serve reset email against the user's email; user lands on the existing `/reset-password` view. One new audit-row flag (`actor=admin`) distinguishes owner-initiated from self-serve.
+- Q: Where does a password-method invitee land to set their first password? → A: Reuse the existing `/reset-password` route from spec 010 with a `type` mode switch (`recovery` vs `invite`). View copy and post-submit redirect adapt to the mode; PKCE exchange and `updateUser({ password })` logic are identical to recovery.
+- Q: Which mode should the Onboard sheet default to when opened? → A: **Quick**. Owners switch to Thorough via the mode pill when they want PIN + avatar set up front. The prototype's `startMode: "thorough"` tweak was a design-canvas review convenience, not a product decision.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Owner invites a new user with a magic-link (Quick onboard) (Priority: P1)
@@ -150,7 +159,7 @@ The owner can search the page by name or email; matches are filtered live across
 
 **Onboard sheet (Quick mode)**
 
-- **FR-010**: System MUST open the Onboard sheet from the **Onboard user** CTA with **Thorough** as the default mode (per the prototype tweak default).
+- **FR-010**: System MUST open the Onboard sheet from the **Onboard user** CTA with **Quick** as the default mode. Owners can switch to Thorough via the mode pill in the sheet header at any time. The prototype's `startMode: "thorough"` tweak in `tweaks-panel.jsx` is design-canvas-only and MUST NOT be carried into the implementation.
 - **FR-011**: System MUST provide a mode pill in the sheet header letting the owner switch between **Quick** and **Thorough** without losing already-entered Identity fields (name, role, color).
 - **FR-012**: Quick mode MUST present a single screen with three fields — full name (min 2 chars), work email (valid RFC 5322 format), and role (one of `owner`, `manager`, `technician`, `front_desk`) — and a **Send invite** button gated on those validations.
 - **FR-013**: Quick mode MUST always send a **magic-link** invite (no method picker shown). PIN and avatar color default to "set on first login" and a system-assigned color.
@@ -166,8 +175,16 @@ The owner can search the page by name or email; matches are filtered live across
 **Invite delivery**
 
 - **FR-030**: System MUST send invite emails on the owner's confirm — `magic_link` invites use a one-time URL valid for 24 hours that signs the recipient in directly; `password` invites use a one-time URL valid for 7 days that requires the recipient to set a password before signing in.
+- **FR-030a**: Password-method invitees MUST land on the existing `/reset-password` route (introduced in spec 010), invoked with `type=invite` instead of `type=recovery`. The route MUST render with first-time-setup copy ("Set your password") rather than recovery copy ("Reset your password") when `type=invite`, but share the same PKCE exchange, `updateUser({ password })` action, and post-submit redirect to `/select-staff`.
 - **FR-031**: System MUST log every invite attempt to the audit trail: `user.invited` with `by`, `subject`, `email`, `role`, `method`, `pin_set`.
 - **FR-032**: Pending invite rows MUST expose three actions — **Resend** (issue a new link, invalidate the prior), **Copy invite link** (write current valid URL to clipboard), and **Cancel invite** (delete the pending auth user and audit `user.invite_cancelled`).
+
+**Active row admin actions**
+
+- **FR-035**: Active row menu MUST expose **Reset PIN** for every user (including the current owner's own row, which lets an owner rotate their own PIN). On click, the system MUST open a centered PIN modal styled to match the prototype's two-pass keypad (enter → confirm). On confirmation, the new PIN MUST be hashed, written to the user's `pin_hash`, and a notice MUST surface on the user's next `/select-staff` sign-in informing them their PIN was reset by an owner.
+- **FR-036**: Every Reset PIN MUST write `user.pin_reset` to the audit trail with `by` (acting owner), `subject` (target user), and `actor=admin` (distinguishing from a user's self-reset).
+- **FR-037**: Active row menu MUST expose **Send password reset** for every user whose `state='active'` (regardless of whether they use magic-link or password sign-in). On click, the system MUST trigger the same password-reset flow used by `/login → Forgot password?` (introduced in spec 010): a reset email is sent to the user's email and the link lands on `/reset-password`.
+- **FR-038**: Every owner-initiated Send password reset MUST reuse the existing `device.password_reset` audit event but write it with `actor=admin` and `by={owner_id}` (the self-serve path uses `actor=user` and omits `by`).
 
 **Offboard (soft, reversible)**
 
@@ -191,7 +208,7 @@ The owner can search the page by name or email; matches are filtered live across
 
 **Audit trail**
 
-- **FR-070**: System MUST extend the existing audit log (introduced in spec 010) with the new event types: `user.invited`, `user.invite_resent`, `user.invite_cancelled`, `user.offboarded`, `user.reactivated`, `user.removed`. Existing `device.password_reset` and PIN-reset events MUST be reused without renaming.
+- **FR-070**: System MUST extend the existing audit log (introduced in spec 010) with the new event types: `user.invited`, `user.invite_resent`, `user.invite_cancelled`, `user.offboarded`, `user.reactivated`, `user.removed`, `user.pin_reset`. Existing `device.password_reset` events MUST be reused without renaming.
 - **FR-071**: Every audit row MUST capture `by` (the acting owner's user_id), `subject` (the target user_id, or the snapshot for removed users), and timestamp; offboard rows also capture `reason`.
 
 **Permissions definition**

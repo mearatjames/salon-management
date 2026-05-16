@@ -35,6 +35,8 @@
 - Two assumptions cite specific implementation surfaces (Supabase Auth invite APIs, the
   `audit_log` table introduced in spec 010) — these are scoped to the Assumptions section
   by design, since the planning phase will validate those exist before building.
-- Reviewed against the 16-item rubric on 2026-05-16: all items pass. Spec is ready for
-  `/speckit-plan` (no `/speckit-clarify` round needed since zero NEEDS CLARIFICATION
-  markers remain).
+- Reviewed against the 16-item rubric on 2026-05-16: all items pass.
+- `/speckit-clarify` ran 2026-05-16 and added 4 high-impact resolutions to the
+  Clarifications section (Reset PIN behavior, Send password reset behavior, password-method
+  invite landing route, default Onboard sheet mode). FR-010, FR-030a, FR-035–FR-038, and
+  FR-070 were updated to integrate the decisions. Spec is now ready for `/speckit-plan`.
