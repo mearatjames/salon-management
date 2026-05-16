@@ -172,8 +172,7 @@ export function computeTargetPermissions(ctx: PermissionContext): StaffTargetPer
 
   // The "manager × owner" axis collapses every per-field flag to false;
   // we expose it as canEditAnyField for the inline banner in the panel.
-  const isManagerOnOwner =
-    target && operator.role === "manager" && target.role === "owner";
+  const isManagerOnOwner = target && operator.role === "manager" && target.role === "owner";
 
   const canEditDisplayName = !isManagerOnOwner;
   const canEditColor = !isManagerOnOwner;

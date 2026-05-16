@@ -125,8 +125,7 @@ describeIfSupabase("staff_assert_owner_present trigger", () => {
       // PostgREST surfaces it as `code: "23514"`. Either string or text form
       // is acceptable; assert structurally.
       expect(
-        lastErr?.code === "23514" ||
-          /staff_assert_owner_present/i.test(lastErr?.message ?? "")
+        lastErr?.code === "23514" || /staff_assert_owner_present/i.test(lastErr?.message ?? "")
       ).toBe(true);
     } finally {
       // Restore the pre-existing owners back to `owner` so the rest of the

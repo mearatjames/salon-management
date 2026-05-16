@@ -13,8 +13,7 @@ export const TOAST = {
   // Destructive variants (fired on `?error=` paths)
   forbiddenTarget: () => "Only owners can edit owner accounts.",
   lastOwner: () => "At least one owner must remain.",
-  selfEditBlocked: () =>
-    "You can't change your own role, deactivate, or remove yourself.",
+  selfEditBlocked: () => "You can't change your own role, deactivate, or remove yourself.",
   notFound: () => "That staff member was removed by another tab.",
   forbidden: () => "Staff settings is restricted to owners and managers.",
 } as const;

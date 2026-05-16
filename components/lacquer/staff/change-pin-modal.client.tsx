@@ -124,11 +124,7 @@ export function ChangePinModal({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent
-        data-slot="change-pin-modal"
-        data-mode={mode}
-        data-phase={phase}
-      >
+      <DialogContent data-slot="change-pin-modal" data-mode={mode} data-phase={phase}>
         <DialogHeader>
           <DialogTitle data-slot="change-pin-title">{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>

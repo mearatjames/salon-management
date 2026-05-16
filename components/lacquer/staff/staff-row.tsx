@@ -23,10 +23,7 @@ const ROLE_LABEL: Record<RosterStaff["role"], string> = {
 
 // Format `Added <Mon YYYY>` using locale-stable English month names so the
 // e2e spec can assert exact text regardless of the runner's locale.
-const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function formatAddedDate(iso: string): string {
   const d = new Date(iso);

@@ -52,7 +52,8 @@ export function StaffEmptyState() {
           lineHeight: "var(--leading-normal)",
         }}
       >
-        Choose someone from the roster to edit their details, change their role, or update their PIN.
+        Choose someone from the roster to edit their details, change their role, or update their
+        PIN.
       </p>
     </div>
   );

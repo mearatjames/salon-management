@@ -53,31 +53,37 @@ describe("recordAudit — staff verbs (006-staff-management)", () => {
     vi.restoreAllMocks();
   });
 
-  it.each(NEW_STAFF_ACTIONS)("accepts and inserts one row for %s with entity_type='staff'", async (action) => {
-    const { insertSpy, fromSpy } = mockClient(async () => ({ error: null }));
+  it.each(NEW_STAFF_ACTIONS)(
+    "accepts and inserts one row for %s with entity_type='staff'",
+    async (action) => {
+      const { insertSpy, fromSpy } = mockClient(async () => ({ error: null }));
 
-    await recordAudit(action, "device-1", "staff-target-1", { foo: "bar" });
+      await recordAudit(action, "device-1", "staff-target-1", { foo: "bar" });
 
-    expect(fromSpy).toHaveBeenCalledWith("audit_log");
-    expect(insertSpy).toHaveBeenCalledTimes(1);
-    const row = insertSpy.mock.calls[0][0] as Record<string, unknown>;
-    expect(row.action).toBe(action);
-    expect(row.entity_type).toBe("staff");
-    expect(row.actor_user_id).toBe("device-1");
-    expect(row.acting_as_staff_id).toBe("staff-target-1");
-    expect(row.entity_id).toBe("staff-target-1");
-    expect(row.payload).toEqual({ foo: "bar" });
-  });
+      expect(fromSpy).toHaveBeenCalledWith("audit_log");
+      expect(insertSpy).toHaveBeenCalledTimes(1);
+      const row = insertSpy.mock.calls[0][0] as Record<string, unknown>;
+      expect(row.action).toBe(action);
+      expect(row.entity_type).toBe("staff");
+      expect(row.actor_user_id).toBe("device-1");
+      expect(row.acting_as_staff_id).toBe("staff-target-1");
+      expect(row.entity_id).toBe("staff-target-1");
+      expect(row.payload).toEqual({ foo: "bar" });
+    }
+  );
 
-  it.each(LEGACY_AUTH_ACTIONS)("keeps entity_type='auth' for legacy verb %s (back-compat)", async (action) => {
-    const { insertSpy } = mockClient(async () => ({ error: null }));
+  it.each(LEGACY_AUTH_ACTIONS)(
+    "keeps entity_type='auth' for legacy verb %s (back-compat)",
+    async (action) => {
+      const { insertSpy } = mockClient(async () => ({ error: null }));
 
-    await recordAudit(action, "device-1", "staff-1", { method: "password" });
+      await recordAudit(action, "device-1", "staff-1", { method: "password" });
 
-    const row = insertSpy.mock.calls[0][0] as Record<string, unknown>;
-    expect(row.action).toBe(action);
-    expect(row.entity_type).toBe("auth");
-  });
+      const row = insertSpy.mock.calls[0][0] as Record<string, unknown>;
+      expect(row.action).toBe(action);
+      expect(row.entity_type).toBe("auth");
+    }
+  );
 
   it("never includes `authorizing_staff_id` in any payload it writes", async () => {
     const { insertSpy } = mockClient(async () => ({ error: null }));

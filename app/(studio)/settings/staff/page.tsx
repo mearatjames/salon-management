@@ -94,29 +94,18 @@ export default async function StaffSettingsPage({
   const activeOwnerCount = roster.filter((r) => r.role === "owner" && r.active).length;
 
   // Resolve the selected target (if any) for the edit panel.
-  const selectedTarget = selectedId
-    ? roster.find((r) => r.id === selectedId) ?? null
-    : null;
+  const selectedTarget = selectedId ? (roster.find((r) => r.id === selectedId) ?? null) : null;
 
   // If the selected target is an owner AND there's only one active owner,
   // it's the last-owner case. For non-owner targets, isLastOwner has no
   // effect on the matrix evaluation and stays false.
-  const isLastOwnerForTarget =
-    selectedTarget?.role === "owner" && activeOwnerCount <= 1;
+  const isLastOwnerForTarget = selectedTarget?.role === "owner" && activeOwnerCount <= 1;
 
   return (
-    <div
-      className="settings-staff-grid"
-      data-slot="staff-page"
-      data-selected-id={selectedId ?? ""}
-    >
+    <div className="settings-staff-grid" data-slot="staff-page" data-selected-id={selectedId ?? ""}>
       <div className="settings-staff-roster">
         <PageHeader />
-        <StaffTable
-          roster={roster}
-          selectedId={selectedId}
-          operatorRole={viewer.staff.role}
-        />
+        <StaffTable roster={roster} selectedId={selectedId} operatorRole={viewer.staff.role} />
       </div>
       <aside className="settings-staff-panel" aria-label="Selected staff details">
         {selectedTarget ? (

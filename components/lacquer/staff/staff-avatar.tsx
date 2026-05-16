@@ -22,13 +22,7 @@ function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-export function StaffAvatar({
-  name,
-  colorToken,
-  size = 40,
-  className,
-  style,
-}: StaffAvatarProps) {
+export function StaffAvatar({ name, colorToken, size = 40, className, style }: StaffAvatarProps) {
   const tint = `oklch(from var(${colorToken}) l c h / 0.15)`;
   const text = `var(${colorToken})`;
   // Roughly half the box for a comfortable initials weight.

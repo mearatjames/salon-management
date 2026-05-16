@@ -41,10 +41,7 @@ import {
   STAFF_COLOR_OPTIONS,
 } from "@/components/lacquer/staff/color-picker";
 import { StaffAvatar } from "@/components/lacquer/staff/staff-avatar";
-import {
-  roleOptionsFor,
-  type StudioRole,
-} from "@/app/(studio)/settings/staff/permissions";
+import { roleOptionsFor, type StudioRole } from "@/app/(studio)/settings/staff/permissions";
 import { addStaff } from "@/app/(studio)/settings/staff/actions";
 
 const ROLE_LABEL: Record<StudioRole, string> = {
@@ -68,11 +65,7 @@ export type AddStaffWizardProps = {
   onOpenChange: (next: boolean) => void;
 };
 
-export function AddStaffWizard({
-  operatorRole,
-  open,
-  onOpenChange,
-}: AddStaffWizardProps) {
+export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWizardProps) {
   const roleOptions = useMemo(() => roleOptionsFor(operatorRole), [operatorRole]);
   const defaultRole: StudioRole = useMemo(() => {
     // Wizard defaults to "technician" if available (matches the prototype);
@@ -169,8 +162,7 @@ export function AddStaffWizard({
         <SheetHeader className="border-b border-border">
           <SheetTitle>Add staff member</SheetTitle>
           <SheetDescription>
-            Add a new person to the salon roster and give them a 4-digit PIN
-            to log in.
+            Add a new person to the salon roster and give them a 4-digit PIN to log in.
           </SheetDescription>
         </SheetHeader>
 
@@ -216,19 +208,14 @@ export function AddStaffWizard({
                       : isActive
                         ? "var(--primary)"
                         : "var(--border)",
-                    color: isDone || isActive
-                      ? "var(--primary-foreground)"
-                      : "var(--muted-foreground)",
+                    color:
+                      isDone || isActive ? "var(--primary-foreground)" : "var(--muted-foreground)",
                     fontSize: "var(--text-xs)",
                     fontWeight: 600,
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  {isDone ? (
-                    <Check size={12} strokeWidth={1.5} aria-hidden="true" />
-                  ) : (
-                    n
-                  )}
+                  {isDone ? <Check size={12} strokeWidth={1.5} aria-hidden="true" /> : n}
                 </span>
                 <span
                   style={{
@@ -383,10 +370,7 @@ function Step1Details({
   return (
     <>
       <div style={fieldStyle}>
-        <label
-          htmlFor="add-staff-name"
-          style={labelStyle}
-        >
+        <label htmlFor="add-staff-name" style={labelStyle}>
           Display name
         </label>
         <input
@@ -399,9 +383,7 @@ function Step1Details({
           autoFocus
           style={inputStyle}
         />
-        <span style={hintStyle}>
-          This is how they&apos;ll appear on the login screen.
-        </span>
+        <span style={hintStyle}>This is how they&apos;ll appear on the login screen.</span>
       </div>
 
       <div style={fieldStyle}>
@@ -421,18 +403,12 @@ function Step1Details({
             </option>
           ))}
         </select>
-        <span style={hintStyle}>
-          Determines what they can access in the app.
-        </span>
+        <span style={hintStyle}>Determines what they can access in the app.</span>
       </div>
 
       <div style={fieldStyle}>
         <label style={labelStyle}>Avatar color</label>
-        <ColorPicker
-          name="color_token_preview"
-          value={colorToken}
-          onChange={setColorToken}
-        />
+        <ColorPicker name="color_token_preview" value={colorToken} onChange={setColorToken} />
 
         {/* Live preview — avatar + name + role */}
         <div
@@ -448,15 +424,9 @@ function Step1Details({
             borderRadius: "var(--radius-md, 8px)",
           }}
         >
-          <StaffAvatar
-            name={previewName}
-            colorToken={colorToken}
-            size={32}
-          />
+          <StaffAvatar name={previewName} colorToken={colorToken} size={32} />
           <div style={{ display: "flex", flexDirection: "column" }}>
-            <span style={{ fontSize: "var(--text-sm)", fontWeight: 500 }}>
-              {previewName}
-            </span>
+            <span style={{ fontSize: "var(--text-sm)", fontWeight: 500 }}>{previewName}</span>
             <span style={{ fontSize: "var(--text-xs)", color: "var(--muted-foreground)" }}>
               {ROLE_LABEL[role]} ·{" "}
               {STAFF_COLOR_OPTIONS.find((o) => o.token === colorToken)?.label ?? "Color"}
@@ -513,9 +483,7 @@ function Step2Pin({
             color: "var(--muted-foreground)",
           }}
         >
-          {pinPhase === "enter"
-            ? `Choose a PIN for ${name}`
-            : "Enter the same PIN again"}
+          {pinPhase === "enter" ? `Choose a PIN for ${name}` : "Enter the same PIN again"}
         </p>
       </div>
 
@@ -606,9 +574,7 @@ function Step3Done({
       >
         <StaffAvatar name={displayName} colorToken={colorToken} size={40} />
         <div style={{ display: "flex", flexDirection: "column", textAlign: "left" }}>
-          <span style={{ fontSize: "var(--text-sm)", fontWeight: 500 }}>
-            {displayName}
-          </span>
+          <span style={{ fontSize: "var(--text-sm)", fontWeight: 500 }}>{displayName}</span>
           <span style={{ fontSize: "var(--text-xs)", color: "var(--muted-foreground)" }}>
             {ROLE_LABEL[role]} · PIN set
           </span>

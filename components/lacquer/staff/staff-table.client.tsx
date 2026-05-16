@@ -73,14 +73,11 @@ export function StaffTable({ roster, selectedId, operatorRole }: StaffTableProps
   // store subscriber synchronously — the `storage` event only fires for
   // cross-tab updates, not same-tab writes.
   const [tick, setTick] = useState(0);
-  const subscribe = useCallback(
-    (notify: () => void) => {
-      // Bump on storage events; the local-write path uses the tick counter
-      // to force a fresh getSnapshot read on the next render.
-      return subscribeToStorage(notify);
-    },
-    []
-  );
+  const subscribe = useCallback((notify: () => void) => {
+    // Bump on storage events; the local-write path uses the tick counter
+    // to force a fresh getSnapshot read on the next render.
+    return subscribeToStorage(notify);
+  }, []);
   const getSnapshot = useCallback(() => {
     // Reading `tick` here keeps eslint happy and makes the subscription
     // re-evaluate after every local write below.

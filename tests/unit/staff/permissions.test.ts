@@ -106,7 +106,13 @@ describe("permissions matrix — manager × non-owner is allowed (with role-set 
     "manager updates a %s row → allowed across non-role-mutating actions",
     (targetRole) => {
       const c = ctx({ operatorRole: "manager", target: { role: targetRole, id: "tgt-different" } });
-      for (const action of ["update_name", "update_color", "set_pin", "deactivate", "reactivate"] as StaffAction[]) {
+      for (const action of [
+        "update_name",
+        "update_color",
+        "set_pin",
+        "deactivate",
+        "reactivate",
+      ] as StaffAction[]) {
         expect(() => assertMutationAllowed(c, action)).not.toThrow();
       }
     }
@@ -338,13 +344,21 @@ describe("computeTargetPermissions", () => {
 
   it("canDeactivate gates on target.active=true; canReactivate gates on target.active=false", () => {
     const activeTarget = computeTargetPermissions(
-      ctx({ operatorRole: "owner", operatorId: "op-A", target: { role: "technician", id: "tgt", active: true } })
+      ctx({
+        operatorRole: "owner",
+        operatorId: "op-A",
+        target: { role: "technician", id: "tgt", active: true },
+      })
     );
     expect(activeTarget.canDeactivate).toBe(true);
     expect(activeTarget.canReactivate).toBe(false);
 
     const inactiveTarget = computeTargetPermissions(
-      ctx({ operatorRole: "owner", operatorId: "op-A", target: { role: "technician", id: "tgt", active: false } })
+      ctx({
+        operatorRole: "owner",
+        operatorId: "op-A",
+        target: { role: "technician", id: "tgt", active: false },
+      })
     );
     expect(inactiveTarget.canDeactivate).toBe(false);
     expect(inactiveTarget.canReactivate).toBe(true);

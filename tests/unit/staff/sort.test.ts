@@ -14,7 +14,9 @@ import {
   type RosterStaff,
 } from "@/app/(studio)/settings/staff/_sort";
 
-function mk(partial: Partial<RosterStaff> & { display_name: string; role: RosterStaff["role"] }): RosterStaff {
+function mk(
+  partial: Partial<RosterStaff> & { display_name: string; role: RosterStaff["role"] }
+): RosterStaff {
   return {
     id: partial.id ?? partial.display_name.toLowerCase().replace(/\s+/g, "-"),
     display_name: partial.display_name,
@@ -88,11 +90,11 @@ describe("sortStaff — end-to-end", () => {
     ];
     const sorted = sortStaff(input).map((s) => s.display_name);
     expect(sorted).toEqual([
-      "Maya Patel",     // owner
-      "Jordan Lee",     // manager
-      "Bea Wong",       // technician (B before S)
-      "Sam Chen",       // technician
-      "Alex Reed",      // front_desk
+      "Maya Patel", // owner
+      "Jordan Lee", // manager
+      "Bea Wong", // technician (B before S)
+      "Sam Chen", // technician
+      "Alex Reed", // front_desk
     ]);
   });
 

@@ -146,9 +146,7 @@ test.describe("US1: see the roster at a glance", () => {
     );
   });
 
-  test("(d) Show-inactive toggle reveals an inactive seeded row when present", async ({
-    page,
-  }) => {
+  test("(d) Show-inactive toggle reveals an inactive seeded row when present", async ({ page }) => {
     // Add a fourth, inactive row directly via the service-role client so the
     // toggle has something visible to flip. Cleaned up by the next
     // beforeEach via resetStaffToSeed() (which deletes any non-seed rows).
@@ -166,7 +164,9 @@ test.describe("US1: see the roster at a glance", () => {
     await toggle.click();
 
     await expect(rows).toHaveCount(4);
-    await expect(page.locator("[data-staff-id='10000000-0000-0000-0000-000000000099']")).toBeVisible();
+    await expect(
+      page.locator("[data-staff-id='10000000-0000-0000-0000-000000000099']")
+    ).toBeVisible();
 
     // Toggle off — Iris disappears again.
     await toggle.click();
@@ -219,7 +219,9 @@ test.describe("US2: add a new staff member with a PIN", () => {
     await page.locator("[data-slot='wizard-role-select']").selectOption("technician");
 
     // Pick the Green swatch (default already, but verify by clicking).
-    await page.locator("[data-slot='color-swatch'][data-color-token='--avatar-green'] input").click();
+    await page
+      .locator("[data-slot='color-swatch'][data-color-token='--avatar-green'] input")
+      .click();
 
     // Advance to PIN step.
     await nextBtn.click();
@@ -318,9 +320,7 @@ test.describe("US3: edit a staff member", () => {
     await resetStaffToSeed();
   });
 
-  test("(a) selecting a row opens the edit panel and toggles ?selected= URL", async ({
-    page,
-  }) => {
+  test("(a) selecting a row opens the edit panel and toggles ?selected= URL", async ({ page }) => {
     await signInAsMaya(page);
 
     // Initially the panel shows the empty state — no row is selected.
@@ -347,10 +347,7 @@ test.describe("US3: edit a staff member", () => {
 
     const panel = page.locator("[data-slot='staff-edit-panel']");
     await expect(panel).toBeVisible();
-    await expect(panel).toHaveAttribute(
-      "data-staff-id",
-      "10000000-0000-0000-0000-000000000003"
-    );
+    await expect(panel).toHaveAttribute("data-staff-id", "10000000-0000-0000-0000-000000000003");
 
     // The currently-selected row's href now toggles back to the bare path
     // — per FR-018, re-activating it deselects.
@@ -368,9 +365,7 @@ test.describe("US3: edit a staff member", () => {
 
     // Navigate directly to the selected URL — equivalent to clicking the row
     // (the row is a <Link>). Avoids pointer-event-intercept flakiness.
-    await page.goto(
-      "/settings/staff?selected=10000000-0000-0000-0000-000000000003"
-    );
+    await page.goto("/settings/staff?selected=10000000-0000-0000-0000-000000000003");
 
     const nameInput = page.locator("[data-slot='edit-panel-name-input']");
     const preview = page.locator("[data-slot='edit-panel-preview-name']");
@@ -383,18 +378,15 @@ test.describe("US3: edit a staff member", () => {
     await expect(preview).toHaveText("Sam C.");
 
     // Table row still reads "Sam Chen" — drafts are not committed yet.
-    const samRow = page
-      .locator("[data-slot='staff-table'] [data-staff-id='10000000-0000-0000-0000-000000000003']");
+    const samRow = page.locator(
+      "[data-slot='staff-table'] [data-staff-id='10000000-0000-0000-0000-000000000003']"
+    );
     await expect(samRow).toContainText("Sam Chen");
   });
 
-  test("(c) Save button enables only when draft differs AND name length ≥ 2", async ({
-    page,
-  }) => {
+  test("(c) Save button enables only when draft differs AND name length ≥ 2", async ({ page }) => {
     await signInAsMaya(page);
-    await page.goto(
-      "/settings/staff?selected=10000000-0000-0000-0000-000000000003"
-    );
+    await page.goto("/settings/staff?selected=10000000-0000-0000-0000-000000000003");
 
     const save = page.locator("[data-slot='edit-panel-save']");
     const nameInput = page.locator("[data-slot='edit-panel-name-input']");
@@ -419,9 +411,7 @@ test.describe("US3: edit a staff member", () => {
     page,
   }) => {
     await signInAsMaya(page);
-    await page.goto(
-      "/settings/staff?selected=10000000-0000-0000-0000-000000000003"
-    );
+    await page.goto("/settings/staff?selected=10000000-0000-0000-0000-000000000003");
 
     const nameInput = page.locator("[data-slot='edit-panel-name-input']");
     await nameInput.fill("Sam C.");
@@ -429,15 +419,15 @@ test.describe("US3: edit a staff member", () => {
     await page.locator("[data-slot='edit-panel-save']").click();
 
     // Server Action redirects back with ?selected=…&toast=changes_saved.
-    await page.waitForURL(
-      /\/settings\/staff\?selected=.+&toast=changes_saved/,
-      { timeout: 10_000 }
-    );
+    await page.waitForURL(/\/settings\/staff\?selected=.+&toast=changes_saved/, {
+      timeout: 10_000,
+    });
 
     // Table row reflects the new name on next paint.
     await expect(
-      page
-        .locator("[data-slot='staff-table'] [data-staff-id='10000000-0000-0000-0000-000000000003']")
+      page.locator(
+        "[data-slot='staff-table'] [data-staff-id='10000000-0000-0000-0000-000000000003']"
+      )
     ).toContainText("Sam C.");
 
     // Audit: exactly one `staff.updated` row with diff-aware payload.
@@ -453,31 +443,21 @@ test.describe("US3: edit a staff member", () => {
     expect(payload).not.toHaveProperty("authorizing_staff_id");
   });
 
-  test("(e) switching rows mid-edit silently discards drafts (FR-022)", async ({
-    page,
-  }) => {
+  test("(e) switching rows mid-edit silently discards drafts (FR-022)", async ({ page }) => {
     await signInAsMaya(page);
 
     // Select Sam, type a draft, do NOT save.
-    await page.goto(
-      "/settings/staff?selected=10000000-0000-0000-0000-000000000003"
-    );
+    await page.goto("/settings/staff?selected=10000000-0000-0000-0000-000000000003");
 
     const nameInput = page.locator("[data-slot='edit-panel-name-input']");
     await nameInput.fill("Discard Me");
-    await expect(page.locator("[data-slot='edit-panel-preview-name']")).toHaveText(
-      "Discard Me"
-    );
+    await expect(page.locator("[data-slot='edit-panel-preview-name']")).toHaveText("Discard Me");
 
     // Switch to Jordan — same as clicking Jordan's row in the table; the
     // panel re-keys on target.id and discards the draft silently.
-    await page.goto(
-      "/settings/staff?selected=10000000-0000-0000-0000-000000000002"
-    );
+    await page.goto("/settings/staff?selected=10000000-0000-0000-0000-000000000002");
 
-    await expect(page.locator("[data-slot='edit-panel-preview-name']")).toHaveText(
-      "Jordan Lee"
-    );
+    await expect(page.locator("[data-slot='edit-panel-preview-name']")).toHaveText("Jordan Lee");
     await expect(nameInput).toHaveValue("Jordan Lee");
 
     // No staff.updated audit row was written (we never saved).
@@ -486,8 +466,9 @@ test.describe("US3: edit a staff member", () => {
 
     // Sam's name in the table is still the seeded value.
     await expect(
-      page
-        .locator("[data-slot='staff-table'] [data-staff-id='10000000-0000-0000-0000-000000000003']")
+      page.locator(
+        "[data-slot='staff-table'] [data-staff-id='10000000-0000-0000-0000-000000000003']"
+      )
     ).toContainText("Sam Chen");
   });
 });
@@ -522,9 +503,7 @@ test.describe("US4: set or change PIN", () => {
     await signInAsMaya(page);
 
     // Select Sam (technician, seeded with pin_hash for PIN 9999).
-    await page.goto(
-      "/settings/staff?selected=10000000-0000-0000-0000-000000000003"
-    );
+    await page.goto("/settings/staff?selected=10000000-0000-0000-0000-000000000003");
 
     // PIN row shows "4-digit PIN set"; button label is "Change".
     const pinRow = page.locator("[data-slot='edit-panel-pin-row']");
@@ -553,10 +532,7 @@ test.describe("US4: set or change PIN", () => {
       await page.getByRole("button", { name: `Digit ${d}`, exact: true }).click();
     }
 
-    await page.waitForURL(
-      /\/settings\/staff\?selected=.+&toast=pin_updated/,
-      { timeout: 10_000 }
-    );
+    await page.waitForURL(/\/settings\/staff\?selected=.+&toast=pin_updated/, { timeout: 10_000 });
 
     // Audit: exactly one staff.pin_set row, previous_pin_set === true, no raw PIN.
     const rows = await getAuditLogRows("staff.pin_set");
@@ -641,9 +617,7 @@ test.describe("US4: set or change PIN", () => {
     const modal = page.locator("[data-slot='change-pin-modal']");
     await expect(modal).toBeVisible();
     await expect(modal).toHaveAttribute("data-mode", "set");
-    await expect(page.locator("[data-slot='change-pin-title']")).toHaveText(
-      "Set PIN — Lana Test"
-    );
+    await expect(page.locator("[data-slot='change-pin-title']")).toHaveText("Set PIN — Lana Test");
 
     // Enter then confirm 2 2 2 2.
     for (const d of ["2", "2", "2", "2"]) {
@@ -654,10 +628,7 @@ test.describe("US4: set or change PIN", () => {
       await page.getByRole("button", { name: `Digit ${d}`, exact: true }).click();
     }
 
-    await page.waitForURL(
-      /\/settings\/staff\?selected=.+&toast=pin_updated/,
-      { timeout: 10_000 }
-    );
+    await page.waitForURL(/\/settings\/staff\?selected=.+&toast=pin_updated/, { timeout: 10_000 });
 
     // Audit: previous_pin_set === false for the freshly-set PIN.
     const rows = await getAuditLogRows("staff.pin_set");
@@ -673,9 +644,7 @@ test.describe("US4: set or change PIN", () => {
     page,
   }) => {
     await signInAsMaya(page);
-    await page.goto(
-      "/settings/staff?selected=10000000-0000-0000-0000-000000000003"
-    );
+    await page.goto("/settings/staff?selected=10000000-0000-0000-0000-000000000003");
 
     await page.locator("[data-slot='edit-panel-pin-button']").click();
     const modal = page.locator("[data-slot='change-pin-modal']");
@@ -737,9 +706,7 @@ test.describe("US5: deactivate, reactivate, remove", () => {
 
     // Flip Show inactive on so the deactivated row stays visible. Same
     // toggle-selector idiom as US1 (d).
-    const toggle = page.locator(
-      "[data-slot='show-inactive-toggle'] [data-slot='switch']"
-    );
+    const toggle = page.locator("[data-slot='show-inactive-toggle'] [data-slot='switch']");
     await toggle.click();
 
     // Select Sam.
@@ -753,22 +720,20 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     const dialog = page.locator("[data-slot='confirm-dialog']");
     await expect(dialog).toBeVisible();
     await expect(dialog).toHaveAttribute("data-variant", "deactivate");
-    await expect(
-      page.locator("[data-slot='confirm-dialog-title']")
-    ).toContainText("Deactivate Sam Chen?");
-    await expect(
-      page.locator("[data-slot='confirm-dialog-body']")
-    ).toContainText("won't be able to log in");
+    await expect(page.locator("[data-slot='confirm-dialog-title']")).toContainText(
+      "Deactivate Sam Chen?"
+    );
+    await expect(page.locator("[data-slot='confirm-dialog-body']")).toContainText(
+      "won't be able to log in"
+    );
     // Per Clarifications Q2 — no appointment-count warning line (i.e. no
     // "X appointments scheduled" string). The body's own copy DOES mention
     // "appointments and history are unaffected", so we look for the
     // count-warning pattern specifically.
-    await expect(
-      page.locator("[data-slot='confirm-dialog-body']")
-    ).not.toContainText(/\d+\s+appointment/);
-    await expect(
-      page.locator("[data-slot='confirm-dialog-body']")
-    ).not.toContainText("scheduled");
+    await expect(page.locator("[data-slot='confirm-dialog-body']")).not.toContainText(
+      /\d+\s+appointment/
+    );
+    await expect(page.locator("[data-slot='confirm-dialog-body']")).not.toContainText("scheduled");
 
     // Click the destructive Deactivate CTA inside the dialog (in the
     // deactivate-variant form). Disambiguate from the footer button.
@@ -792,9 +757,7 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     // Toggle Show inactive again so Sam's now-inactive row is visible
     // (sessionStorage persists across the redirect but a fresh page render
     // may re-read it — double-tap is harmless if already on).
-    const toggleAfter = page.locator(
-      "[data-slot='show-inactive-toggle'] [data-slot='switch']"
-    );
+    const toggleAfter = page.locator("[data-slot='show-inactive-toggle'] [data-slot='switch']");
     const ariaChecked = await toggleAfter.getAttribute("aria-checked");
     if (ariaChecked !== "true") {
       await toggleAfter.click();
@@ -802,24 +765,17 @@ test.describe("US5: deactivate, reactivate, remove", () => {
 
     // Sam's row still visible with Inactive badge; panel Active switch off;
     // footer button is now Reactivate (not Deactivate).
-    const samRow = page.locator(
-      `[data-slot='staff-table'] [data-staff-id='${SAM_ID}']`
-    );
+    const samRow = page.locator(`[data-slot='staff-table'] [data-staff-id='${SAM_ID}']`);
     await expect(samRow).toBeVisible();
     await expect(samRow).toContainText("Inactive");
-    await expect(
-      page.locator("[data-slot='edit-panel-reactivate']")
-    ).toBeVisible();
-    await expect(
-      page.locator("[data-slot='edit-panel-deactivate']")
-    ).toHaveCount(0);
+    await expect(page.locator("[data-slot='edit-panel-reactivate']")).toBeVisible();
+    await expect(page.locator("[data-slot='edit-panel-deactivate']")).toHaveCount(0);
 
     // Click Reactivate (single-click; no confirm dialog).
     await page.locator("[data-slot='edit-panel-reactivate']").click();
-    await page.waitForURL(
-      /\/settings\/staff\?selected=.+&toast=changes_saved/,
-      { timeout: 10_000 }
-    );
+    await page.waitForURL(/\/settings\/staff\?selected=.+&toast=changes_saved/, {
+      timeout: 10_000,
+    });
 
     // Audit: one staff.reactivated row.
     auditRows = await getAuditLogRows("staff.reactivated");
@@ -829,9 +785,7 @@ test.describe("US5: deactivate, reactivate, remove", () => {
 
     // Row is Active again; the panel re-shows the Deactivate button.
     await expect(samRow).toContainText("Active");
-    await expect(
-      page.locator("[data-slot='edit-panel-deactivate']")
-    ).toBeVisible();
+    await expect(page.locator("[data-slot='edit-panel-deactivate']")).toBeVisible();
   });
 
   test("(b) remove Sam: confirm dialog copy, row gone, panel returns to empty state, audit snapshots name + role", async ({
@@ -848,12 +802,12 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     const dialog = page.locator("[data-slot='confirm-dialog']");
     await expect(dialog).toBeVisible();
     await expect(dialog).toHaveAttribute("data-variant", "remove");
-    await expect(
-      page.locator("[data-slot='confirm-dialog-title']")
-    ).toContainText("Remove Sam Chen?");
-    await expect(
-      page.locator("[data-slot='confirm-dialog-body']")
-    ).toContainText("removed from the staff roster");
+    await expect(page.locator("[data-slot='confirm-dialog-title']")).toContainText(
+      "Remove Sam Chen?"
+    );
+    await expect(page.locator("[data-slot='confirm-dialog-body']")).toContainText(
+      "removed from the staff roster"
+    );
 
     // Submit the destructive Remove CTA.
     await page
@@ -864,21 +818,18 @@ test.describe("US5: deactivate, reactivate, remove", () => {
 
     // Redirect carries no ?selected= — the row is gone, panel returns to
     // empty state.
-    await page.waitForURL(
-      /\/settings\/staff\?toast=staff_removed&name=Sam%20Chen/,
-      { timeout: 10_000 }
-    );
+    await page.waitForURL(/\/settings\/staff\?toast=staff_removed&name=Sam%20Chen/, {
+      timeout: 10_000,
+    });
     expect(page.url()).not.toContain("selected=");
 
     // Sam's row is no longer in the table.
-    await expect(
-      page.locator(`[data-slot='staff-table'] [data-staff-id='${SAM_ID}']`)
-    ).toHaveCount(0);
+    await expect(page.locator(`[data-slot='staff-table'] [data-staff-id='${SAM_ID}']`)).toHaveCount(
+      0
+    );
 
     // Panel returns to the empty state.
-    await expect(
-      page.locator("[data-slot='staff-empty-state']")
-    ).toBeVisible();
+    await expect(page.locator("[data-slot='staff-empty-state']")).toBeVisible();
 
     // Audit: one staff.removed row with display_name_at_removal +
     // role_at_removal snapshotted.
@@ -893,9 +844,7 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     expect(auditRows[0].entity_id).toBe(SAM_ID);
   });
 
-  test("(c) cancel inside the deactivate dialog closes it with no mutation", async ({
-    page,
-  }) => {
+  test("(c) cancel inside the deactivate dialog closes it with no mutation", async ({ page }) => {
     await signInAsMaya(page);
     await page.goto(`/settings/staff?selected=${SAM_ID}`);
 
@@ -915,13 +864,9 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     expect(auditRows).toHaveLength(0);
 
     // Sam's row is still active in the table; footer still shows Deactivate.
-    const samRow = page.locator(
-      `[data-slot='staff-table'] [data-staff-id='${SAM_ID}']`
-    );
+    const samRow = page.locator(`[data-slot='staff-table'] [data-staff-id='${SAM_ID}']`);
     await expect(samRow).toContainText("Active");
-    await expect(
-      page.locator("[data-slot='edit-panel-deactivate']")
-    ).toBeVisible();
+    await expect(page.locator("[data-slot='edit-panel-deactivate']")).toBeVisible();
   });
 });
 
@@ -1010,9 +955,7 @@ test.describe("US6: restrict who can manage staff", () => {
     await expect(page.locator("[data-slot='staff-table']")).toHaveCount(0);
   });
 
-  test("(b) manager opens Maya's row → all controls disabled, banner visible", async ({
-    page,
-  }) => {
+  test("(b) manager opens Maya's row → all controls disabled, banner visible", async ({ page }) => {
     await signInAsJordan(page);
 
     // Open Maya (the owner) via the ?selected= URL — the layout has already
@@ -1133,9 +1076,7 @@ test.describe("US7: toasts", () => {
     await resetStaffToSeed();
   });
 
-  test("(a) ?toast=staff_added&name=… fires success toast and clears params", async ({
-    page,
-  }) => {
+  test("(a) ?toast=staff_added&name=… fires success toast and clears params", async ({ page }) => {
     await signInAsMaya(page);
     await page.goto("/settings/staff?toast=staff_added&name=Maya%20Chen");
 
@@ -1167,9 +1108,7 @@ test.describe("US7: toasts", () => {
     await expect.poll(() => new URL(page.url()).search).toBe("");
   });
 
-  test("(d) ?toast=staff_deactivated&name=… fires '{name} deactivated'", async ({
-    page,
-  }) => {
+  test("(d) ?toast=staff_deactivated&name=… fires '{name} deactivated'", async ({ page }) => {
     await signInAsMaya(page);
     await page.goto("/settings/staff?toast=staff_deactivated&name=Sam%20Chen");
 
@@ -1179,9 +1118,7 @@ test.describe("US7: toasts", () => {
     await expect.poll(() => new URL(page.url()).search).toBe("");
   });
 
-  test("(e) ?toast=staff_removed&name=… fires '{name} removed'", async ({
-    page,
-  }) => {
+  test("(e) ?toast=staff_removed&name=… fires '{name} removed'", async ({ page }) => {
     await signInAsMaya(page);
     await page.goto("/settings/staff?toast=staff_removed&name=Sam%20Chen");
 
@@ -1191,9 +1128,7 @@ test.describe("US7: toasts", () => {
     await expect.poll(() => new URL(page.url()).search).toBe("");
   });
 
-  test("(f) ?error=forbidden_target fires destructive toast", async ({
-    page,
-  }) => {
+  test("(f) ?error=forbidden_target fires destructive toast", async ({ page }) => {
     await signInAsMaya(page);
     await page.goto("/settings/staff?error=forbidden_target");
 
@@ -1205,9 +1140,7 @@ test.describe("US7: toasts", () => {
     await expect.poll(() => new URL(page.url()).search).toBe("");
   });
 
-  test("(g) two rapid toasts: only one is visible at a time (no stacking)", async ({
-    page,
-  }) => {
+  test("(g) two rapid toasts: only one is visible at a time (no stacking)", async ({ page }) => {
     await signInAsMaya(page);
 
     // First navigation.
@@ -1219,10 +1152,9 @@ test.describe("US7: toasts", () => {
 
     // Second navigation within ~100 ms of the first toast becoming visible.
     await page.goto("/settings/staff?toast=pin_updated");
-    await expect(page.locator("[data-sonner-toast]").first()).toContainText(
-      "PIN updated",
-      { timeout: 5_000 }
-    );
+    await expect(page.locator("[data-sonner-toast]").first()).toContainText("PIN updated", {
+      timeout: 5_000,
+    });
 
     // Only one Sonner toast on-screen at any sampled moment. Sonner's default
     // `expand={false}` collapses additional toasts under the front one but

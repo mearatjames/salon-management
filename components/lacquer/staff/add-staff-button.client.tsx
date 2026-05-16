@@ -53,11 +53,7 @@ export function AddStaffButton({ operatorRole }: AddStaffButtonProps) {
         <Plus size={16} strokeWidth={1.5} aria-hidden="true" />
         Add staff
       </button>
-      <AddStaffWizard
-        operatorRole={operatorRole}
-        open={open}
-        onOpenChange={setOpen}
-      />
+      <AddStaffWizard operatorRole={operatorRole} open={open} onOpenChange={setOpen} />
     </>
   );
 }

@@ -62,18 +62,12 @@ function assertCanEnterSettings(viewer: StudioViewer): void {
  * (matches updateStaff/setStaffPin/etc.).
  */
 function handleKnownError(err: unknown, selectedId?: string | null): never {
-  const selectedSuffix = selectedId
-    ? `&selected=${encodeURIComponent(selectedId)}`
-    : "";
+  const selectedSuffix = selectedId ? `&selected=${encodeURIComponent(selectedId)}` : "";
   if (err instanceof ValidationError) {
-    redirect(
-      `${STAFF_PATH}?error=${encodeURIComponent(err.code)}${selectedSuffix}`
-    );
+    redirect(`${STAFF_PATH}?error=${encodeURIComponent(err.code)}${selectedSuffix}`);
   }
   if (err instanceof PermissionError) {
-    redirect(
-      `${STAFF_PATH}?error=${encodeURIComponent(err.code)}${selectedSuffix}`
-    );
+    redirect(`${STAFF_PATH}?error=${encodeURIComponent(err.code)}${selectedSuffix}`);
   }
   throw err;
 }
@@ -233,9 +227,7 @@ export async function updateStaff(formData: FormData): Promise<void> {
     .single();
 
   if (loadErr || !targetRow || targetRow.removed_at !== null) {
-    redirect(
-      `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`
-    );
+    redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
   }
   const target: StaffRowFromDb = {
     id: targetRow!.id,
@@ -259,9 +251,7 @@ export async function updateStaff(formData: FormData): Promise<void> {
       .neq("id", target.id);
     if (countErr) {
       console.error("updateStaff isLastOwner count failed", countErr);
-      redirect(
-        `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`
-      );
+      redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
     }
     isLastOwner = (count ?? 0) === 0;
   }
@@ -272,9 +262,7 @@ export async function updateStaff(formData: FormData): Promise<void> {
 
   try {
     const proposed: StaffSnapshot = {
-      display_name: validateDisplayName(
-        String(formData.get("display_name") ?? "")
-      ),
+      display_name: validateDisplayName(String(formData.get("display_name") ?? "")),
       role: validateRole(String(formData.get("role") ?? "")),
       color_token: validateColor(String(formData.get("color_token") ?? "")),
       // FormData encodes unchecked switches by omission; "on" means checked.
@@ -282,17 +270,15 @@ export async function updateStaff(formData: FormData): Promise<void> {
     };
 
     // Compute diff.
-    changedKeys = UPDATE_FIELD_TO_ACTION.filter(
-      ({ key }) => proposed[key] !== target[key]
-    ).map(({ key }) => key);
+    changedKeys = UPDATE_FIELD_TO_ACTION.filter(({ key }) => proposed[key] !== target[key]).map(
+      ({ key }) => key
+    );
 
     if (changedKeys.length === 0) {
       // Defense-in-depth: the UI's Save button is disabled when there's no
       // diff, so this is unreachable in practice. Surface it as a soft error
       // anyway so a direct POST fails cleanly.
-      redirect(
-        `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=no_changes`
-      );
+      redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=no_changes`);
     }
 
     // Evaluate the matrix once per changed field. First throw wins
@@ -327,10 +313,7 @@ export async function updateStaff(formData: FormData): Promise<void> {
     (updatePatch as Record<string, unknown>)[key] = nextSnapshot![key];
   }
 
-  const { error: updateErr } = await admin
-    .from("staff")
-    .update(updatePatch)
-    .eq("id", target.id);
+  const { error: updateErr } = await admin.from("staff").update(updatePatch).eq("id", target.id);
 
   if (updateErr) {
     // The last-owner trigger raises check_violation. We treat any
@@ -339,14 +322,10 @@ export async function updateStaff(formData: FormData): Promise<void> {
     // unknown errors still surface via the catch-all below.
     const code = (updateErr as { code?: string }).code;
     if (code === "23514" || code === "P0001") {
-      redirect(
-        `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=last_owner`
-      );
+      redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=last_owner`);
     }
     console.error("updateStaff UPDATE failed", updateErr);
-    redirect(
-      `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`
-    );
+    redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
   }
 
   // 7: audit row — diff-aware payload. Only changed keys appear in
@@ -379,9 +358,7 @@ export async function updateStaff(formData: FormData): Promise<void> {
       `${STAFF_PATH}?selected=${encodeURIComponent(target.id)}&toast=staff_deactivated&name=${encodeURIComponent(nextSnapshot!.display_name)}`
     );
   }
-  redirect(
-    `${STAFF_PATH}?selected=${encodeURIComponent(target.id)}&toast=changes_saved`
-  );
+  redirect(`${STAFF_PATH}?selected=${encodeURIComponent(target.id)}&toast=changes_saved`);
 }
 
 // ── setStaffPin ──────────────────────────────────────────────────────────
@@ -422,9 +399,7 @@ export async function setStaffPin(formData: FormData): Promise<void> {
     .single();
 
   if (loadErr || !targetRow || targetRow.removed_at !== null) {
-    redirect(
-      `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`
-    );
+    redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
   }
 
   const previousPinSet = targetRow!.pin_hash !== null;
@@ -443,9 +418,7 @@ export async function setStaffPin(formData: FormData): Promise<void> {
       .neq("id", targetRow!.id);
     if (countErr) {
       console.error("setStaffPin isLastOwner count failed", countErr);
-      redirect(
-        `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`
-      );
+      redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
     }
     isLastOwner = (count ?? 0) === 0;
   }
@@ -483,9 +456,7 @@ export async function setStaffPin(formData: FormData): Promise<void> {
 
   if (updateErr) {
     console.error("setStaffPin UPDATE failed", updateErr);
-    redirect(
-      `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`
-    );
+    redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
   }
 
   // 7: audit row — payload contains ONLY `previous_pin_set`. The raw PIN
@@ -496,9 +467,7 @@ export async function setStaffPin(formData: FormData): Promise<void> {
 
   // 8: revalidate + redirect.
   revalidatePath(STAFF_PATH);
-  redirect(
-    `${STAFF_PATH}?selected=${encodeURIComponent(targetRow!.id)}&toast=pin_updated`
-  );
+  redirect(`${STAFF_PATH}?selected=${encodeURIComponent(targetRow!.id)}&toast=pin_updated`);
 }
 
 // ── deactivateStaff / reactivateStaff / removeStaff ─────────────────────
@@ -543,9 +512,7 @@ async function loadLifecycleTarget(
     .single();
 
   if (loadErr || !targetRow) {
-    redirect(
-      `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`
-    );
+    redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
   }
 
   let isLastOwner = false;
@@ -559,9 +526,7 @@ async function loadLifecycleTarget(
       .neq("id", targetRow!.id);
     if (countErr) {
       console.error("loadLifecycleTarget isLastOwner count failed", countErr);
-      redirect(
-        `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`
-      );
+      redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
     }
     isLastOwner = (count ?? 0) === 0;
   }
@@ -602,9 +567,7 @@ export async function deactivateStaff(formData: FormData): Promise<void> {
   // Pre-check: already inactive → soft no-op. Prevents writing a redundant
   // audit row when a stale tab re-submits.
   if (!target.active || target.removed_at !== null) {
-    redirect(
-      `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=no_changes`
-    );
+    redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=no_changes`);
   }
 
   // 5: matrix.
@@ -630,14 +593,10 @@ export async function deactivateStaff(formData: FormData): Promise<void> {
 
   if (updateErr) {
     if (isLastOwnerTriggerError(updateErr)) {
-      redirect(
-        `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=last_owner`
-      );
+      redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=last_owner`);
     }
     console.error("deactivateStaff UPDATE failed", updateErr);
-    redirect(
-      `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`
-    );
+    redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
   }
 
   // 7: audit row — empty payload per audit.contract.md § staff.deactivated.
@@ -668,14 +627,10 @@ export async function reactivateStaff(formData: FormData): Promise<void> {
 
   // Pre-check: must be removed_at null AND currently inactive.
   if (target.removed_at !== null) {
-    redirect(
-      `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`
-    );
+    redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
   }
   if (target.active) {
-    redirect(
-      `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=no_changes`
-    );
+    redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=no_changes`);
   }
 
   // 5: matrix.
@@ -701,9 +656,7 @@ export async function reactivateStaff(formData: FormData): Promise<void> {
 
   if (updateErr) {
     console.error("reactivateStaff UPDATE failed", updateErr);
-    redirect(
-      `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`
-    );
+    redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
   }
 
   // 7: audit row — empty payload per audit.contract.md § staff.reactivated.
@@ -712,9 +665,7 @@ export async function reactivateStaff(formData: FormData): Promise<void> {
   // 8: revalidate + redirect. Per contract § 5 the reactivate success toast
   // is `changes_saved` (not a dedicated reactivated variant).
   revalidatePath(STAFF_PATH);
-  redirect(
-    `${STAFF_PATH}?selected=${encodeURIComponent(target.id)}&toast=changes_saved`
-  );
+  redirect(`${STAFF_PATH}?selected=${encodeURIComponent(target.id)}&toast=changes_saved`);
 }
 
 // ── 6. removeStaff ──────────────────────────────────────────────────────
@@ -735,9 +686,7 @@ export async function removeStaff(formData: FormData): Promise<void> {
 
   // Pre-check: must not already be soft-removed.
   if (target.removed_at !== null) {
-    redirect(
-      `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`
-    );
+    redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
   }
 
   // 5: matrix.
@@ -768,14 +717,10 @@ export async function removeStaff(formData: FormData): Promise<void> {
 
   if (updateErr) {
     if (isLastOwnerTriggerError(updateErr)) {
-      redirect(
-        `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=last_owner`
-      );
+      redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=last_owner`);
     }
     console.error("removeStaff UPDATE failed", updateErr);
-    redirect(
-      `${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`
-    );
+    redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
   }
 
   // 7: audit row — snapshot the display_name + role at removal time so the
@@ -788,7 +733,5 @@ export async function removeStaff(formData: FormData): Promise<void> {
   // 8: revalidate + redirect. NO ?selected= — the row is gone and the panel
   // returns to its empty state.
   revalidatePath(STAFF_PATH);
-  redirect(
-    `${STAFF_PATH}?toast=staff_removed&name=${encodeURIComponent(target.display_name)}`
-  );
+  redirect(`${STAFF_PATH}?toast=staff_removed&name=${encodeURIComponent(target.display_name)}`);
 }

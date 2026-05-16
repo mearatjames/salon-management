@@ -120,7 +120,10 @@ export function ColorPicker({
               value={opt.token}
               {...(isControlled
                 ? { checked, onChange: () => onChange?.(opt.token) }
-                : { defaultChecked: checked, onChange: onChange ? () => onChange(opt.token) : undefined })}
+                : {
+                    defaultChecked: checked,
+                    onChange: onChange ? () => onChange(opt.token) : undefined,
+                  })}
               disabled={disabled}
               aria-label={opt.label}
               style={{

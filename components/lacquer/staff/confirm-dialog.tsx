@@ -97,11 +97,7 @@ export function ConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        data-slot="confirm-dialog"
-        data-variant={variant}
-        data-name={name}
-      >
+      <DialogContent data-slot="confirm-dialog" data-variant={variant} data-name={name}>
         <DialogHeader>
           <DialogTitle data-slot="confirm-dialog-title">
             <span
@@ -120,9 +116,7 @@ export function ConfirmDialog({
               <span>{title}</span>
             </span>
           </DialogTitle>
-          <DialogDescription data-slot="confirm-dialog-body">
-            {body}
-          </DialogDescription>
+          <DialogDescription data-slot="confirm-dialog-body">{body}</DialogDescription>
         </DialogHeader>
 
         <DialogFooter>

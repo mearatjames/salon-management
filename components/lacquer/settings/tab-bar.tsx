@@ -50,9 +50,7 @@ export function TabBar() {
               fontWeight: isActive ? 600 : 500,
               color: isActive ? "var(--foreground)" : "var(--muted-foreground)",
               textDecoration: "none",
-              borderBottom: isActive
-                ? "2px solid var(--primary)"
-                : "2px solid transparent",
+              borderBottom: isActive ? "2px solid var(--primary)" : "2px solid transparent",
               marginBottom: "-1px",
               transition:
                 "color 150ms var(--ease-out, ease-out), border-color 150ms var(--ease-out, ease-out)",
