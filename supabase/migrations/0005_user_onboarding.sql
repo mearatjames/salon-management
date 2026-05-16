@@ -1,5 +1,10 @@
--- Migration: 0004_user_onboarding.sql
+-- Migration: 0005_user_onboarding.sql
 -- Feature: 012-user-onboarding
+--
+-- Renumbered from 0004 to 0005 during the merge with main, where feature
+-- 011 (cash-sale checkout) shipped as 0004_checkout_cash_sale.sql. The two
+-- migrations touch disjoint tables and have no ordering dependency; the
+-- bump is purely to keep the migration sequence unique.
 --
 -- Adds the user-onboarding lifecycle columns to public.staff (state, email,
 -- invite metadata, offboard metadata, last_sign_in_at, pin_reset_admin_at),

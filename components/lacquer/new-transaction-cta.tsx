@@ -12,7 +12,7 @@ export type NewTransactionCTAProps = {
 // the anchor swap. All color / radius / shadow / spacing resolves to tokens
 // via the CSS class (Constitution Principle I). FR-008 / SC-002.
 export function NewTransactionCTA({
-  href = "/checkout",
+  href = "/checkout?fresh=1",
   sub = "Charge a sale",
 }: NewTransactionCTAProps) {
   return (

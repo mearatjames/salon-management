@@ -10,11 +10,12 @@
 // transient inserts.
 //
 // `entity_type` is derived from the action verb's prefix via
-// `deriveEntityType` — `service.*` → `"service"`, the six staff-mutation
-// verbs → `"staff"`, everything else (sign-in / sign-out / PIN-fail / switch)
-// → `"auth"`. The prefix dispatch keeps the helper closed against future
-// feature additions (the next feature's verbs route correctly without
-// editing this set as long as they follow the same `<entity>.<verb>` shape).
+// `deriveEntityType` — `service.*` → `"service"`, `ticket.*` → `"ticket"`,
+// `payment.*` → `"payment"`, the six staff-mutation verbs → `"staff"`,
+// everything else (sign-in / sign-out / PIN-fail / switch) → `"auth"`. The
+// prefix dispatch keeps the helper closed against future feature additions
+// (the next feature's verbs route correctly without editing this set as
+// long as they follow the same `<entity>.<verb>` shape).
 //
 // `actingAsStaffId` is a 5th optional argument that lets `service.*` (and
 // any future entity-type) call sites pass an operator id distinct from the
@@ -47,6 +48,13 @@ export type AuditAction =
   | "service.updated"
   | "service.archived"
   | "service.restored"
+  // Added by feature 011 (entity_type "ticket" / "payment")
+  | "ticket.created"
+  | "ticket.line_added"
+  | "ticket.line_removed"
+  | "ticket.line_tech_assigned"
+  | "ticket.discarded"
+  | "payment.captured"
   // Added by feature 012 (entity_type "user")
   | "user.invited"
   | "user.invite_resent"
@@ -56,8 +64,12 @@ export type AuditAction =
   | "user.removed"
   | "user.pin_reset";
 
-export function deriveEntityType(action: AuditAction): "service" | "staff" | "auth" | "user" {
+export function deriveEntityType(
+  action: AuditAction
+): "service" | "ticket" | "payment" | "staff" | "auth" | "user" {
   if (action.startsWith("user.")) return "user";
+  if (action.startsWith("ticket.")) return "ticket";
+  if (action.startsWith("payment.")) return "payment";
   if (action.startsWith("service.")) return "service";
   if (
     action === "staff.added" ||

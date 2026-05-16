@@ -1,0 +1,322 @@
+"use client";
+
+// CartRowWithTech — adapted from `design-system/prototypes/transaction/components.jsx`
+// § CartRowWithTech.
+//
+// US3 (T038) wraps the chip in a Radix Popover so the operator can
+// reassign tech for one line without changing the header pick or other
+// lines (FR-013). Composition is unchanged otherwise — line name on top,
+// snapshotted price + tech chip + (optional) "Set price" hint below; on
+// the right, line total (tabular numerals) and a remove button.
+//
+// The popover content is a vertical list of active staff that mirrors
+// `tech-avatar-row.tsx`'s post-pick chip visual so the two surfaces feel
+// consistent. The currently-assigned staff item is marked aria-disabled +
+// data-current="true" so the no-op tap is impossible (the disabled state
+// guards both the click handler and screen-reader output).
+
+import { useState } from "react";
+
+import { ChevronDown, X, Edit3 } from "lucide-react";
+
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+export type CartLineView = {
+  /** May be a temp id during optimistic insert; the row is keyed by this. */
+  id: string;
+  serviceId: string;
+  name: string;
+  unitPriceCents: number;
+  qty: number;
+  priceUnconfirmed: boolean;
+  assignedStaffId: string;
+};
+
+type ActiveStaff = {
+  id: string;
+  display_name: string;
+  color_token: string;
+};
+
+export type CartRowWithTechProps = {
+  line: CartLineView;
+  /** Lookup table: assignedStaffId → staff row (for the chip label/color). */
+  staffById: Map<string, ActiveStaff>;
+  onRemove: () => void;
+  /** Opens the variable-price placeholder dialog (FR-016). */
+  onEditPrice: () => void;
+  /**
+   * Per-line tech reassignment (FR-013). Called when the operator picks a
+   * different staff from the chip popover. Receives the new staff id.
+   * Optional so callers that don't yet wire it (back-compat) still compile;
+   * when omitted, the popover behaves as a read-only preview of the roster.
+   */
+  onSetTech?: (staffId: string) => void;
+};
+
+function fmtMoney(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+export function CartRowWithTech({
+  line,
+  staffById,
+  onRemove,
+  onEditPrice,
+  onSetTech,
+}: CartRowWithTechProps) {
+  const staff = staffById.get(line.assignedStaffId);
+  const lineTotalCents = line.unitPriceCents * line.qty;
+  const needsPrice = line.priceUnconfirmed;
+  // Controlled Popover state so the item-pick handler can dismiss the
+  // overlay after firing `onSetTech` (Radix Content does NOT auto-close on
+  // inner button clicks).
+  const [popoverOpen, setPopoverOpen] = useState(false);
+
+  // Sort the staff roster by display_name for a stable popover order.
+  // (The Map insertion order from the caller is not guaranteed alphabetical.)
+  const roster: ActiveStaff[] = [];
+  for (const s of staffById.values()) roster.push(s);
+  roster.sort((a, b) => a.display_name.localeCompare(b.display_name));
+
+  return (
+    <div
+      data-slot="cart-line"
+      data-line-id={line.id}
+      data-service-id={line.serviceId}
+      data-needs-price={needsPrice ? "true" : "false"}
+      className="checkout-line"
+    >
+      <div style={{ minWidth: 0, flex: "1 1 auto" }}>
+        <div
+          className="checkout-line-name"
+          data-slot="cart-line-name"
+          style={{
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {line.name}
+        </div>
+        <div
+          style={{
+            marginTop: "var(--space-1)",
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--space-2)",
+            flexWrap: "wrap",
+            fontSize: "var(--text-xs)",
+            color: "var(--muted-foreground)",
+          }}
+        >
+          {staff ? (
+            <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  data-slot="cart-line-tech-chip"
+                  data-staff-id={staff.id}
+                  aria-label={`Tech: ${staff.display_name}. Tap to reassign.`}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "var(--space-1)",
+                    padding: "var(--space-1) var(--space-2)",
+                    background: "var(--card)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius-full)",
+                    color: "var(--foreground)",
+                    fontWeight: 500,
+                    fontSize: "var(--text-xs)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      display: "inline-block",
+                      width: "var(--space-2)",
+                      height: "var(--space-2)",
+                      borderRadius: "var(--radius-full)",
+                      background: `var(${staff.color_token})`,
+                    }}
+                  />
+                  {staff.display_name}
+                  <ChevronDown
+                    size={16}
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                    style={{ marginLeft: "var(--space-1)", color: "var(--muted-foreground)" }}
+                  />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" sideOffset={6} className="w-56 p-1">
+                <ul
+                  role="listbox"
+                  aria-label="Reassign tech"
+                  style={{
+                    listStyle: "none",
+                    margin: 0,
+                    padding: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "var(--space-1)",
+                  }}
+                >
+                  {roster.map((candidate) => {
+                    const isCurrent = candidate.id === line.assignedStaffId;
+                    const tint = `oklch(from var(${candidate.color_token}) l c h / 0.15)`;
+                    const fg = `var(${candidate.color_token})`;
+                    return (
+                      <li key={candidate.id} style={{ margin: 0 }}>
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={isCurrent}
+                          aria-disabled={isCurrent || undefined}
+                          data-slot="tech-popover-item"
+                          data-staff-id={candidate.id}
+                          data-current={isCurrent ? "true" : undefined}
+                          onClick={(ev) => {
+                            // No-op guard — the currently assigned tech is
+                            // a "current pick" indicator, not a re-fire of
+                            // the same write. The popover stays open so the
+                            // operator can pick a different item.
+                            if (isCurrent) {
+                              ev.preventDefault();
+                              ev.stopPropagation();
+                              return;
+                            }
+                            onSetTech?.(candidate.id);
+                            setPopoverOpen(false);
+                          }}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "var(--space-2)",
+                            width: "100%",
+                            padding: "var(--space-2) var(--space-2)",
+                            background: isCurrent ? "var(--muted)" : "transparent",
+                            border: "none",
+                            borderRadius: "var(--radius-sm)",
+                            cursor: isCurrent ? "default" : "pointer",
+                            color: isCurrent ? "var(--muted-foreground)" : "var(--foreground)",
+                            fontSize: "var(--text-sm)",
+                            fontWeight: 500,
+                            textAlign: "left",
+                            opacity: isCurrent ? 0.7 : 1,
+                          }}
+                        >
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              width: "var(--space-6)",
+                              height: "var(--space-6)",
+                              borderRadius: "var(--radius-full)",
+                              background: tint,
+                              color: fg,
+                              fontSize: "var(--text-xs)",
+                              fontWeight: 600,
+                              border: "1px solid var(--border)",
+                            }}
+                          >
+                            {initials(candidate.display_name)}
+                          </span>
+                          <span style={{ flex: "1 1 auto" }}>{candidate.display_name}</span>
+                          {isCurrent ? (
+                            <span
+                              style={{
+                                fontSize: "var(--text-xs)",
+                                color: "var(--muted-foreground)",
+                                fontWeight: 500,
+                              }}
+                            >
+                              Current
+                            </span>
+                          ) : null}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </PopoverContent>
+            </Popover>
+          ) : null}
+          {needsPrice ? (
+            <span
+              data-slot="cart-line-needs-price"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "var(--space-1)",
+                color: "var(--primary)",
+                fontWeight: 500,
+              }}
+            >
+              <Edit3 size={16} strokeWidth={1.5} aria-hidden="true" />
+              Set price
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+        <button
+          type="button"
+          onClick={onEditPrice}
+          data-slot="cart-line-price"
+          aria-label={needsPrice ? "Set price for this line" : "Edit price for this line"}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "var(--space-1)",
+            padding: "var(--space-1) var(--space-2)",
+            background: needsPrice
+              ? "color-mix(in oklch, var(--primary) 10%, transparent)"
+              : "transparent",
+            border: needsPrice ? "1px solid var(--primary)" : "1px solid transparent",
+            borderRadius: "var(--radius-sm)",
+            cursor: "pointer",
+            color: "var(--foreground)",
+            fontSize: "var(--text-sm)",
+            fontWeight: 500,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          <span className="checkout-line-price">{fmtMoney(lineTotalCents)}</span>
+        </button>
+        <button
+          type="button"
+          onClick={onRemove}
+          data-slot="cart-line-remove"
+          aria-label={`Remove ${line.name} from cart`}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            width: "var(--space-6)",
+            height: "var(--space-6)",
+            background: "transparent",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            cursor: "pointer",
+            color: "var(--muted-foreground)",
+          }}
+        >
+          <X size={16} strokeWidth={1.5} aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+  );
+}
