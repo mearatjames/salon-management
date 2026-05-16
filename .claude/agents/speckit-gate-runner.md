@@ -21,9 +21,21 @@ anything — you diagnose and report; the caller decides what to do.
 
 ## What you do
 
-1. Run each requested command. Run independent ones in parallel where safe; run anything
-   stateful (`npm ci`, `npm install`, `npm run build`) sequentially and before dependent
-   gates.
+1. **Run independent gates concurrently**. The following four share no state and MUST
+   run in parallel (single Bash response with multiple tool calls), never sequentially:
+   - `npm run format:check`
+   - `npm run lint`
+   - `npm run typecheck`
+   - `npm test`
+
+   Sequential would be ~7+3+7+22 = 39s on Tang Nails; concurrent is ~22s (bounded by
+   the slowest, unit tests). Same wall-clock saving applies on any Node project.
+
+   **Sequential only when truly stateful**: `npm ci` / `npm install` (mutates
+   `node_modules/`) and `npm run build` (writes `.next/`) must run before any gate
+   that depends on them. `npm run test:e2e` requires the dev/prod server to be
+   running and consumes the most time — run it last, alone.
+
 2. For each command capture: exit status, and on failure the **specific** error — the
    failing test name, the `file:line` of a type error, the lint rule + location, the
    build error. Not the full log.

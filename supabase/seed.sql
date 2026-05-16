@@ -59,6 +59,25 @@ values (
   now(),
   now(),
   '', '', '', '', '', '', '', ''
+),
+-- Dedicated user for destructive e2e tests (password-reset round-trip etc.)
+-- so those tests don't mutate the shared `owner@tangnails.dev` mid-suite —
+-- which broke parallel workers in any spec signing in as Maya. NO `staff`
+-- row associated; the reset test only navigates as far as /select-staff and
+-- never pins in.
+(
+  '00000000-0000-0000-0000-0000000000ff',
+  '00000000-0000-0000-0000-000000000000',
+  'authenticated',
+  'authenticated',
+  'reset-test@tangnails.dev',
+  crypt('reset-tang-nails-test', gen_salt('bf')),
+  now(),
+  '{"provider":"email","providers":["email"]}'::jsonb,
+  '{}'::jsonb,
+  now(),
+  now(),
+  '', '', '', '', '', '', '', ''
 )
 on conflict (id) do nothing;
 

@@ -164,18 +164,31 @@ You **MUST** consider the user input before proceeding (if not empty).
    runs, file edits). Running it all in this conversation risks hitting the context limit
    mid-feature. Act as an **orchestrator**, not the executor:
    - For each phase in tasks.md, dispatch a **`speckit-phase-executor`** subagent. Pass it:
-     the absolute FEATURE_DIR, the phase name, the **verbatim text of every task** in that
-     phase (IDs, `[P]` markers, file paths), and any hard user directives or constitution
-     principles in play for that phase. It executes the phase, marks tasks `[X]`, runs the
-     checkpoint, and returns a concise report. Keep only that report in your context.
+     - the absolute FEATURE_DIR
+     - the phase name
+     - the **verbatim text of every task** in that phase (IDs, `[P]` markers, file paths)
+     - any hard user directives or constitution principles in play for that phase
+     - **a "doc bundle"**: the relevant excerpts of `plan.md` (tech stack + project
+       structure), `data-model.md` (just the entities the phase touches), `research.md`
+       (just the decisions cited by the phase's tasks), and any contract files the
+       tasks reference. Inline the text in the dispatch prompt — do NOT just list paths.
+       Goal: the executor never has to re-read your project's design docs to do its
+       work. Skip the doc bundle only for trivial phases (e.g. a single typecheck
+       checkpoint with no implementation tasks).
+     - **dependency status**: a one-line "deps already installed in Phase 1" so the
+       executor knows NOT to `npm ci` / `npm install` / `pip install` etc. Phase 1
+       (setup) is the only phase that mutates `node_modules/`.
    - Dispatch phases **sequentially** (each depends on the prior phase's checkpoint), unless
      tasks.md explicitly marks whole phases as independent.
    - For build/test/lint verification — phase checkpoints and step 9 — use the
      **`speckit-gate-runner`** subagent (read-only) so verbose command output never lands
      in this context.
-   - For features that build UI surfaces, after the relevant phase dispatch a
-     **`speckit-design-auditor`** subagent to verify Lacquer design-system compliance
-     (constitution Principle I) before treating that UI work as complete.
+   - **`speckit-design-auditor` only when the phase touched UI**. Dispatch it after a
+     phase that creates or modifies files under `components/`, `app/`, `styles/`, or any
+     other front-end surface tracked by the project's design system. Skip for
+     backend-only phases (audit-log extensions, server-action plumbing, migrations,
+     polish tasks that don't touch JSX/CSS) — the audit can't find anything in those
+     and burns a subagent dispatch for nothing.
    - If a phase-executor reports BLOCKED, resolve the blocker (dispatch a focused fix or
      handle it directly) before dispatching the next phase. Do not skip ahead.
 

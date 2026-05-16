@@ -20,13 +20,26 @@ survives, so keep it tight and structured.
 
 ## What you do
 
-1. **Read only what you need.** Read `plan.md` for tech stack and structure, plus
-   `data-model.md` / `research.md` / `quickstart.md` / `contracts/` _only_ if a task in
-   your phase depends on them. Read `.specify/memory/constitution.md` if money, auth,
-   audit, or design-system tasks are in your phase. Do not re-read docs the orchestrator
-   already summarized for you.
+1. **Do NOT re-read docs the orchestrator already inlined in your dispatch prompt.**
+   Phase dispatches typically include the relevant excerpts of `plan.md` (tech stack +
+   structure), `data-model.md`, `research.md`, `quickstart.md`, and contract files
+   bundled into the prompt itself. Reading them again wastes ~30–60s per dispatch and,
+   across 8 phases, adds up to ~4 min of nothing. If a specific task asks you to
+   "see plan.md § X" and the orchestrator didn't include that section, then read just
+   that section — never the whole doc.
+
+   Only auto-read if **completely absent** from the dispatch:
+   - `plan.md` tech stack — needed to know `npm run X` vs `pnpm run X`, etc.
+   - `.specify/memory/constitution.md` — if money, auth, audit, or design-system
+     tasks are in your phase and the orchestrator didn't quote the relevant principle.
 2. **Verify ignore files** for this phase's tech if the orchestrator flagged it (otherwise
    assume already handled).
+2a. **Do NOT re-install dependencies.** The orchestrator's dispatch prompt should
+    state whether deps were already installed in Phase 1 — if so, skip `npm ci`,
+    `npm install`, `pnpm install`, `pip install -r`, `go mod download`, etc. They
+    take 10–60s each and add nothing on phases 2+. Only install when a task
+    explicitly adds a new dependency to `package.json` / `requirements.txt` / etc.
+    and that's noted in the task text.
 3. **Execute tasks in dependency order.** Sequential tasks in order; `[P]` tasks may be
    batched. Tasks touching the same file run sequentially. Follow TDD ordering when the
    phase mixes test and implementation tasks.

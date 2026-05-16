@@ -13,6 +13,7 @@ import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 const ALL_ACTIONS: AuthAction[] = [
   "device.signed_in",
   "device.signed_out",
+  "device.password_reset",
   "staff.signed_in",
   "staff.pin_failed",
   "staff.switched",
@@ -57,7 +58,11 @@ describe("lib/auth/audit", () => {
   it.each(ALL_ACTIONS)("writes an audit row for action %s", async (action) => {
     const { insertSpy } = mockClient(async () => ({ error: null }));
     const staffId =
-      action === "device.signed_in" || action === "device.signed_out" ? null : "staff-xyz";
+      action === "device.signed_in" ||
+      action === "device.signed_out" ||
+      action === "device.password_reset"
+        ? null
+        : "staff-xyz";
 
     await recordAuth(action, "device-1", staffId, { foo: "bar" });
 

@@ -36,8 +36,8 @@ async function signInAsMaya(
 ): Promise<void> {
   const encodedNext = encodeURIComponent(next);
   await page.goto(`/login?next=${encodedNext}`);
-  await page.locator("#email").fill("owner@tangnails.dev");
-  await page.getByLabel("Password").fill("tang-nails-dev");
+  await page.locator("#signin-email").fill("owner@tangnails.dev");
+  await page.locator("#signin-password").fill("tang-nails-dev");
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/select-staff\?next=/);
   await page.getByRole("button", { name: /Maya Patel/ }).click();
