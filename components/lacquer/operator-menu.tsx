@@ -43,28 +43,17 @@ export function OperatorMenu({ children }: OperatorMenuProps) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={6}>
-        <DropdownMenuItem asChild>
-          <form action={signOut} style={{ width: "100%" }}>
-            <button
-              type="submit"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                width: "100%",
-                background: "transparent",
-                border: 0,
-                padding: 0,
-                font: "inherit",
-                color: "inherit",
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              <LogOut size={16} strokeWidth={1.5} aria-hidden="true" />
-              Sign out
-            </button>
-          </form>
+        <DropdownMenuItem
+          className="cursor-pointer"
+          onSelect={() => {
+            // Server action returns a redirect; Next handles navigation.
+            // Nesting a <form> inside DropdownMenuItem with asChild caused
+            // the menu's click handler to swallow the first submit.
+            void signOut();
+          }}
+        >
+          <LogOut size={16} strokeWidth={1.5} aria-hidden="true" />
+          Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

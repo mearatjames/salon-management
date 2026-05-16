@@ -93,10 +93,27 @@ export function SignInView({ next, error }: SignInViewProps) {
               id="signin-email"
               name="email"
               type="email"
-              autoComplete="email"
+              autoComplete="username"
               placeholder="you@tangstudio.com"
               className="auth-text-input"
               required
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" || event.shiftKey) return;
+                const form = event.currentTarget.form;
+                const pw = form?.elements.namedItem("password") as HTMLInputElement | null;
+                event.preventDefault();
+                // If password is still empty, advance focus instead of
+                // submitting (HTML5 validation would block silently).
+                if (pw && pw.value === "") {
+                  pw.focus();
+                  return;
+                }
+                // Otherwise force submission. Safari / iCloud Keychain on
+                // React 19 Server Action forms sometimes skips the browser's
+                // implicit submit; requestSubmit() is equivalent to clicking
+                // the submit button and runs HTML5 validation.
+                form?.requestSubmit();
+              }}
             />
           </div>
 
@@ -115,6 +132,13 @@ export function SignInView({ next, error }: SignInViewProps) {
                 autoComplete="current-password"
                 className="auth-text-input auth-text-input-suffixed"
                 required
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" || event.shiftKey) return;
+                  // Safari + iCloud Keychain on React 19 Server Action forms
+                  // sometimes swallows implicit submission. Force it.
+                  event.preventDefault();
+                  event.currentTarget.form?.requestSubmit();
+                }}
               />
               <button
                 type="button"
