@@ -76,21 +76,6 @@ async function signInAsMaya(
   await page.waitForURL(nextRegex, { timeout: 10_000 });
 }
 
-async function discardAllOpenTicketsForOperator(
-  admin: SupabaseClient,
-  staffId: string
-): Promise<void> {
-  await admin
-    .from("tickets")
-    .update({
-      status: "discarded",
-      closed_at: new Date().toISOString(),
-      closed_by_staff_id: staffId,
-    })
-    .eq("opened_by_staff_id", staffId)
-    .eq("status", "open");
-}
-
 async function cleanupTickets(
   admin: SupabaseClient,
   ticketIds: ReadonlyArray<string>
@@ -122,10 +107,10 @@ test.describe("US3: per-line tech override", () => {
     }
   });
 
-  test.beforeEach(async () => {
-    const admin = adminClient();
-    await discardAllOpenTicketsForOperator(admin, MAYA_STAFF_ID);
-  });
+  // No global beforeEach reset: the `?fresh=1` dashboard CTA path used by
+  // each test always creates a brand-new ticket, so we don't need a clean
+  // slate. A cross-spec reset on MAYA_STAFF_ID would race against other 011
+  // checkout specs that also operate as Maya under CI's 2-worker setup.
 
   test("(1) override one line; header pick + subsequent lines unchanged", async ({ page }) => {
     const admin = adminClient();

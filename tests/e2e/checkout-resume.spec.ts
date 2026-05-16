@@ -46,12 +46,17 @@ function adminClient(): SupabaseClient {
   });
 }
 
-// Maya Patel — owner — is the seeded operator the rest of the checkout
-// suite signs in as. Her staff id is deterministic (see supabase/seed.sql
-// and tests/e2e/_db.ts SEEDED_STAFF).
-const MAYA_STAFF_ID = "10000000-0000-0000-0000-000000000001";
+// Sam Chen — technician — is used as the operator for this spec specifically
+// to keep the destructive beforeEach reset (which discards all of the
+// operator's open tickets) from racing against the other 011 checkout specs
+// running in parallel under CI's 2-worker setup. No other 011 spec signs in
+// as Sam, so this spec owns Sam's ticket history. Sam's staff id is
+// deterministic (see supabase/seed.sql); Sam has no linked auth user, but the
+// select-staff page lists every active staff with a pin_hash, so signing in
+// via owner@tangnails.dev and picking Sam at the picker is the standard path.
+const SAM_STAFF_ID = "10000000-0000-0000-0000-000000000003";
 
-async function signInAsMaya(
+async function signInAsSam(
   page: import("@playwright/test").Page,
   next = "/dashboard"
 ): Promise<void> {
@@ -61,12 +66,13 @@ async function signInAsMaya(
   await page.locator("#signin-password").fill("tang-nails-dev");
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
+  await page.getByRole("button", { name: /Sam Chen/ }).click();
   await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
+  // Sam's PIN is 9999.
+  await page.getByRole("button", { name: "Digit 9" }).click();
+  await page.getByRole("button", { name: "Digit 9" }).click();
+  await page.getByRole("button", { name: "Digit 9" }).click();
+  await page.getByRole("button", { name: "Digit 9" }).click();
   const nextRegex = new RegExp(`${next.replace(/[/\-]/g, "\\$&")}(\\?|$)`);
   await page.waitForURL(nextRegex, { timeout: 10_000 });
 }
@@ -127,7 +133,7 @@ async function cleanupTickets(
     .update({
       status: "discarded",
       closed_at: new Date().toISOString(),
-      closed_by_staff_id: MAYA_STAFF_ID,
+      closed_by_staff_id: SAM_STAFF_ID,
     })
     .in("id", ids);
 }
@@ -148,17 +154,19 @@ test.describe("US2: sidebar resume vs fresh dispatch", () => {
   });
 
   test.beforeEach(async () => {
-    // Start each test with no resumable tickets for Maya so the cases
-    // under test see a controlled starting roster.
+    // Start each test with no resumable tickets for Sam so the cases under
+    // test see a controlled starting roster. Sam is unique to this spec (no
+    // other 011 spec signs in as Sam), so this reset is race-free under
+    // parallel workers.
     const admin = adminClient();
-    await discardAllOpenTicketsForOperator(admin, MAYA_STAFF_ID);
+    await discardAllOpenTicketsForOperator(admin, SAM_STAFF_ID);
   });
 
   test("(a) one same-day open ticket → resumed", async ({ page }) => {
     const admin = adminClient();
     const created: string[] = [];
 
-    await signInAsMaya(page, "/dashboard");
+    await signInAsSam(page, "/dashboard");
 
     // Open a fresh ticket via the dashboard CTA (?fresh=1 path).
     await page.locator("[data-slot='new-transaction-cta']").click();
@@ -182,13 +190,13 @@ test.describe("US2: sidebar resume vs fresh dispatch", () => {
     const admin = adminClient();
     const cursor = newAuditCursor();
 
-    await signInAsMaya(page, "/dashboard");
+    await signInAsSam(page, "/dashboard");
 
     // Pre-condition is already enforced by beforeEach (no open tickets).
     await navigateSidebarCheckout(page);
     const freshTicketId = new URL(page.url()).pathname.split("/").pop()!;
 
-    // The DB row should exist, status=open, opened by Maya, and the audit
+    // The DB row should exist, status=open, opened by Sam, and the audit
     // row should carry `created_by_entry_point = 'sidebar_resume_or_create'`.
     const { data: row, error } = await admin
       .from("tickets")
@@ -197,7 +205,7 @@ test.describe("US2: sidebar resume vs fresh dispatch", () => {
       .single();
     expect(error).toBeNull();
     expect(row!.status).toBe("open");
-    expect(row!.opened_by_staff_id).toBe(MAYA_STAFF_ID);
+    expect(row!.opened_by_staff_id).toBe(SAM_STAFF_ID);
 
     const auditRows = await getAuditLogRowsSince(cursor, "ticket.created");
     const matching = auditRows.filter((r) => r.entity_id === freshTicketId);
@@ -211,7 +219,7 @@ test.describe("US2: sidebar resume vs fresh dispatch", () => {
     const admin = adminClient();
     const created: string[] = [];
 
-    await signInAsMaya(page, "/dashboard");
+    await signInAsSam(page, "/dashboard");
 
     // Open ticket A via dashboard CTA.
     await page.locator("[data-slot='new-transaction-cta']").click();
@@ -257,7 +265,7 @@ test.describe("US2: sidebar resume vs fresh dispatch", () => {
     const admin = adminClient();
     const created: string[] = [];
 
-    await signInAsMaya(page, "/dashboard");
+    await signInAsSam(page, "/dashboard");
 
     // Open a ticket today, then mutate its created_at to yesterday so the
     // resume query's date-window predicate excludes it.
@@ -293,7 +301,7 @@ test.describe("US2: sidebar resume vs fresh dispatch", () => {
     const admin = adminClient();
     const created: string[] = [];
 
-    await signInAsMaya(page, "/dashboard");
+    await signInAsSam(page, "/dashboard");
 
     // Open a ticket via dashboard CTA, then discard it directly.
     await page.locator("[data-slot='new-transaction-cta']").click();
@@ -306,7 +314,7 @@ test.describe("US2: sidebar resume vs fresh dispatch", () => {
       .update({
         status: "discarded",
         closed_at: new Date().toISOString(),
-        closed_by_staff_id: MAYA_STAFF_ID,
+        closed_by_staff_id: SAM_STAFF_ID,
       })
       .eq("id", discardedTicketId);
 
