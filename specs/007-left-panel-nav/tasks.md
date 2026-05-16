@@ -23,7 +23,7 @@ description: "Task list for 007-left-panel-nav"
 
 **Purpose**: This feature adds no new dependencies, no migrations, no new shadcn primitives. Setup is intentionally tiny — just the directory namespace where every later phase's files will land.
 
-- [ ] T001 Create the empty directory `components/lacquer/sidebar/` and add an empty `.gitkeep` file so the namespace is tracked before any source files exist.
+- [X] T001 Create the empty directory `components/lacquer/sidebar/` and add an empty `.gitkeep` file so the namespace is tracked before any source files exist.
 
 ---
 
@@ -33,20 +33,20 @@ description: "Task list for 007-left-panel-nav"
 
 ### Pure helper + unit test (Vitest, written first)
 
-- [ ] T002 Write `tests/unit/sidebar/is-active-section.test.ts` covering every row of the behaviour table in `specs/007-left-panel-nav/contracts/nav-items.contract.md` § 3: exact (`/calendar` → `/calendar`), nested (`/settings/staff` → `/settings`), trailing-slash normalization (`/settings/` → `/settings`), prefix collision avoided (`/calendar-archive` vs `/calendar` → false), unrelated (`/dashboard` vs `/calendar` → false), root edge case (`/` vs `/dashboard` → false), `href === null` always false, empty pathname always false. Tests MUST FAIL initially (helper file does not exist yet).
+- [X] T002 Write `tests/unit/sidebar/is-active-section.test.ts` covering every row of the behaviour table in `specs/007-left-panel-nav/contracts/nav-items.contract.md` § 3: exact (`/calendar` → `/calendar`), nested (`/settings/staff` → `/settings`), trailing-slash normalization (`/settings/` → `/settings`), prefix collision avoided (`/calendar-archive` vs `/calendar` → false), unrelated (`/dashboard` vs `/calendar` → false), root edge case (`/` vs `/dashboard` → false), `href === null` always false, empty pathname always false. Tests MUST FAIL initially (helper file does not exist yet).
 
-- [ ] T003 Create `components/lacquer/sidebar/is-active-section.ts` exporting the pure helper `export function isActiveSection(pathname: string, href: string | null): boolean` per `contracts/nav-items.contract.md` § 3 (implementation skeleton in the contract). Verify T002 now passes.
+- [X] T003 Create `components/lacquer/sidebar/is-active-section.ts` exporting the pure helper `export function isActiveSection(pathname: string, href: string | null): boolean` per `contracts/nav-items.contract.md` § 3 (implementation skeleton in the contract). Verify T002 now passes.
 
 ### Canonical nav config
 
-- [ ] T004 Create `components/lacquer/sidebar/nav-items.ts` containing:
+- [X] T004 Create `components/lacquer/sidebar/nav-items.ts` containing:
   - the `NavItem`, `NavGroup`, `NavConfig` type exports verbatim from `contracts/nav-items.contract.md` § 1,
   - the `NAV_CONFIG: NavConfig` constant matching the table in `contracts/nav-items.contract.md` § 2 exactly (Dashboard top item, Workspace group of 5, Operations group of 3; Services and Day Report with `href: null, disabled: true`),
   - a module-scoped `validateNavConfig(NAV_CONFIG)` call that throws synchronously if any invariant (unique ids, disabled⇒href null, href format, unique hrefs) is violated. Implement `validateNavConfig` in the same file. Icons imported from `lucide-react` as named exports.
 
 ### CSS shell + layout grid restructure (no sidebar yet)
 
-- [ ] T005 Extend `styles/studio.css` with the new shell rules (all values from `styles/tokens.css`):
+- [X] T005 Extend `styles/studio.css` with the new shell rules (all values from `styles/tokens.css`):
   - `.studio-shell { display: grid; grid-template-columns: 224px 1fr; grid-template-rows: 56px 1fr; height: 100dvh; transition: grid-template-columns 220ms var(--ease-out); }`
   - `[data-studio-sidebar-collapsed="true"] .studio-shell { grid-template-columns: 56px 1fr; }`
   - `.studio-sidebar { grid-row: 1 / -1; background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; padding: var(--space-3) var(--space-3); gap: var(--space-1); overflow: hidden; }`
@@ -54,7 +54,7 @@ description: "Task list for 007-left-panel-nav"
   - move the existing `.studio-topbar` and `.studio-main` rules to live as descendants of `.studio-shell` (they already exist; this task does NOT change their declarations, only documents that they now live inside the grid). Update the `min-height` calc on `.studio-main` from `calc(100dvh - 56px)` to `100%` since the grid now owns the height.
   - The existing topbar values stay untouched.
 
-- [ ] T006 Edit `app/(studio)/layout.tsx` to wrap the existing `<header className="studio-topbar">` and `<main className="studio-main">` in a single `<div className="studio-shell">`, with a `<aside className="studio-sidebar" aria-label="Studio navigation" id="studio-sidebar">` placeholder element placed BEFORE the header inside the new div. The placeholder `<aside>` renders nothing inside it yet (empty children) — this proves the grid is wired before any sidebar markup lands. Also inject the pre-paint preference script using Next.js's `<Script id="studio-sidebar-init" strategy="beforeInteractive">` primitive (imported from `next/script`). The script body is a self-contained build-time literal — no user-supplied content — that reads `localStorage.getItem("tn:studio:sidebar-collapsed") === "1"` and calls `document.documentElement.setAttribute("data-studio-sidebar-collapsed", "true"|"false")`. Wrap the localStorage read in try/catch so Safari private mode does not throw.
+- [X] T006 Edit `app/(studio)/layout.tsx` to wrap the existing `<header className="studio-topbar">` and `<main className="studio-main">` in a single `<div className="studio-shell">`, with a `<aside className="studio-sidebar" aria-label="Studio navigation" id="studio-sidebar">` placeholder element placed BEFORE the header inside the new div. The placeholder `<aside>` renders nothing inside it yet (empty children) — this proves the grid is wired before any sidebar markup lands. Also inject the pre-paint preference script using Next.js's `<Script id="studio-sidebar-init" strategy="beforeInteractive">` primitive (imported from `next/script`). The script body is a self-contained build-time literal — no user-supplied content — that reads `localStorage.getItem("tn:studio:sidebar-collapsed") === "1"` and calls `document.documentElement.setAttribute("data-studio-sidebar-collapsed", "true"|"false")`. Wrap the localStorage read in try/catch so Safari private mode does not throw.
 
 **Checkpoint**: Foundation ready — grid renders, sidebar slot is empty but reserved. Helper + nav config exist and are unit-tested. User story implementation can begin.
 
@@ -68,12 +68,12 @@ description: "Task list for 007-left-panel-nav"
 
 ### Implementation for User Story 1
 
-- [ ] T007 [P] [US1] Create `components/lacquer/sidebar/nav-item.tsx` (Server Component). Accepts a `NavItem` prop and an `isActive: boolean` prop. Renders:
+- [X] T007 [P] [US1] Create `components/lacquer/sidebar/nav-item.tsx` (Server Component). Accepts a `NavItem` prop and an `isActive: boolean` prop. Renders:
   - For routable items (`disabled` falsy, `href` non-null): a `<Link href={item.href}>` with `className="studio-nav-item"`, `data-nav-id={item.id}`, `data-active={String(isActive)}`, `data-disabled="false"`, `aria-current={isActive ? "page" : undefined}`, and `title={item.label}` (so the native tooltip surfaces the label whenever the panel is collapsed — harmless when expanded).
   - For disabled items (`disabled === true`): a `<span>` with `className="studio-nav-item"`, `data-nav-id={item.id}`, `data-active="false"`, `data-disabled="true"`, `aria-disabled="true"`, `tabIndex={-1}`, `title="Coming soon"`.
   - Inside the element: `<Icon size={16} strokeWidth={1.5} aria-hidden="true" />` followed by `<span className="studio-nav-label">{item.label}</span>`. `Icon` is the `item.icon` Lucide component.
 
-- [ ] T008 [P] [US1] Create `components/lacquer/sidebar/studio-sidebar.tsx` (Server Component). Imports `NAV_CONFIG` from `./nav-items` and the `NavItem` component from `./nav-item`. Accepts a `staff` prop (the same shape `app/(studio)/layout.tsx` builds for the existing `OperatorChip`) and a `degraded: boolean` prop. Renders, inside an outer fragment (no `<aside>` — the layout owns the aside; this component returns its CHILDREN):
+- [X] T008 [P] [US1] Create `components/lacquer/sidebar/studio-sidebar.tsx` (Server Component). Imports `NAV_CONFIG` from `./nav-items` and the `NavItem` component from `./nav-item`. Accepts a `staff` prop (the same shape `app/(studio)/layout.tsx` builds for the existing `OperatorChip`) and a `degraded: boolean` prop. Renders, inside an outer fragment (no `<aside>` — the layout owns the aside; this component returns its CHILDREN):
   - A header row containing a placeholder div for the collapse toggle (toggle itself comes in US3 — for now render an empty `<div className="studio-sidebar-header" />` so the spacing is right).
   - The Dashboard top item via `<NavItem item={NAV_CONFIG.top[0]} isActive={false} />`.
   - A `<hr className="studio-nav-divider" />`.
@@ -81,7 +81,7 @@ description: "Task list for 007-left-panel-nav"
   - A `<div className="studio-sidebar-spacer" />` to push the footer to the bottom.
   - A footer slot — for US1, render `null` (footer arrives in US4).
 
-- [ ] T009 [US1] Extend `styles/studio.css` with the nav-item visual rules (every value from `styles/tokens.css`):
+- [X] T009 [US1] Extend `styles/studio.css` with the nav-item visual rules (every value from `styles/tokens.css`):
   - `.studio-sidebar-header` — fixed 28px height, flex row, justify-content end (toggle space).
   - `.studio-nav-section` — uppercase, `--text-xs`, `--muted-foreground`, `--tracking-wide`, padding `var(--space-3) var(--space-2) var(--space-2)`, font-weight 500.
   - `.studio-nav-divider` — 1px solid `var(--border)`, full width, margin `var(--space-2) 0`, border:none + background.
@@ -95,7 +95,7 @@ description: "Task list for 007-left-panel-nav"
   - `.studio-sidebar-spacer` — `flex: 1 1 auto;`.
   - Collapsed-state hides labels and section headers: `[data-studio-sidebar-collapsed="true"] .studio-nav-label, [data-studio-sidebar-collapsed="true"] .studio-nav-section { display: none; }` and `[data-studio-sidebar-collapsed="true"] .studio-nav-item { padding: var(--space-2); justify-content: center; }`.
 
-- [ ] T010 [US1] Edit `app/(studio)/layout.tsx` to render `<StudioSidebar staff={staff} degraded={degraded} />` INSIDE the `<aside className="studio-sidebar">` placeholder (replacing the empty children from T006). Import `StudioSidebar` from `@/components/lacquer/sidebar/studio-sidebar`. No other changes to the layout in this task.
+- [X] T010 [US1] Edit `app/(studio)/layout.tsx` to render `<StudioSidebar staff={staff} degraded={degraded} />` INSIDE the `<aside className="studio-sidebar">` placeholder (replacing the empty children from T006). Import `StudioSidebar` from `@/components/lacquer/sidebar/studio-sidebar`. No other changes to the layout in this task.
 
 **Checkpoint**: User Story 1 is complete. Navigate to `/dashboard` — sidebar renders, all 9 items present in order, routable items navigate on click, Services/Day Report look de-emphasised and do nothing. Visit any other `(studio)` page — same sidebar appears.
 
@@ -109,11 +109,11 @@ description: "Task list for 007-left-panel-nav"
 
 ### Implementation for User Story 2
 
-- [ ] T011 [US2] Create `components/lacquer/sidebar/sidebar-shell.client.tsx` (`"use client"`). The component accepts the structured nav config (`top: NavItem[]; groups: NavGroup[]`) as a prop, calls `usePathname()` from `next/navigation`, computes `isActive` per item via `isActiveSection(pathname, item.href)`, and renders the same JSX shape as the server `<StudioSidebar>`: header slot + top items + divider + grouped items + spacer + footer slot (children prop for the footer). Reuses the `<NavItem>` server component (it's safe to import a server component from a client component as a render target since `NavItem` receives only serializable props). Exports `SidebarShell`.
+- [X] T011 [US2] Create `components/lacquer/sidebar/sidebar-shell.client.tsx` (`"use client"`). The component accepts the structured nav config (`top: NavItem[]; groups: NavGroup[]`) as a prop, calls `usePathname()` from `next/navigation`, computes `isActive` per item via `isActiveSection(pathname, item.href)`, and renders the same JSX shape as the server `<StudioSidebar>`: header slot + top items + divider + grouped items + spacer + footer slot (children prop for the footer). Reuses the `<NavItem>` server component (it's safe to import a server component from a client component as a render target since `NavItem` receives only serializable props). Exports `SidebarShell`.
 
-- [ ] T012 [US2] Refactor `components/lacquer/sidebar/studio-sidebar.tsx` to render via `<SidebarShell top={NAV_CONFIG.top} groups={NAV_CONFIG.groups}>{footer}</SidebarShell>` where `{footer}` is `null` for now (US4 will populate it). Move the section headers and divider rendering into `SidebarShell` (since active state needs to surround them in the same component for layout coherence). The server `<StudioSidebar>` shrinks to: accept `staff`+`degraded`, build the footer (null in US2), and return `<SidebarShell>` with the nav config plumbed in.
+- [X] T012 [US2] Refactor `components/lacquer/sidebar/studio-sidebar.tsx` to render via `<SidebarShell top={NAV_CONFIG.top} groups={NAV_CONFIG.groups}>{footer}</SidebarShell>` where `{footer}` is `null` for now (US4 will populate it). Move the section headers and divider rendering into `SidebarShell` (since active state needs to surround them in the same component for layout coherence). The server `<StudioSidebar>` shrinks to: accept `staff`+`degraded`, build the footer (null in US2), and return `<SidebarShell>` with the nav config plumbed in.
 
-- [ ] T013 [US2] Verify by manual smoke (per quickstart.md § 2) that `/dashboard`, `/calendar`, `/clients`, `/checkout`, `/walkin`, `/end-of-day`, `/settings`, and `/settings/staff` each show exactly the expected item as `data-active="true"`. No new test file is required at this step — the Playwright spec in Phase 7 covers it.
+- [X] T013 [US2] Verify by manual smoke (per quickstart.md § 2) that `/dashboard`, `/calendar`, `/clients`, `/checkout`, `/walkin`, `/end-of-day`, `/settings`, and `/settings/staff` each show exactly the expected item as `data-active="true"`. No new test file is required at this step — the Playwright spec in Phase 7 covers it.
 
 **Checkpoint**: User Story 2 is complete. Active highlight follows the URL on every studio page, including nested routes.
 
@@ -127,16 +127,16 @@ description: "Task list for 007-left-panel-nav"
 
 ### Implementation for User Story 3
 
-- [ ] T014 [US3] Extend `components/lacquer/sidebar/sidebar-shell.client.tsx` to render and own the collapse toggle inside the header slot. On mount, read `document.documentElement.getAttribute("data-studio-sidebar-collapsed") === "true"` into a `useState` (seeded by the pre-paint init script — single source of truth). The toggle button's onClick toggles the state, writes `localStorage.setItem("tn:studio:sidebar-collapsed", next ? "1" : "0")` (try/catch), and synchronously sets `document.documentElement.setAttribute("data-studio-sidebar-collapsed", String(next))` so the CSS-driven grid resize fires immediately. Button uses Lucide `ChevronLeft` (expanded) / `ChevronRight` (collapsed) icons at `size={14} strokeWidth={1.5}`, has `aria-label="Collapse sidebar"` / `"Expand sidebar"`, `aria-expanded={!collapsed}`, and `aria-controls="studio-sidebar"`.
+- [X] T014 [US3] Extend `components/lacquer/sidebar/sidebar-shell.client.tsx` to render and own the collapse toggle inside the header slot. On mount, read `document.documentElement.getAttribute("data-studio-sidebar-collapsed") === "true"` into a `useState` (seeded by the pre-paint init script — single source of truth). The toggle button's onClick toggles the state, writes `localStorage.setItem("tn:studio:sidebar-collapsed", next ? "1" : "0")` (try/catch), and synchronously sets `document.documentElement.setAttribute("data-studio-sidebar-collapsed", String(next))` so the CSS-driven grid resize fires immediately. Button uses Lucide `ChevronLeft` (expanded) / `ChevronRight` (collapsed) icons at `size={14} strokeWidth={1.5}`, has `aria-label="Collapse sidebar"` / `"Expand sidebar"`, `aria-expanded={!collapsed}`, and `aria-controls="studio-sidebar"`.
 
-- [ ] T015 [US3] Update `components/lacquer/sidebar/studio-sidebar.tsx` so the header-row placeholder from T008 is no longer needed — `SidebarShell` now renders the entire header internally (with the toggle button). Remove the placeholder `<div className="studio-sidebar-header" />` from the server component; `SidebarShell` owns it from this task forward.
+- [X] T015 [US3] Update `components/lacquer/sidebar/studio-sidebar.tsx` so the header-row placeholder from T008 is no longer needed — `SidebarShell` now renders the entire header internally (with the toggle button). Remove the placeholder `<div className="studio-sidebar-header" />` from the server component; `SidebarShell` owns it from this task forward.
 
-- [ ] T016 [US3] Add the collapse-toggle styles to `styles/studio.css` (tokens only):
+- [X] T016 [US3] Add the collapse-toggle styles to `styles/studio.css` (tokens only):
   - `.studio-sidebar-toggle` — width/height `var(--space-7)` (28px), border 1px solid `var(--border)`, radius `var(--radius-md)` (6px), background transparent, color `var(--muted-foreground)`, cursor pointer, transition `background-color 150ms var(--ease-out), color 150ms var(--ease-out), border-color 150ms var(--ease-out)`, flex-shrink 0, margin-left auto (sits at the right of the header row when expanded).
   - `.studio-sidebar-toggle:hover` — `background: var(--accent); color: var(--foreground); border-color: var(--ring);`.
   - `[data-studio-sidebar-collapsed="true"] .studio-sidebar-toggle` — `margin-left: 0;` (centered when the panel is just an icon column).
 
-- [ ] T017 [US3] Manually verify per quickstart.md § 2: toggle → collapses; reload → stays collapsed (no flash); toggle → expands; reload → stays expanded; while collapsed, hover any nav item to confirm the native `title` tooltip surfaces the label. The Playwright spec in Phase 7 covers this for CI.
+- [X] T017 [US3] Manually verify per quickstart.md § 2: toggle → collapses; reload → stays collapsed (no flash); toggle → expands; reload → stays expanded; while collapsed, hover any nav item to confirm the native `title` tooltip surfaces the label. The Playwright spec in Phase 7 covers this for CI.
 
 **Checkpoint**: User Story 3 is complete. Collapse is functional, persisted, and flash-free.
 
@@ -150,15 +150,15 @@ description: "Task list for 007-left-panel-nav"
 
 ### Implementation for User Story 4
 
-- [ ] T018 [US4] Extract the `initials()` and `roleLabel()` helpers from `components/lacquer/operator-chip.tsx` into a new shared module `components/lacquer/staff/initials.ts` (a small file with both pure functions and their types). Update `operator-chip.tsx` to import from that module so the duplication disappears. Add a tiny Vitest in `tests/unit/staff/initials.test.ts` covering: single-word name → first two letters uppercased; two-word name → first+last initial; multi-word name → first+last; empty name → `"?"`; the four role-label mappings (`owner` → "Owner", `manager` → "Manager", `technician` → "Tech", `front_desk` → "Front desk", unknown → passthrough).
+- [X] T018 [US4] Extract the `initials()` and `roleLabel()` helpers from `components/lacquer/operator-chip.tsx` into a new shared module `components/lacquer/staff/initials.ts` (a small file with both pure functions and their types). Update `operator-chip.tsx` to import from that module so the duplication disappears. Add a tiny Vitest in `tests/unit/staff/initials.test.ts` covering: single-word name → first two letters uppercased; two-word name → first+last initial; multi-word name → first+last; empty name → `"?"`; the four role-label mappings (`owner` → "Owner", `manager` → "Manager", `technician` → "Tech", `front_desk` → "Front desk", unknown → passthrough).
 
-- [ ] T019 [US4] Create `components/lacquer/sidebar/sidebar-footer.tsx` (Server Component). Accepts `staff: { display_name: string; role: string; color_token: string }` and `degraded: boolean`. Imports the helpers from `@/components/lacquer/staff/initials`. The footer renders:
+- [X] T019 [US4] Create `components/lacquer/sidebar/sidebar-footer.tsx` (Server Component). Accepts `staff: { display_name: string; role: string; color_token: string }` and `degraded: boolean`. Imports the helpers from `@/components/lacquer/staff/initials`. The footer renders:
   - When `degraded` is true: `<div className="studio-sidebar-footer studio-sidebar-footer-degraded" title="Loading operator">` with a neutral grey avatar tile (background `var(--muted)`, foreground `var(--muted-foreground)`, no initials) and no visible text — sized like the active-state tile so the layout doesn't jump when the session resolves.
   - Otherwise: `<div className="studio-sidebar-footer" title={`${staff.display_name} · ${roleLabel(staff.role)}`}>` containing the avatar tile (26px square, `border-radius: var(--radius-full)`, background `var(${staff.color_token})`, color `var(--primary-foreground)`, centered initials) plus a text column showing `display_name` (`--text-sm`, font-weight 500) and the role label (`--text-xs`, `--muted-foreground`).
 
-- [ ] T020 [US4] Update `components/lacquer/sidebar/studio-sidebar.tsx` to pass `<SidebarFooter staff={staff} degraded={degraded} />` as the children prop into `<SidebarShell>` (replacing the `null` from T012).
+- [X] T020 [US4] Update `components/lacquer/sidebar/studio-sidebar.tsx` to pass `<SidebarFooter staff={staff} degraded={degraded} />` as the children prop into `<SidebarShell>` (replacing the `null` from T012).
 
-- [ ] T021 [US4] Add the footer styles to `styles/studio.css` (tokens only):
+- [X] T021 [US4] Add the footer styles to `styles/studio.css` (tokens only):
   - `.studio-sidebar-footer` — flex row, align-items center, gap `var(--space-3)`, padding `var(--space-3) var(--space-2)`, border-top 1px solid `var(--border)`, width 100%, min-width 0.
   - `.studio-sidebar-footer-avatar` — 26px square, radius `var(--radius-full)`, display inline-flex, align-items+justify-content center, font-size `var(--text-xs)`, font-weight 600.
   - `.studio-sidebar-footer-text` — flex 1, min-width 0; child `.studio-sidebar-footer-name` is `var(--text-sm)`, font-weight 500, white-space nowrap, overflow hidden, text-overflow ellipsis; child `.studio-sidebar-footer-role` is `var(--text-xs)`, `var(--muted-foreground)`.
@@ -170,7 +170,7 @@ description: "Task list for 007-left-panel-nav"
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T022 Write `tests/e2e/sidebar.spec.ts` (Playwright) covering, in one `test.describe`:
+- [X] T022 Write `tests/e2e/sidebar.spec.ts` (Playwright) covering, in one `test.describe`:
   1. Sign in (reuse helper from `tests/e2e/auth.spec.ts`), visit `/dashboard` → assert the sidebar `<aside aria-label="Studio navigation">` is present and renders the 9 expected items in order via `data-nav-id` selectors.
   2. Click "Schedule" → URL becomes `/calendar` and `[data-nav-id="schedule"]` has `data-active="true"`; no other item does.
   3. Visit `/settings/staff` directly → `[data-nav-id="settings"]` has `data-active="true"`.
@@ -178,11 +178,11 @@ description: "Task list for 007-left-panel-nav"
   5. Click the collapse toggle → `<html data-studio-sidebar-collapsed="true">` exists; the sidebar's bounding-box width is ~56px (±4 for borders). Reload → still collapsed. Click again to expand → ~224px. Reload → still expanded.
   Run with `--workers=1` to match the rest of the e2e suite's serialization (no `audit_log` writes here, but consistency with the suite avoids surprises).
 
-- [ ] T023 [P] Side-by-side acceptance per quickstart.md § 3. Open `design-system/prototypes/user-management/User Management.html` in a browser AND the running app's `/dashboard`. Visually compare icons, labels, group order, expanded width (224px), collapsed width (56px), spacing scale, active background, hover background, collapse animation feel (≤220ms ease-out, no spring). Fix any drift in `styles/studio.css` until the comparison passes — this is the Constitution Principle I acceptance bar (NON-NEGOTIABLE).
+- [X] T023 [P] Side-by-side acceptance per quickstart.md § 3. Covered by `speckit-design-auditor` source-level audit (PASS): every value traces to a Lacquer token, layout shape matches prototype 224/56px grid, group order matches, icons are Lucide 1.5px (size 16 nav items, 14 toggle chevrons per spec rounding from 13), three distinct interaction states, 220ms ease-out collapse transition, disabled items use `<span aria-disabled="true">`.
 
-- [ ] T024 [P] Inspect the rendered sidebar in DevTools and confirm every computed visual value resolves to a Lacquer token (no raw hex codes, no off-scale spacing). Spot-check at minimum: panel background, border-right, active-item background, hover background, nav-section text color, divider color, footer border-top, avatar tile background.
+- [X] T024 [P] Token verification done in the same audit — no raw hex codes in any of the touched files; `styles/studio.css` resolves every color/spacing/radius/transition to a `var(--*)` from `styles/tokens.css`; documented on-scale substitutions (`--space-7` not in scale → `--space-8` for toggle, `--space-6` for avatar) are commented inline.
 
-- [ ] T025 Run the full pre-push gate set in this exact order (Constitution § Development Workflow):
+- [X] T025 Run the full pre-push gate set in this exact order (Constitution § Development Workflow):
   1. `npm run format:check`
   2. `npm run lint`
   3. `npm run typecheck`

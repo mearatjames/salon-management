@@ -23,7 +23,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    // `suppressHydrationWarning` — the studio sidebar's pre-paint init script in `app/(studio)/layout.tsx` sets `data-studio-sidebar-collapsed` on <html> before hydration; this is the React-blessed escape hatch for that intentional mismatch.
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
   );
