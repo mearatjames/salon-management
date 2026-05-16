@@ -1,6 +1,25 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change: 1.0.2 → 1.0.3
+Bump rationale: PATCH — closes a schema-drift hole exposed by the
+  007-left-panel-nav preview. The Supabase migration set on `main` was
+  out-of-sync with both the preview project (where /settings/staff crashed
+  on a missing `removed_at` column added by PR #6's 0002 migration) and the
+  production project. The deploy pipeline had no step that applied
+  `supabase/migrations/**` to the hosted Supabase projects, so propagation
+  depended on a human remembering to run `supabase db push`. This amendment
+  adds the "Schema drift forbidden" rule under § Development Workflow &
+  Quality Gates, naming the two GitHub Actions
+  (`.github/workflows/db-migrate-{preview,prod}.yml`) that automate the
+  apply. No principle, section, or governance rule changed; this codifies a
+  workflow that should have existed since PR #6.
+
+Templates requiring updates: none — the rule sits inside an existing
+  section. CLAUDE.md gains a one-line pointer to the new workflows in the
+  same change set.
+
+--- Prior entry (1.0.2) -------------------------------------------------------
 Version change: 1.0.1 → 1.0.2
 Bump rationale: PATCH — clarification of an existing CI gate. The "CI gates"
   bullet in § Development Workflow & Quality Gates already required type
@@ -198,6 +217,15 @@ creep is the primary risk to shipping a single integrated tool the salon can ado
   commands; a green local run is the contract that the PR will not bounce on a
   formatting or lint nit. PRs touching payments, auth, or audit logging additionally
   require a reviewer to confirm Principles II, III, and IV.
+- **Schema drift forbidden.** The hosted Supabase preview and production projects
+  MUST always match the migration set on the open PR (preview) and on `main`
+  (production). New migrations land via two GitHub Actions —
+  `.github/workflows/db-migrate-preview.yml` (on PR open/synchronize) and
+  `.github/workflows/db-migrate-prod.yml` (on push to `main`) — both running
+  `supabase db push --linked --include-all`. Manual `supabase db push` is reserved
+  for emergencies. A PR that depends on a new schema MUST include the migration in
+  `supabase/migrations/**` so the preview workflow applies it before the Vercel
+  preview deploy is exercised.
 - **Review.** Code review MUST verify constitution compliance. A reviewer cites the
   specific principle when requesting changes. Unjustified complexity is grounds for
   rejection.
@@ -222,4 +250,4 @@ creep is the primary risk to shipping a single integrated tool the salon can ado
 - **Runtime guidance.** Use `CLAUDE.md` and `docs/system-design.md` for day-to-day
   implementation guidance; this constitution is the stable layer above them.
 
-**Version**: 1.0.2 | **Ratified**: 2026-05-13 | **Last Amended**: 2026-05-15
+**Version**: 1.0.3 | **Ratified**: 2026-05-13 | **Last Amended**: 2026-05-16
