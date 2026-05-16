@@ -229,17 +229,17 @@ Phase 9's implementer can `grep -r "TODO(phase-9)"` to find every site needing a
 ```sql
 SELECT id
 FROM tickets
-WHERE opened_by_staff_id = $1                             -- current operator
+WHERE opened_by_staff_id = $1                   -- current operator (viewer.staff.id)
   AND status = 'open'
-  AND (created_at AT TIME ZONE 'America/New_York')::date  -- SALON_TZ via the existing lib/time/* helper
-      = (now() AT TIME ZONE 'America/New_York')::date
+  AND created_at >= $2                          -- start of "today in salon tz" (UTC instant)
+  AND created_at <  $3                          -- start of "tomorrow in salon tz" (UTC instant)
 ORDER BY updated_at DESC
 LIMIT 1;
 ```
 
 If no row returns, it calls `createEmptyTicket()` and returns the new id.
 
-The timezone literal is supplied by the existing `SALON_TZ` env var via `lib/time/*` (Constitution § "Time correctness") rather than being hardcoded in SQL; the example above uses the salon's default value for readability.
+The "today in salon timezone" bounds are computed by the Server Action in TypeScript using `Intl.DateTimeFormat('en-CA', { timeZone: process.env.SALON_TZ ?? 'America/New_York' })` to derive the salon's current calendar date, then constructing two UTC `Date` instants (`startOfDay`, `nextDay`) and passing them as `timestamptz` parameters to the query. Computing the bounds in TS rather than in SQL avoids depending on a Postgres timezone literal and keeps the helper-free baseline this phase ships against. A future `lib/time/*` helper (per Constitution § "Time correctness") will absorb this inline computation when the rest of the studio standardises on it.
 
 **Rationale**:
 

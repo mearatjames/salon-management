@@ -57,10 +57,10 @@ Repo root: `/Users/mearathou/Dev/salon-management/.worktrees/011-cash-sale-wip/`
 - [ ] T007 [P] Write `tests/unit/checkout/cart-totals.test.ts` covering: empty cart returns `{subtotalCents:0, totalCents:0, chargeEligible:false}`; one fixed-price line; two fixed-price lines; one fixed + one unconfirmed (subtotal excludes unconfirmed, `chargeEligible=false`). This file is the red baseline before T008 lands.
 - [ ] T008 Implement `lib/pos/cart.ts` exporting `computeTotals(items: CartItem[]): { subtotalCents: number; taxCents: 0; totalCents: number; chargeEligible: boolean }`. Sum fixed-price lines only; `taxCents` is the literal `0`; `chargeEligible = totalCents > 0 && items.every(i => !i.priceUnconfirmed)`. Make T007's tests pass.
 
-### Server-actions module scaffold + currentOperator helper
+### Server-actions module scaffold + session-helper check
 
 - [ ] T009 Create `app/(studio)/checkout/actions.ts` with the file-level `"use server"` directive, the `CheckoutActionError` type union from `contracts/server-actions.md`, and the error subclasses (`TicketNotOpenError`, `TicketAlreadyTerminalError`, `TicketHasUnpricedItemsError`, `TicketEmptyError`, `StaffNotActiveError`, `ServiceArchivedError`, `CashPaymentFailedError`). No actions implemented yet — scaffolding only.
-- [ ] T010 Add a `currentOperator(): Promise<{ staffId: string; userId: string }>` helper in `lib/auth/session.ts` if it does not already exist (it pairs with `requireStudioSession()` / `requireActingAsStaff()`; reuse those if they already return what we need — only add if missing).
+- [ ] T010 Confirm `requireStudioSession()` in `lib/auth/session.ts` returns a `StudioViewer` with both `deviceUserId` (the device's `auth.uid()`) and `staff.id` (the operator from the `acting_as_staff_id` cookie). No new helper needed — the seven actions destructure `viewer.staff.id` directly. If a future feature wants a sugar alias (`currentOperator()`), that's a one-line wrapper added in that feature's plan, not here.
 
 ### Stylesheet scaffold
 
@@ -132,7 +132,7 @@ Repo root: `/Users/mearathou/Dev/salon-management/.worktrees/011-cash-sale-wip/`
 
 ### Implementation
 
-- [ ] T033 [US2] Implement `resumeOrCreateTicket()` in `app/(studio)/checkout/actions.ts` per `contracts/server-actions.md` § 2 and research.md § R8. Uses the existing `lib/time/*` helper to compute "today in salon timezone" rather than hardcoding the timezone in SQL. If found, returns `{ ticketId, resumed: true }`; otherwise falls through to `createEmptyTicket()` and returns `{ ticketId, resumed: false }`.
+- [ ] T033 [US2] Implement `resumeOrCreateTicket()` in `app/(studio)/checkout/actions.ts` per `contracts/server-actions.md` § 2 and research.md § R8. Compute the "today in salon timezone" bounds inline via `Intl.DateTimeFormat` against `process.env.SALON_TZ` (no `lib/time/*` helper exists yet — see analysis C1); pass `[startOfDay, nextDay]` as `timestamptz` parameters to the resume query. If a row is returned, return `{ ticketId, resumed: true }`; otherwise fall through to `createEmptyTicket()` and return `{ ticketId, resumed: false }`.
 - [ ] T034 [US2] Update `app/(studio)/checkout/page.tsx` to dispatch by entry-point hint: if `?fresh=1` is present in the URL `searchParams`, call `createEmptyTicket()` (dashboard CTA); otherwise call `resumeOrCreateTicket()` (sidebar). Preserves US1's "dashboard always creates fresh" invariant per FR-002.
 - [ ] T035 [US2] Update `components/lacquer/new-transaction-cta.tsx` to set `href = "/checkout?fresh=1"` (single-line change in the default prop). No other call sites need updating.
 
@@ -300,5 +300,5 @@ Ship Phases 1 → 7 in one PR if you prefer fewer review cycles. The task orderi
 - The `// TODO(phase-9)` markers from research.md § R7 are placed by T026 (action) and T003 (SQL function). T049 grep-verifies they are present and findable.
 - The `appointments` table is schema-only this phase (data-model.md § 1). Do not add seed data, queries, or UI for it; it exists to satisfy the `tickets.appointment_id` FK target for the future appointments feature.
 - The `discarded` status enum extension is the single tracked deviation from `docs/system-design.md` — see `plan.md` § Complexity Tracking. Mention this in the PR description so the next constitution amendment can pick it up.
-- Every Server Action lives behind `requireStudioSession()` + `requireActingAsStaff()`. There is no role check beyond "is signed in" (FR-028 / clarification Q4).
+- Every Server Action lives behind `requireStudioSession()`. The returned `StudioViewer.staff.id` is the operator (cookie-driven); `StudioViewer.deviceUserId` is the device user (Supabase auth). There is no role check beyond "is signed in" (FR-028 / clarification Q4).
 - Cash payment is a money critical path. Reviewers must verify Principles II (server-authoritative), III (atomic, audited, snapshotted), and IV (test-first) in the PR per the constitution.

@@ -7,7 +7,7 @@ This file contracts the seven Server Actions for this feature: signature, inputs
 All actions:
 
 - Are exported `async function`s marked `"use server"` at the file top.
-- Authenticate via the existing `requireStudioSession()` and `requireActingAsStaff()` helpers in `lib/auth/session.ts`. An action MUST refuse (throw) if either fails — no anonymous mutation path.
+- Authenticate via the existing `requireStudioSession()` helper in `lib/auth/session.ts`. It returns a `StudioViewer` (`{ deviceUserId, staff: { id, role, … } }`) and throws `AuthRedirectError` if no valid session exists. The operator id is `viewer.staff.id`; the device-user id is `viewer.deviceUserId`. No anonymous mutation path.
 - Validate input with `zod` schemas defined alongside the action.
 - Use the service-role Supabase client from `lib/db/admin.ts` for writes. Service-role bypasses RLS; authorization is enforced in the action body.
 - Emit an `audit_log` row through `lib/auth/audit.ts` for every successful write (except `payment.captured`, which is emitted from inside the `pos_take_cash` SQL function — see [audit.contract.md](./audit.contract.md)).
@@ -28,7 +28,7 @@ export async function createEmptyTicket(): Promise<{ ticketId: string }>;
 
 **Invariants**:
 
-- Inserts one `public.tickets` row with `status='open'`, `appointment_id=null`, `opened_by_staff_id = currentOperator()`, all totals = 0.
+- Inserts one `public.tickets` row with `status='open'`, `appointment_id=null`, `opened_by_staff_id = viewer.staff.id`, all totals = 0.
 - Emits `audit_log` row with `action='ticket.created'`, `entity_id = newTicketId`, payload `{ created_by_entry_point: 'unspecified' }` (the entry point is provided by `resumeOrCreateTicket` when it calls through; direct callers omit it).
 - Never re-uses an existing ticket. The caller (`/checkout/page.tsx`) is responsible for redirect logic.
 
@@ -51,7 +51,7 @@ export async function resumeOrCreateTicket(): Promise<{
 
 **Invariants**:
 
-- Runs the resume query from research.md § R8: `status='open'`, `opened_by_staff_id = currentOperator()`, `(created_at AT TIME ZONE SALON_TZ)::date = today`. Returns the most recently updated row, if any.
+- Runs the resume query from research.md § R8: `status='open'`, `opened_by_staff_id = viewer.staff.id`, `created_at` within the salon's current calendar day (TS-computed bounds, see R8). Returns the most recently updated row, if any.
 - If found: returns `{ ticketId, resumed: true }`. No audit emission (no write occurred).
 - If not found: calls `createEmptyTicket()` and returns `{ ticketId, resumed: false }`. The downstream `ticket.created` audit row carries `payload.created_by_entry_point = 'sidebar_resume_or_create'`.
 - Paid and discarded tickets are NEVER returned — the resume query filters them out by index predicate.
@@ -205,7 +205,7 @@ export async function discardTicket(
 **Invariants**:
 
 - Refuses if the ticket is already `paid` or `discarded` (terminal states are not revisitable — throws `TicketAlreadyTerminalError`).
-- Updates `tickets.status='discarded'`, `closed_by_staff_id = currentOperator()`, `closed_at = now()`. `total_cents` is left as-is for forensic visibility (the cart contents on a discarded ticket are still readable via the receipt route, though no receipt would normally be printed for a discarded ticket).
+- Updates `tickets.status='discarded'`, `closed_by_staff_id = viewer.staff.id`, `closed_at = now()`. `total_cents` is left as-is for forensic visibility (the cart contents on a discarded ticket are still readable via the receipt route, though no receipt would normally be printed for a discarded ticket).
 - Emits `ticket.discarded`, entity = `ticketId`, payload `{ subtotal_cents_at_discard, line_count_at_discard }`.
 - Caller (the client island) routes the operator back to the dashboard after a successful discard.
 
@@ -215,7 +215,7 @@ export async function discardTicket(
 
 ## Cross-cutting invariants
 
-- **Operator attribution**: every action reads `acting_as_staff_id` from the signed cookie via `currentOperator()` (a thin helper in `lib/auth/session.ts`). Audit rows carry this as `acting_as_staff_id`; relevant table columns (`tickets.opened_by_staff_id`, `tickets.closed_by_staff_id`, `payments.taken_by_staff_id`) all derive from it.
+- **Operator attribution**: every action reads the operator id from the `StudioViewer` returned by `requireStudioSession()` — specifically `viewer.staff.id`. Audit rows carry this as `acting_as_staff_id` (via the existing `audit()` helper, which also writes `actor_user_id = viewer.deviceUserId`). Relevant table columns (`tickets.opened_by_staff_id`, `tickets.closed_by_staff_id`, `payments.taken_by_staff_id`) all derive from `viewer.staff.id`.
 - **No client trust for money**: `addServiceLine` reads `services.price_cents` from the database — the client never sends a price. `takeCash` reads `tickets.total_cents` inside the RPC's locked transaction.
 - **Idempotency**: actions do not currently key inputs (no `Idempotency-Key` header analog). Re-submission protection is by:
   - `takeCash` — the ticket is locked + `status='open'` checked; a second submission sees `ticket_not_open`.
