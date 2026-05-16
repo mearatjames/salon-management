@@ -49,7 +49,10 @@ describe("lib/auth/cookie", () => {
   it("rejects a tampered signature segment", async () => {
     const token = await mintCookie({ sid: SID });
     const [header, payload, sig] = token.split(".");
-    const flipped = sig.slice(0, -1) + (sig.endsWith("a") ? "b" : "a");
+    // Flip the first char (not the last): a 43-char base64url HS256 signature
+    // has 2 don't-care bits at the tail, so a last-char flip can decode to the
+    // same bytes (e.g. "a"↔"b" share a group) and verification still passes.
+    const flipped = (sig.startsWith("a") ? "b" : "a") + sig.slice(1);
     const tampered = `${header}.${payload}.${flipped}`;
     await expect(verifyOperatorCookie(tampered)).rejects.toBeInstanceOf(OperatorCookieInvalidError);
   });
