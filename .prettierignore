@@ -10,6 +10,10 @@ test-results/
 # Generated lockfile
 package-lock.json
 
+# Sibling worktrees — each worktree has its own branch and runs its own
+# format:check. Don't lint them from the parent.
+.worktrees/
+
 # Vendored design-system handoff — re-exported, never hand-edited or reformatted
 design-system/
 
