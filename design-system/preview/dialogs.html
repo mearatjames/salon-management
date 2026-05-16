@@ -1,0 +1,138 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  body { padding: 20px 24px; }
+  .row { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+
+  /* ── Dialog shell ── */
+  .dlg {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+  }
+  .dlg-hd {
+    padding: 20px 20px 0 24px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .dlg-title { font-size: var(--text-md); font-weight: 600; line-height: var(--leading-snug); }
+  .dlg-desc  { font-size: var(--text-sm); color: var(--muted-foreground); margin-top: 3px; text-wrap: pretty; line-height: var(--leading-normal); }
+  .dlg-x {
+    flex-shrink: 0; width: 28px; height: 28px; border-radius: var(--radius-sm);
+    border: none; background: transparent; color: var(--muted-foreground);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+  }
+  .dlg-x:hover { background: var(--accent); color: var(--foreground); }
+  .dlg-sep { height: 1px; background: var(--border); margin: 16px 0 0; }
+  .dlg-body { padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+  .dlg-ft   { padding: 4px 24px 20px; display: flex; gap: 8px; justify-content: flex-end; }
+
+  /* ── Form fields ── */
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field-lbl { font-size: var(--text-xs); font-weight: 500; color: var(--foreground); }
+  .field-inp {
+    height: 32px; padding: 0 10px;
+    border: 1px solid var(--input); border-radius: var(--radius-xs);
+    font-size: var(--text-sm); font-family: var(--font-sans);
+    color: var(--foreground); background: var(--background);
+    outline: none; transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+    appearance: none;
+  }
+  .field-inp::placeholder { color: var(--muted-foreground); }
+  .field-inp:focus { border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 20%, transparent); }
+  .field-ta { height: 76px; padding: 8px 10px; resize: none; line-height: var(--leading-normal); }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .field-hint { font-size: var(--text-xs); color: var(--muted-foreground); margin-top: 2px; }
+
+  /* ── Buttons ── */
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: var(--radius-sm); font-size: var(--text-sm); font-weight: 500; border: 1px solid transparent; cursor: pointer; font-family: var(--font-sans); white-space: nowrap; transition: all var(--duration-fast) var(--ease-out); }
+  .btn-primary     { background: var(--primary); color: var(--primary-foreground); }
+  .btn-primary:hover { background: color-mix(in oklch, var(--primary) 90%, black); }
+  .btn-secondary   { background: var(--secondary); color: var(--secondary-foreground); border-color: var(--border); }
+  .btn-secondary:hover { background: var(--accent); }
+  .btn-ghost       { background: transparent; color: var(--foreground); }
+  .btn-ghost:hover { background: var(--accent); }
+  .btn svg { width: 14px; height: 14px; }
+
+  /* ── Section label ── */
+  .lbl { font-size: 11px; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-foreground); margin-bottom: 10px; }
+</style>
+</head>
+<body>
+  <div class="row">
+
+    <!-- ── Dialog 1: Simple / text input ── -->
+    <div>
+      <div class="lbl">Simple</div>
+      <div class="dlg" style="width:320px">
+        <div class="dlg-hd">
+          <div>
+            <div class="dlg-title">Add a note</div>
+            <div class="dlg-desc">Saved to Maya Patel's client record.</div>
+          </div>
+          <button class="dlg-x" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 6 6 18M6 6l12 12" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="dlg-sep"></div>
+        <div class="dlg-body">
+          <div class="field">
+            <label class="field-lbl">Note</label>
+            <textarea class="field-inp field-ta" placeholder="e.g. Prefers no gel topcoat, sensitive cuticles…"></textarea>
+            <span class="field-hint">Visible to staff only.</span>
+          </div>
+        </div>
+        <div class="dlg-ft">
+          <button class="btn btn-secondary">Cancel</button>
+          <button class="btn btn-primary">Save note</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Dialog 2: Form / multi-field ── -->
+    <div>
+      <div class="lbl">Form</div>
+      <div class="dlg" style="width:380px">
+        <div class="dlg-hd">
+          <div>
+            <div class="dlg-title">Reschedule appointment</div>
+            <div class="dlg-desc">Maya Patel · Gel polish · 60 min</div>
+          </div>
+          <button class="dlg-x" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M18 6 6 18M6 6l12 12" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="dlg-sep"></div>
+        <div class="dlg-body">
+          <div class="field-row">
+            <div class="field">
+              <label class="field-lbl">Date</label>
+              <input type="text" class="field-inp" value="Sat, May 17">
+            </div>
+            <div class="field">
+              <label class="field-lbl">Time</label>
+              <input type="text" class="field-inp" value="2:30 PM">
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-lbl">Technician</label>
+            <input type="text" class="field-inp" value="Priya Sharma">
+          </div>
+          <div class="field">
+            <label class="field-lbl">Reason (optional)</label>
+            <input type="text" class="field-inp" placeholder="e.g. Client request">
+          </div>
+        </div>
+        <div class="dlg-ft">
+          <button class="btn btn-ghost">Cancel</button>
+          <button class="btn btn-primary">Confirm reschedule</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body></html>
