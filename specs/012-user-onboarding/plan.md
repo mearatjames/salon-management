@@ -237,7 +237,8 @@ lib/auth/
 lib/onboarding/
 ├── invite.ts                                 # NEW: thin wrappers over supabase.auth.admin.*
 │                                              #   (generateMagicLinkInvite, sendPasswordInvite, deleteInviteUser)
-└── email-conflict.ts                         # NEW: pre-invite uniqueness check across all 3 states
+├── email-conflict.ts                         # NEW: pre-invite uniqueness check across all 3 states
+└── anon-counter.ts                           # NEW: getNextAnonPlaceholder() — wraps nextval('staff_anon_counter')
 
 styles/
 └── onboarding.css                            # NEW: page + sheet + row styles (adapted from prototype's onboarding.css)

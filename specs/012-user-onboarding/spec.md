@@ -138,7 +138,7 @@ The owner can search the page by name or email; matches are filtered live across
 ### Edge Cases
 
 - **Email already exists.** Owner submits an invite for an email tied to an existing account (whether active, offboarded, or pending). The system rejects with a calm inline error naming the existing state ("Already invited", "Already active", "Was offboarded — reactivate instead?") and does not create a duplicate account.
-- **Invite link expired.** Invitee clicks a link past its validity (24 h for magic-link, 7 days for password-setup). The user lands on a friendly "Link expired — ask {inviter} to resend" page; an `user.invite_expired_attempt` audit row is written.
+- **Invite link expired.** Invitee clicks a link past its validity (24 h for magic-link, 7 days for password-setup). The user lands on a friendly "Link expired — ask {inviter} to resend" page. No separate audit row is written — passive failures are surfaced via Supabase's standard expired-link redirect path, and tracking every expired-link click would add noise without forensic value.
 - **Self-offboard via direct request.** A non-owner cannot reach the page or its server actions (RLS + role check). The owner row's offboard option is explicitly disabled (US3 AC5). If the owner attempts to call the offboard action against their own user_id via a crafted request, the server rejects with `cannot_offboard_self`.
 - **Last owner protection.** If a salon has exactly one Owner, attempting to offboard or remove that owner (by anyone) must fail with a `last_owner` error and a UI message "Promote another owner first." (Implemented at the server layer; the UI need not disable the path proactively if the second owner exists.)
 - **Concurrent edits.** Two owners are on the Onboarding page; Owner A offboards a user while Owner B is viewing the same row. Owner B's next action against that row returns a stale-state error and the page refetches.
@@ -209,7 +209,7 @@ The owner can search the page by name or email; matches are filtered live across
 **Audit trail**
 
 - **FR-070**: System MUST extend the existing audit log (introduced in spec 010) with the new event types: `user.invited`, `user.invite_resent`, `user.invite_cancelled`, `user.offboarded`, `user.reactivated`, `user.removed`, `user.pin_reset`. Existing `device.password_reset` events MUST be reused without renaming.
-- **FR-071**: Every audit row MUST capture `by` (the acting owner's user_id), `subject` (the target user_id, or the snapshot for removed users), and timestamp; offboard rows also capture `reason`.
+- **FR-071**: Every audit row MUST capture `by` (the acting owner's user_id), `subject` (the target staff_id — stored as the `audit_log.entity_id` column — or, for removed users, the anonymized snapshot of display_name + email in the `payload`), and timestamp; offboard rows also capture `reason`.
 
 **Permissions definition**
 
