@@ -1,23 +1,33 @@
-// Write-only audit-log helper. The single point of truth for every auth + staff
-// management event this app emits. Uses the service-role Supabase client
-// because `audit_log` has no INSERT policy for `authenticated` (by design).
+// Write-only audit-log helper. The single point of truth for every auth,
+// staff-management, and catalog event this app emits. Uses the service-role
+// Supabase client because `audit_log` has no INSERT policy for
+// `authenticated` (by design).
 //
 // Failure mode: if the insert throws (DB outage, RLS misconfiguration,
 // etc.), the error is logged and swallowed. An audit-write blip MUST NOT
-// block a legitimate sign-in or staff-management mutation. The append-only
-// retention contract guarantees nothing is ever lost beyond transient inserts.
+// block a legitimate sign-in, staff-management mutation, or catalog edit.
+// The append-only retention contract guarantees nothing is ever lost beyond
+// transient inserts.
 //
-// Note: `entity_type` is derived from the action verb's prefix — `staff.*`
-// verbs that mutate the roster get `"staff"`, all other (auth-flow) verbs
-// retain `"auth"`. This keeps feature 003's call sites (`device.signed_in`,
-// `staff.signed_in`, `staff.pin_failed`, `staff.switched`) unchanged while
-// the six new feature-006 staff verbs route to the correct entity type.
+// `entity_type` is derived from the action verb's prefix via
+// `deriveEntityType` — `service.*` → `"service"`, the six staff-mutation
+// verbs → `"staff"`, everything else (sign-in / sign-out / PIN-fail / switch)
+// → `"auth"`. The prefix dispatch keeps the helper closed against future
+// feature additions (the next feature's verbs route correctly without
+// editing this set as long as they follow the same `<entity>.<verb>` shape).
+//
+// `actingAsStaffId` is a 5th optional argument that lets `service.*` (and
+// any future entity-type) call sites pass an operator id distinct from the
+// `entityId` (the affected row). When omitted, it falls back to `entityId`
+// for backward compatibility with the existing `staff.*` and auth call
+// sites — there the staff being mutated IS the actor (or both are null
+// for device-level events).
 
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 import type { Json } from "@/lib/db/types";
 
 export type AuditAction =
-  // From feature 003 (kept verbatim — entity_type "auth")
+  // From feature 003 (entity_type "auth")
   | "device.signed_in"
   | "device.signed_out"
   | "staff.signed_in"
@@ -29,37 +39,48 @@ export type AuditAction =
   | "staff.pin_set"
   | "staff.deactivated"
   | "staff.reactivated"
-  | "staff.removed";
+  | "staff.removed"
+  // Added by feature 008 (entity_type "service")
+  | "service.added"
+  | "service.updated"
+  | "service.archived"
+  | "service.restored";
 
-// The six new verbs that target the staff roster as an entity. Everything else
-// (sign-in / sign-out / PIN-fail / switch) is an auth-flow event.
-const STAFF_ENTITY_ACTIONS = new Set<AuditAction>([
-  "staff.added",
-  "staff.updated",
-  "staff.pin_set",
-  "staff.deactivated",
-  "staff.reactivated",
-  "staff.removed",
-]);
-
-function deriveEntityType(action: AuditAction): "staff" | "auth" {
-  return STAFF_ENTITY_ACTIONS.has(action) ? "staff" : "auth";
+function deriveEntityType(action: AuditAction): "service" | "staff" | "auth" {
+  if (action.startsWith("service.")) return "service";
+  if (
+    action === "staff.added" ||
+    action === "staff.updated" ||
+    action === "staff.pin_set" ||
+    action === "staff.deactivated" ||
+    action === "staff.reactivated" ||
+    action === "staff.removed"
+  ) {
+    return "staff";
+  }
+  return "auth";
 }
 
 export async function recordAudit(
   action: AuditAction,
   deviceUserId: string | null,
-  staffId: string | null = null,
-  payload: Record<string, unknown> = {}
+  entityId: string | null = null,
+  payload: Record<string, unknown> = {},
+  actingAsStaffId?: string | null
 ): Promise<void> {
   try {
     const supabase = createSupabaseServiceRoleClient();
+    // Back-compat: when the 5th arg is omitted, mirror `entityId` into
+    // `acting_as_staff_id`. This matches every existing `staff.*` and auth
+    // call site where the staff being mutated IS the actor (or both are
+    // null for device-level events).
+    const actingAs = actingAsStaffId === undefined ? entityId : actingAsStaffId;
     await supabase.from("audit_log").insert({
       action,
       actor_user_id: deviceUserId,
-      acting_as_staff_id: staffId,
+      acting_as_staff_id: actingAs,
       entity_type: deriveEntityType(action),
-      entity_id: staffId,
+      entity_id: entityId,
       payload: payload as Json,
     });
   } catch (err) {

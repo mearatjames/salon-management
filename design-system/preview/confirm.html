@@ -1,0 +1,117 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css">
+<style>
+  body { padding: 20px 24px; }
+  .row { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+
+  /* ── Confirmation shell ── */
+  .confirm {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-md);
+    width: 304px;
+    padding: 24px;
+  }
+
+  /* ── Icon badge ── */
+  .confirm-icon {
+    width: 36px; height: 36px; border-radius: var(--radius-md);
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 16px; flex-shrink: 0;
+  }
+  .confirm-icon svg { width: 18px; height: 18px; }
+  .confirm-icon.danger   { background: color-mix(in oklch, var(--destructive) 12%, transparent); color: var(--destructive); }
+  .confirm-icon.warning  { background: color-mix(in oklch, var(--warning) 18%, transparent); color: var(--amber-500); }
+  .confirm-icon.info     { background: color-mix(in oklch, var(--info) 14%, transparent); color: var(--blue-500); }
+
+  /* ── Text ── */
+  .confirm-title { font-size: var(--text-md); font-weight: 600; line-height: var(--leading-snug); margin-bottom: 6px; }
+  .confirm-desc  { font-size: var(--text-sm); color: var(--muted-foreground); line-height: var(--leading-normal); text-wrap: pretty; }
+
+  /* ── Actions ── */
+  .confirm-actions { display: flex; gap: 8px; margin-top: 20px; }
+  .confirm-actions.stack { flex-direction: column; }
+  .confirm-actions.end   { justify-content: flex-end; }
+
+  /* ── Buttons ── */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: var(--radius-sm); font-size: var(--text-sm); font-weight: 500; border: 1px solid transparent; cursor: pointer; font-family: var(--font-sans); white-space: nowrap; transition: all var(--duration-fast) var(--ease-out); }
+  .btn-full { width: 100%; }
+  .btn-primary     { background: var(--primary); color: var(--primary-foreground); }
+  .btn-primary:hover { background: color-mix(in oklch, var(--primary) 90%, black); }
+  .btn-secondary   { background: var(--secondary); color: var(--secondary-foreground); border-color: var(--border); }
+  .btn-secondary:hover { background: var(--accent); }
+  .btn-destructive { background: var(--destructive); color: var(--destructive-foreground); }
+  .btn-destructive:hover { background: color-mix(in oklch, var(--destructive) 88%, black); }
+  .btn-ghost       { background: transparent; color: var(--foreground); }
+  .btn-ghost:hover { background: var(--accent); }
+
+  /* ── Section label ── */
+  .lbl { font-size: 11px; font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-foreground); margin-bottom: 10px; }
+
+  /* ── Inline detail pill ── */
+  .detail {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; margin-top: 12px;
+    background: var(--muted); border-radius: var(--radius-md);
+    font-size: var(--text-xs); color: var(--foreground);
+  }
+  .detail .dot { width: 6px; height: 6px; border-radius: 99px; background: var(--rose-400); flex-shrink: 0; }
+</style>
+</head>
+<body>
+  <div class="row">
+
+    <!-- ── Confirm 1: Destructive action ── -->
+    <div>
+      <div class="lbl">Destructive</div>
+      <div class="confirm">
+        <div class="confirm-icon danger">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M6 6l1 14a2 2 0 002 2h6a2 2 0 002-2l1-14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="confirm-title">Cancel this booking?</div>
+        <div class="confirm-desc">Maya Patel's 2 PM appointment will be removed. This cannot be undone.</div>
+        <div class="detail">
+          <span class="dot"></span>
+          <span>Maya will receive a cancellation email.</span>
+        </div>
+        <div class="confirm-actions end">
+          <button class="btn btn-ghost">Keep it</button>
+          <button class="btn btn-destructive">Cancel booking</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Confirm 2: Warning / recoverable ── -->
+    <div>
+      <div class="lbl">Warning</div>
+      <div class="confirm">
+        <div class="confirm-icon warning">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke-linecap="round" stroke-linejoin="round"/><line x1="12" y1="9" x2="12" y2="13" stroke-linecap="round"/><line x1="12" y1="17" x2="12.01" y2="17" stroke-linecap="round"/></svg>
+        </div>
+        <div class="confirm-title">Mark as no-show?</div>
+        <div class="confirm-desc">A no-show fee of $25 may apply per your studio policy. Maya won't be notified automatically.</div>
+        <div class="confirm-actions end">
+          <button class="btn btn-secondary">Go back</button>
+          <button class="btn btn-primary">Mark no-show</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Confirm 3: Informational / send ── -->
+    <div>
+      <div class="lbl">Informational</div>
+      <div class="confirm">
+        <div class="confirm-icon info">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 11a19.79 19.79 0 01-3.07-8.67A2 2 0 012 2.18h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L6.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0122 16.92z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div class="confirm-title">Send payment request?</div>
+        <div class="confirm-desc">A link for $84 will be sent to maya@example.com. She'll have 24 hours to pay.</div>
+        <div class="confirm-actions end">
+          <button class="btn btn-ghost">Cancel</button>
+          <button class="btn btn-primary">Send request</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</body></html>

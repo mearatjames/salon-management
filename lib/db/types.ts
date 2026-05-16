@@ -69,6 +69,57 @@ export type Database = {
           },
         ];
       };
+      services: {
+        Row: {
+          active: boolean;
+          category: string;
+          color_token: string;
+          created_at: string;
+          duration_min: number;
+          id: string;
+          name: string;
+          price_cents: number;
+          price_from_cents: number | null;
+          price_to_cents: number | null;
+          taxable: boolean;
+          updated_at: string;
+          variable_price: boolean;
+          variable_price_note: string | null;
+        };
+        Insert: {
+          active?: boolean;
+          category?: string;
+          color_token: string;
+          created_at?: string;
+          duration_min: number;
+          id?: string;
+          name: string;
+          price_cents: number;
+          price_from_cents?: number | null;
+          price_to_cents?: number | null;
+          taxable?: boolean;
+          updated_at?: string;
+          variable_price?: boolean;
+          variable_price_note?: string | null;
+        };
+        Update: {
+          active?: boolean;
+          category?: string;
+          color_token?: string;
+          created_at?: string;
+          duration_min?: number;
+          id?: string;
+          name?: string;
+          price_cents?: number;
+          price_from_cents?: number | null;
+          price_to_cents?: number | null;
+          taxable?: boolean;
+          updated_at?: string;
+          variable_price?: boolean;
+          variable_price_note?: string | null;
+        };
+        Relationships: [];
+      };
       staff: {
         Row: {
           active: boolean;
@@ -104,6 +155,45 @@ export type Database = {
           user_id?: string | null;
         };
         Relationships: [];
+      };
+      staff_services: {
+        Row: {
+          created_at: string;
+          duration_min_override: number | null;
+          service_id: string;
+          staff_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          duration_min_override?: number | null;
+          service_id: string;
+          staff_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          duration_min_override?: number | null;
+          service_id?: string;
+          staff_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "staff_services_service_id_fkey";
+            columns: ["service_id"];
+            isOneToOne: false;
+            referencedRelation: "services";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "staff_services_staff_id_fkey";
+            columns: ["staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
       };
     };
     Views: {

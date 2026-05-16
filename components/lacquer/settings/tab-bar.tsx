@@ -8,6 +8,9 @@
 // client wrapper splits one trivial component into two). The bundle cost
 // is < 1 KB.
 //
+// Services lives at `/services` (top-level studio destination, reached via
+// the sidebar) rather than under Settings — see feature 008-services-catalog.
+//
 // All visual values resolve to Lacquer tokens via `styles/settings.css`.
 
 import Link from "next/link";

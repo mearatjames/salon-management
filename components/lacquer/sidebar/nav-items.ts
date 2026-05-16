@@ -83,7 +83,7 @@ export const NAV_CONFIG: NavConfig = {
       items: [
         { id: "schedule", label: "Schedule", icon: Calendar, href: "/calendar" },
         { id: "clients", label: "Clients", icon: Users, href: "/clients" },
-        { id: "services", label: "Services", icon: Sparkles, href: null, disabled: true },
+        { id: "services", label: "Services", icon: Sparkles, href: "/services" },
         { id: "checkout", label: "Checkout", icon: DollarSign, href: "/checkout" },
         { id: "walkin", label: "Walk-in", icon: Footprints, href: "/walkin" },
       ],

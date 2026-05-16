@@ -4,13 +4,14 @@ import { sanitizeNext, STUDIO_PREFIXES } from "@/lib/auth/next-url";
 
 describe("lib/auth/next-url", () => {
   describe("STUDIO_PREFIXES", () => {
-    it("enumerates the seven studio prefixes from research R6", () => {
+    it("enumerates the studio prefixes (research R6 + 008-services-catalog)", () => {
       expect(new Set(STUDIO_PREFIXES)).toEqual(
         new Set([
           "/dashboard",
           "/calendar",
           "/checkout",
           "/clients",
+          "/services",
           "/walkin",
           "/end-of-day",
           "/settings",
@@ -25,6 +26,7 @@ describe("lib/auth/next-url", () => {
       "/calendar/2026-05-15",
       "/checkout/abc-123",
       "/clients",
+      "/services",
       "/walkin",
       "/end-of-day",
       "/settings/staff",

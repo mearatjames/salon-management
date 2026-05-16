@@ -95,7 +95,7 @@ This is the data the v1 implementation MUST ship with (any deviation is a spec c
 | top | – | `dashboard` | Dashboard | `Home` | `/dashboard` | – |
 | group 1 | Workspace | `schedule` | Schedule | `Calendar` | `/calendar` | – |
 | | | `clients` | Clients | `Users` | `/clients` | – |
-| | | `services` | Services | `Sparkles` | `null` | `true` |
+| | | `services` | Services | `Sparkles` | `/services` | – |
 | | | `checkout` | Checkout | `DollarSign` | `/checkout` | – |
 | | | `walkin` | Walk-in | `Footprints` | `/walkin` | – |
 | group 2 | Operations | `end-of-day` | End of Day Cash | `Banknote` | `/end-of-day` | – |

@@ -22,6 +22,8 @@ import { Suspense } from "react";
 
 import { EditPanel } from "@/components/lacquer/staff/edit-panel.client";
 import { StaffEmptyState } from "@/components/lacquer/staff/empty-state";
+import { redirect } from "next/navigation";
+
 import { PageHeader } from "@/components/lacquer/staff/page-header";
 import { StaffTable } from "@/components/lacquer/staff/staff-table.client";
 import { StaffToaster } from "@/components/lacquer/staff/staff-toaster.client";
@@ -31,6 +33,12 @@ import { requireStudioSession, type StudioRole } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/db/server";
 
 export const dynamic = "force-dynamic";
+
+// Role gate for /settings/staff. Previously lived in the parent layout, but
+// 008-services-catalog FR-029 requires Services to be readable by every
+// operator — so the gate moved here, leaving the layout open and each
+// restricted child page enforcing its own role check.
+const STAFF_SETTINGS_OPERATORS = new Set<StudioRole>(["owner", "manager"]);
 
 type SearchParamsShape = {
   selected?: string | string[];
@@ -47,11 +55,17 @@ export default async function StaffSettingsPage({
 }: {
   searchParams?: Promise<SearchParamsShape>;
 }) {
-  // The settings layout already gates owner/manager; calling again here keeps
-  // the page robust if the layout is ever bypassed (e.g., direct RSC import
-  // from a future surface). `requireStudioSession()` throws AuthRedirectError
-  // on unauthenticated requests — propagates up to the error boundary.
+  // Re-verify the studio session for the page. `requireStudioSession()`
+  // throws AuthRedirectError on unauthenticated requests — propagates up to
+  // the error boundary. The settings layout is permissive now (see
+  // 008-services-catalog FR-029); this page enforces the owner/manager-only
+  // gate inline before any data fetch so a technician/front-desk operator
+  // never sees the staff table flash.
   const viewer = await requireStudioSession();
+
+  if (!STAFF_SETTINGS_OPERATORS.has(viewer.staff.role)) {
+    redirect("/dashboard");
+  }
 
   const params = (await searchParams) ?? {};
   const selectedId = resolveSelectedId(params.selected);

@@ -80,3 +80,203 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-xs);
 }
+
+/* ==========================================================================
+   Services catalog (Settings → Services)
+   Layout rules for the catalog list, the edit/add drawer, the per-row
+   composition (color swatch · name · duration · price · tech-count · archived
+   badge), the empty state, and the variable-price field row. Every value
+   resolves to a `var(--*)` token from `styles/tokens.css`.
+   ========================================================================== */
+
+/* Single-column catalog: header + list. The drawer is an off-canvas overlay
+   on the right (see `.services-drawer`) — there is no two-column grid like
+   the staff page. `min-height: 0` lets the inner list scroll on its own.
+   The page lives at top-level `/services` (no Settings layout above it), so
+   it owns its own padding instead of inheriting `.settings-content`'s. */
+.settings-services-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-6) var(--space-8);
+  overflow: auto;
+}
+
+/* Off-canvas right-side drawer for Add / Edit. The width is derived from the
+   spacing scale (`--space-16` × 7 = 448px), so it stays on-scale across
+   breakpoints. Slide-in motion uses the Lacquer ease-out curve at 300ms per
+   `contracts/ui.contract.md § 7`. */
+.services-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: calc(var(--space-16) * 7);
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: var(--card);
+  color: var(--card-foreground);
+  border-left: 1px solid var(--border);
+  border-radius: var(--radius-xl) 0 0 var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  overflow-y: auto;
+  transition:
+    transform var(--duration-slow) var(--ease-out),
+    opacity var(--duration-slow) var(--ease-out);
+}
+
+/* One row in the catalog list. Renders as a native `<button>` for keyboard
+   reachability; the visual is a flex track with the swatch, name, and a
+   trailing group of pills. The selected-row state borrows `--ring` so the
+   active drawer target is visually paired with its row. */
+.service-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  text-align: left;
+  font-weight: 500;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.service-list-row:hover {
+  background: var(--accent);
+  border-color: var(--ring);
+}
+
+.service-list-row[data-selected="true"] {
+  border-color: var(--ring);
+  box-shadow: var(--shadow-xs);
+}
+
+.service-list-row[data-archived="true"] {
+  opacity: 0.6;
+}
+
+/* Color swatch: a circular chip rendered from the service's `color_token`.
+   The actual background color is set inline via the matching `--avatar-*`
+   token. Size is on-scale (`--space-5` = 20px). */
+.service-color-swatch {
+  width: var(--space-5);
+  height: var(--space-5);
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+}
+
+/* Price pill — neutral tone with tabular numerals so columns of prices align
+   even when the catalog scrolls. Radius `999` per spec rule §8. */
+.service-price-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "cv02", "cv03";
+}
+
+/* Tech-count pill — same shape as the price pill but switches to the warning
+   tone when zero techs are assigned (the amber dot + amber text per
+   `contracts/ui.contract.md § 3`). Default is neutral. */
+.service-tech-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.service-tech-pill[data-tone="warning"] {
+  background: var(--muted);
+  color: var(--warning);
+}
+
+.service-tech-pill[data-tone="warning"]::before {
+  content: "";
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--warning);
+  flex-shrink: 0;
+}
+
+/* Archived badge — small uppercase label that sits inline after the trailing
+   pills. Uses `--muted` foreground so it reads as secondary metadata. */
+.service-archived-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+/* Empty-state composition: centered icon + headline + CTA stack. Padding
+   uses the on-scale `--space-12` so the panel feels intentional rather than
+   collapsed. */
+.services-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-12) var(--space-6);
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+
+.services-empty-state-icon {
+  width: var(--space-8);
+  height: var(--space-8);
+  color: var(--muted-foreground);
+}
+
+.services-empty-state-copy {
+  font-size: var(--text-base);
+  color: var(--muted-foreground);
+  max-width: calc(var(--space-16) * 5);
+}
+
+/* Variable-price field row: a two-up `From` / `To` track with the note
+   beneath, only rendered when `variable_price` is on. The gap is `--space-3`
+   to keep the inputs visually paired. */
+.service-variable-price-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.service-variable-price-note {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
