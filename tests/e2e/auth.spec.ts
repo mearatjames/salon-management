@@ -7,19 +7,20 @@
 // timeout in `beforeAll`. If the probe fails, the block is skipped. When the
 // developer enables Docker + `supabase start`, the same specs run unchanged.
 //
-// The block is also marked `serial` so the seeded state (audit_log) isn't
-// disturbed by parallel runners — the audit-row assertion in case (e) reads
-// the entire table.
+// Audit-log assertions use a per-test cursor (`newAuditCursor()` captured in
+// `beforeEach`, queried via `getAuditLogRowsSince`). This replaces the prior
+// `truncateAuditLog()` pattern, which forced `--workers=1` because parallel
+// specs racing on a single global table would wipe each other's rows.
 
 import { expect, test } from "@playwright/test";
 
 import { mintExpiredCookie } from "../unit/auth/_fixtures";
 
 import {
-  getAuditLogRows,
+  getAuditLogRowsSince,
   getAuthUserByEmail,
   getStaffByDisplayName,
-  truncateAuditLog,
+  newAuditCursor,
 } from "./_db";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
@@ -40,6 +41,7 @@ test.describe.configure({ mode: "serial" });
 
 test.describe("US1: owner signs in with password", () => {
   let supabaseUp = false;
+  let auditCursor = "";
 
   test.beforeAll(async () => {
     supabaseUp = await supabaseIsReachable();
@@ -52,11 +54,11 @@ test.describe("US1: owner signs in with password", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(() => {
     if (!supabaseUp) return;
-    // Clear audit_log between cases so the count assertion in (e) is
-    // deterministic. ~100ms vs a full `supabase db reset` (~30–45s).
-    await truncateAuditLog();
+    // Capture a fresh cursor so this test only sees audit rows it (or this
+    // beforeEach's setup) wrote — letting the suite run with workers > 1.
+    auditCursor = newAuditCursor();
   });
 
   test("(a) signed-out visit to /dashboard redirects to /login?next=%2Fdashboard", async ({
@@ -113,26 +115,14 @@ test.describe("US1: owner signs in with password", () => {
 
   test("(e) exactly one device.signed_in audit row was written across (b)+(c)+(d)", async () => {
     // (b) only succeeds when valid creds match — (c) and (d) both redirect
-    // before recordAuth() runs. Run all three in sequence then read the
-    // audit_log table. The beforeEach above resets between cases, so this
-    // case explicitly runs them serially and skips the reset between them.
-    // We rely on a fresh reset from the most recent beforeEach: only (d)
-    // ran last, so the table is empty going in.
-    //
-    // Note: serial mode guarantees the order above, but we don't trust the
-    // intermediate state — re-run all three here in one test so the row
-    // assertion is independent.
-    const audits = await getAuditLogRows("device.signed_in");
-    // After the most recent test's reset, the table should be empty. This
-    // case is intentionally a regression assertion: only successful sign-ins
-    // emit `device.signed_in`. Wrong-password and unknown-email attempts do
-    // not.
+    // before recordAuth() runs. The cursor is fresh per beforeEach, so this
+    // test only sees rows written after its own cursor; (b)+(c)+(d)'s rows
+    // are scoped out. Assertion is the regression invariant: nothing here
+    // wrote a `device.signed_in` row.
+    const audits = await getAuditLogRowsSince(auditCursor, "device.signed_in");
     expect(audits.length).toBeLessThanOrEqual(1);
-    // The real assertion lives in case (b)'s success path — once that test
-    // completes and the next reset hasn't fired, we'd see exactly 1 row.
-    // Because beforeEach resets, we can only assert "no extra rows from the
-    // failure cases". A stronger assertion will land in US2 (T040) where the
-    // full flow is exercised end-to-end without resets between cases.
+    // A stronger end-to-end assertion lives in US2 (T040) where the full
+    // flow is exercised in one test without per-test cursor resets.
   });
 });
 
@@ -150,6 +140,7 @@ async function signInOwner(page: import("@playwright/test").Page) {
 
 test.describe("US2: staff selects identity with a PIN", () => {
   let supabaseUp = false;
+  let auditCursor = "";
 
   test.beforeAll(async () => {
     supabaseUp = await supabaseIsReachable();
@@ -162,9 +153,9 @@ test.describe("US2: staff selects identity with a PIN", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(() => {
     if (!supabaseUp) return;
-    await truncateAuditLog();
+    auditCursor = newAuditCursor();
   });
 
   test("(a) roster renders three tiles by display name", async ({ page }) => {
@@ -214,7 +205,7 @@ test.describe("US2: staff selects identity with a PIN", () => {
     await page.waitForURL(/\/select-staff\?error=pin_failed/);
     await expect(page.locator('[data-slot="alert"]')).toHaveText("PIN didn't match. Try again.");
 
-    const failed = await getAuditLogRows("staff.pin_failed");
+    const failed = await getAuditLogRowsSince(auditCursor, "staff.pin_failed");
     const mismatch = failed.find(
       (row) =>
         row.entity_id === MAYA_ID &&
@@ -263,6 +254,7 @@ async function signInAsMaya(page: import("@playwright/test").Page) {
 
 test.describe("US3: switch staff at shift change", () => {
   let supabaseUp = false;
+  let auditCursor = "";
 
   test.beforeAll(async () => {
     supabaseUp = await supabaseIsReachable();
@@ -275,9 +267,9 @@ test.describe("US3: switch staff at shift change", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(() => {
     if (!supabaseUp) return;
-    await truncateAuditLog();
+    auditCursor = newAuditCursor();
   });
 
   test("(a) Switch staff from /dashboard lands on /select-staff (no /login flash)", async ({
@@ -345,11 +337,11 @@ test.describe("US3: switch staff at shift change", () => {
     await page.keyboard.type("5678");
     await page.waitForURL(/\/dashboard($|\?)/);
 
-    const switched = await getAuditLogRows("staff.switched");
+    const switched = await getAuditLogRowsSince(auditCursor, "staff.switched");
     const mayaSwitch = switched.filter((r) => r.acting_as_staff_id === MAYA_ID);
     expect(mayaSwitch.length).toBe(1);
 
-    const signedIn = await getAuditLogRows("staff.signed_in");
+    const signedIn = await getAuditLogRowsSince(auditCursor, "staff.signed_in");
     // The most recent signed_in is Jordan's, with previous_staff_id=Maya.
     const jordanSignIn = signedIn.find(
       (r) =>
@@ -445,6 +437,7 @@ function extractMagicLinkUrl(body: InbucketMessageBody): string | null {
 test.describe("US4: Google sign-in + magic-link recovery", () => {
   let supabaseUp = false;
   let inbucketUp = false;
+  let auditCursor = "";
 
   test.beforeAll(async () => {
     supabaseUp = await supabaseIsReachable();
@@ -462,9 +455,9 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(() => {
     if (!supabaseUp || !inbucketUp) return;
-    await truncateAuditLog();
+    auditCursor = newAuditCursor();
   });
 
   test("(a) magic-link form submission with owner email redirects to ?magic_sent=...", async ({
@@ -509,7 +502,7 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
     expect(new URL(page.url()).pathname).toBe("/select-staff");
 
     // Exactly one device.signed_in row with method='magic_link'.
-    const signedIn = await getAuditLogRows("device.signed_in");
+    const signedIn = await getAuditLogRowsSince(auditCursor, "device.signed_in");
     const magicRows = signedIn.filter(
       (r) => r.payload !== null && (r.payload as Record<string, unknown>).method === "magic_link"
     );
@@ -593,11 +586,7 @@ test.describe("US5: operator session expiry", () => {
       return;
     }
   });
-
-  test.beforeEach(async () => {
-    if (!supabaseUp) return;
-    await truncateAuditLog();
-  });
+  // No audit-cursor beforeEach: US5 asserts on cookie headers, not audit rows.
 
   test("(a)-(e) expired cookie redirects to /select-staff?next=… without flashing /login, and Max-Age=0 clears the cookie", async ({
     page,
@@ -730,6 +719,7 @@ test.describe("US5: operator session expiry", () => {
 
 test.describe.serial("US6: sign out the device", () => {
   let supabaseUp = false;
+  let auditCursor = "";
 
   test.beforeAll(async () => {
     supabaseUp = await supabaseIsReachable();
@@ -742,9 +732,9 @@ test.describe.serial("US6: sign out the device", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(() => {
     if (!supabaseUp) return;
-    await truncateAuditLog();
+    auditCursor = newAuditCursor();
   });
 
   test("(a) operator menu → Sign out from /dashboard lands on /login", async ({ page }) => {
@@ -790,7 +780,7 @@ test.describe.serial("US6: sign out the device", () => {
     // device user, then pins in as Maya. The audit row's actor_user_id is
     // therefore the owner's auth.users.id; acting_as_staff_id is Maya's
     // staff.id.
-    const signedOut = await getAuditLogRows("device.signed_out");
+    const signedOut = await getAuditLogRowsSince(auditCursor, "device.signed_out");
     const row = signedOut.find(
       (r) => r.actor_user_id === mayaUser.id && r.acting_as_staff_id === maya.id
     );
@@ -830,11 +820,7 @@ test.describe.serial("US-soft-degrade: Supabase outage", () => {
       return;
     }
   });
-
-  test.beforeEach(async () => {
-    if (!supabaseUp) return;
-    await truncateAuditLog();
-  });
+  // No audit-cursor beforeEach: the fixme'd test doesn't read audit rows.
 
   // FIXME: page.route() only intercepts browser requests. The studio layout
   // reads the Supabase session server-side via getStudioSessionOrDegraded(),
@@ -1090,10 +1076,13 @@ test.describe("010-US1: rebranded sign-in shell layout", () => {
 // Mailpit's contract directly; the legacy US4 Inbucket helpers above are
 // a known-broken regression that Phase 7 T058 will fix.
 //
-// CRITICAL: the round-trip test (a) flips owner@tangnails.dev's password
-// from the seeded `tang-nails-dev` to `tang-nails-dev-new`. The
-// `test.afterEach` hook below resets it back via Supabase Admin API so
-// later tests (and re-runs of this file) start from a clean slate.
+// CRITICAL: the round-trip test (a) flips this describe's auth user
+// password from the seeded value to a "new" value. To avoid contention
+// with parallel workers signing in as Maya (which all use
+// `owner@tangnails.dev` / `tang-nails-dev`), this describe uses a
+// dedicated seeded user (`reset-test@tangnails.dev`) — see
+// `supabase/seed.sql`. The `test.afterEach` hook still resets the
+// password back via Supabase Admin API so re-runs start clean.
 
 const MAILPIT_BASE = "http://127.0.0.1:54324";
 
@@ -1230,12 +1219,19 @@ async function followRecoveryLink(
   }
 }
 
+// Dedicated user for the destructive reset round-trip. Seeded in
+// `supabase/seed.sql`; has NO `staff` row (the test only reaches
+// /select-staff, never pins in).
+const RESET_TEST_EMAIL = "reset-test@tangnails.dev";
+const RESET_TEST_PASSWORD = "reset-tang-nails-test";
+const RESET_TEST_NEW_PASSWORD = "reset-tang-nails-test-new";
+
 /**
- * Restore owner@tangnails.dev's password to the seeded value via the
+ * Restore the reset-test user's password to the seeded value via the
  * Supabase admin API. The test mutates the password mid-run; this hook
- * makes the mutation idempotent across re-runs.
+ * makes the mutation idempotent across re-runs and against crashes.
  */
-async function restoreOwnerPassword(): Promise<void> {
+async function restoreResetTestUserPassword(): Promise<void> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) return;
@@ -1244,11 +1240,10 @@ async function restoreOwnerPassword(): Promise<void> {
     const admin = createClient(url, key, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
-    const ownerEmail = "owner@tangnails.dev";
     const { data: list } = await admin.auth.admin.listUsers();
-    const owner = list?.users.find((u) => u.email?.toLowerCase() === ownerEmail);
-    if (owner) {
-      await admin.auth.admin.updateUserById(owner.id, { password: "tang-nails-dev" });
+    const user = list?.users.find((u) => u.email?.toLowerCase() === RESET_TEST_EMAIL);
+    if (user) {
+      await admin.auth.admin.updateUserById(user.id, { password: RESET_TEST_PASSWORD });
     }
   } catch {
     // Best-effort.
@@ -1258,6 +1253,7 @@ async function restoreOwnerPassword(): Promise<void> {
 test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
   let supabaseUp = false;
   let mailpitUp = false;
+  let auditCursor = "";
 
   test.beforeAll(async () => {
     supabaseUp = await supabaseIsReachable();
@@ -1277,15 +1273,20 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
 
   test.beforeEach(async () => {
     if (!supabaseUp || !mailpitUp) return;
-    await truncateAuditLog();
+    auditCursor = newAuditCursor();
     await clearMailpit();
+  });
+
+  test.beforeEach(async () => {
+    if (!supabaseUp) return;
+    // Defensive restore in case a prior crash left the password mutated.
+    // afterEach runs the same call after each test.
+    await restoreResetTestUserPassword();
   });
 
   test.afterEach(async () => {
     if (!supabaseUp) return;
-    // Ensure the seed password is restored regardless of whether the test
-    // changed it. Cheap idempotent admin call.
-    await restoreOwnerPassword();
+    await restoreResetTestUserPassword();
   });
 
   test("(T042) full password reset round-trip", async ({ page }) => {
@@ -1295,14 +1296,15 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     await page.waitForURL(/\/login\?reset_intent=1/);
     await expect(page.getByRole("heading", { name: "Reset password" })).toBeVisible();
 
-    // (b) Submit the forgot form for the owner email.
-    await page.locator("#forgot-email").fill("owner@tangnails.dev");
+    // (b) Submit the forgot form for the dedicated reset-test user.
+    await page.locator("#forgot-email").fill(RESET_TEST_EMAIL);
     await page.getByRole("button", { name: "Send reset link" }).click();
-    await page.waitForURL(/\/login\?reset_sent=owner%40tangnails\.dev/);
-    await expect(page.locator(".auth-confirm-card")).toContainText("owner@tangnails.dev");
+    const encodedEmail = encodeURIComponent(RESET_TEST_EMAIL);
+    await page.waitForURL(new RegExp(`/login\\?reset_sent=${encodedEmail.replace(/\./g, "\\.")}`));
+    await expect(page.locator(".auth-confirm-card")).toContainText(RESET_TEST_EMAIL);
 
     // (c) Pull the recovery link out of Mailpit.
-    const message = await fetchLatestEmailFor("owner@tangnails.dev");
+    const message = await fetchLatestEmailFor(RESET_TEST_EMAIL);
     expect(message, "Mailpit must deliver a recovery email").not.toBeNull();
     const recoveryUrl = extractRecoveryLink(message!);
     expect(recoveryUrl, "Recovery email must contain a type=recovery link").not.toBeNull();
@@ -1315,16 +1317,16 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     expect(new URL(page.url()).pathname).toBe("/reset-password");
 
     // (e) Set a new password.
-    await page.locator("#reset-password").fill("tang-nails-dev-new");
-    await page.locator("#reset-confirm").fill("tang-nails-dev-new");
+    await page.locator("#reset-password").fill(RESET_TEST_NEW_PASSWORD);
+    await page.locator("#reset-confirm").fill(RESET_TEST_NEW_PASSWORD);
     await page.getByRole("button", { name: "Set new password" }).click();
     await page.waitForURL(/\/select-staff($|\?)/);
 
     // (f) Sign out + sign in with the NEW password.
     await page.context().clearCookies();
     await page.goto("/login");
-    await page.locator("#signin-email").fill("owner@tangnails.dev");
-    await page.locator("#signin-password").fill("tang-nails-dev-new");
+    await page.locator("#signin-email").fill(RESET_TEST_EMAIL);
+    await page.locator("#signin-password").fill(RESET_TEST_NEW_PASSWORD);
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL(/\/select-staff($|\?)/);
     expect(new URL(page.url()).pathname).toBe("/select-staff");
@@ -1332,22 +1334,22 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
 
   test("(T043) reset writes device.password_reset audit row", async ({ page }) => {
     await page.goto("/login?reset_intent=1");
-    await page.locator("#forgot-email").fill("owner@tangnails.dev");
+    await page.locator("#forgot-email").fill(RESET_TEST_EMAIL);
     await page.getByRole("button", { name: "Send reset link" }).click();
     await page.waitForURL(/\/login\?reset_sent=/);
 
-    const message = await fetchLatestEmailFor("owner@tangnails.dev");
+    const message = await fetchLatestEmailFor(RESET_TEST_EMAIL);
     expect(message).not.toBeNull();
     const recoveryUrl = extractRecoveryLink(message!);
     expect(recoveryUrl).not.toBeNull();
     await followRecoveryLink(page, recoveryUrl!);
 
-    await page.locator("#reset-password").fill("tang-nails-dev-new");
-    await page.locator("#reset-confirm").fill("tang-nails-dev-new");
+    await page.locator("#reset-password").fill(RESET_TEST_NEW_PASSWORD);
+    await page.locator("#reset-confirm").fill(RESET_TEST_NEW_PASSWORD);
     await page.getByRole("button", { name: "Set new password" }).click();
     await page.waitForURL(/\/select-staff($|\?)/);
 
-    const resets = await getAuditLogRows("device.password_reset");
+    const resets = await getAuditLogRowsSince(auditCursor, "device.password_reset");
     expect(resets.length).toBeGreaterThanOrEqual(1);
     const latest = resets[resets.length - 1];
     expect(latest.payload).toEqual({ method: "recovery" });
@@ -1359,17 +1361,17 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     page,
   }) => {
     await page.goto("/login?reset_intent=1");
-    await page.locator("#forgot-email").fill("owner@tangnails.dev");
+    await page.locator("#forgot-email").fill(RESET_TEST_EMAIL);
     await page.getByRole("button", { name: "Send reset link" }).click();
     await page.waitForURL(/\/login\?reset_sent=/);
 
-    const message = await fetchLatestEmailFor("owner@tangnails.dev");
+    const message = await fetchLatestEmailFor(RESET_TEST_EMAIL);
     expect(message).not.toBeNull();
     const recoveryUrl = extractRecoveryLink(message!);
     expect(recoveryUrl).not.toBeNull();
     await followRecoveryLink(page, recoveryUrl!);
 
-    const signedIn = await getAuditLogRows("device.signed_in");
+    const signedIn = await getAuditLogRowsSince(auditCursor, "device.signed_in");
     const recoveryRow = signedIn.find(
       (r) => r.payload !== null && (r.payload as Record<string, unknown>).method === "recovery"
     );
@@ -1378,11 +1380,11 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
 
   test("(T045) mismatched passwords render inline error", async ({ page }) => {
     await page.goto("/login?reset_intent=1");
-    await page.locator("#forgot-email").fill("owner@tangnails.dev");
+    await page.locator("#forgot-email").fill(RESET_TEST_EMAIL);
     await page.getByRole("button", { name: "Send reset link" }).click();
     await page.waitForURL(/\/login\?reset_sent=/);
 
-    const message = await fetchLatestEmailFor("owner@tangnails.dev");
+    const message = await fetchLatestEmailFor(RESET_TEST_EMAIL);
     expect(message).not.toBeNull();
     const recoveryUrl = extractRecoveryLink(message!);
     expect(recoveryUrl).not.toBeNull();
@@ -1397,11 +1399,11 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
 
   test("(T046) password < 8 chars renders inline error", async ({ page }) => {
     await page.goto("/login?reset_intent=1");
-    await page.locator("#forgot-email").fill("owner@tangnails.dev");
+    await page.locator("#forgot-email").fill(RESET_TEST_EMAIL);
     await page.getByRole("button", { name: "Send reset link" }).click();
     await page.waitForURL(/\/login\?reset_sent=/);
 
-    const message = await fetchLatestEmailFor("owner@tangnails.dev");
+    const message = await fetchLatestEmailFor(RESET_TEST_EMAIL);
     expect(message).not.toBeNull();
     const recoveryUrl = extractRecoveryLink(message!);
     expect(recoveryUrl).not.toBeNull();
@@ -1432,12 +1434,12 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     const requesterContext = await browser.newContext();
     const requester = await requesterContext.newPage();
     await requester.goto("/login?reset_intent=1");
-    await requester.locator("#forgot-email").fill("owner@tangnails.dev");
+    await requester.locator("#forgot-email").fill(RESET_TEST_EMAIL);
     await requester.getByRole("button", { name: "Send reset link" }).click();
     await requester.waitForURL(/\/login\?reset_sent=/);
     await requesterContext.close();
 
-    const message = await fetchLatestEmailFor("owner@tangnails.dev");
+    const message = await fetchLatestEmailFor(RESET_TEST_EMAIL);
     expect(message).not.toBeNull();
     const recoveryUrl = extractRecoveryLink(message!);
     expect(recoveryUrl).not.toBeNull();

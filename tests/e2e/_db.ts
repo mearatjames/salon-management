@@ -38,14 +38,19 @@ export type AuditRow = {
   ts: string;
 };
 
-// Wipes the audit_log table. Use in `beforeEach` to keep per-test audit
-// assertions deterministic without paying the ~30s cost of a full
-// `supabase db reset`. Runs against the service-role client, which bypasses
-// RLS. The `.not("id", "is", null)` filter is the standard supabase-js
-// idiom for "delete all rows" (the SDK refuses an unconditional delete).
-export async function truncateAuditLog(): Promise<void> {
-  const { error } = await client().from("audit_log").delete().not("id", "is", null);
-  if (error) throw new Error(`audit_log truncate failed: ${error.message}`);
+// Capture the start-of-test timestamp to use as a cursor for subsequent
+// `getAuditLogRowsSince()` queries. Call this in `beforeEach` (or `beforeAll`
+// when an assertion spans multiple serial tests) instead of truncating the
+// table. Each test then sees only the rows written after its own cursor,
+// which lets the suite run with `workers > 1` — global truncation would
+// race across spec files that share the `audit_log` table.
+//
+// Node and Postgres share the host clock on dev + CI, so a simple Node
+// `new Date()` is within sub-ms of the value Postgres will stamp on rows
+// inserted moments later. If we ever split Postgres onto another host,
+// swap this for an RPC that returns server-side `now()`.
+export function newAuditCursor(): string {
+  return new Date().toISOString();
 }
 
 // Re-applies the three seeded staff rows from `supabase/seed.sql` (Maya,
@@ -122,10 +127,15 @@ export async function resetStaffToSeed(): Promise<void> {
   if (upErr) throw new Error(`staff seed upsert failed: ${upErr.message}`);
 }
 
-export async function getAuditLogRows(action?: string): Promise<AuditRow[]> {
+// Returns audit rows written at or after `cursor` (use `newAuditCursor()` to
+// produce one in `beforeEach`). Optionally filtered to a specific `action`.
+// Ordered by `ts` ascending so multi-row assertions can assume insertion
+// order.
+export async function getAuditLogRowsSince(cursor: string, action?: string): Promise<AuditRow[]> {
   let query = client()
     .from("audit_log")
     .select("action, actor_user_id, acting_as_staff_id, entity_type, entity_id, payload, ts")
+    .gte("ts", cursor)
     .order("ts", { ascending: true });
   if (action) {
     query = query.eq("action", action);

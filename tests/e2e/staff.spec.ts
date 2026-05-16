@@ -5,19 +5,21 @@
 // so each describe block skips itself rather than failing.
 //
 // Each describe runs serial because the seeded state is shared. `beforeEach`
-// clears `audit_log` and re-applies the seeded staff rows via `_db.ts`
-// helpers so per-test mutations don't leak.
+// captures an `audit_log` cursor (per-test) and re-applies the seeded staff
+// rows so per-test mutations don't leak. The cursor pattern lets the suite
+// run with workers > 1; the previous `truncateAuditLog()` approach forced
+// `--workers=1`.
 
 import { expect, test } from "@playwright/test";
 
 import { createClient } from "@supabase/supabase-js";
 
 import {
-  getAuditLogRows,
+  getAuditLogRowsSince,
   getAuthUserByEmail,
   getStaffByDisplayName,
+  newAuditCursor,
   resetStaffToSeed,
-  truncateAuditLog,
 } from "./_db";
 
 async function insertInactiveSeed(): Promise<void> {
@@ -94,7 +96,6 @@ test.describe("US1: see the roster at a glance", () => {
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    await truncateAuditLog();
     await resetStaffToSeed();
   });
 
@@ -176,6 +177,7 @@ test.describe("US1: see the roster at a glance", () => {
 
 test.describe("US2: add a new staff member with a PIN", () => {
   let supabaseUp = false;
+  let auditCursor = "";
 
   test.beforeAll(async () => {
     supabaseUp = await supabaseIsReachable();
@@ -190,7 +192,7 @@ test.describe("US2: add a new staff member with a PIN", () => {
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    await truncateAuditLog();
+    auditCursor = newAuditCursor();
     await resetStaffToSeed();
   });
 
@@ -252,7 +254,7 @@ test.describe("US2: add a new staff member with a PIN", () => {
     ).toHaveCount(1);
 
     // Audit row check — exactly one `staff.added` with the expected payload.
-    const rows = await getAuditLogRows("staff.added");
+    const rows = await getAuditLogRowsSince(auditCursor, "staff.added");
     expect(rows).toHaveLength(1);
     const audit = rows[0];
     const payload = (audit.payload ?? {}) as Record<string, unknown>;
@@ -295,13 +297,14 @@ test.describe("US2: add a new staff member with a PIN", () => {
     await expect(page.getByText("Enter a 4-digit PIN")).toBeVisible();
 
     // No audit row should exist for the failed attempt.
-    const rows = await getAuditLogRows("staff.added");
+    const rows = await getAuditLogRowsSince(auditCursor, "staff.added");
     expect(rows).toHaveLength(0);
   });
 });
 
 test.describe("US3: edit a staff member", () => {
   let supabaseUp = false;
+  let auditCursor = "";
 
   test.beforeAll(async () => {
     supabaseUp = await supabaseIsReachable();
@@ -316,7 +319,7 @@ test.describe("US3: edit a staff member", () => {
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    await truncateAuditLog();
+    auditCursor = newAuditCursor();
     await resetStaffToSeed();
   });
 
@@ -431,7 +434,7 @@ test.describe("US3: edit a staff member", () => {
     ).toContainText("Sam C.");
 
     // Audit: exactly one `staff.updated` row with diff-aware payload.
-    const rows = await getAuditLogRows("staff.updated");
+    const rows = await getAuditLogRowsSince(auditCursor, "staff.updated");
     expect(rows).toHaveLength(1);
     const audit = rows[0];
     const payload = (audit.payload ?? {}) as Record<string, unknown>;
@@ -461,7 +464,7 @@ test.describe("US3: edit a staff member", () => {
     await expect(nameInput).toHaveValue("Jordan Lee");
 
     // No staff.updated audit row was written (we never saved).
-    const rows = await getAuditLogRows("staff.updated");
+    const rows = await getAuditLogRowsSince(auditCursor, "staff.updated");
     expect(rows).toHaveLength(0);
 
     // Sam's name in the table is still the seeded value.
@@ -475,6 +478,7 @@ test.describe("US3: edit a staff member", () => {
 
 test.describe("US4: set or change PIN", () => {
   let supabaseUp = false;
+  let auditCursor = "";
 
   // Stable id for the no-PIN test staff inserted in test (b). Cleaned up by
   // resetStaffToSeed() in the next beforeEach (it deletes any non-seed rows).
@@ -493,7 +497,7 @@ test.describe("US4: set or change PIN", () => {
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    await truncateAuditLog();
+    auditCursor = newAuditCursor();
     await resetStaffToSeed();
   });
 
@@ -535,7 +539,7 @@ test.describe("US4: set or change PIN", () => {
     await page.waitForURL(/\/settings\/staff\?selected=.+&toast=pin_updated/, { timeout: 10_000 });
 
     // Audit: exactly one staff.pin_set row, previous_pin_set === true, no raw PIN.
-    const rows = await getAuditLogRows("staff.pin_set");
+    const rows = await getAuditLogRowsSince(auditCursor, "staff.pin_set");
     expect(rows).toHaveLength(1);
     const audit = rows[0];
     const payload = (audit.payload ?? {}) as Record<string, unknown>;
@@ -631,7 +635,7 @@ test.describe("US4: set or change PIN", () => {
     await page.waitForURL(/\/settings\/staff\?selected=.+&toast=pin_updated/, { timeout: 10_000 });
 
     // Audit: previous_pin_set === false for the freshly-set PIN.
-    const rows = await getAuditLogRows("staff.pin_set");
+    const rows = await getAuditLogRowsSince(auditCursor, "staff.pin_set");
     expect(rows).toHaveLength(1);
     const audit = rows[0];
     const payload = (audit.payload ?? {}) as Record<string, unknown>;
@@ -670,13 +674,14 @@ test.describe("US4: set or change PIN", () => {
     expect(page.url()).not.toContain("toast=pin_updated");
 
     // No staff.pin_set audit row was written.
-    const rows = await getAuditLogRows("staff.pin_set");
+    const rows = await getAuditLogRowsSince(auditCursor, "staff.pin_set");
     expect(rows).toHaveLength(0);
   });
 });
 
 test.describe("US5: deactivate, reactivate, remove", () => {
   let supabaseUp = false;
+  let auditCursor = "";
 
   // Sam Chen — seeded technician, safe to deactivate / remove without
   // tripping the last-owner trigger.
@@ -695,7 +700,7 @@ test.describe("US5: deactivate, reactivate, remove", () => {
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    await truncateAuditLog();
+    auditCursor = newAuditCursor();
     await resetStaffToSeed();
   });
 
@@ -749,7 +754,7 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     );
 
     // Audit: one staff.deactivated row with empty payload.
-    let auditRows = await getAuditLogRows("staff.deactivated");
+    let auditRows = await getAuditLogRowsSince(auditCursor, "staff.deactivated");
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0].payload).toEqual({});
     expect(auditRows[0].entity_id).toBe(SAM_ID);
@@ -778,7 +783,7 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     });
 
     // Audit: one staff.reactivated row.
-    auditRows = await getAuditLogRows("staff.reactivated");
+    auditRows = await getAuditLogRowsSince(auditCursor, "staff.reactivated");
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0].payload).toEqual({});
     expect(auditRows[0].entity_id).toBe(SAM_ID);
@@ -833,7 +838,7 @@ test.describe("US5: deactivate, reactivate, remove", () => {
 
     // Audit: one staff.removed row with display_name_at_removal +
     // role_at_removal snapshotted.
-    const auditRows = await getAuditLogRows("staff.removed");
+    const auditRows = await getAuditLogRowsSince(auditCursor, "staff.removed");
     expect(auditRows).toHaveLength(1);
     const payload = (auditRows[0].payload ?? {}) as Record<string, unknown>;
     expect(payload).toEqual({
@@ -860,7 +865,7 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     expect(page.url()).toBe(urlBefore);
 
     // No audit row was written.
-    const auditRows = await getAuditLogRows("staff.deactivated");
+    const auditRows = await getAuditLogRowsSince(auditCursor, "staff.deactivated");
     expect(auditRows).toHaveLength(0);
 
     // Sam's row is still active in the table; footer still shows Deactivate.
@@ -915,6 +920,7 @@ async function signInAsJordan(page: import("@playwright/test").Page) {
 
 test.describe("US6: restrict who can manage staff", () => {
   let supabaseUp = false;
+  let auditCursor = "";
 
   // Maya's seeded id — fixed in the seed file.
   const MAYA_ID = "10000000-0000-0000-0000-000000000001";
@@ -932,7 +938,7 @@ test.describe("US6: restrict who can manage staff", () => {
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    await truncateAuditLog();
+    auditCursor = newAuditCursor();
     await resetStaffToSeed();
   });
 
@@ -991,7 +997,7 @@ test.describe("US6: restrict who can manage staff", () => {
     await page.goto(`/settings/staff?selected=${MAYA_ID}`);
 
     // Sanity: zero audit rows so far for staff.updated.
-    let auditRows = await getAuditLogRows("staff.updated");
+    let auditRows = await getAuditLogRowsSince(auditCursor, "staff.updated");
     expect(auditRows).toHaveLength(0);
 
     // Server Action endpoint URLs aren't documented as stable, so we
@@ -1034,7 +1040,7 @@ test.describe("US6: restrict who can manage staff", () => {
 
     // Zero `staff.updated` audit rows. The matrix threw before recordAudit
     // ran, so no row exists.
-    auditRows = await getAuditLogRows("staff.updated");
+    auditRows = await getAuditLogRowsSince(auditCursor, "staff.updated");
     expect(auditRows).toHaveLength(0);
 
     // Defense in depth: Maya's display_name in the DB is still "Maya Patel".
@@ -1072,7 +1078,6 @@ test.describe("US7: toasts", () => {
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    await truncateAuditLog();
     await resetStaffToSeed();
   });
 

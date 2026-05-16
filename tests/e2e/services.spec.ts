@@ -19,7 +19,7 @@ import { expect, test } from "@playwright/test";
 
 import { createClient } from "@supabase/supabase-js";
 
-import { getAuditLogRows, truncateAuditLog } from "./_db";
+import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -506,6 +506,7 @@ const SAM_ID = "10000000-0000-0000-0000-000000000003";
 // reintroduced.
 test.describe.skip("US3: edit a service's details and per-tech assignments", () => {
   let supabaseUp = false;
+  let auditCursor = "";
 
   test.beforeAll(async () => {
     supabaseUp = await supabaseIsReachable();
@@ -569,8 +570,10 @@ test.describe.skip("US3: edit a service's details and per-tech assignments", () 
       })
       .eq("id", CLASSIC_PEDICURE_ID);
 
-    // Truncate audit_log so this describe's audit assertion is deterministic.
-    await truncateAuditLog();
+    // Capture the audit cursor so this describe's assertions only see rows
+    // written after setup. (Pattern note: cursor lives in describe scope so
+    // it survives across the describe's serial tests.)
+    auditCursor = newAuditCursor();
   });
 
   test("(a) clicking Spa pedicure hydrates the drawer with Sam @ 75-min override pre-filled", async ({
@@ -699,7 +702,7 @@ test.describe.skip("US3: edit a service's details and per-tech assignments", () 
     expect(serviceRow!.price_cents).toBe(5000);
 
     // Audit row — exactly one `service.updated` row for this service id.
-    const auditRows = await getAuditLogRows("service.updated");
+    const auditRows = await getAuditLogRowsSince(auditCursor, "service.updated");
     const matchRow = auditRows.find((r) => r.entity_id === CLASSIC_PEDICURE_ID);
     expect(matchRow).toBeDefined();
     expect(matchRow!.entity_type).toBe("service");
@@ -931,6 +934,41 @@ test.describe("US5: variable-price services with bounds and a note", () => {
   let supabaseUp = false;
   const createdIds: string[] = [];
 
+  // Drives the Add Service drawer for a variable-priced row. Each call
+  // returns a brand-new id, so tests in this describe are self-contained
+  // — earlier they shared `createdIds[0]`, which broke under Playwright
+  // retries (a retried test runs alone, without the prior tests that
+  // populated the array).
+  async function createVariablePriceService(
+    page: import("@playwright/test").Page,
+    opts: { from?: number; to?: number } = {}
+  ): Promise<string> {
+    const name = `Custom ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    await page.locator("[data-slot='services-add-button']").click();
+    await page.waitForURL(/\?adding=1/);
+    await page.locator("[data-slot='service-form-name-input']").fill(name);
+    const categoryInput = page.locator("[data-slot='service-form-category-input']");
+    await categoryInput.click();
+    await categoryInput.fill("");
+    await categoryInput.fill("Add-on");
+    await page.locator("[data-slot='service-form-duration-input']").fill("");
+    await page.locator("[data-slot='service-form-duration-input']").fill("30");
+    await page.locator("[data-slot='service-form-variable-switch']").click();
+    await expect(page.locator("[data-slot='service-form-price-from-input']")).toBeVisible();
+    if (opts.from !== undefined) {
+      await page.locator("[data-slot='service-form-price-from-input']").fill(String(opts.from));
+    }
+    if (opts.to !== undefined) {
+      await page.locator("[data-slot='service-form-price-to-input']").fill(String(opts.to));
+    }
+    await page.locator("[data-slot='services-drawer-save']").click();
+    await page.waitForURL(/\?selected=[^&]+&toast=service_added&name=/);
+    const id = new URL(page.url()).searchParams.get("selected");
+    if (!id) throw new Error("createVariablePriceService: no selected= in URL after save");
+    createdIds.push(id);
+    return id;
+  }
+
   test.beforeAll(async () => {
     supabaseUp = await supabaseIsReachable();
     if (!supabaseUp) {
@@ -1014,9 +1052,7 @@ test.describe("US5: variable-price services with bounds and a note", () => {
     page,
   }) => {
     await signInAsMaya(page);
-    // Edit the service created in (a).
-    const id = createdIds[0];
-    expect(id).toBeTruthy();
+    const id = await createVariablePriceService(page);
     await page.goto(`/services?selected=${id}`);
 
     const drawer = page.locator("[data-slot='services-drawer']");
@@ -1046,8 +1082,8 @@ test.describe("US5: variable-price services with bounds and a note", () => {
 
   test("(c) Set To < From → inline bounds error + Save disabled", async ({ page }) => {
     await signInAsMaya(page);
-    const id = createdIds[0];
-    expect(id).toBeTruthy();
+    // (c) needs a baseline of From=20 / To=60 to then drop To down to 10.
+    const id = await createVariablePriceService(page, { from: 20, to: 60 });
     await page.goto(`/services?selected=${id}`);
 
     // Drop To from 60 down to 10 — now To < From (20).
@@ -1078,8 +1114,7 @@ test.describe("US5: variable-price services with bounds and a note", () => {
     page,
   }) => {
     await signInAsMaya(page);
-    const id = createdIds[0];
-    expect(id).toBeTruthy();
+    const id = await createVariablePriceService(page);
     await page.goto(`/services?selected=${id}`);
 
     // Toggle Variable off — the From/To/note inputs disappear and the fixed

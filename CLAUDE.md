@@ -41,12 +41,33 @@ Run them in this order so the cheapest checks fail fast:
 2. `npm run lint` — ESLint.
 3. `npm run typecheck` — `tsc --noEmit`.
 4. `npm test` — Vitest unit suite.
-5. `npm run test:e2e` — Playwright against a local Supabase. Use
-   `--workers=1` for the full suite to avoid `audit_log` truncate races
-   between spec files.
+5. `npm run test:e2e` — Playwright against a local Supabase. Defaults to
+   parallel workers; set `PLAYWRIGHT_PROD=1` to opt into the same prebuilt
+   `npm run start` server CI uses (avoids next-dev JIT compile flake under
+   load). Audit-log assertions are cursor-scoped per-test (see
+   `tests/e2e/_db.ts` — `newAuditCursor()` / `getAuditLogRowsSince()`),
+   so parallel workers no longer race on the shared `audit_log` table.
 
 All five MUST be green locally. Constitution v1.0.3 § Development Workflow
 & Quality Gates is the authority.
+
+### Scoping e2e at intermediate phase gates
+
+When generating or executing a `specs/<feature>/tasks.md`, intermediate
+per-phase gates (e.g. "Phase 5 verification" between user stories) should
+run a **scoped** e2e instead of the full suite. The full suite belongs at
+the final gate only:
+
+- Phase N verifying User Story M: `npx playwright test tests/e2e/<file>.spec.ts -g "USm"`
+  (the describe-name convention `US1: …`, `US2: …`, `010-US3: …` is what
+  the `-g` filter matches.)
+- Final gate (the one before "feature done"): full
+  `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e`.
+
+Rationale: a typical 70-task feature ran the full e2e ~3 times in
+intermediate gates (≈ 7 min wasted on tests not touched by the phase).
+The final full-suite gate still catches anything a scoped run missed,
+so the safety net is intact.
 
 ## Supabase migrations
 
