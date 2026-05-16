@@ -1,0 +1,82 @@
+/* ==========================================================================
+   Lacquer — Settings shell layout
+   Mirrors `design-system/prototypes/user-management/user-management.css`
+   (single-column shell, tabs across the top, then a 2-col staff layout).
+   Every value resolves to a `var(--*)` token from `styles/tokens.css`.
+   ========================================================================== */
+
+/* Outer shell: full-height single column. Tabs sit at the top; the content
+   slot below them takes the remaining height. No left rail — the prototype
+   uses the tab bar as the only settings nav. */
+.settings-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Single content column under the tab bar. `min-height: 0` lets the inner
+   `.settings-staff-grid` (which itself uses `flex: 1`) reclaim height; the
+   horizontal padding matches the prototype's `.content-pad`. */
+.settings-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-8);
+  overflow: auto;
+}
+
+/* Horizontal tab bar (General · Staff · Notifications · Billing). Matches
+   `.settings-tabs` in the prototype. Lives ABOVE `.settings-content`, so
+   tabs span the full width while the content column gets its own padding. */
+.settings-tab-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 0 var(--space-8);
+  background: var(--card);
+  flex-shrink: 0;
+}
+
+/* Staff page two-column layout: roster table on the left, edit panel on the
+   right. `minmax(0, 1fr)` on the roster column is load-bearing — without
+   the explicit `0` floor the column would grow to fit its widest descendant
+   (e.g. a long row) and squash the panel column. */
+.settings-staff-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) calc(var(--space-16) * 5);
+  gap: var(--space-4);
+  align-items: start;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Roster column wrapper. */
+.settings-staff-roster {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* Edit-panel column wrapper. Sticky so it stays in view as the roster scrolls.
+   Background/border come from `var(--card)` so the column reads as a single
+   surface, matching the prototype's `.card`. */
+.settings-staff-panel {
+  position: sticky;
+  top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+}

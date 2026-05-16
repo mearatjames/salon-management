@@ -77,6 +77,7 @@ export type Database = {
           display_name: string;
           id: string;
           pin_hash: string | null;
+          removed_at: string | null;
           role: string;
           user_id: string | null;
         };
@@ -87,6 +88,7 @@ export type Database = {
           display_name: string;
           id?: string;
           pin_hash?: string | null;
+          removed_at?: string | null;
           role: string;
           user_id?: string | null;
         };
@@ -97,6 +99,7 @@ export type Database = {
           display_name?: string;
           id?: string;
           pin_hash?: string | null;
+          removed_at?: string | null;
           role?: string;
           user_id?: string | null;
         };
