@@ -29,9 +29,13 @@ import { redirect } from "next/navigation";
 import { recordAudit } from "@/lib/auth/audit";
 import { requireStudioSession } from "@/lib/auth/session";
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
+import { getSetting } from "@/lib/settings/read";
 
 import {
   CashPaymentFailedError,
+  DiscountInvalidError,
+  EmailAddressInvalidError,
+  InvalidPriceError,
   ServiceArchivedError,
   StaffNotActiveError,
   TicketAlreadyTerminalError,
@@ -39,6 +43,26 @@ import {
   TicketHasUnpricedItemsError,
   TicketNotOpenError,
 } from "./_errors";
+
+// ----------------------------------------------------------------------
+// T035 (US4): shared email regex constant used by `emailBillStub` for
+// server-side address validation. The client (`email-bill-dialog.tsx`)
+// duplicates this literal so the two validations stay textually identical
+// — rather than exporting from this `"use server"` file (which forbids
+// non-async exports) we keep the regex tiny and tolerate the duplication.
+// ----------------------------------------------------------------------
+
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// ----------------------------------------------------------------------
+// T026 (US3): discountNameSnapshot — co-located helper used by
+// addDiscountLine to snapshot the row's `name_snapshot`. Co-located here
+// (not exported) because it has exactly one caller.
+// ----------------------------------------------------------------------
+
+function discountNameSnapshot(shape: "flat" | "percent", value: number): string {
+  return shape === "percent" ? `Discount · ${value}%` : "Discount";
+}
 
 // Loose 36-char hyphenated hex shape check. The DB FKs are the real
 // guard; this just drops obviously bogus payloads before a round-trip.
@@ -224,9 +248,24 @@ export async function resumeOrCreateTicket(): Promise<{
 
 // ----------------------------------------------------------------------
 // Internal totals helper — re-derives subtotal / total over a ticket's
-// items per the contract (R2): subtotal sums only fixed-price lines
-// (`price_unconfirmed = false`); tax stays 0; total = subtotal + tax.
-// Used by `addServiceLine` and `removeLine` after each mutation.
+// items per the contract (R2 / R11 / R18). One SELECT (pulls in `kind`
+// and `discount_pct` so percent-discount rows can be recomputed against
+// the freshly summed service subtotal), N targeted per-row UPDATEs for
+// any percent-discount row whose stored amount has drifted, and one
+// final UPDATE on `tickets` with the new subtotal/total. No second
+// roundtrip — discount-row amounts are folded in memory after the
+// targeted UPDATEs so the ticket UPDATE sees fresh values.
+//
+// Math (mirrored in `lib/pos/cart.ts::computeTotals`):
+//   service_subtotal = sum over kind='service' && !price_unconfirmed
+//   percent_amount   = -round(pct * service_subtotal / 100)  per discount row
+//   discount_total   = sum over kind='discount' (negative or zero)
+//   subtotal_cents   = max(0, service_subtotal + discount_total)
+//   total_cents      = subtotal_cents   (tax_cents stays 0 this phase)
+//
+// Used by every mutating cart action: `addServiceLine`, `removeLine`,
+// `setLinePrice`, `addDiscountLine`, `removeDiscountLine`. The signature
+// and call sites are unchanged from phase 2 — the body just does more.
 // ----------------------------------------------------------------------
 
 async function recomputeTicketTotals(
@@ -235,16 +274,48 @@ async function recomputeTicketTotals(
 ): Promise<{ subtotalCents: number; totalCents: number }> {
   const { data, error } = await supabase
     .from("ticket_items")
-    .select("unit_price_cents, qty, price_unconfirmed")
+    .select("id, kind, unit_price_cents, qty, price_unconfirmed, discount_pct")
     .eq("ticket_id", ticketId);
 
   if (error) {
     throw new Error(`recomputeTicketTotals read failed: ${error.message}`);
   }
 
-  const subtotalCents = (data ?? [])
-    .filter((row) => row.price_unconfirmed === false)
+  const rows = (data ?? []).map((r) => ({ ...r }));
+
+  // 1) Service subtotal — only confirmed service rows contribute.
+  const serviceSubtotal = rows
+    .filter((row) => row.kind === "service" && row.price_unconfirmed === false)
     .reduce((sum, row) => sum + row.unit_price_cents * row.qty, 0);
+
+  // 2) Re-price each percent-discount row against the fresh service
+  //    subtotal. Only UPDATE rows whose stored amount has actually
+  //    drifted to avoid useless writes (and audit-trigger noise, when
+  //    we add one later).
+  for (const row of rows) {
+    if (row.kind === "discount" && row.discount_pct != null) {
+      const newAmount = -Math.round((Number(row.discount_pct) * serviceSubtotal) / 100);
+      if (newAmount !== row.unit_price_cents) {
+        const { error: rowErr } = await supabase
+          .from("ticket_items")
+          .update({ unit_price_cents: newAmount })
+          .eq("id", row.id);
+        if (rowErr) {
+          throw new Error(
+            `recomputeTicketTotals discount-row update failed (${row.id}): ${rowErr.message}`
+          );
+        }
+        row.unit_price_cents = newAmount;
+      }
+    }
+  }
+
+  // 3) Discount total — sum over the (now-fresh) discount rows.
+  const discountTotal = rows
+    .filter((row) => row.kind === "discount")
+    .reduce((sum, row) => sum + row.unit_price_cents * row.qty, 0);
+
+  const subtotalCents = Math.max(0, serviceSubtotal + discountTotal);
   const totalCents = subtotalCents; // tax_cents stays 0 in this phase.
 
   const { error: updErr } = await supabase
@@ -517,6 +588,115 @@ export async function setLineTech(input: SetLineTechInput): Promise<{ ok: true }
 }
 
 // ----------------------------------------------------------------------
+// 5b. setLinePrice — save a price for a variable-priced cart row (US1)
+//     OR override the snapshotted price on a confirmed row (US2).
+//     Contract: `specs/013-cart-polish/contracts/server-actions.md § 1`.
+//
+//     Refuses if the named line is on a different ticket (defensive Error,
+//     same pattern as setLineTech), if the row is a discount line
+//     (InvalidPriceError), or if `unitPriceCents <= 0` (InvalidPriceError;
+//     defense in depth — the client also enforces this via the sheet's
+//     disabled-Save state and the contract's zod schema).
+//
+//     Single write path for both auto-open (was_unconfirmed=true) and
+//     override (was_unconfirmed=false) — the audit payload disambiguates
+//     them for downstream reporting. `price_unconfirmed` is set to false
+//     unconditionally because the override path is harmless on already-
+//     confirmed rows (the column is already false, the update is a no-op
+//     for that field).
+// ----------------------------------------------------------------------
+
+export type SetLinePriceInput = {
+  ticketId: string;
+  lineId: string;
+  unitPriceCents: number;
+};
+
+export async function setLinePrice(
+  input: SetLinePriceInput
+): Promise<{ subtotalCents: number; totalCents: number }> {
+  assertUuid(input.ticketId, "setLinePrice.ticketId");
+  assertUuid(input.lineId, "setLinePrice.lineId");
+
+  // FR-006 server-side defense — zod catches this client-side too.
+  if (!Number.isInteger(input.unitPriceCents) || input.unitPriceCents <= 0) {
+    throw new InvalidPriceError(
+      `unitPriceCents must be a positive integer (got ${input.unitPriceCents})`
+    );
+  }
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  // 1) Ticket must be open.
+  const { data: ticket, error: tkErr } = await supabase
+    .from("tickets")
+    .select("id, status")
+    .eq("id", input.ticketId)
+    .single();
+  if (tkErr || !ticket) {
+    throw new Error(`setLinePrice ticket read failed: ${tkErr?.message ?? "not found"}`);
+  }
+  if (ticket.status !== "open") {
+    throw new TicketNotOpenError();
+  }
+
+  // 2) Read the named line — capture previous price + unconfirmed flag
+  //    for the audit payload, and confirm kind != 'discount'.
+  const { data: lineRow, error: readErr } = await supabase
+    .from("ticket_items")
+    .select("id, ticket_id, kind, unit_price_cents, price_unconfirmed")
+    .eq("id", input.lineId)
+    .single();
+  if (readErr || !lineRow) {
+    throw new Error(`setLinePrice line read failed: ${readErr?.message ?? "not found"}`);
+  }
+  if (lineRow.ticket_id !== input.ticketId) {
+    throw new Error(
+      `setLinePrice: line ${input.lineId} does not belong to ticket ${input.ticketId}`
+    );
+  }
+  if (lineRow.kind === "discount") {
+    throw new InvalidPriceError("cannot price-override a discount row");
+  }
+
+  const previousUnitPriceCents = lineRow.unit_price_cents as number;
+  const wasUnconfirmed = lineRow.price_unconfirmed as boolean;
+
+  // 3) Update the row's price and clear the unconfirmed flag.
+  const { error: updErr } = await supabase
+    .from("ticket_items")
+    .update({
+      unit_price_cents: input.unitPriceCents,
+      price_unconfirmed: false,
+    })
+    .eq("id", input.lineId);
+  if (updErr) {
+    throw new Error(`setLinePrice update failed: ${updErr.message}`);
+  }
+
+  // 4) Recompute totals (folds any percent-discount rows against the
+  //    fresh service subtotal).
+  const totals = await recomputeTicketTotals(supabase, input.ticketId);
+
+  // 5) Audit.
+  await recordAudit(
+    "line.price_set",
+    viewer.deviceUserId,
+    input.lineId,
+    {
+      ticket_id: input.ticketId,
+      previous_unit_price_cents: previousUnitPriceCents,
+      new_unit_price_cents: input.unitPriceCents,
+      was_unconfirmed: wasUnconfirmed,
+    },
+    viewer.staff.id
+  );
+
+  return totals;
+}
+
+// ----------------------------------------------------------------------
 // 6. takeCash — atomic cash payment (T026 / contracts § 6).
 //    Calls `pos_take_cash` RPC and maps Postgres error messages to the
 //    typed checkout-error classes. The RPC owns the audit emission for
@@ -631,6 +811,320 @@ export async function discardTicket(input: DiscardTicketInput): Promise<{ ok: tr
     {
       subtotal_cents_at_discard: ticket.subtotal_cents,
       line_count_at_discard: count ?? 0,
+    },
+    viewer.staff.id
+  );
+
+  return { ok: true };
+}
+
+// ----------------------------------------------------------------------
+// 8. addDiscountLine — US3 / T027. Contract: `specs/013-cart-polish/contracts/
+//    server-actions.md § 2`.
+//
+//    Validates session, the input shape, and refuses if the ticket is not
+//    open. Per-shape body validation:
+//      - shape='flat'    → value > 0 (positive integer cents)
+//      - shape='percent' → 1 <= value <= 100 (whole percent)
+//    Note must be ≤ 80 chars (caught by the input-shape validator).
+//
+//    Reads `discount.manager_threshold_cents` via getSetting<number|null>;
+//    v1 ignores the return per FR-018 (phase-8 plugs in the manager-PIN
+//    gate at this exact point).
+//
+//    The insert sets `unit_price_cents = -value` for flat and `0` for
+//    percent — recomputeTicketTotals walks the rows after insert and
+//    writes the correct percent amount back via a targeted UPDATE.
+//
+//    Emits `discount.added` audit with payload = { ticket_id, shape, value, note }.
+// ----------------------------------------------------------------------
+
+export type AddDiscountLineInput = {
+  ticketId: string;
+  shape: "flat" | "percent";
+  value: number;
+  note?: string;
+};
+
+export async function addDiscountLine(
+  input: AddDiscountLineInput
+): Promise<{ lineId: string; subtotalCents: number; totalCents: number }> {
+  // 1) Input-shape validation. The contract documents a zod schema; we
+  //    hand-roll the same guards (no zod dependency in this repo). The
+  //    surfaces match the typed error contract in `_errors.ts`:
+  //      - `flat_value_non_positive` (covers !int / NaN / ≤ 0)
+  //      - `percent_out_of_range`    (covers !int / NaN / not in [1, 100])
+  //      - `note_too_long`           (> 80 chars)
+  assertUuid(input.ticketId, "addDiscountLine.ticketId");
+
+  if (input.shape !== "flat" && input.shape !== "percent") {
+    throw new DiscountInvalidError(
+      `unknown discount shape: ${JSON.stringify(input.shape)}`,
+      // Use the closest reason — an unknown shape is a programming bug, not
+      // an operator-recoverable case; surface it as the flat non-positive
+      // bucket so the UI's error branch matches its primary fallback.
+      "flat_value_non_positive"
+    );
+  }
+
+  if (input.shape === "flat") {
+    if (!Number.isInteger(input.value) || input.value <= 0) {
+      throw new DiscountInvalidError(
+        `flat discount value must be a positive integer cents (got ${input.value})`,
+        "flat_value_non_positive"
+      );
+    }
+  } else {
+    // shape === 'percent'
+    if (!Number.isInteger(input.value) || input.value < 1 || input.value > 100) {
+      throw new DiscountInvalidError(
+        `percent discount value must be an integer in [1, 100] (got ${input.value})`,
+        "percent_out_of_range"
+      );
+    }
+  }
+
+  if (input.note != null && input.note.length > 80) {
+    throw new DiscountInvalidError(
+      `discount note must be ≤ 80 characters (got ${input.note.length})`,
+      "note_too_long"
+    );
+  }
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  // 2) Ticket must be open.
+  const { data: ticket, error: tkErr } = await supabase
+    .from("tickets")
+    .select("id, status")
+    .eq("id", input.ticketId)
+    .single();
+  if (tkErr || !ticket) {
+    throw new Error(`addDiscountLine ticket read failed: ${tkErr?.message ?? "not found"}`);
+  }
+  if (ticket.status !== "open") {
+    throw new TicketNotOpenError();
+  }
+
+  // 3) Read the manager-threshold setting. The return is intentionally
+  //    ignored in v1 per FR-018 — phase 8 plugs in the manager-PIN gate
+  //    here. The read stays so the wire is in place.
+  await getSetting<number | null>("discount.manager_threshold_cents");
+
+  // 4) Insert the discount row. For percent shape, unit_price_cents starts
+  //    at 0; recomputeTicketTotals computes and writes the negative amount
+  //    against the live service subtotal.
+  const insertValues = {
+    ticket_id: input.ticketId,
+    kind: "discount" as const,
+    ref_id: null as string | null,
+    assigned_staff_id: null as string | null,
+    name_snapshot: discountNameSnapshot(input.shape, input.value),
+    unit_price_cents: input.shape === "flat" ? -input.value : 0,
+    qty: 1,
+    discount_pct: input.shape === "percent" ? input.value : null,
+    note: input.note ?? null,
+  };
+
+  const { data: lineRow, error: insErr } = await supabase
+    .from("ticket_items")
+    .insert(insertValues)
+    .select("id")
+    .single();
+  if (insErr || !lineRow) {
+    throw new Error(`addDiscountLine insert failed: ${insErr?.message ?? "no row returned"}`);
+  }
+
+  // 5) Recompute totals — for percent shape this writes the correct
+  //    unit_price_cents back to the discount row.
+  const totals = await recomputeTicketTotals(supabase, input.ticketId);
+
+  // 6) Audit. entity_id = newLineId (NOT the ticket id).
+  await recordAudit(
+    "discount.added",
+    viewer.deviceUserId,
+    lineRow.id,
+    {
+      ticket_id: input.ticketId,
+      shape: input.shape,
+      value: input.value,
+      note: input.note ?? null,
+    },
+    viewer.staff.id
+  );
+
+  return {
+    lineId: lineRow.id,
+    subtotalCents: totals.subtotalCents,
+    totalCents: totals.totalCents,
+  };
+}
+
+// ----------------------------------------------------------------------
+// 9. removeDiscountLine — US3 / T028. Contract: `specs/013-cart-polish/contracts/
+//    server-actions.md § 3`.
+//
+//    Validates session, refuses if the ticket is not open, refuses if the
+//    named line is not on this ticket (defensive Error), refuses if the
+//    row's kind !== 'discount' (DiscountInvalidError).
+//
+//    Captures discount_pct + unit_price_cents + note BEFORE the delete so
+//    the audit payload can reconstruct the original entry:
+//      - shape = discount_pct != null ? 'percent' : 'flat'
+//      - value = discount_pct ?? -unit_price_cents (back to positive)
+// ----------------------------------------------------------------------
+
+export type RemoveDiscountLineInput = {
+  ticketId: string;
+  lineId: string;
+};
+
+export async function removeDiscountLine(
+  input: RemoveDiscountLineInput
+): Promise<{ subtotalCents: number; totalCents: number }> {
+  assertUuid(input.ticketId, "removeDiscountLine.ticketId");
+  assertUuid(input.lineId, "removeDiscountLine.lineId");
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  // 1) Ticket must be open.
+  const { data: ticket, error: tkErr } = await supabase
+    .from("tickets")
+    .select("id, status")
+    .eq("id", input.ticketId)
+    .single();
+  if (tkErr || !ticket) {
+    throw new Error(`removeDiscountLine ticket read failed: ${tkErr?.message ?? "not found"}`);
+  }
+  if (ticket.status !== "open") {
+    throw new TicketNotOpenError();
+  }
+
+  // 2) Read the named line — capture payload fields + confirm membership +
+  //    confirm kind='discount'.
+  const { data: lineRow, error: readErr } = await supabase
+    .from("ticket_items")
+    .select("id, ticket_id, kind, unit_price_cents, discount_pct, note")
+    .eq("id", input.lineId)
+    .single();
+  if (readErr || !lineRow) {
+    throw new Error(`removeDiscountLine line read failed: ${readErr?.message ?? "not found"}`);
+  }
+  if (lineRow.ticket_id !== input.ticketId) {
+    throw new Error(
+      `removeDiscountLine: line ${input.lineId} does not belong to ticket ${input.ticketId}`
+    );
+  }
+  if (lineRow.kind !== "discount") {
+    throw new DiscountInvalidError("not a discount line", "not_a_discount_line");
+  }
+
+  const capturedDiscountPct = lineRow.discount_pct as number | null;
+  const capturedUnitPriceCents = lineRow.unit_price_cents as number;
+  const capturedNote = (lineRow.note ?? null) as string | null;
+
+  // 3) Delete the row.
+  const { error: delErr } = await supabase.from("ticket_items").delete().eq("id", input.lineId);
+  if (delErr) {
+    throw new Error(`removeDiscountLine delete failed: ${delErr.message}`);
+  }
+
+  // 4) Recompute totals.
+  const totals = await recomputeTicketTotals(supabase, input.ticketId);
+
+  // 5) Audit. Reconstruct the original entry shape/value from the captured
+  //    fields. discount_pct can be a `numeric(5,2)` so coerce to Number.
+  const shape: "flat" | "percent" = capturedDiscountPct != null ? "percent" : "flat";
+  const value: number =
+    capturedDiscountPct != null ? Number(capturedDiscountPct) : -capturedUnitPriceCents;
+
+  await recordAudit(
+    "discount.removed",
+    viewer.deviceUserId,
+    input.lineId,
+    {
+      ticket_id: input.ticketId,
+      shape,
+      value,
+      note: capturedNote,
+    },
+    viewer.staff.id
+  );
+
+  return totals;
+}
+
+// ----------------------------------------------------------------------
+// 10. emailBillStub — US4 / T036. Contract: `specs/013-cart-polish/contracts/
+//     server-actions.md § 4`.
+//
+//     Stub action — DOES NOT dispatch real mail. The audit row is the only
+//     persisted evidence the operator pressed Email. Validates the address
+//     server-side (defense in depth — the client also runs the same regex
+//     in `email-bill-dialog.tsx`). On invalid: throws
+//     EmailAddressInvalidError, no audit row, no external call. On valid:
+//     emits the `bill.emailed` audit row whose `payload.line_snapshot`
+//     forwards the full client-captured bill snapshot verbatim (large by
+//     design — the audit is the only evidence of what the operator was
+//     looking at).
+//
+//     Validation is hand-rolled (no zod in this repo, consistent with
+//     phase 5's deviations note). UUID via `assertUuid`; the structural
+//     check on the snapshot is intentionally minimal — the audit stores
+//     whatever the client sent, the test asserts forwarding.
+// ----------------------------------------------------------------------
+
+export type EmailBillStubSnapshotLine = {
+  id: string;
+  kind: "service" | "discount";
+  name: string;
+  unitPriceCents: number;
+  qty: number;
+  note: string | null;
+  discountPct: number | null;
+};
+
+export type EmailBillStubSnapshot = {
+  lines: EmailBillStubSnapshotLine[];
+  serviceSubtotalCents: number;
+  discountTotalCents: number;
+  totalCents: number;
+  capturedAt: string;
+};
+
+export type EmailBillStubInput = {
+  ticketId: string;
+  address: string;
+  snapshot: EmailBillStubSnapshot;
+};
+
+export async function emailBillStub(input: EmailBillStubInput): Promise<{ ok: true }> {
+  assertUuid(input.ticketId, "emailBillStub.ticketId");
+
+  // Address validation — empty string fails the regex; the regex is the
+  // single source of truth (the client mirrors it in email-bill-dialog.tsx).
+  if (typeof input.address !== "string" || !EMAIL.test(input.address)) {
+    throw new EmailAddressInvalidError(
+      `email address is invalid (got ${JSON.stringify(input.address)})`
+    );
+  }
+
+  const viewer = await requireStudioSession();
+
+  // Audit row — `payload.line_snapshot` forwards the full snapshot verbatim
+  // so the audit log preserves exactly what the operator saw when they
+  // pressed Email. No external network call; no DB write to any other
+  // table. The action does NOT verify the ticket exists — the audit row
+  // stands as evidence regardless.
+  await recordAudit(
+    "bill.emailed",
+    viewer.deviceUserId,
+    input.ticketId,
+    {
+      address: input.address,
+      line_snapshot: input.snapshot,
     },
     viewer.staff.id
   );

@@ -21,6 +21,7 @@ import { CheckoutScreen } from "./checkout-screen.client";
 import { DoneScreen } from "@/components/lacquer/checkout/done-screen";
 import { requireStudioSession } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/db/server";
+import { getSetting } from "@/lib/settings/read";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +52,7 @@ export default async function CheckoutTicketPage({
   const itemsPromise = supabase
     .from("ticket_items")
     .select(
-      "id, ref_id, name_snapshot, unit_price_cents, qty, assigned_staff_id, price_unconfirmed"
+      "id, kind, ref_id, name_snapshot, unit_price_cents, qty, assigned_staff_id, price_unconfirmed, discount_pct, note"
     )
     .eq("ticket_id", ticketId)
     .order("created_at", { ascending: true });
@@ -65,17 +66,37 @@ export default async function CheckoutTicketPage({
 
   const servicesPromise = supabase
     .from("services")
-    .select("id, name, category, duration_min, price_cents, variable_price, price_from_cents")
+    .select(
+      "id, name, category, duration_min, price_cents, variable_price, price_from_cents, price_to_cents, variable_price_note, presets"
+    )
     .eq("active", true)
     .order("category", { ascending: true })
     .order("name", { ascending: true });
 
-  const [ticketRes, itemsRes, staffRes, servicesRes] = await Promise.all([
-    ticketPromise,
-    itemsPromise,
-    staffPromise,
-    servicesPromise,
-  ]);
+  // US4 (T040): fetch the three salon-info settings keys in parallel with
+  // the rest of the page data so the BillSheet's masthead can render
+  // without a second round trip. Missing keys fall back to safe strings
+  // per the spec's "Salon settings missing" edge case.
+  const salonNamePromise = getSetting<string>("salon.name");
+  const salonAddressPromise = getSetting<string>("salon.address");
+  const salonPhonePromise = getSetting<string>("salon.phone");
+
+  const [ticketRes, itemsRes, staffRes, servicesRes, salonName, salonAddress, salonPhone] =
+    await Promise.all([
+      ticketPromise,
+      itemsPromise,
+      staffPromise,
+      servicesPromise,
+      salonNamePromise,
+      salonAddressPromise,
+      salonPhonePromise,
+    ]);
+
+  const salonInfo = {
+    name: salonName ?? "Tang Nails",
+    address: salonAddress ?? "",
+    phone: salonPhone ?? "",
+  };
 
   if (ticketRes.error) throw new Error(`ticket load failed: ${ticketRes.error.message}`);
   if (!ticketRes.data) notFound();
@@ -131,19 +152,79 @@ export default async function CheckoutTicketPage({
     );
   }
 
+  // 013-cart-polish T022 (US2): build a service lookup so initial-load
+  // (server-hydrated) cart lines can carry `serviceMeta` from the moment
+  // the page renders. Without this, opening the override sheet on a row
+  // that was already on the ticket at page load shows the generic
+  // "Adjust price for this sale" context and renders no preset chips —
+  // the metadata only flowed in via `handlePickService` (optimistically
+  // added lines). The CHECK on `services.presets` (migration 0006)
+  // guarantees the cast shape.
+  const servicesById = new Map<string, (typeof servicesRes.data)[number]>();
+  for (const s of servicesRes.data ?? []) servicesById.set(s.id, s);
+
   // status === 'open' — render the cart island with the loaded snapshot.
   return (
     <CheckoutScreen
       ticketId={ticket.id}
-      initialItems={(itemsRes.data ?? []).map((row) => ({
-        id: row.id,
-        serviceId: row.ref_id,
-        name: row.name_snapshot,
-        unitPriceCents: row.unit_price_cents,
-        qty: row.qty,
-        priceUnconfirmed: row.price_unconfirmed,
-        assignedStaffId: row.assigned_staff_id,
-      }))}
+      salonInfo={salonInfo}
+      initialItems={(itemsRes.data ?? [])
+        // US3 (T031): both service AND discount rows now surface. Discount
+        // rows have ref_id=null / assigned_staff_id=null (CHECK-enforced in
+        // 0006) and carry `discount_pct` + `note`. Service rows still need
+        // both fk fields populated to be valid.
+        .filter((row) => {
+          if (row.kind === "discount") return true;
+          return row.kind === "service" && row.ref_id !== null && row.assigned_staff_id !== null;
+        })
+        .map((row) => {
+          if (row.kind === "discount") {
+            return {
+              id: row.id,
+              serviceId: null,
+              name: row.name_snapshot,
+              unitPriceCents: row.unit_price_cents,
+              qty: row.qty,
+              priceUnconfirmed: false,
+              assignedStaffId: null,
+              kind: "discount" as const,
+              note: (row.note as string | null) ?? null,
+              discountPct: row.discount_pct != null ? Number(row.discount_pct as unknown) : null,
+              serviceMeta: null,
+            };
+          }
+          const svc = servicesById.get(row.ref_id as string);
+          return {
+            id: row.id,
+            serviceId: row.ref_id as string,
+            name: row.name_snapshot,
+            unitPriceCents: row.unit_price_cents,
+            qty: row.qty,
+            priceUnconfirmed: row.price_unconfirmed,
+            assignedStaffId: row.assigned_staff_id as string,
+            kind: "service" as const,
+            note: null,
+            discountPct: null,
+            // T022 (US2): pre-fill the variable-price metadata so the
+            // override path renders the same preset chips + context note
+            // as the in-session optimistic insert path. `null` when the
+            // source service is no longer in the active catalog (archived
+            // mid-session) — the sheet falls back to the generic context.
+            serviceMeta: svc
+              ? {
+                  variable: svc.variable_price,
+                  priceFromCents: svc.price_from_cents,
+                  priceToCents: svc.price_to_cents,
+                  variableNote: svc.variable_price_note,
+                  presets:
+                    (svc.presets as
+                      | Array<{ label: string; price_cents: number }>
+                      | null
+                      | undefined) ?? null,
+                }
+              : null,
+          };
+        })}
       staff={(staffRes.data ?? []).map((s) => ({
         id: s.id,
         display_name: s.display_name,
@@ -157,6 +238,14 @@ export default async function CheckoutTicketPage({
         price_cents: s.price_cents,
         variable_price: s.variable_price,
         price_from_cents: s.price_from_cents,
+        price_to_cents: s.price_to_cents,
+        variable_price_note: s.variable_price_note,
+        // `presets` is a `jsonb` column whose schema is enforced by a DB
+        // CHECK (added in migration 0006) — an array of `{label, price_cents}`
+        // objects. Coerce the typed-out unknown[] back to the shape the
+        // checkout client expects; the CHECK guarantees correctness.
+        presets:
+          (s.presets as Array<{ label: string; price_cents: number }> | null | undefined) ?? null,
       }))}
     />
   );

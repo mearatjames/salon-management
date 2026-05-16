@@ -243,3 +243,30 @@ begin
   on conflict (service_id, staff_id) do nothing;
 end
 $$;
+
+-- ---------------------------------------------------------------------------
+-- 013-cart-polish: presets seed for the variable-priced "Nail art" service.
+-- Three quick-pick chips (Small / Medium / Large) at $35 / $45 / $60 — the
+-- price-sheet renders them via the `services.presets` jsonb column (added
+-- by migration 0006_cart_polish.sql).
+--
+-- Deviation note vs data-model.md: the spec snippet targets the row by
+-- name='Nail art · medium', but the existing seed (and phase-2 e2e tests)
+-- use the shorter name 'Nail art'. We update the existing row in place
+-- rather than rename it; renaming would break tests/e2e/services.spec.ts.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if to_regclass('public.services') is null then
+    return;
+  end if;
+
+  update public.services
+     set presets = jsonb_build_array(
+       jsonb_build_object('label', 'Small',  'price_cents', 3500),
+       jsonb_build_object('label', 'Medium', 'price_cents', 4500),
+       jsonb_build_object('label', 'Large',  'price_cents', 6000)
+     )
+   where name = 'Nail art';
+end
+$$;

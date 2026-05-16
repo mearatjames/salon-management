@@ -192,6 +192,7 @@ export type Database = {
           duration_min: number;
           id: string;
           name: string;
+          presets: Json | null;
           price_cents: number;
           price_from_cents: number | null;
           price_to_cents: number | null;
@@ -208,6 +209,7 @@ export type Database = {
           duration_min: number;
           id?: string;
           name: string;
+          presets?: Json | null;
           price_cents: number;
           price_from_cents?: number | null;
           price_to_cents?: number | null;
@@ -224,6 +226,7 @@ export type Database = {
           duration_min?: number;
           id?: string;
           name?: string;
+          presets?: Json | null;
           price_cents?: number;
           price_from_cents?: number | null;
           price_to_cents?: number | null;
@@ -231,6 +234,24 @@ export type Database = {
           updated_at?: string;
           variable_price?: boolean;
           variable_price_note?: string | null;
+        };
+        Relationships: [];
+      };
+      settings: {
+        Row: {
+          key: string;
+          updated_at: string;
+          value: Json;
+        };
+        Insert: {
+          key: string;
+          updated_at?: string;
+          value: Json;
+        };
+        Update: {
+          key?: string;
+          updated_at?: string;
+          value?: Json;
         };
         Relationships: [];
       };
@@ -311,38 +332,44 @@ export type Database = {
       };
       ticket_items: {
         Row: {
-          assigned_staff_id: string;
+          assigned_staff_id: string | null;
           created_at: string;
+          discount_pct: number | null;
           id: string;
           kind: Database["public"]["Enums"]["ticket_item_kind"];
           name_snapshot: string;
+          note: string | null;
           price_unconfirmed: boolean;
           qty: number;
-          ref_id: string;
+          ref_id: string | null;
           ticket_id: string;
           unit_price_cents: number;
         };
         Insert: {
-          assigned_staff_id: string;
+          assigned_staff_id?: string | null;
           created_at?: string;
+          discount_pct?: number | null;
           id?: string;
           kind: Database["public"]["Enums"]["ticket_item_kind"];
           name_snapshot: string;
+          note?: string | null;
           price_unconfirmed?: boolean;
           qty?: number;
-          ref_id: string;
+          ref_id?: string | null;
           ticket_id: string;
           unit_price_cents: number;
         };
         Update: {
-          assigned_staff_id?: string;
+          assigned_staff_id?: string | null;
           created_at?: string;
+          discount_pct?: number | null;
           id?: string;
           kind?: Database["public"]["Enums"]["ticket_item_kind"];
           name_snapshot?: string;
+          note?: string | null;
           price_unconfirmed?: boolean;
           qty?: number;
-          ref_id?: string;
+          ref_id?: string | null;
           ticket_id?: string;
           unit_price_cents?: number;
         };
@@ -448,7 +475,7 @@ export type Database = {
       payment_kind: "payment";
       payment_method: "cash";
       payment_status: "succeeded" | "pending" | "failed";
-      ticket_item_kind: "service";
+      ticket_item_kind: "service" | "discount";
       ticket_status: "open" | "paid" | "discarded";
     };
     CompositeTypes: {
@@ -581,7 +608,7 @@ export const Constants = {
       payment_kind: ["payment"],
       payment_method: ["cash"],
       payment_status: ["succeeded", "pending", "failed"],
-      ticket_item_kind: ["service"],
+      ticket_item_kind: ["service", "discount"],
       ticket_status: ["open", "paid", "discarded"],
     },
   },

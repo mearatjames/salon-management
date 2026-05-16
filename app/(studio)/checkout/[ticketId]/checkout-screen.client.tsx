@@ -25,15 +25,24 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
+import { Plus, Printer } from "lucide-react";
+import { toast } from "sonner";
+
 import {
+  addDiscountLine,
   addServiceLine,
   discardTicket,
+  emailBillStub,
+  removeDiscountLine,
   removeLine,
+  setLinePrice,
   setLineTech,
   takeCash,
 } from "@/app/(studio)/checkout/actions";
 import {
   CashPaymentFailedError,
+  DiscountInvalidError,
+  InvalidPriceError,
   ServiceArchivedError,
   StaffNotActiveError,
   TicketAlreadyTerminalError,
@@ -42,16 +51,19 @@ import {
   TicketNotOpenError,
 } from "@/app/(studio)/checkout/_errors";
 
+import { BillSheet, type BillSnapshot } from "@/components/lacquer/checkout/bill-sheet";
 import {
   CartRowWithTech,
   type CartLineView,
 } from "@/components/lacquer/checkout/cart-row-with-tech";
+import { DiscountSheet } from "@/components/lacquer/checkout/discount-sheet";
+import { EmailBillDialog } from "@/components/lacquer/checkout/email-bill-dialog";
 import { PaymentTiles, type PaymentMethod } from "@/components/lacquer/checkout/payment-tiles";
+import { PriceSheet } from "@/components/lacquer/checkout/price-sheet";
 import { ServiceTiles, type ServiceTileService } from "@/components/lacquer/checkout/service-tiles";
 import { TechAvatarRow } from "@/components/lacquer/checkout/tech-avatar-row";
 import { Totals } from "@/components/lacquer/checkout/totals";
 import { TxHeader } from "@/components/lacquer/checkout/tx-header";
-import { VariablePricePlaceholderDialog } from "@/components/lacquer/checkout/variable-price-placeholder-dialog";
 
 import { computeTotals } from "@/lib/pos/cart";
 
@@ -62,6 +74,8 @@ export type CheckoutScreenProps = {
   initialItems: CartLineView[];
   staff: Staff[];
   services: ServiceTileService[];
+  /** Salon-info settings for the BillSheet masthead (US4 / T040). */
+  salonInfo: { name: string; address: string; phone: string };
 };
 
 function tempId(): string {
@@ -72,20 +86,42 @@ function fmt(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-export function CheckoutScreen({ ticketId, initialItems, staff, services }: CheckoutScreenProps) {
+export function CheckoutScreen({
+  ticketId,
+  initialItems,
+  staff,
+  services,
+  salonInfo,
+}: CheckoutScreenProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
 
-  // Header tech pick defaults to the first line's assigned staff if the
-  // ticket was already non-empty when the page loaded; otherwise null.
+  // Header tech pick defaults to the first service line's assigned staff if
+  // the ticket was already non-empty when the page loaded; otherwise null.
+  // Discount rows don't carry an assigned staff (assigned_staff_id IS NULL).
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(
-    initialItems[0]?.assignedStaffId ?? null
+    initialItems.find((l) => l.kind === "service")?.assignedStaffId ?? null
   );
   const [lines, setLines] = useState<CartLineView[]>(initialItems);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [inflight, setInflight] = useState(false);
-  const [placeholderLineId, setPlaceholderLineId] = useState<string | null>(null);
+  // 013-cart-polish US1/US2: the price sheet replaces phase-2's placeholder
+  // dialog. `isOverride=false` is the US1 auto-open path (Remove rendered);
+  // `isOverride=true` is the US2 row-level override path (Remove hidden).
+  const [priceSheet, setPriceSheet] = useState<{ lineId: string; isOverride: boolean } | null>(
+    null
+  );
+  // 013-cart-polish US3: discount sheet open state. The sheet itself owns its
+  // working amount/note + radio state; this island just toggles visibility.
+  const [discountSheetOpen, setDiscountSheetOpen] = useState(false);
+  // 013-cart-polish US4: BillSheet shows a frozen snapshot of the cart at
+  // open time. The snapshot is captured by deep-cloning the live lines and
+  // freezing in the totals so subsequent cart edits don't mutate what the
+  // operator is looking at on paper. EmailBillDialog is a separate modal
+  // mounted on top of the BillSheet.
+  const [billSnapshot, setBillSnapshot] = useState<BillSnapshot | null>(null);
+  const [emailDialogOpen, setEmailDialogOpen] = useState(false);
 
   const staffById = useMemo(() => {
     const m = new Map<string, Staff>();
@@ -96,10 +132,17 @@ export function CheckoutScreen({ ticketId, initialItems, staff, services }: Chec
   const totals = useMemo(
     () =>
       computeTotals(
+        // US3 (T031) widened the local view to pass the discriminator and
+        // discountPct so percent-discount rows can be recomputed against the
+        // live service subtotal client-side (mirrors the server's
+        // `recomputeTicketTotals`). The server stays the authority — see
+        // `lib/pos/cart.ts` comments.
         lines.map((l) => ({
+          kind: l.kind,
           unitPriceCents: l.unitPriceCents,
           qty: l.qty,
           priceUnconfirmed: l.priceUnconfirmed,
+          discountPct: l.discountPct,
         }))
       ),
     [lines]
@@ -122,10 +165,25 @@ export function CheckoutScreen({ ticketId, initialItems, staff, services }: Chec
       id: tmp,
       serviceId: svc.id,
       name: svc.name,
-      unitPriceCents: svc.price_cents,
+      // Variable-priced services start at $0 unconfirmed; fixed-price
+      // services snapshot the catalog price.
+      unitPriceCents: svc.variable_price ? 0 : svc.price_cents,
       qty: 1,
       priceUnconfirmed: svc.variable_price,
       assignedStaffId: selectedStaffId,
+      // Snapshot the tile's variable-price metadata onto the line so the
+      // PriceSheet can render bounds + presets without re-fetching.
+      serviceMeta: {
+        variable: svc.variable_price,
+        priceFromCents: svc.price_from_cents ?? null,
+        priceToCents: svc.price_to_cents ?? null,
+        variableNote: svc.variable_price_note ?? null,
+        presets: svc.presets ?? null,
+      },
+      // US3 widening — service rows carry kind='service' and null note/pct.
+      kind: "service",
+      note: null,
+      discountPct: null,
     };
     setLines((prev) => [...prev, optimisticLine]);
     setErrorBanner(null);
@@ -139,6 +197,11 @@ export function CheckoutScreen({ ticketId, initialItems, staff, services }: Chec
         });
         // Swap the temp id for the server-returned one.
         setLines((prev) => prev.map((l) => (l.id === tmp ? { ...l, id: lineId } : l)));
+        // FR-001: auto-open the price sheet for variable-priced services
+        // as soon as the server confirms the row exists.
+        if (svc.variable_price) {
+          setPriceSheet({ lineId, isOverride: false });
+        }
       } catch (err) {
         // Revert the optimistic insert.
         setLines((prev) => prev.filter((l) => l.id !== tmp));
@@ -164,9 +227,15 @@ export function CheckoutScreen({ ticketId, initialItems, staff, services }: Chec
     // never saw them).
     if (line.id.startsWith("tmp-")) return;
 
+    // US3 (T031): dispatch the right Server Action based on the line's
+    // kind. Discount rows route through `removeDiscountLine`, which emits
+    // a `discount.removed` audit (not `ticket.line_removed`) and refuses
+    // if the row isn't actually kind='discount' (defense-in-depth).
+    const removeFn = line.kind === "discount" ? removeDiscountLine : removeLine;
+
     startTransition(async () => {
       try {
-        await removeLine({ ticketId, lineId: line.id });
+        await removeFn({ ticketId, lineId: line.id });
       } catch (err) {
         // Revert.
         setLines(snapshot);
@@ -179,7 +248,65 @@ export function CheckoutScreen({ ticketId, initialItems, staff, services }: Chec
     });
   }
 
+  // US3 (T031): add a discount line. Wraps `addDiscountLine` (Server Action)
+  // and surfaces typed errors via the inline banner. The discount sheet
+  // closes on success; on failure the sheet stays open so the operator can
+  // retry (the DiscountSheet's own `.catch` re-enables Save).
+  async function handleAddDiscount(payload: {
+    shape: "flat" | "percent";
+    value: number;
+    note: string | undefined;
+  }): Promise<void> {
+    setErrorBanner(null);
+    try {
+      const result = await addDiscountLine({
+        ticketId,
+        shape: payload.shape,
+        value: payload.value,
+        note: payload.note,
+      });
+      // Append the new discount row to the local view so the cart total
+      // recomputes immediately. The displayed amount for percent rows is
+      // derived in render via computeTotals against the live service
+      // subtotal — we don't need to track the server-computed amount here.
+      setLines((prev) => [
+        ...prev,
+        {
+          id: result.lineId,
+          serviceId: null,
+          name: payload.shape === "percent" ? `Discount · ${payload.value}%` : "Discount",
+          unitPriceCents: payload.shape === "flat" ? -payload.value : 0,
+          qty: 1,
+          priceUnconfirmed: false,
+          assignedStaffId: null,
+          kind: "discount",
+          note: payload.note ?? null,
+          discountPct: payload.shape === "percent" ? payload.value : null,
+          serviceMeta: null,
+        },
+      ]);
+      setDiscountSheetOpen(false);
+    } catch (err) {
+      if (err instanceof DiscountInvalidError) {
+        // The sheet's client validation matches the server's; this branch
+        // catches programmer error or stale state.
+        setErrorBanner("That discount isn’t valid. Check the amount and try again.");
+      } else if (err instanceof TicketNotOpenError) {
+        setDiscountSheetOpen(false);
+        setErrorBanner("This ticket is no longer open.");
+      } else {
+        setErrorBanner("Couldn’t add that discount. Try again.");
+      }
+      // Re-throw so DiscountSheet's .catch can re-enable Save.
+      throw err;
+    }
+  }
+
   function handleSetLineTech(line: CartLineView, newStaffId: string) {
+    // Discount rows don't have an assigned staff; the discount-row branch in
+    // CartRowWithTech doesn't render the tech chip, so this callback should
+    // never fire for kind='discount'. Defensive guard for type-narrowing.
+    if (line.kind !== "service" || line.assignedStaffId == null) return;
     if (newStaffId === line.assignedStaffId) return;
     const previousStaffId = line.assignedStaffId;
 
@@ -218,17 +345,49 @@ export function CheckoutScreen({ ticketId, initialItems, staff, services }: Chec
   }
 
   function handleEditPrice(line: CartLineView) {
-    // FR-016: unconfirmed-price lines open the placeholder dialog. For
-    // fixed-price lines the price control is a no-op in this phase
-    // (later phase adds discount-edit).
-    if (!line.priceUnconfirmed) return;
-    setPlaceholderLineId(line.id);
+    // FR-001 / FR-009: tapping the price button opens the price sheet.
+    // Unconfirmed rows land in US1's auto-open mode (Remove rendered);
+    // confirmed rows land in US2's override mode (Remove hidden).
+    // Skip temp-id rows — the server hasn't confirmed them yet, so a
+    // setLinePrice call would 404. The auto-open via handlePickService
+    // already covered the variable-price case for fresh inserts; the
+    // user can re-open after the temp id swaps.
+    if (line.id.startsWith("tmp-")) return;
+    // US3: discount rows have no price-edit affordance (setLinePrice throws
+    // InvalidPriceError on kind='discount'). Defensive guard.
+    if (line.kind === "discount") return;
+    setPriceSheet({ lineId: line.id, isOverride: !line.priceUnconfirmed });
   }
 
-  function handlePlaceholderRemove() {
-    const line = lines.find((l) => l.id === placeholderLineId);
+  async function handlePriceSheetSave(unitPriceCents: number) {
+    if (!priceSheet) return;
+    const { lineId } = priceSheet;
+    setErrorBanner(null);
+    try {
+      await setLinePrice({ ticketId, lineId, unitPriceCents });
+      // Local update: clear the unconfirmed flag and reflect the new
+      // price so the cart total recomputes immediately.
+      setLines((prev) =>
+        prev.map((l) => (l.id === lineId ? { ...l, unitPriceCents, priceUnconfirmed: false } : l))
+      );
+      setPriceSheet(null);
+    } catch (err) {
+      if (err instanceof InvalidPriceError) {
+        setErrorBanner("Enter a price greater than $0.");
+      } else if (err instanceof TicketNotOpenError) {
+        setPriceSheet(null);
+        setErrorBanner("This ticket is no longer open.");
+      } else {
+        setErrorBanner("Couldn’t save that price. Try again.");
+      }
+    }
+  }
+
+  function handlePriceSheetRemove() {
+    if (!priceSheet) return;
+    const line = lines.find((l) => l.id === priceSheet.lineId);
     if (line) handleRemoveLine(line);
-    setPlaceholderLineId(null);
+    setPriceSheet(null);
   }
 
   async function handleTakeCash() {
@@ -277,9 +436,69 @@ export function CheckoutScreen({ ticketId, initialItems, staff, services }: Chec
     router.push("/dashboard");
   }
 
-  const placeholderLine = placeholderLineId
-    ? (lines.find((l) => l.id === placeholderLineId) ?? null)
+  // US4 (T041): capture a frozen snapshot of the cart at the moment Bill
+  // is tapped. Deep-clone the lines so subsequent cart mutations don't
+  // bleed into what the operator is looking at on paper (research.md § R14).
+  // Percent-discount rows' unit_price_cents is recomputed against the
+  // current service subtotal so the snapshot matches what the bill totals
+  // display. capturedAt drives the bill's decorative Check # field.
+  function handleOpenBill() {
+    const liveServiceSubtotalCents = lines
+      .filter((l) => l.kind === "service" && !l.priceUnconfirmed)
+      .reduce((sum, l) => sum + l.unitPriceCents * l.qty, 0);
+
+    const snapshotLines = lines.map((l) => {
+      const displayUnitPriceCents =
+        l.kind === "discount" && l.discountPct != null
+          ? -Math.round((l.discountPct * liveServiceSubtotalCents) / 100)
+          : l.unitPriceCents;
+      return {
+        id: l.id,
+        kind: l.kind,
+        name: l.name,
+        unitPriceCents: displayUnitPriceCents,
+        qty: l.qty,
+        note: l.note,
+        discountPct: l.discountPct,
+      };
+    });
+
+    setBillSnapshot({
+      lines: structuredClone(snapshotLines),
+      serviceSubtotalCents: totals.serviceSubtotalCents,
+      discountTotalCents: totals.discountTotalCents,
+      totalCents: totals.totalCents,
+      capturedAt: new Date().toISOString(),
+    });
+  }
+
+  // US4 (T041): wrap the emailBillStub action with the toast + cart-banner
+  // surface. The dialog itself owns the in-flight + inline-error state;
+  // we just dispatch the action and let the result propagate.
+  async function handleEmailBill(address: string): Promise<void> {
+    if (!billSnapshot) {
+      throw new Error("billSnapshot is null — should not happen");
+    }
+    await emailBillStub({
+      ticketId,
+      address,
+      snapshot: billSnapshot,
+    });
+    toast.success(`Bill emailed to ${address}`);
+  }
+
+  const priceSheetLine = priceSheet
+    ? (lines.find((l) => l.id === priceSheet.lineId) ?? null)
     : null;
+
+  // Tech name for the bill's "Tech" meta row — the first service line's
+  // assigned staff. Discount rows carry no tech, so look only at service rows.
+  const billTechName = ((): string | null => {
+    const firstService = lines.find((l) => l.kind === "service");
+    if (!firstService || !firstService.assignedStaffId) return null;
+    const s = staffById.get(firstService.assignedStaffId);
+    return s ? s.display_name : null;
+  })();
 
   return (
     <div className="checkout-shell" data-slot="checkout-shell" data-ticket-id={ticketId}>
@@ -298,6 +517,46 @@ export function CheckoutScreen({ ticketId, initialItems, staff, services }: Chec
             onPick={handlePickTech}
             onClear={handleClearTech}
           />
+          {/* US3 cart header — title + + Discount affordance. The button
+              opens the DiscountSheet (mounted at the bottom of this island);
+              uses the same `tx-btn ghost` token-styled chrome the rest of
+              the checkout uses. */}
+          <div
+            data-slot="checkout-cart-header"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "var(--space-2)",
+              marginTop: "var(--space-3)",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "var(--text-xs)",
+                textTransform: "uppercase",
+                letterSpacing: "var(--tracking-wide)",
+                fontWeight: 500,
+                color: "var(--muted-foreground)",
+              }}
+            >
+              Cart
+            </div>
+            <button
+              type="button"
+              className="tx-btn ghost"
+              data-slot="add-discount-button"
+              onClick={() => setDiscountSheetOpen(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "var(--space-1)",
+              }}
+            >
+              <Plus size={16} strokeWidth={1.5} aria-hidden="true" />
+              Discount
+            </button>
+          </div>
           <div className="checkout-cart-lines" data-slot="checkout-cart-lines">
             {lines.length === 0 ? (
               <p
@@ -315,16 +574,38 @@ export function CheckoutScreen({ ticketId, initialItems, staff, services }: Chec
                   : "Pick a tech first, then tap a service."}
               </p>
             ) : (
-              lines.map((line) => (
-                <CartRowWithTech
-                  key={line.id}
-                  line={line}
-                  staffById={staffById}
-                  onRemove={() => handleRemoveLine(line)}
-                  onEditPrice={() => handleEditPrice(line)}
-                  onSetTech={(staffId) => handleSetLineTech(line, staffId)}
-                />
-              ))
+              // US3: percent-discount rows display an amount that is derived
+              // from the live service subtotal — the local `unitPriceCents`
+              // for a percent row may be stale (server's recompute writes the
+              // amount but the action contract returns only totals). We mirror
+              // `computeTotals`/`recomputeTicketTotals` here so the per-row
+              // amount the operator sees matches what's persisted.
+              (() => {
+                const liveServiceSubtotalCents = lines
+                  .filter((l) => l.kind === "service" && !l.priceUnconfirmed)
+                  .reduce((sum, l) => sum + l.unitPriceCents * l.qty, 0);
+                return lines.map((line) => {
+                  const displayLine =
+                    line.kind === "discount" && line.discountPct != null
+                      ? {
+                          ...line,
+                          unitPriceCents: -Math.round(
+                            (line.discountPct * liveServiceSubtotalCents) / 100
+                          ),
+                        }
+                      : line;
+                  return (
+                    <CartRowWithTech
+                      key={line.id}
+                      line={displayLine}
+                      staffById={staffById}
+                      onRemove={() => handleRemoveLine(line)}
+                      onEditPrice={() => handleEditPrice(line)}
+                      onSetTech={(staffId) => handleSetLineTech(line, staffId)}
+                    />
+                  );
+                });
+              })()
             )}
           </div>
           <Totals
@@ -351,31 +632,57 @@ export function CheckoutScreen({ ticketId, initialItems, staff, services }: Chec
             </p>
           ) : null}
           <PaymentTiles value={paymentMethod} onChange={setPaymentMethod} />
-          <button
-            type="button"
-            onClick={handleTakeCash}
-            disabled={!takeCashEnabled}
-            data-slot="take-cash-button"
+          {/* US4 (T041): Bill + Charge sit side-by-side in the cart footer.
+              Bill is the token-styled secondary button per the prototype;
+              clicking it captures a frozen snapshot and opens the BillSheet
+              overlay. The Bill button is enabled even when Charge isn't —
+              the operator can print/email a bill at any point before payment. */}
+          <div
             style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              height: "var(--space-10)",
-              padding: "0 var(--space-4)",
-              background: takeCashEnabled ? "var(--primary)" : "var(--muted)",
-              color: takeCashEnabled ? "var(--primary-foreground)" : "var(--muted-foreground)",
-              border: "none",
-              borderRadius: "var(--radius-sm)",
-              fontSize: "var(--text-base)",
-              fontWeight: 600,
-              cursor: takeCashEnabled ? "pointer" : "not-allowed",
-              fontVariantNumeric: "tabular-nums",
+              display: "flex",
+              gap: "var(--space-2)",
+              alignItems: "stretch",
             }}
           >
-            {totals.totalCents > 0 && !totals.chargeEligible
-              ? "Set price on highlighted items"
-              : `Take cash · ${fmt(totals.totalCents)}`}
-          </button>
+            <button
+              type="button"
+              onClick={handleOpenBill}
+              data-slot="bill-button"
+              className="tx-btn secondary"
+              disabled={inflight || lines.length === 0}
+              style={{
+                height: "var(--space-10)",
+              }}
+            >
+              <Printer size={16} strokeWidth={1.5} aria-hidden="true" /> Bill
+            </button>
+            <button
+              type="button"
+              onClick={handleTakeCash}
+              disabled={!takeCashEnabled}
+              data-slot="take-cash-button"
+              style={{
+                flex: "1 1 auto",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "var(--space-10)",
+                padding: "0 var(--space-4)",
+                background: takeCashEnabled ? "var(--primary)" : "var(--muted)",
+                color: takeCashEnabled ? "var(--primary-foreground)" : "var(--muted-foreground)",
+                border: "none",
+                borderRadius: "var(--radius-sm)",
+                fontSize: "var(--text-base)",
+                fontWeight: 600,
+                cursor: takeCashEnabled ? "pointer" : "not-allowed",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            >
+              {lines.some((l) => l.priceUnconfirmed)
+                ? "Set price on highlighted items"
+                : `Take cash · ${fmt(totals.totalCents)}`}
+            </button>
+          </div>
         </section>
 
         {/* RIGHT: catalog column */}
@@ -388,12 +695,55 @@ export function CheckoutScreen({ ticketId, initialItems, staff, services }: Chec
         </section>
       </div>
 
-      <VariablePricePlaceholderDialog
-        open={placeholderLine !== null}
-        onOpenChange={(open) => (open ? null : setPlaceholderLineId(null))}
-        serviceName={placeholderLine?.name ?? ""}
-        onRemove={handlePlaceholderRemove}
-      />
+      {priceSheet && priceSheetLine ? (
+        <PriceSheet
+          name={priceSheetLine.name}
+          unitPriceCents={priceSheetLine.unitPriceCents}
+          priceUnconfirmed={priceSheetLine.priceUnconfirmed}
+          isOverride={priceSheet.isOverride}
+          serviceMeta={priceSheetLine.serviceMeta ?? null}
+          onSave={(cents) => {
+            // setLinePrice is async; fire-and-forget so the click handler
+            // returns sync (React state updates batch inside the handler).
+            void handlePriceSheetSave(cents);
+          }}
+          onCancel={() => setPriceSheet(null)}
+          onRemove={
+            !priceSheet.isOverride && priceSheetLine.priceUnconfirmed
+              ? handlePriceSheetRemove
+              : undefined
+          }
+        />
+      ) : null}
+
+      {discountSheetOpen ? (
+        <DiscountSheet
+          onSave={async (payload) => {
+            await handleAddDiscount(payload);
+          }}
+          onCancel={() => setDiscountSheetOpen(false)}
+        />
+      ) : null}
+
+      {/* US4 (T041): Bill preview sheet. The snapshot is a frozen JS object —
+          cart edits underneath the sheet do not mutate it. Closing + re-
+          opening calls `handleOpenBill` again, which captures a fresh
+          snapshot from the live cart state. */}
+      {billSnapshot ? (
+        <BillSheet
+          snapshot={billSnapshot}
+          salonInfo={salonInfo}
+          techName={billTechName}
+          guestLabel="Walk-in client"
+          onClose={() => setBillSnapshot(null)}
+          onPrint={() => window.print()}
+          onEmail={() => setEmailDialogOpen(true)}
+        />
+      ) : null}
+
+      {emailDialogOpen ? (
+        <EmailBillDialog onSubmit={handleEmailBill} onCancel={() => setEmailDialogOpen(false)} />
+      ) : null}
     </div>
   );
 }

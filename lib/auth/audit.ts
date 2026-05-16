@@ -54,7 +54,12 @@ export type AuditAction =
   | "ticket.line_removed"
   | "ticket.line_tech_assigned"
   | "ticket.discarded"
-  | "payment.captured";
+  | "payment.captured"
+  // Added by feature 013 (entity_type "ticket")
+  | "line.price_set"
+  | "discount.added"
+  | "discount.removed"
+  | "bill.emailed";
 
 function deriveEntityType(
   action: AuditAction
@@ -62,6 +67,12 @@ function deriveEntityType(
   if (action.startsWith("ticket.")) return "ticket";
   if (action.startsWith("payment.")) return "payment";
   if (action.startsWith("service.")) return "service";
+  // Feature 013 — line/discount/bill verbs all entity_type="ticket".
+  // Placed before staff.* / auth fall-throughs so the prefix dispatch
+  // resolves before the staff-specific verb list.
+  if (action.startsWith("line.")) return "ticket";
+  if (action.startsWith("discount.")) return "ticket";
+  if (action.startsWith("bill.")) return "ticket";
   if (
     action === "staff.added" ||
     action === "staff.updated" ||
