@@ -51,23 +51,51 @@ Run them in this order so the cheapest checks fail fast:
 All five MUST be green locally. Constitution v1.0.3 § Development Workflow
 & Quality Gates is the authority.
 
-### Scoping e2e at intermediate phase gates
+### Scoping intermediate phase gates
 
 When generating or executing a `specs/<feature>/tasks.md`, intermediate
 per-phase gates (e.g. "Phase 5 verification" between user stories) should
-run a **scoped** e2e instead of the full suite. The full suite belongs at
-the final gate only:
+run **scoped** commands instead of the full versions. The full suite
+belongs at the final gate only.
 
+**E2E** — filter by user story:
 - Phase N verifying User Story M: `npx playwright test tests/e2e/<file>.spec.ts -g "USm"`
   (the describe-name convention `US1: …`, `US2: …`, `010-US3: …` is what
   the `-g` filter matches.)
-- Final gate (the one before "feature done"): full
-  `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e`.
+
+**Prettier + ESLint** — scope to the files the phase touched:
+- `npx prettier --check $(git diff --name-only --diff-filter=ACMR HEAD)`
+- `npx eslint $(git diff --name-only --diff-filter=ACMR HEAD | grep -E '\.(ts|tsx|js|jsx)$' || echo .)`
+
+The `git diff` form covers tracked changes since the last commit; if
+nothing is modified the eslint fallback runs the project default (`.`).
+
+**Typecheck and unit tests** stay full-suite even at intermediate gates —
+TypeScript's project-wide type graph and Vitest's fast watch mode mean
+scoping them adds complexity without meaningful savings.
+
+**Final gate** (the one before "feature done"): run everything full.
+`npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e`.
 
 Rationale: a typical 70-task feature ran the full e2e ~3 times in
-intermediate gates (≈ 7 min wasted on tests not touched by the phase).
-The final full-suite gate still catches anything a scoped run missed,
-so the safety net is intact.
+intermediate gates (≈ 7 min wasted on tests not touched by the phase),
+and prettier/lint over the whole repo at every checkpoint adds another
+~30s × N. The final full-suite gate still catches anything a scoped run
+missed, so the safety net is intact.
+
+### Skill-level optimizations (in `.claude/`)
+
+The project-local agents and skills under `.claude/agents/` and
+`.claude/skills/` codify the patterns above so any `/speckit-implement`
+run picks them up automatically:
+
+- `speckit-gate-runner` runs the four cheap gates concurrently
+  (format:check, lint, typecheck, test) — never sequentially.
+- `speckit-phase-executor` does NOT re-read design docs the orchestrator
+  inlines in its dispatch prompt, and does NOT re-install dependencies
+  after Phase 1.
+- `/speckit-implement` only dispatches `speckit-design-auditor` after
+  phases that touched `components/` / `app/` / `styles/`.
 
 ## Supabase migrations
 
