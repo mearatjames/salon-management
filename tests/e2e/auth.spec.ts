@@ -283,15 +283,11 @@ test.describe("US3: switch staff at shift change", () => {
   }) => {
     await signInAsMaya(page);
 
-    // Operator chip is the dropdown trigger; assert it's there, open the
-    // menu, click "Switch staff".
-    const chip = page.locator("[data-slot='operator-chip']");
-    await expect(chip).toBeVisible();
-    await chip.click();
-
-    const switchItem = page.getByRole("menuitem", { name: /Switch staff/ });
-    await expect(switchItem).toBeVisible();
-    await switchItem.click();
+    // Switch staff is a standalone top-nav button (feature 009); one click
+    // submits the `<form action={switchStaff}>` and routes to /select-staff.
+    const switchBtn = page.locator("[data-slot='switch-staff-button']");
+    await expect(switchBtn).toBeVisible();
+    await switchBtn.click();
 
     await page.waitForURL(/\/select-staff\?next=%2Fdashboard/);
     expect(new URL(page.url()).pathname).toBe("/select-staff");
@@ -306,8 +302,7 @@ test.describe("US3: switch staff at shift change", () => {
     page,
   }) => {
     await signInAsMaya(page);
-    await page.locator("[data-slot='operator-chip']").click();
-    await page.getByRole("menuitem", { name: /Switch staff/ }).click();
+    await page.locator("[data-slot='switch-staff-button']").click();
     await page.waitForURL(/\/select-staff\?next=/);
 
     // The redirect carries `selectedTileId=<Maya>` so the page can show
@@ -320,8 +315,7 @@ test.describe("US3: switch staff at shift change", () => {
 
   test("(c) tap Jordan + PIN 5678 → /dashboard with Jordan in the topbar", async ({ page }) => {
     await signInAsMaya(page);
-    await page.locator("[data-slot='operator-chip']").click();
-    await page.getByRole("menuitem", { name: /Switch staff/ }).click();
+    await page.locator("[data-slot='switch-staff-button']").click();
     await page.waitForURL(/\/select-staff\?next=/);
 
     await page.getByRole("button", { name: /Jordan Lee/ }).click();
@@ -340,8 +334,7 @@ test.describe("US3: switch staff at shift change", () => {
     page,
   }) => {
     await signInAsMaya(page);
-    await page.locator("[data-slot='operator-chip']").click();
-    await page.getByRole("menuitem", { name: /Switch staff/ }).click();
+    await page.locator("[data-slot='switch-staff-button']").click();
     await page.waitForURL(/\/select-staff\?next=/);
 
     await page.getByRole("button", { name: /Jordan Lee/ }).click();
@@ -363,6 +356,17 @@ test.describe("US3: switch staff at shift change", () => {
         r.payload !== null && (r.payload as Record<string, unknown>).previous_staff_id === MAYA_ID
     );
     expect(jordanSignIn).toBeTruthy();
+  });
+
+  test("(e) operator chip dropdown contains only Sign out", async ({ page }) => {
+    // Feature 009 promoted the "Switch staff" item out of the operator chip
+    // dropdown and into a standalone top-nav button. The chip's dropdown
+    // must now contain ONLY the "Sign out" item — anything else is a
+    // regression on FR-004.
+    await signInAsMaya(page);
+    await page.locator("[data-slot='operator-chip']").click();
+    await expect(page.getByRole("menuitem", { name: /Switch staff/ })).toHaveCount(0);
+    await expect(page.getByRole("menuitem", { name: /Sign out/ })).toBeVisible();
   });
 });
 
@@ -876,14 +880,13 @@ test.describe.serial("US-soft-degrade: Supabase outage", () => {
       timeout: 12_000,
     });
 
-    // (d) Open the operator menu and click "Switch staff". The server
-    //     action throws because Supabase is unreachable; the studio
-    //     error boundary surfaces a sonner toast. We MUST NOT land on
-    //     /login.
-    await page.locator("[data-slot='operator-chip']").click();
-    const switchItem = page.getByRole("menuitem", { name: /Switch staff/ });
-    await expect(switchItem).toBeVisible();
-    await switchItem.click();
+    // (d) Click the standalone Switch staff top-nav button (feature 009).
+    //     The server action throws because Supabase is unreachable; the
+    //     studio error boundary surfaces a sonner toast. We MUST NOT land
+    //     on /login.
+    const switchBtn = page.locator("[data-slot='switch-staff-button']");
+    await expect(switchBtn).toBeVisible();
+    await switchBtn.click();
 
     // A sonner toast is rendered by the studio error boundary. The toast
     // root carries `[data-sonner-toast]`. We do NOT require a specific

@@ -9,6 +9,7 @@ import { OperatorChip } from "@/components/lacquer/operator-chip";
 import { OperatorMenu } from "@/components/lacquer/operator-menu";
 import { ReconnectingBanner } from "@/components/lacquer/reconnecting-banner";
 import { StudioSidebar } from "@/components/lacquer/sidebar/studio-sidebar";
+import { SwitchStaffButton } from "@/components/lacquer/switch-staff-button";
 import { Toaster } from "@/components/ui/sonner";
 import { getStudioSessionOrDegraded } from "@/lib/auth/session";
 
@@ -46,6 +47,8 @@ export default async function StudioLayout({ children }: Readonly<{ children: Re
             <ReconnectingBanner />
           </div>
           <div className="studio-topbar-right">
+            <SwitchStaffButton />
+            <span className="studio-topbar-sep" aria-hidden="true" />
             <OperatorMenu>
               <OperatorChip staff={staff} />
             </OperatorMenu>

@@ -58,3 +58,6 @@ supabase/.temp
 .idea/
 *.swp
 *.swo
+
+# Per-user Claude Code overrides (tracked .claude/agents, skills, etc. stay in repo)
+.claude/settings.local.json

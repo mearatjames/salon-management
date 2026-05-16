@@ -2,9 +2,9 @@
 
 import type { ReactNode } from "react";
 
-import { LogOut, Repeat } from "lucide-react";
+import { LogOut } from "lucide-react";
 
-import { signOut, switchStaff } from "@/app/(studio)/actions";
+import { signOut } from "@/app/(studio)/actions";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,29 +21,6 @@ export function OperatorMenu({ children }: OperatorMenuProps) {
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={6}>
-        <DropdownMenuItem asChild>
-          <form action={switchStaff} style={{ width: "100%" }}>
-            <button
-              type="submit"
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                width: "100%",
-                background: "transparent",
-                border: 0,
-                padding: 0,
-                font: "inherit",
-                color: "inherit",
-                cursor: "pointer",
-                textAlign: "left",
-              }}
-            >
-              <Repeat size={16} strokeWidth={1.5} aria-hidden="true" />
-              Switch staff
-            </button>
-          </form>
-        </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <form action={signOut} style={{ width: "100%" }}>
             <button
