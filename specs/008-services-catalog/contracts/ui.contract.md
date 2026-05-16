@@ -1,11 +1,13 @@
 # Contract: UI composition and drawer state machine
 
-The Services page lives at `/settings/services`. It is a Server Component that composes:
+The Services page lives at `/services`. It is a Server Component that composes:
+
+The page renders directly inside the studio shell (sidebar + topbar from
+feature 007) — there is no tab strip above it. The previously-disabled
+`services` sidebar entry is the only entry point.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  <TabBar /> (existing — edited to include "Services")        │
-├──────────────────────────────────────────────────────────────┤
 │  <PageHeader />  (server: title + "X active · Y total" line) │
 │                                                              │
 │  ┌────────────────────────────────────────────────────────┐  │

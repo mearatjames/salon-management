@@ -1,4 +1,5 @@
-// E2E for Settings → Services (specs/008-services-catalog).
+// E2E for the Services catalog at /services (specs/008-services-catalog).
+// Reached from the studio sidebar — not nested under Settings.
 //
 // US1 — see the catalog at a glance. Seeded state (from supabase/seed.sql):
 //   - Manicure: Classic manicure, Gel polish
@@ -77,7 +78,7 @@ async function removeArchivedSeed(): Promise<void> {
 // Mirrors `signInAsMaya` in staff.spec.ts — Maya is the seeded owner
 // (display name "Maya Patel", PIN 1234, linked to owner@tangnails.dev).
 async function signInAsMaya(page: import("@playwright/test").Page) {
-  await page.goto("/login?next=%2Fsettings%2Fservices");
+  await page.goto("/login?next=%2Fservices");
   await page.locator("#email").fill("owner@tangnails.dev");
   await page.getByLabel("Password").fill("tang-nails-dev");
   await page.getByRole("button", { name: "Sign in" }).click();
@@ -88,7 +89,7 @@ async function signInAsMaya(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: "Digit 2" }).click();
   await page.getByRole("button", { name: "Digit 3" }).click();
   await page.getByRole("button", { name: "Digit 4" }).click();
-  await page.waitForURL(/\/settings\/services(\?|$)/, { timeout: 10_000 });
+  await page.waitForURL(/\/services(\?|$)/, { timeout: 10_000 });
 }
 
 test.describe.configure({ mode: "serial" });
@@ -115,11 +116,11 @@ test.describe("US1: see the services catalog at a glance", () => {
     await removeArchivedSeed();
   });
 
-  test("(a) owner reaches /settings/services and sees the seeded catalog grouped by category", async ({
+  test("(a) owner reaches /services and sees the seeded catalog grouped by category", async ({
     page,
   }) => {
     await signInAsMaya(page);
-    expect(new URL(page.url()).pathname).toBe("/settings/services");
+    expect(new URL(page.url()).pathname).toBe("/services");
 
     // Default view: archived hidden, 5 active rows visible.
     const rows = page.locator("[data-slot='service-row']");
@@ -238,12 +239,12 @@ test.describe("US1: see the services catalog at a glance", () => {
     const link = classicMani.locator("xpath=ancestor::a");
     await expect(link).toHaveAttribute(
       "href",
-      /\/settings\/services\?selected=20000000-0000-0000-0000-000000000001/
+      /\/services\?selected=20000000-0000-0000-0000-000000000001/
     );
 
     await link.focus();
     await link.press("Enter");
-    await page.waitForURL(/\/settings\/services\?selected=.+/);
+    await page.waitForURL(/\/services\?selected=.+/);
 
     // The row's data-selected flips to true. No overlay appears — the
     // drawer wiring lands in US2/US3.
@@ -848,7 +849,7 @@ test.describe("US4: archive or restore a service", () => {
     // baseline is clean (no edits) so Cancel closes silently — no discard
     // dialog.
     await page.locator("[data-slot='services-drawer-cancel']").click();
-    await page.waitForURL(/\/settings\/services$/);
+    await page.waitForURL(/\/services$/);
 
     // Default view (archived hidden): Gel polish row is gone.
     await expect(
@@ -1021,7 +1022,7 @@ test.describe("US5: variable-price services with bounds and a note", () => {
     // Edit the service created in (a).
     const id = createdIds[0];
     expect(id).toBeTruthy();
-    await page.goto(`/settings/services?selected=${id}`);
+    await page.goto(`/services?selected=${id}`);
 
     const drawer = page.locator("[data-slot='services-drawer']");
     await expect(drawer).toHaveAttribute("data-mode", "edit");
@@ -1052,7 +1053,7 @@ test.describe("US5: variable-price services with bounds and a note", () => {
     await signInAsMaya(page);
     const id = createdIds[0];
     expect(id).toBeTruthy();
-    await page.goto(`/settings/services?selected=${id}`);
+    await page.goto(`/services?selected=${id}`);
 
     // Drop To from 60 down to 10 — now To < From (20).
     const toInput = page.locator("[data-slot='service-form-price-to-input']");
@@ -1084,7 +1085,7 @@ test.describe("US5: variable-price services with bounds and a note", () => {
     await signInAsMaya(page);
     const id = createdIds[0];
     expect(id).toBeTruthy();
-    await page.goto(`/settings/services?selected=${id}`);
+    await page.goto(`/services?selected=${id}`);
 
     // Toggle Variable off — the From/To/note inputs disappear and the fixed
     // price input reappears with an empty value (per the toggle-off clear).
@@ -1134,7 +1135,7 @@ test.describe("US5: variable-price services with bounds and a note", () => {
 // US6 — Restrict who can manage the catalog.
 //
 // Independent test (per tasks.md T048): sign in as the seeded technician
-// (Sam Chen, PIN 9999) → /settings/services renders the read-only catalog
+// (Sam Chen, PIN 9999) → /services renders the read-only catalog
 // → "Add service" button is disabled with the FR-030 tooltip and remains
 // keyboard-reachable → clicking a row opens the drawer in read-only mode
 // (every input / toggle / swatch / checkbox / override field is disabled,
@@ -1148,7 +1149,7 @@ test.describe("US5: variable-price services with bounds and a note", () => {
 // (owner@tangnails.dev) is used and Sam is picked at /select-staff with
 // PIN 9999. The signed-in result is a technician-role studio session.
 async function signInAsSamOnServicesPage(page: import("@playwright/test").Page) {
-  await page.goto("/login?next=%2Fsettings%2Fservices");
+  await page.goto("/login?next=%2Fservices");
   await page.locator("#email").fill("owner@tangnails.dev");
   await page.getByLabel("Password").fill("tang-nails-dev");
   await page.getByRole("button", { name: "Sign in" }).click();
@@ -1158,10 +1159,10 @@ async function signInAsSamOnServicesPage(page: import("@playwright/test").Page) 
   for (const d of ["9", "9", "9", "9"]) {
     await page.getByRole("button", { name: `Digit ${d}`, exact: true }).click();
   }
-  // The settings layout is now permissive (FR-029); /settings/services is
-  // reachable for technicians. Other restricted settings pages still gate
-  // themselves inside their own page.tsx.
-  await page.waitForURL(/\/settings\/services(\?|$)/, { timeout: 10_000 });
+  // /services is a top-level route (not under /settings); it gates itself
+  // and is reachable for technicians in read-only mode (FR-029). Other
+  // restricted settings pages still gate themselves inside their own page.tsx.
+  await page.waitForURL(/\/services(\?|$)/, { timeout: 10_000 });
 }
 
 test.describe("US6: restrict who can manage the catalog", () => {
@@ -1182,7 +1183,7 @@ test.describe("US6: restrict who can manage the catalog", () => {
     page,
   }) => {
     await signInAsSamOnServicesPage(page);
-    expect(new URL(page.url()).pathname).toBe("/settings/services");
+    expect(new URL(page.url()).pathname).toBe("/services");
 
     // The catalog list still renders the seeded rows — read access is
     // universal per FR-029.
@@ -1281,7 +1282,7 @@ test.describe("US6: restrict who can manage the catalog", () => {
     // read-only mode (every control is disabled, so the discard dialog is
     // unreachable per T046).
     await page.locator("[data-slot='services-drawer-cancel']").click();
-    await page.waitForURL(/\/settings\/services$/);
+    await page.waitForURL(/\/services$/);
   });
 
   // NOTE on the deferred direct-POST `?error=forbidden` assertion:
@@ -1299,7 +1300,7 @@ test.describe("US6: restrict who can manage the catalog", () => {
   //      (T013) asserts `assertCanWriteCatalog('technician')` throws a
   //      PermissionError with `code = "forbidden"`.
   //   2. Server Action prelude — every action in
-  //      `app/(studio)/settings/services/actions.ts` calls
+  //      `app/(studio)/services/actions.ts` calls
   //      `assertCanWriteCatalog(viewer.staff.role)` before any mutation;
   //      the catch arm at `handleKnownError()` redirects to
   //      `?error=forbidden` (visible in actions.ts line ~76).
@@ -1314,10 +1315,10 @@ test.describe("US6: restrict who can manage the catalog", () => {
 
 // US7 — Get clear feedback after every action.
 //
-// Phase 9 mounts `<ServicesToaster />` on `/settings/services`. It reads
+// Phase 9 mounts `<ServicesToaster />` on `/services`. It reads
 // `?toast`, `?secondary`, `?name`, `?error` from the URL on every navigation,
 // fires the matching Sonner toast(s) per the `TOASTS` map in
-// `app/(studio)/settings/services/toasts.ts`, then strips the consumed
+// `app/(studio)/services/toasts.ts`, then strips the consumed
 // params via `window.history.replaceState` (preserving `?selected=` and
 // `?adding=` so the drawer state survives).
 //
@@ -1498,7 +1499,7 @@ test.describe("US7: get clear feedback after every action", () => {
     // succession. The bridge dismisses any prior toast before firing the
     // new one, so only the second toast remains visible.
     const CLASSIC_MANI = "20000000-0000-0000-0000-000000000001";
-    await page.goto(`/settings/services?selected=${CLASSIC_MANI}`);
+    await page.goto(`/services?selected=${CLASSIC_MANI}`);
 
     const drawer = page.locator("[data-slot='services-drawer']");
     await expect(drawer).toHaveAttribute("data-mode", "edit");

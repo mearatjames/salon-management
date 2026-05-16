@@ -1,5 +1,5 @@
 // Vitest contract test for the services catalog validators
-// (`app/(studio)/settings/services/_validation.ts`). Covers every validator
+// (`app/(studio)/services/_validation.ts`). Covers every validator
 // and edge case from `specs/008-services-catalog/data-model.md § 4`.
 
 import { describe, expect, it } from "vitest";
@@ -15,7 +15,7 @@ import {
   validateOverrideMin,
   validateUuid,
   ValidationError,
-} from "@/app/(studio)/settings/services/_validation";
+} from "@/app/(studio)/services/_validation";
 
 describe("validateName", () => {
   it("trims and returns when length >= 2", () => {

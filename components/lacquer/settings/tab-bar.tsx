@@ -1,12 +1,15 @@
 "use client";
 
-// Settings tab bar — General · Staff · Services · Notifications · Billing.
+// Settings tab bar — General · Staff · Notifications · Billing.
 //
 // Deviation from task T015's "Server Component" guidance: making this a
 // small client island (~30 lines) is cleaner than the alternatives
 // (`headers().get("x-pathname")` requires middleware support; a child
 // client wrapper splits one trivial component into two). The bundle cost
 // is < 1 KB.
+//
+// Services lives at `/services` (top-level studio destination, reached via
+// the sidebar) rather than under Settings — see feature 008-services-catalog.
 //
 // All visual values resolve to Lacquer tokens via `styles/settings.css`.
 
@@ -22,7 +25,6 @@ type Tab = {
 const TABS: readonly Tab[] = [
   { id: "general", label: "General", href: "/settings/general" },
   { id: "staff", label: "Staff", href: "/settings/staff" },
-  { id: "services", label: "Services", href: "/settings/services" },
   { id: "notifications", label: "Notifications", href: "/settings/notifications" },
   { id: "billing", label: "Billing", href: "/settings/billing" },
 ] as const;

@@ -30,12 +30,12 @@ import {
   validateDurationMin,
   validateFixedPriceDollars,
   validateName,
-} from "@/app/(studio)/settings/services/_validation";
+} from "@/app/(studio)/services/_validation";
 import type {
   AvatarColorToken,
   ServiceAssignment,
   ServiceDraftBaseline,
-} from "@/app/(studio)/settings/services/_types";
+} from "@/app/(studio)/services/_types";
 
 // Working-state shape for the drawer's draft. Strings on every numeric
 // field so the input value can mirror what the user typed without losing

@@ -1,8 +1,6 @@
 // EmptyState — the zero-catalog placeholder. Server Component, pure layout.
 // Copy is verbatim from `contracts/ui.contract.md § 3`. The "Add service"
-// CTA links to `/settings/services?adding=1`; the drawer wiring lands in
-// US2 (T034), but for US1 the link is still valid — clicking it just
-// updates the URL without an overlay appearing yet.
+// CTA links to `/services?adding=1`.
 //
 // All visual values resolve to Lacquer tokens (see `styles/settings.css`
 // for `.services-empty-state*`).
@@ -24,7 +22,7 @@ export function ServicesEmptyState() {
         Add your first service to start booking appointments.
       </p>
       <Link
-        href="/settings/services?adding=1"
+        href="/services?adding=1"
         data-slot="services-empty-add-button"
         style={{
           display: "inline-flex",

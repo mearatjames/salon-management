@@ -1,6 +1,7 @@
 "use server";
 
-// Server Actions for Settings → Services. Each action follows the shared
+// Server Actions for Services catalog (top-level /services route, reached
+// from the studio sidebar). Each action follows the shared
 // prelude documented in `contracts/server-actions.contract.md § Shared prelude`:
 //   1. requireStudioSession           (auth resolver — throws AuthRedirectError)
 //   2. assertCanWriteCatalog          (owner OR manager — defense in depth)
@@ -59,7 +60,7 @@ import {
 // cheap shape filter to drop bogus form payloads.
 const UUID_SHAPE_LOOSE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const SERVICES_PATH = "/settings/services";
+const SERVICES_PATH = "/services";
 
 /**
  * Map a thrown known error to a `?error=<code>` redirect, preserving the

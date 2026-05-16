@@ -1,4 +1,4 @@
-// PageHeader — title row for the Settings → Services page. Server Component,
+// PageHeader — title row for the Services catalog page. Server Component,
 // pure layout. Renders the static "Services" title + a single-line summary
 // "{X} active · {Y} total" with tabular numerals so the counts column-align
 // across renders (Constitution Principle II — Lacquer typography).

@@ -20,18 +20,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ROLE_LABEL } from "./_role-label";
-import {
-  addService,
-  restoreService,
-  updateService,
-} from "@/app/(studio)/settings/services/actions";
-import { formatPriceLabel } from "@/app/(studio)/settings/services/_format";
+import { addService, restoreService, updateService } from "@/app/(studio)/services/actions";
+import { formatPriceLabel } from "@/app/(studio)/services/_format";
 import type {
   AssignableStaff,
   ServiceAssignment,
   ServiceDraftBaseline,
-} from "@/app/(studio)/settings/services/_types";
-import { canWriteCatalog, type StudioRole } from "@/app/(studio)/settings/services/permissions";
+} from "@/app/(studio)/services/_types";
+import { canWriteCatalog, type StudioRole } from "@/app/(studio)/services/permissions";
 
 import { ArchiveDialog } from "./archive-dialog.client";
 import { DiscardChangesDialog } from "./discard-changes-dialog.client";
@@ -177,7 +173,7 @@ export function Drawer({ mode, baseline, assignableStaff, categories, operatorRo
   // guard when the draft is dirty; otherwise closes silently by stripping
   // the `?adding=`/`?selected=` URL params.
   const navigateClosed = useCallback(() => {
-    router.push("/settings/services");
+    router.push("/services");
   }, [router]);
 
   const attemptClose = useCallback(() => {

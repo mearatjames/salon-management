@@ -9,7 +9,7 @@
 //   - the no-match state when filter yields zero rows
 //   - the empty state when the unfiltered catalog is empty
 //
-// Row click navigates to `/settings/services?selected=<id>` via `next/link`;
+// Row click navigates to `/services?selected=<id>` via `next/link`;
 // "Add service" navigates to `?adding=1`. The drawer wiring lands in US2 —
 // for US1 these links only update the URL.
 //
@@ -31,12 +31,12 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { CatalogRow } from "@/components/lacquer/services/catalog-row";
 import { ServicesEmptyState } from "@/components/lacquer/services/empty-state";
-import { filterServicesByName } from "@/app/(studio)/settings/services/_filter";
-import { sortCatalogGroups } from "@/app/(studio)/settings/services/_sort";
-import type { CatalogService } from "@/app/(studio)/settings/services/_types";
-import { canWriteCatalog, type StudioRole } from "@/app/(studio)/settings/services/permissions";
+import { filterServicesByName } from "@/app/(studio)/services/_filter";
+import { sortCatalogGroups } from "@/app/(studio)/services/_sort";
+import type { CatalogService } from "@/app/(studio)/services/_types";
+import { canWriteCatalog, type StudioRole } from "@/app/(studio)/services/permissions";
 
-const SHOW_ARCHIVED_KEY = "tn:settings:services:show-archived";
+const SHOW_ARCHIVED_KEY = "tn:services:show-archived";
 
 export type CatalogListProps = {
   roster: CatalogService[];
@@ -73,9 +73,9 @@ function writeShowArchived(next: boolean): void {
 
 function buildRowHref(serviceId: string, selectedId: string | null): string {
   if (selectedId === serviceId) {
-    return "/settings/services";
+    return "/services";
   }
-  return `/settings/services?selected=${encodeURIComponent(serviceId)}`;
+  return `/services?selected=${encodeURIComponent(serviceId)}`;
 }
 
 export function CatalogList({ roster, selectedId, operatorRole }: CatalogListProps) {
@@ -194,7 +194,7 @@ export function CatalogList({ roster, selectedId, operatorRole }: CatalogListPro
           </label>
           {canWrite ? (
             <Link
-              href="/settings/services?adding=1"
+              href="/services?adding=1"
               data-slot="services-add-button"
               style={{
                 display: "inline-flex",

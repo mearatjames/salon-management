@@ -16,8 +16,8 @@
 // `.service-list-row[data-selected="true"]` can apply the active-row visual.
 // All visual values resolve to Lacquer tokens (see `styles/settings.css`).
 
-import { formatPriceLabel } from "@/app/(studio)/settings/services/_format";
-import type { CatalogService } from "@/app/(studio)/settings/services/_types";
+import { formatPriceLabel } from "@/app/(studio)/services/_format";
+import type { CatalogService } from "@/app/(studio)/services/_types";
 
 export type CatalogRowProps = {
   service: CatalogService;

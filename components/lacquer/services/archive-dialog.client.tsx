@@ -18,7 +18,7 @@
 
 import { Trash2 } from "lucide-react";
 
-import { archiveService } from "@/app/(studio)/settings/services/actions";
+import { archiveService } from "@/app/(studio)/services/actions";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
 export type ArchiveDialogProps = {

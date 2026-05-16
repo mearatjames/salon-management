@@ -1,13 +1,13 @@
 // Vitest contract test for the catalog group/sort comparator
-// (`app/(studio)/settings/services/_sort.ts`). Mirrors the SQL
+// (`app/(studio)/services/_sort.ts`). Mirrors the SQL
 // `order by s.category, s.name` from the page hot query so an SSR stream
 // and a fully-hydrated render produce the same order
 // (data-model.md § 6 invariant 7).
 
 import { describe, expect, it } from "vitest";
 
-import { sortCatalogGroups } from "@/app/(studio)/settings/services/_sort";
-import type { CatalogService } from "@/app/(studio)/settings/services/_types";
+import { sortCatalogGroups } from "@/app/(studio)/services/_sort";
+import type { CatalogService } from "@/app/(studio)/services/_types";
 
 function svc(
   partial: Partial<CatalogService> & { id: string; name: string; category: string }

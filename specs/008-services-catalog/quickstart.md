@@ -50,7 +50,7 @@ const services = [
 npm run dev        # http://localhost:3000
 ```
 
-Sign in as the owner (PIN: see seed), then navigate to `/settings/services`.
+Sign in as the owner (PIN: see seed), then navigate to `/services`.
 
 ---
 
@@ -68,7 +68,7 @@ Sign in as the owner (PIN: see seed), then navigate to `/settings/services`.
 
 6. **Archive + restore (US4).** Open any active service, click "Archive service". Confirm dialog shows the service name and the history-preservation note. Confirm. Row disappears from the list; toast reads "{name} archived". Drawer's bottom action flips to "Restore service". Click Restore (no dialog). Row returns; toast reads "{name} restored".
 
-7. **Authorization (US6).** Sign out, sign in as a technician. Navigate to `/settings/services`. The list renders; "Add service" is disabled with the tooltip; clicking a row opens the drawer in read-only mode (all controls disabled, primary chip reads "View only"). Try posting `addService` directly via DevTools FormData submission — server responds with the `forbidden` toast.
+7. **Authorization (US6).** Sign out, sign in as a technician. Navigate to `/services`. The list renders; "Add service" is disabled with the tooltip; clicking a row opens the drawer in read-only mode (all controls disabled, primary chip reads "View only"). Try posting `addService` directly via DevTools FormData submission — server responds with the `forbidden` toast.
 
 8. **Toasts (US7).** Trigger each mutation in succession; confirm each toast fires in sequence with no stacking (except the secondary `no_techs_assigned` which may stack with `service_added`).
 

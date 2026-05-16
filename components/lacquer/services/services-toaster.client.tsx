@@ -1,21 +1,21 @@
 "use client";
 
-// ServicesToaster — the URL → Sonner toast bridge for the Services settings page.
+// ServicesToaster — the URL → Sonner toast bridge for the Services page.
 //
-// Every services Server Action redirects back to `/settings/services` with one
-// or more of:
+// Every services Server Action redirects back to `/services` with one or
+// more of:
 //   - `?toast=<key>&name=<encoded>`      success / info variants
 //   - `?secondary=<key>`                 a warning toast that may stack with
 //                                        a success toast (currently only
 //                                        `no_techs_assigned`)
 //   - `?error=<code>`                    destructive variants
 //
-// This client island lives at the bottom of
-// `app/(studio)/settings/services/page.tsx` (wrapped in <Suspense> because
-// `useSearchParams()` requires it under Next 16's strict streaming rules) and,
-// on each navigation, fires the matching toast(s) through Sonner then strips
-// the consumed params via a history rewrite (preserving `?selected=` and
-// `?adding=` so the drawer state survives the cleanup).
+// This client island lives at the bottom of `app/(studio)/services/page.tsx`
+// (wrapped in <Suspense> because `useSearchParams()` requires it under Next
+// 16's strict streaming rules) and, on each navigation, fires the matching
+// toast(s) through Sonner then strips the consumed params via a history
+// rewrite (preserving `?selected=` and `?adding=` so the drawer state
+// survives the cleanup).
 //
 // Source of truth for the copy + variant is the `TOASTS` map in `./toasts.ts`
 // (Phase 2), keyed by the URL `?toast=<key>` / `?error=<code>` value.
@@ -38,7 +38,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
-import { TOASTS, type ToastKey } from "@/app/(studio)/settings/services/toasts";
+import { TOASTS, type ToastKey } from "@/app/(studio)/services/toasts";
 
 const TOAST_KEYS = new Set(Object.keys(TOASTS)) as ReadonlySet<string>;
 

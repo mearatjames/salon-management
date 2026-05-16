@@ -2,8 +2,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import { staffAssignmentDiff } from "@/app/(studio)/settings/services/_diff";
-import type { ServiceAssignment } from "@/app/(studio)/settings/services/_types";
+import { staffAssignmentDiff } from "@/app/(studio)/services/_diff";
+import type { ServiceAssignment } from "@/app/(studio)/services/_types";
 
 function row(staff_id: string, override: number | null = null): ServiceAssignment {
   return { staff_id, duration_min_override: override };

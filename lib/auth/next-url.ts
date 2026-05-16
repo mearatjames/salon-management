@@ -14,6 +14,7 @@ export const STUDIO_PREFIXES = [
   "/calendar",
   "/checkout",
   "/clients",
+  "/services",
   "/walkin",
   "/end-of-day",
   "/settings",

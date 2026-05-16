@@ -1,4 +1,4 @@
-# Phase 0 — Research: Services catalog (Settings → Services)
+# Phase 0 — Research: Services catalog (top-level /services)
 
 **Feature**: `008-services-catalog` · **Date**: 2026-05-15
 
@@ -40,7 +40,7 @@ Each entry follows: **Decision** · **Rationale** · **Alternatives considered**
 
 ## R4. After a successful Add save, the drawer stays open and flips to Edit mode
 
-**Decision**: `addService` succeeds → `revalidatePath` → `redirect('/settings/services?selected=<new id>&toast=service_added&name=<encoded>')`. The page's RSC re-renders with `?selected=<new id>`, the drawer detects the selection and re-opens in Edit mode for the just-created service (title becomes "Edit service", baseline matches saved values so Save is disabled, the bottom action becomes "Archive service"). Visually one continuous frame; no flash of an empty drawer.
+**Decision**: `addService` succeeds → `revalidatePath` → `redirect('/services?selected=<new id>&toast=service_added&name=<encoded>')`. The page's RSC re-renders with `?selected=<new id>`, the drawer detects the selection and re-opens in Edit mode for the just-created service (title becomes "Edit service", baseline matches saved values so Save is disabled, the bottom action becomes "Archive service"). Visually one continuous frame; no flash of an empty drawer.
 
 **Rationale**: Clarification Q4. Add and Edit then share one post-save mental model (matching `updateService` in FR-020). Owners commonly tweak a service immediately after creating it (add another tech, set a per-tech override).
 

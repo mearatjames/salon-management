@@ -1,6 +1,6 @@
 # Contract: Server Actions
 
-Five entry points exported from `app/(studio)/settings/services/actions.ts`. Each follows the **shared prelude** below before its action-specific body. Implementations that skip a prelude step are bugs.
+Five entry points exported from `app/(studio)/services/actions.ts`. Each follows the **shared prelude** below before its action-specific body. Implementations that skip a prelude step are bugs.
 
 The read helper `loadServiceWithAssignments(id)` is exported from the same file as a **typed projection over RSC-fetched data**, not a network round-trip — see `research.md § R10`.
 
@@ -9,13 +9,13 @@ The read helper `loadServiceWithAssignments(id)` is exported from the same file 
 ## Shared prelude (applies to every write action)
 
 1. `requireStudioSession()` — auth resolver. Throws `AuthRedirectError` (middleware catches → redirect to `/login`).
-2. `assertCanWriteCatalog(viewer.staff.role)` — owner OR manager. On failure: `redirect('/settings/services?error=forbidden')`.
-3. Parse + validate `FormData` (per-action; via `_validation.ts` validators). On `ValidationError`: `redirect('/settings/services?error=<code>'+selectedSuffix)`.
+2. `assertCanWriteCatalog(viewer.staff.role)` — owner OR manager. On failure: `redirect('/services?error=forbidden')`.
+3. Parse + validate `FormData` (per-action; via `_validation.ts` validators). On `ValidationError`: `redirect('/services?error=<code>'+selectedSuffix)`.
 4. Load target row (skipped for `addService`).
 5. Permission matrix is currently a single rule (`canWriteCatalog`) — there is no per-target check (no analogue to the staff feature's owner-special-case). The `assertCanWriteCatalog` call in step 2 is the entire check.
 6. Mutate via `createSupabaseServiceRoleClient()`. Service-role bypasses RLS.
 7. `await recordAudit('service.<verb>', viewer.deviceUserId, service.id, payload)` — awaited before redirect (Constitution III: audit row commits before success line).
-8. `revalidatePath('/settings/services')` + `redirect('/settings/services?selected=<id>&toast=<key>&name=<encoded>')` on success; `redirect('/settings/services?error=<code>'+selectedSuffix)` on failure.
+8. `revalidatePath('/services')` + `redirect('/services?selected=<id>&toast=<key>&name=<encoded>')` on success; `redirect('/services?error=<code>'+selectedSuffix)` on failure.
 
 `selectedSuffix` is `&selected=<id>` when a target id is in scope; preserved on every error redirect so the drawer stays open on the failing row.
 
@@ -50,8 +50,8 @@ The read helper `loadServiceWithAssignments(id)` is exported from the same file 
 4. INSERT into `services`. If error: log + `redirect('?error=db_failure')`.
 5. For each `staff_id` in `staff_ids[]`, INSERT into `staff_services` with `duration_min_override = parseOrNull(override_min[id])`. If any single INSERT fails, roll back the service INSERT and `redirect('?error=db_failure')`.
 6. `await recordAudit('service.added', viewer.deviceUserId, newId, payload)` (payload shape in `audit.contract.md § 1`).
-7. `revalidatePath('/settings/services')`.
-8. Redirect: `/settings/services?selected=<newId>&toast=service_added&name=<encoded>`. If `staff_ids[]` is empty, append `&secondary=no_techs_assigned` so the URL-toast bridge fires the secondary toast as well.
+7. `revalidatePath('/services')`.
+8. Redirect: `/services?selected=<newId>&toast=service_added&name=<encoded>`. If `staff_ids[]` is empty, append `&secondary=no_techs_assigned` so the URL-toast bridge fires the secondary toast as well.
 
 ### Failure URLs
 
@@ -83,8 +83,8 @@ Same FormData shape as `addService` plus:
    - For each diff op in {delete, insert, update}, run the matching `staff_services` write.
    - If any statement errors: roll back, `redirect('?selected=<id>&error=db_failure')`.
 7. `await recordAudit('service.updated', viewer.deviceUserId, target.id, payload)` (payload shape in `audit.contract.md § 2` — includes `changes` diff plus before/after assignment id sets).
-8. `revalidatePath('/settings/services')`.
-9. Redirect: `/settings/services?selected=<id>&toast=changes_saved` (plus optional `&secondary=no_techs_assigned`).
+8. `revalidatePath('/services')`.
+9. Redirect: `/services?selected=<id>&toast=changes_saved` (plus optional `&secondary=no_techs_assigned`).
 
 ### Failure URLs
 
@@ -106,8 +106,8 @@ Same set as `addService` plus `?error=no_changes` (when the diff is empty).
 2. Pre-check: if `active = false` already → `redirect('?selected=<id>&error=no_changes')` (defense in depth against a stale-tab re-submit).
 3. UPDATE `services` set `active = false`.
 4. `await recordAudit('service.archived', viewer.deviceUserId, target.id, { name: target.name })` (payload in `audit.contract.md § 3`).
-5. `revalidatePath('/settings/services')`.
-6. Redirect: `/settings/services?selected=<id>&toast=service_archived&name=<encoded>`.
+5. `revalidatePath('/services')`.
+6. Redirect: `/services?selected=<id>&toast=service_archived&name=<encoded>`.
 
 ### Failure URLs
 
@@ -129,8 +129,8 @@ Same set as `addService` plus `?error=no_changes` (when the diff is empty).
 2. Pre-check: if `active = true` already → `redirect('?selected=<id>&error=no_changes')`.
 3. UPDATE `services` set `active = true`.
 4. `await recordAudit('service.restored', viewer.deviceUserId, target.id, { name: target.name })`.
-5. `revalidatePath('/settings/services')`.
-6. Redirect: `/settings/services?selected=<id>&toast=service_restored&name=<encoded>`.
+5. `revalidatePath('/services')`.
+6. Redirect: `/services?selected=<id>&toast=service_restored&name=<encoded>`.
 
 ### Failure URLs
 

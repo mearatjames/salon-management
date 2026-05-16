@@ -91,13 +91,17 @@
 
 /* Single-column catalog: header + list. The drawer is an off-canvas overlay
    on the right (see `.services-drawer`) — there is no two-column grid like
-   the staff page. `min-height: 0` lets the inner list scroll on its own. */
+   the staff page. `min-height: 0` lets the inner list scroll on its own.
+   The page lives at top-level `/services` (no Settings layout above it), so
+   it owns its own padding instead of inheriting `.settings-content`'s. */
 .settings-services-grid {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
   flex: 1;
   min-height: 0;
+  padding: var(--space-6) var(--space-8);
+  overflow: auto;
 }
 
 /* Off-canvas right-side drawer for Add / Edit. The width is derived from the

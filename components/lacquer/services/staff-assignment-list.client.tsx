@@ -19,7 +19,7 @@
 
 import { ROLE_LABEL } from "./_role-label";
 
-import type { AssignableStaff, ServiceAssignment } from "@/app/(studio)/settings/services/_types";
+import type { AssignableStaff, ServiceAssignment } from "@/app/(studio)/services/_types";
 
 export type StaffAssignmentListProps = {
   assignableStaff: AssignableStaff[];

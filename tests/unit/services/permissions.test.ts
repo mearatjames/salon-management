@@ -1,5 +1,5 @@
 // Vitest contract test for the services-catalog permission matrix
-// (`app/(studio)/settings/services/permissions.ts`).
+// (`app/(studio)/services/permissions.ts`).
 // See contracts/server-actions.contract.md § Shared prelude.
 
 import { describe, expect, it } from "vitest";
@@ -8,7 +8,7 @@ import {
   assertCanWriteCatalog,
   canWriteCatalog,
   PermissionError,
-} from "@/app/(studio)/settings/services/permissions";
+} from "@/app/(studio)/services/permissions";
 
 describe("canWriteCatalog", () => {
   it("returns true for owner and manager", () => {

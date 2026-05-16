@@ -1,4 +1,4 @@
-# Phase 1 — Data Model: Services catalog (Settings → Services)
+# Phase 1 — Data Model: Services catalog (top-level /services)
 
 **Feature**: `008-services-catalog` · **Date**: 2026-05-15
 
@@ -110,7 +110,7 @@ No `insert`, `update`, or `delete` policy on either table. All writes go through
 ## 3. App-layer types
 
 ```ts
-// app/(studio)/settings/services/_types.ts
+// app/(studio)/services/_types.ts
 
 export type AvatarColorToken =
   | "--avatar-rose" | "--avatar-blue" | "--avatar-green" | "--avatar-amber"
@@ -162,7 +162,7 @@ The page passes `roster: CatalogService[]`, `assignableStaff: AssignableStaff[]`
 
 ## 4. Validation rules (Server Action layer)
 
-`app/(studio)/settings/services/_validation.ts` exposes a validator per field. Each throws `ValidationError(code)` and the action prelude maps it to a `?error=<code>` redirect.
+`app/(studio)/services/_validation.ts` exposes a validator per field. Each throws `ValidationError(code)` and the action prelude maps it to a `?error=<code>` redirect.
 
 | Validator                  | Field                    | Rule                                                                  | Error code              |
 |----------------------------|--------------------------|-----------------------------------------------------------------------|--------------------------|

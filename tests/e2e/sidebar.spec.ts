@@ -143,20 +143,24 @@ test.describe("Studio left navigation panel", () => {
     expect(activeIds).toEqual(["settings"]);
   });
 
-  test("(4) services placeholder is aria-disabled + data-disabled and does not navigate", async ({
-    page,
-  }) => {
+  test("(4) services nav item routes to /services and marks itself active", async ({ page }) => {
     await signInAsMaya(page, "/dashboard");
 
     const services = page.locator('[data-nav-id="services"]');
-    await expect(services).toHaveAttribute("aria-disabled", "true");
-    await expect(services).toHaveAttribute("data-disabled", "true");
+    // Wired entry — not disabled.
+    await expect(services).toHaveAttribute("data-disabled", "false");
+    await expect(services).not.toHaveAttribute("aria-disabled", "true");
 
-    const before = new URL(page.url()).pathname;
     await services.click();
-    // Give the router a tick to confirm nothing changed.
-    await page.waitForTimeout(300);
-    expect(new URL(page.url()).pathname).toBe(before);
+    await page.waitForURL(/\/services(\?|$)/);
+    expect(new URL(page.url()).pathname).toBe("/services");
+
+    // Active highlight transferred from dashboard to services.
+    await expect(services).toHaveAttribute("data-active", "true");
+    const activeIds = await page
+      .locator('aside[aria-label="Studio navigation"] [data-nav-id][data-active="true"]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute("data-nav-id")));
+    expect(activeIds).toEqual(["services"]);
   });
 
   test("(5) collapse toggle resizes the sidebar and persists across reloads", async ({ page }) => {

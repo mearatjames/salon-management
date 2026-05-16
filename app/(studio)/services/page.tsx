@@ -1,4 +1,8 @@
-// Settings → Services page. Server Component.
+// Services catalog page. Server Component.
+//
+// Lives at `/services` — a top-level studio destination reached from the
+// sidebar (see `components/lacquer/sidebar/nav-items.ts`). Not nested under
+// Settings; renders directly inside the studio shell (sidebar + topbar).
 //
 // Fetches the catalog (with per-service `assignment_count` for active staff
 // only), the assignable-staff list, and — when `?selected=<id>` is set —
@@ -22,13 +26,13 @@ import { CatalogList } from "@/components/lacquer/services/catalog-list.client";
 import { Drawer } from "@/components/lacquer/services/drawer.client";
 import { PageHeader } from "@/components/lacquer/services/page-header";
 import { ServicesToaster } from "@/components/lacquer/services/services-toaster.client";
-import { loadServiceWithAssignments } from "@/app/(studio)/settings/services/_load";
+import { loadServiceWithAssignments } from "@/app/(studio)/services/_load";
 import type {
   AssignableStaff,
   AvatarColorToken,
   CatalogService,
   ServiceDraftBaseline,
-} from "@/app/(studio)/settings/services/_types";
+} from "@/app/(studio)/services/_types";
 import { requireStudioSession, type StudioRole } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/db/server";
 
@@ -72,15 +76,13 @@ function narrowColorToken(raw: string): AvatarColorToken {
     : "--avatar-slate";
 }
 
-export default async function ServicesSettingsPage({
+export default async function ServicesPage({
   searchParams,
 }: {
   searchParams?: Promise<SearchParamsShape>;
 }) {
-  // Re-verify the studio session even though the settings layout already
-  // gates — keeps the page robust if the layout is ever bypassed (e.g.
-  // direct RSC import from a future surface). Throws AuthRedirectError on
-  // unauthenticated requests.
+  // Verify the studio session. Throws AuthRedirectError on unauthenticated
+  // requests; middleware turns it into a /login redirect.
   const viewer = await requireStudioSession();
 
   const params = (await searchParams) ?? {};

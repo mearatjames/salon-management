@@ -1,4 +1,4 @@
-# Specification Quality Checklist: Services catalog (Settings → Services)
+# Specification Quality Checklist: Services catalog (top-level /services)
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-05-15

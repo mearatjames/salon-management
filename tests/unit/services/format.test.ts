@@ -3,8 +3,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import { formatPriceLabel } from "@/app/(studio)/settings/services/_format";
-import type { CatalogService } from "@/app/(studio)/settings/services/_types";
+import { formatPriceLabel } from "@/app/(studio)/services/_format";
+import type { CatalogService } from "@/app/(studio)/services/_types";
 
 function svc(partial: Partial<CatalogService>): CatalogService {
   return {
