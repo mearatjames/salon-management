@@ -346,7 +346,10 @@ test.describe("US3: switch staff at shift change", () => {
 
     await page.getByRole("button", { name: /Jordan Lee/ }).click();
     await page.waitForURL(/selectedTileId=/);
-    await page.keyboard.type("5678");
+    // Wait for the keypad to mount — its `keydown` listener is attached in a
+    // `useEffect`, so keyboard.type() before mount completes drops the events.
+    await expect(page.locator(".auth-keypad")).toBeVisible();
+    await page.keyboard.type("5678", { delay: 30 });
     await page.waitForURL(/\/dashboard($|\?)/);
 
     const switched = await getAuditLogRows("staff.switched");
