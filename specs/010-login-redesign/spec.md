@@ -601,11 +601,28 @@ the email exists; the Google button hides when its flag is off; the
   for production bootstrap) per `003-login-flow`. This feature
   only adds the password-reset recovery on top of the existing
   seeded-owner model.
-- **FR-026**: `/select-staff`, the PIN keypad, the studio
-  topbar's "Switch staff" / "Sign out" controls, and the
+- **FR-026**: `/select-staff`'s **functional** surface — the
+  PIN keypad logic, the roster query, the operator-cookie
+  issuance, the audit-log writes, the URL contract — and the
+  studio topbar's "Switch staff" / "Sign out" controls and the
   middleware redirect contract are explicitly **out of scope**.
-  This feature touches only `/login`, the new `/reset-password`
-  page, and their supporting components / styles.
+  This feature's code changes touch only `/login`, the new
+  `/reset-password` page, the shared `(auth)` layout, the
+  `lib/auth/audit.ts` `AuditAction` union, and their supporting
+  components / styles. As a deliberate **styling consequence**
+  of refactoring the shared `app/(auth)/layout.tsx` into the new
+  two-panel shell (FR-001 / FR-002), `/select-staff` inherits
+  the Lacquer brand panel + form panel chrome around its
+  existing keypad UI — no copy change, no logic change, no
+  selector change on the keypad itself. The keypad / staff-tile
+  / roster CSS (`.auth-keypad*`, `.auth-staff-tile`,
+  `.auth-roster` in `styles/auth.css`) is left untouched. The
+  rationale is design cohesion: every surface under `(auth)`
+  presents one consistent Lacquer shell so the device user has
+  a single visual anchor across sign-in, recovery, and operator
+  selection. If a future feature decides `/select-staff` needs
+  a different chrome, it can override the layout at the route
+  level.
 
 #### Visual & content
 

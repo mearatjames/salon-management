@@ -84,7 +84,7 @@ end-to-end (no regressions) before any new view ships.
 
 ### Phase 2D — Layout refactor
 
-- [ ] T010 **Refactor** `app/(auth)/layout.tsx` to use `<AuthShell>{children}</AuthShell>` from T007. Remove the existing inline-styled centred `<section>` and the "Tang Nails Studio" wordmark+Sparkles icon block (lines 9-33) — that styling moves into `AuthBrandPanel` (brand) and `AuthFormPanel` (solo wordmark). The `import "@/styles/auth.css"` stays. Confirm the layout still passes `children` through unchanged for `/login` and `/select-staff`. (NOTE: `/select-staff` will look slightly different because it'll inherit the two-panel shell — that's intentional; the brand panel is consistent across all `(auth)` surfaces. The keypad CSS is untouched per T006.)
+- [ ] T010 **Refactor** `app/(auth)/layout.tsx` to use `<AuthShell>{children}</AuthShell>` from T007. Remove the existing inline-styled centred `<section>` and the "Tang Nails Studio" wordmark+Sparkles icon block (lines 9-33) — that styling moves into `AuthBrandPanel` (brand) and `AuthFormPanel` (solo wordmark). The `import "@/styles/auth.css"` stays. Confirm the layout still passes `children` through unchanged for `/login`, `/reset-password`, **and** `/select-staff`. The `/select-staff` chrome change (inheriting the two-panel brand-panel shell around the existing keypad UI) is a deliberate styling consequence explicitly permitted by FR-026 — design cohesion across the `(auth)` route group. The keypad CSS (`.auth-keypad*`, `.auth-staff-tile`, `.auth-roster`) is untouched per T006; the keypad's DOM, selectors, copy, and logic are all unchanged. (FR-001, FR-002, FR-026.)
 
 ### Phase 2E — View-router scaffold + sign-in view
 
