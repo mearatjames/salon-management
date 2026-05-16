@@ -48,6 +48,80 @@ export async function truncateAuditLog(): Promise<void> {
   if (error) throw new Error(`audit_log truncate failed: ${error.message}`);
 }
 
+// Re-applies the three seeded staff rows from `supabase/seed.sql` (Maya,
+// Jordan, Sam) to the local DB. Idempotent via `upsert` so tests that
+// mutate the seed rows (rename, deactivate, soft-remove) get them back to
+// known-good state without paying for a full `supabase db reset`.
+//
+// Mirrors the seed.sql INSERT block — keep these literals in sync if the
+// seed changes. PIN hashes are pre-computed bcrypt(11) for 1234/5678/9999.
+const SEEDED_STAFF: ReadonlyArray<{
+  id: string;
+  user_id: string | null;
+  display_name: string;
+  role: string;
+  pin_hash: string;
+  color_token: string;
+  active: boolean;
+  removed_at: string | null;
+}> = [
+  {
+    id: "10000000-0000-0000-0000-000000000001",
+    user_id: "00000000-0000-0000-0000-000000000001",
+    display_name: "Maya Patel",
+    role: "owner",
+    pin_hash: "$2b$11$ocPxZYLxI9q3whaThAf44eqadcklBHovq4KGJcGQ2VjlZkoGD66x.",
+    color_token: "--avatar-rose",
+    active: true,
+    removed_at: null,
+  },
+  {
+    id: "10000000-0000-0000-0000-000000000002",
+    user_id: "00000000-0000-0000-0000-000000000002",
+    display_name: "Jordan Lee",
+    role: "manager",
+    pin_hash: "$2b$11$ixukE2AGjrZs3diU3DJbk.ee1XcDBdkg.GlRUABhzcHX.20ELBPiq",
+    color_token: "--avatar-amber",
+    active: true,
+    removed_at: null,
+  },
+  {
+    id: "10000000-0000-0000-0000-000000000003",
+    user_id: null,
+    display_name: "Sam Chen",
+    role: "technician",
+    pin_hash: "$2b$11$sWcIO2ja2W3yapUKh2haPeCOiYOHEPBui0AibaP8F6oHWLpxfPv9W",
+    color_token: "--avatar-purple",
+    active: true,
+    removed_at: null,
+  },
+];
+
+/**
+ * Re-applies the seeded staff rows. Upserts on id so the function is
+ * idempotent and survives tests that rename or deactivate the seed rows.
+ *
+ * IMPORTANT: This does NOT remove non-seeded rows. Tests that create extra
+ * staff (e.g. the Add wizard scenario) should explicitly delete them in
+ * `afterEach`, OR rely on the next `truncate non-seeded staff` block to do
+ * it. To keep the roster clean we also delete any row whose id is NOT in
+ * the seeded set — this gives every `beforeEach` a fresh 3-row roster.
+ */
+export async function resetStaffToSeed(): Promise<void> {
+  const c = client();
+  // 1. Delete any non-seed rows so the roster matches the seed exactly.
+  const seedIds = SEEDED_STAFF.map((s) => s.id);
+  const { error: delErr } = await c
+    .from("staff")
+    .delete()
+    .not("id", "in", `(${seedIds.map((id) => `"${id}"`).join(",")})`);
+  if (delErr) throw new Error(`staff cleanup failed: ${delErr.message}`);
+
+  // 2. Upsert the seed rows back to their canonical state.
+  const { error: upErr } = await c.from("staff").upsert(SEEDED_STAFF, { onConflict: "id" });
+  if (upErr) throw new Error(`staff seed upsert failed: ${upErr.message}`);
+}
+
 export async function getAuditLogRows(action?: string): Promise<AuditRow[]> {
   let query = client()
     .from("audit_log")

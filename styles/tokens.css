@@ -42,6 +42,17 @@
   --red-500: oklch(0.58 0.18 25);
   --blue-500: oklch(0.6 0.13 240);
 
+  /* Avatar swatches — 8 distinct hues for staff initials backgrounds.
+     Same OKLCH values apply in both light and dark mode. */
+  --avatar-rose: oklch(0.55 0.12 12);
+  --avatar-blue: oklch(0.60 0.13 240);
+  --avatar-green: oklch(0.62 0.13 150);
+  --avatar-amber: oklch(0.76 0.14 75);
+  --avatar-purple: oklch(0.55 0.13 270);
+  --avatar-teal: oklch(0.56 0.13 200);
+  --avatar-orange: oklch(0.62 0.17 50);
+  --avatar-slate: oklch(0.44 0.01 90);
+
   /* ---------- Semantic tokens (USE THESE in components) ---------- */
   --background: var(--neutral-50);
   --foreground: var(--neutral-900);

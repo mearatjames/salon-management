@@ -77,7 +77,7 @@ values
     'Maya Patel',
     'owner',
     '$2b$11$ocPxZYLxI9q3whaThAf44eqadcklBHovq4KGJcGQ2VjlZkoGD66x.',
-    '--accent-rose',
+    '--avatar-rose',
     true
   ),
   (
@@ -86,7 +86,7 @@ values
     'Jordan Lee',
     'manager',
     '$2b$11$ixukE2AGjrZs3diU3DJbk.ee1XcDBdkg.GlRUABhzcHX.20ELBPiq',
-    '--accent-amber',
+    '--avatar-amber',
     true
   ),
   (
@@ -95,7 +95,7 @@ values
     'Sam Chen',
     'technician',
     '$2b$11$sWcIO2ja2W3yapUKh2haPeCOiYOHEPBui0AibaP8F6oHWLpxfPv9W',
-    '--accent-violet',
+    '--avatar-purple',
     true
   )
 on conflict (id) do nothing;

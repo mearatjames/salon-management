@@ -1,0 +1,74 @@
+/* ==========================================================================
+   Lacquer — Settings shell layout
+   Skeleton hooks for the Settings surface (sidebar + content + tab bar +
+   staff edit-panel column). Every value resolves to a `var(--*)` token from
+   `styles/tokens.css`. No magic numbers above the 4px scale.
+   ========================================================================== */
+
+/* Outer shell: a thin left rail (settings sub-nav) + the main content column.
+   The rail is sized in `--space-*` multiples to stay on the 4px grid. */
+.settings-shell {
+  display: grid;
+  grid-template-columns: calc(var(--space-16) * 3 + var(--space-12)) 1fr;
+  gap: var(--space-8);
+  padding: var(--space-8);
+  min-height: 100%;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Horizontal tab bar (Staff / General / Notifications / Billing). */
+.settings-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-bottom: 1px solid var(--border);
+  padding: 0 var(--space-1) var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.settings-tab-bar > * + * {
+  margin-left: var(--space-1);
+}
+
+/* Single content column under the tab bar, comfortable reading width. */
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: calc(var(--space-16) * 18);
+  width: 100%;
+}
+
+/* Staff page two-column layout: roster table on the left, edit panel on the right.
+   Panel column is fixed at 24rem-equivalent (on the 4px scale) to keep the table
+   from collapsing as the panel content grows. */
+.settings-staff-grid {
+  display: grid;
+  grid-template-columns: 1fr calc(var(--space-16) * 6);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+/* Roster column wrapper. */
+.settings-staff-roster {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* Edit-panel column wrapper. Sticky so it stays in view as the roster scrolls. */
+.settings-staff-panel {
+  position: sticky;
+  top: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
