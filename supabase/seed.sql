@@ -99,3 +99,128 @@ values
     true
   )
 on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- Services catalog seed (feature 008-services-catalog).
+-- Five sample services across three categories (Manicure, Pedicure, Add-on)
+-- plus their `staff_services` rows so the e2e suite has assignments to
+-- exercise:
+--   * Classic manicure   — Jordan + Sam (both non-owners)
+--   * Gel polish         — Sam only
+--   * Classic pedicure   — Jordan + Sam (both non-owners)
+--   * Spa pedicure       — Sam with a 75-min duration_min_override
+--   * Nail art           — no assignments (exercises the "No techs" pill +
+--                          the secondary `no_techs_assigned` toast)
+--
+-- The `services` and `staff_services` tables only exist after the Phase 2
+-- migration (`0003_services_catalog.sql`) has run. To keep `supabase db
+-- reset` working before that migration lands, the inserts are wrapped in a
+-- DO block that no-ops when the tables don't yet exist.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if to_regclass('public.services') is null then
+    return;
+  end if;
+
+  insert into public.services (
+    id,
+    name,
+    category,
+    duration_min,
+    price_cents,
+    color_token,
+    taxable,
+    variable_price,
+    price_from_cents,
+    price_to_cents,
+    variable_price_note,
+    active
+  ) values
+    (
+      '20000000-0000-0000-0000-000000000001',
+      'Classic manicure',
+      'Manicure',
+      30,
+      2500,
+      '--avatar-rose',
+      true,
+      false,
+      null,
+      null,
+      null,
+      true
+    ),
+    (
+      '20000000-0000-0000-0000-000000000002',
+      'Gel polish',
+      'Manicure',
+      45,
+      3500,
+      '--avatar-blue',
+      true,
+      false,
+      null,
+      null,
+      null,
+      true
+    ),
+    (
+      '20000000-0000-0000-0000-000000000003',
+      'Classic pedicure',
+      'Pedicure',
+      45,
+      4000,
+      '--avatar-green',
+      true,
+      false,
+      null,
+      null,
+      null,
+      true
+    ),
+    (
+      '20000000-0000-0000-0000-000000000004',
+      'Spa pedicure',
+      'Pedicure',
+      60,
+      5500,
+      '--avatar-teal',
+      true,
+      false,
+      null,
+      null,
+      null,
+      true
+    ),
+    (
+      '20000000-0000-0000-0000-000000000005',
+      'Nail art',
+      'Add-on',
+      30,
+      0,
+      '--avatar-purple',
+      true,
+      true,
+      1500,
+      null,
+      'Depends on design complexity',
+      true
+    )
+  on conflict (id) do nothing;
+
+  insert into public.staff_services (service_id, staff_id, duration_min_override) values
+    -- Classic manicure → Jordan + Sam
+    ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000002', null),
+    ('20000000-0000-0000-0000-000000000001', '10000000-0000-0000-0000-000000000003', null),
+    -- Gel polish → Sam only
+    ('20000000-0000-0000-0000-000000000002', '10000000-0000-0000-0000-000000000003', null),
+    -- Classic pedicure → Jordan + Sam
+    ('20000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000002', null),
+    ('20000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000003', null),
+    -- Spa pedicure → Sam with a 75-min override
+    ('20000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000003', 75)
+    -- Nail art (20000000-…-005) intentionally has no assignments.
+  on conflict (service_id, staff_id) do nothing;
+end
+$$;

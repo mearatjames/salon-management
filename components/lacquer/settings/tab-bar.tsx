@@ -1,6 +1,6 @@
 "use client";
 
-// Settings tab bar — General · Staff · Notifications · Billing.
+// Settings tab bar — General · Staff · Services · Notifications · Billing.
 //
 // Deviation from task T015's "Server Component" guidance: making this a
 // small client island (~30 lines) is cleaner than the alternatives
@@ -22,6 +22,7 @@ type Tab = {
 const TABS: readonly Tab[] = [
   { id: "general", label: "General", href: "/settings/general" },
   { id: "staff", label: "Staff", href: "/settings/staff" },
+  { id: "services", label: "Services", href: "/settings/services" },
   { id: "notifications", label: "Notifications", href: "/settings/notifications" },
   { id: "billing", label: "Billing", href: "/settings/billing" },
 ] as const;
