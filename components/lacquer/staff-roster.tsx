@@ -17,6 +17,7 @@ type StaffRow = {
   display_name: string;
   role: string;
   color_token: string;
+  pin_reset_admin_at: string | null;
 };
 
 export type StaffRosterProps = {

@@ -23,6 +23,7 @@ import {
 } from "@/lib/auth/cookie";
 import { sanitizeNext } from "@/lib/auth/next-url";
 import { verifyPin } from "@/lib/auth/pin";
+import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 import { createSupabaseServerClient } from "@/lib/db/server";
 
 const COOKIE_NAME = "acting_as_staff_id";
@@ -107,6 +108,19 @@ export async function submitPin(formData: FormData): Promise<void> {
     staffId,
     previousSid ? { previous_staff_id: previousSid } : {}
   );
+
+  // Feature 012 US3 (FR-035 / FR-036): on a successful PIN match, clear the
+  // admin-reset notice on this row. Idempotent — when nothing was reset
+  // there is nothing to clear; the UPDATE is cheap and uses service-role
+  // because RLS forbids non-admin writes to staff.
+  try {
+    const admin = createSupabaseServiceRoleClient();
+    await admin.from("staff").update({ pin_reset_admin_at: null }).eq("id", staffId);
+  } catch (err) {
+    // Best-effort: failing to clear the notice doesn't block the sign-in;
+    // the user just sees the badge until the next successful PIN.
+    console.error("submitPin: failed to clear pin_reset_admin_at", err);
+  }
 
   redirect(sanitizeNext(next));
 }

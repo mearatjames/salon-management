@@ -1,4 +1,4 @@
--- Migration: 0006_cart_polish.sql
+-- Migration: 0007_cart_polish.sql
 -- Feature: 013-cart-polish (part 2 of 2)
 --
 -- Cart-polish DDL: discount-line support, services.presets, settings table,
@@ -8,10 +8,12 @@
 -- copy.
 --
 -- Ordering note: the `'discount'` enum label is added in
--- 0005_add_discount_enum_value.sql (a separate file) so the new value is
+-- 0006_add_discount_enum_value.sql (a separate file) so the new value is
 -- visible to the CHECK constraints below. Postgres rejects the combined
 -- form when an in-transaction CHECK or INSERT mentions a freshly added
 -- enum label (SQLSTATE 55P04).
+--
+-- Renumbered from `0006` during the merge of main's `0005_user_onboarding.sql`.
 
 -- ----------------------------------------------------------------------
 -- 1. ticket_items column adds + nullability relax for discount rows

@@ -248,7 +248,7 @@ $$;
 -- 013-cart-polish: presets seed for the variable-priced "Nail art" service.
 -- Three quick-pick chips (Small / Medium / Large) at $35 / $45 / $60 — the
 -- price-sheet renders them via the `services.presets` jsonb column (added
--- by migration 0006_cart_polish.sql).
+-- by migration 0007_cart_polish.sql).
 --
 -- Deviation note vs data-model.md: the spec snippet targets the row by
 -- name='Nail art · medium', but the existing seed (and phase-2 e2e tests)

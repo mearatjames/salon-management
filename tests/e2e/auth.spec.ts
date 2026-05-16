@@ -21,6 +21,7 @@ import {
   getAuthUserByEmail,
   getStaffByDisplayName,
   newAuditCursor,
+  resetStaffToSeed,
 } from "./_db";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
@@ -153,9 +154,13 @@ test.describe("US2: staff selects identity with a PIN", () => {
     }
   });
 
-  test.beforeEach(() => {
+  test.beforeEach(async () => {
     if (!supabaseUp) return;
     auditCursor = newAuditCursor();
+    // Restore the seeded staff to canonical state so earlier specs (012
+    // onboarding offboard/remove/reactivate) don't leave Jordan in a
+    // non-active state that hides him from /select-staff for this US2.
+    await resetStaffToSeed();
   });
 
   test("(a) roster renders three tiles by display name", async ({ page }) => {
@@ -1614,5 +1619,130 @@ test.describe("010-Phase 8: hydrated view-swap polish", () => {
     // applies, and `"0s"` for `animation-duration`. Accept either.
     const animationDisabled = computed.name === "none" || computed.duration === "0s";
     expect(animationDisabled).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// 012-Phase 2: invite-method password setup leg (auth/callback + reset-password)
+//
+// Exercises the new `?type=invite` branch added to /auth/callback in T014
+// and the matching heading/copy switch in /reset-password (T016). The full
+// Onboard sheet that issues invites lands in US2; for the Phase 2 gate we
+// drive `auth.admin.inviteUserByEmail` directly from the test setup so the
+// auth chain (invite link → reset-password?type=invite → /select-staff)
+// can be verified independently of the UI surface.
+//
+// Skips automatically when Docker/Supabase or Inbucket is unreachable.
+// ─────────────────────────────────────────────────────────────────────────
+
+test.describe("012-Phase 2: invite-method password setup leg", () => {
+  let supabaseUp = false;
+  let inbucketUp = false;
+  let auditCursor = "";
+  const INVITE_EMAIL = "onboarding-invite-12@tang.test";
+
+  async function deleteInviteUserByEmail(email: string): Promise<void> {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) return;
+    const { createClient } = await import("@supabase/supabase-js");
+    const admin = createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data } = await admin.auth.admin.listUsers();
+    const match = data.users.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+    if (match) {
+      await admin.auth.admin.deleteUser(match.id);
+    }
+  }
+
+  test.beforeAll(async () => {
+    supabaseUp = await supabaseIsReachable();
+    if (!supabaseUp) {
+      test.skip(
+        true,
+        "Supabase not reachable at 127.0.0.1:54321 — skipping 012-Phase 2 invite-leg specs."
+      );
+      return;
+    }
+    inbucketUp = await inbucketIsReachable();
+    if (!inbucketUp) {
+      test.skip(
+        true,
+        "Inbucket not reachable at 127.0.0.1:54324 — skipping 012-Phase 2 invite-leg specs."
+      );
+      return;
+    }
+    // Clean any prior run's invitee so the test is replayable.
+    await deleteInviteUserByEmail(INVITE_EMAIL);
+  });
+
+  test.beforeEach(() => {
+    if (!supabaseUp || !inbucketUp) return;
+    auditCursor = newAuditCursor();
+  });
+
+  test.afterAll(async () => {
+    if (!supabaseUp) return;
+    await deleteInviteUserByEmail(INVITE_EMAIL);
+  });
+
+  test("invite link lands on /reset-password?type=invite with 'Set your password' heading; submitting password redirects to /select-staff and writes the audit chain", async ({
+    page,
+  }) => {
+    // Issue an invite directly via the admin API. The full Onboard sheet
+    // (US2) wires the same call through a server action; Phase 2 verifies
+    // the auth chain in isolation.
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const { createClient } = await import("@supabase/supabase-js");
+    const admin = createClient(url, key, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const origin = "http://127.0.0.1:3000";
+    const { error: inviteErr } = await admin.auth.admin.inviteUserByEmail(INVITE_EMAIL, {
+      redirectTo: `${origin}/auth/callback?type=invite`,
+    });
+    expect(inviteErr).toBeNull();
+
+    // Inbucket mailbox name = local part of the email (Supabase delivers
+    // to the local Mailpit/Inbucket via the local SMTP relay).
+    const mailbox = INVITE_EMAIL.split("@")[0];
+    const message = await fetchLatestMagicLinkEmail(mailbox);
+    expect(message).not.toBeNull();
+    const inviteUrl = extractMagicLinkUrl(message!);
+    expect(inviteUrl).not.toBeNull();
+
+    // Follow the invite link. Supabase's `/auth/v1/verify` consumes the
+    // token then redirects to `redirectTo`, which is our /auth/callback
+    // with `?type=invite`. The callback redirects to
+    // /reset-password?type=invite.
+    await page.goto(inviteUrl!);
+    await page.waitForURL(/\/reset-password\?type=invite/);
+    await expect(page.getByRole("heading", { name: "Set your password" })).toBeVisible();
+
+    // Set a password.
+    await page.locator("#reset-password").fill("tang-nails-test-pw-12");
+    await page.locator("#reset-confirm").fill("tang-nails-test-pw-12");
+    await page.getByRole("button", { name: "Set password and continue" }).click();
+
+    // Land on /select-staff.
+    await page.waitForURL(/\/select-staff/);
+
+    // Audit chain: device.signed_in.method='invite' (from /auth/callback's
+    // recordAuth), then device.password_reset.method='invite' (from
+    // updatePassword).
+    const signedIn = await getAuditLogRowsSince(auditCursor, "device.signed_in");
+    const inviteSignedIn = signedIn.filter(
+      (r) => r.payload !== null && (r.payload as Record<string, unknown>).method === "invite"
+    );
+    expect(inviteSignedIn.length).toBe(1);
+
+    const passwordReset = await getAuditLogRowsSince(auditCursor, "device.password_reset");
+    const invitePasswordReset = passwordReset.filter(
+      (r) => r.payload !== null && (r.payload as Record<string, unknown>).method === "invite"
+    );
+    expect(invitePasswordReset.length).toBe(1);
   });
 });

@@ -38,6 +38,7 @@ type StaffRow = {
   display_name: string;
   role: string;
   color_token: string;
+  pin_reset_admin_at: string | null;
 };
 
 export default async function SelectStaffPage({
@@ -62,7 +63,7 @@ export default async function SelectStaffPage({
 
   const { data: rosterData } = await supabase
     .from("staff")
-    .select("id, display_name, role, color_token")
+    .select("id, display_name, role, color_token, pin_reset_admin_at")
     .eq("active", true)
     .not("pin_hash", "is", null)
     .order("role")

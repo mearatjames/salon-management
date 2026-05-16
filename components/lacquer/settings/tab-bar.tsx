@@ -25,6 +25,9 @@ type Tab = {
 const TABS: readonly Tab[] = [
   { id: "general", label: "General", href: "/settings/general" },
   { id: "staff", label: "Staff", href: "/settings/staff" },
+  // 012-user-onboarding FR-001 — Onboarding tab sits between Staff and
+  // Notifications. The page enforces the owner-only role gate inline.
+  { id: "onboarding", label: "Onboarding", href: "/settings/onboarding" },
   { id: "notifications", label: "Notifications", href: "/settings/notifications" },
   { id: "billing", label: "Billing", href: "/settings/billing" },
 ] as const;

@@ -46,12 +46,13 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  // Parallel-safe: audit_log assertions use per-test cursors (see _db.ts +
-  // spec headers) and the destructive password-reset describe in
-  // auth.spec.ts uses a dedicated seeded user so it can't kick concurrent
-  // sign-ins. CI runs 2 workers (matches the 2 vCPUs on ubuntu-latest);
-  // local defaults to half CPU count.
-  workers: process.env.CI ? 2 : undefined,
+  // Single-worker mode: a parallel-worker race between onboarding.spec.ts and
+  // staff.spec.ts on the shared seeded staff (Maya/Jordan/Sam) caused flaky
+  // failures. Option 3 (per-spec staff namespace) introduced its own pollution
+  // problems. Until either a proper namespace refactor (runtime fixtures) or a
+  // Playwright project-dependency setup lands, workers=1 keeps the suite
+  // deterministic. See specs/012-user-onboarding for context.
+  workers: 1,
   reporter: "html",
   // Per-test budget. Local timeout is generous (60s) because parallel
   // workers contending on the Next.js prod server can stretch a single
