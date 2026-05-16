@@ -4,7 +4,6 @@ import "@/styles/dashboard.css";
 import type { ReactNode } from "react";
 
 import { Sparkles } from "lucide-react";
-import Script from "next/script";
 
 import { OperatorChip } from "@/components/lacquer/operator-chip";
 import { OperatorMenu } from "@/components/lacquer/operator-menu";
@@ -13,12 +12,12 @@ import { StudioSidebar } from "@/components/lacquer/sidebar/studio-sidebar";
 import { Toaster } from "@/components/ui/sonner";
 import { getStudioSessionOrDegraded } from "@/lib/auth/session";
 
-export const dynamic = "force-dynamic";
+// Sidebar pre-paint script — lives in `app/layout.tsx`. Next.js `<Script
+// strategy="beforeInteractive">` is only supported in the root layout per the
+// Next.js docs; placing it here caused a runtime crash on nested routes
+// (e.g. /settings/staff).
 
-// Pre-paint script — sets the collapsed attribute on <html> from localStorage
-// BEFORE first paint so the grid renders at the right width with no flash.
-// Body is a self-contained build-time literal: no user-supplied content.
-const SIDEBAR_INIT_SCRIPT = `(function(){try{var v=localStorage.getItem("tn:studio:sidebar-collapsed")==="1";document.documentElement.setAttribute("data-studio-sidebar-collapsed",v?"true":"false");}catch(e){document.documentElement.setAttribute("data-studio-sidebar-collapsed","false");}})();`;
+export const dynamic = "force-dynamic";
 
 export default async function StudioLayout({ children }: Readonly<{ children: ReactNode }>) {
   const session = await getStudioSessionOrDegraded();
@@ -34,9 +33,6 @@ export default async function StudioLayout({ children }: Readonly<{ children: Re
 
   return (
     <>
-      <Script id="studio-sidebar-init" strategy="beforeInteractive">
-        {SIDEBAR_INIT_SCRIPT}
-      </Script>
       <div className="studio-shell">
         <aside className="studio-sidebar" aria-label="Studio navigation" id="studio-sidebar">
           <StudioSidebar staff={staff} degraded={degraded} />

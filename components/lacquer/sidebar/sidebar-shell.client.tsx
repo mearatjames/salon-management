@@ -37,19 +37,23 @@ export type SidebarShellProps = {
   children?: ReactNode;
 };
 
-// `localStorage` key + DOM attribute contract for collapse persistence — see
-// specs/007-left-panel-nav/research.md § R3. The pre-paint init script in
-// `app/(studio)/layout.tsx` seeds `<html data-studio-sidebar-collapsed>` from
-// the stored value before first paint; this component is the runtime owner.
-const STORAGE_KEY = "tn:studio:sidebar-collapsed";
+// DOM attribute + cookie contract for collapse persistence. The cookie
+// (`tn-studio-sidebar-collapsed=1|0`) is read by `app/layout.tsx` on the
+// server so `<html data-studio-sidebar-collapsed>` ships with the correct
+// initial value — no inline init script, no hydration mismatch. The toggle
+// writes the cookie via `document.cookie`; this component is the runtime owner
+// of the `<html>` attribute.
+const COOKIE_NAME = "tn-studio-sidebar-collapsed";
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // one year
 const ATTR = "data-studio-sidebar-collapsed";
 
 // `useSyncExternalStore` keeps the toggle's icon in lockstep with the `<html>`
 // attribute (the single source of truth) without triggering the
-// `react-hooks/set-state-in-effect` lint rule, and without producing a
-// hydration mismatch — `getServerSnapshot` returns the SSR default (false),
-// and the client snapshot reads the attribute that the pre-paint init script
-// has already seeded.
+// `react-hooks/set-state-in-effect` lint rule. `getServerSnapshot` reads from
+// `document` is impossible on the server, so we return `false`; on the
+// client, `getSnapshot` reads the attribute that the root layout has already
+// rendered from the cookie — so the very first client snapshot matches what
+// the user actually has persisted, and the icon renders correctly.
 function subscribeToCollapsedAttr(onChange: () => void): () => void {
   const observer = new MutationObserver(onChange);
   observer.observe(document.documentElement, {
@@ -128,11 +132,9 @@ export function SidebarShell({ children }: SidebarShellProps) {
     // change back into React via useSyncExternalStore, so the icon swap and
     // the CSS-driven grid resize fire from the same source of truth.
     document.documentElement.setAttribute(ATTR, String(next));
-    try {
-      window.localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
-    } catch {
-      // Safari private mode etc. — preference reverts on reload, which is fine.
-    }
+    // Persist via cookie so the root layout can SSR the correct attribute on
+    // the next request — no inline init script, no flash, no hydration diff.
+    document.cookie = `${COOKIE_NAME}=${next ? "1" : "0"}; path=/; max-age=${COOKIE_MAX_AGE}; samesite=lax`;
   };
 
   return (
