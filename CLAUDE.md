@@ -31,6 +31,23 @@ Before claiming a UI task complete:
 - Confirm every value used (color, spacing, radius, shadow) traces back to a token.
 - Run the design-system preview HTML files (`design-system/preview/*.html`) in a browser if you need to eyeball the canonical look.
 
+## Pre-push quality gates
+
+Before `git push` (or before claiming any feature done), run the full local
+gate set — CI runs the same commands and a missed one will bounce the PR.
+Run them in this order so the cheapest checks fail fast:
+
+1. `npm run format:check` — Prettier. Fix with `npm run format`.
+2. `npm run lint` — ESLint.
+3. `npm run typecheck` — `tsc --noEmit`.
+4. `npm test` — Vitest unit suite.
+5. `npm run test:e2e` — Playwright against a local Supabase. Use
+   `--workers=1` for the full suite to avoid `audit_log` truncate races
+   between spec files.
+
+All five MUST be green locally. Constitution v1.0.2 § Development Workflow
+& Quality Gates is the authority.
+
 ## Stack reminder
 
 Next.js 16 (App Router, RSC + Server Actions) · Vercel · Supabase (Postgres/RLS, Auth, Realtime, Storage) · Square SDK (server-side) · shadcn/ui + Tailwind + Lucide. See `docs/system-design.md` for the full picture.

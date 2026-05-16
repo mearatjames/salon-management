@@ -1,6 +1,21 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change: 1.0.1 → 1.0.2
+Bump rationale: PATCH — clarification of an existing CI gate. The "CI gates"
+  bullet in § Development Workflow & Quality Gates already required type
+  checking, Vitest, and Playwright, but omitted `npm run format:check` and
+  `npm run lint`. The repo's CI workflow runs both and PR #6 (006-staff-management)
+  was bounced for a format-check failure that should have been caught locally
+  before push. This amendment names every CI command explicitly so the same
+  miss can't repeat. No principle, section, or governance rule changed; the
+  underlying CI behavior is unchanged.
+
+Templates requiring updates: none — quality-gate enumeration only touches
+  CLAUDE.md (synced in the same change set with a "Pre-push quality gates"
+  block).
+
+--- Prior entry (1.0.1) -------------------------------------------------------
 Version change: 1.0.0 → 1.0.1
 Bump rationale: PATCH — non-semantic factual correction. The preamble named the
   web framework as "Next.js 15"; the scaffolding feature (001) generated the repo
@@ -177,9 +192,12 @@ creep is the primary risk to shipping a single integrated tool the salon can ado
 - **Design-system sync.** When the live Lacquer project changes, the re-exported handoff
   replaces `design-system/` and propagates to `styles/tokens.css` and
   `components/lacquer/*` in a single commit — never partially.
-- **CI gates.** Every PR MUST pass: type checking, the Vitest unit suite, and the
-  Playwright e2e suite against a seeded local Supabase. PRs touching payments, auth, or
-  audit logging additionally require a reviewer to confirm Principles II, III, and IV.
+- **CI gates.** Every PR MUST pass the full local gate set before push, in this order:
+  `npm run format:check`, `npm run lint`, `npm run typecheck`, `npm test` (Vitest unit
+  suite), and `npm run test:e2e` against a seeded local Supabase. CI runs the same
+  commands; a green local run is the contract that the PR will not bounce on a
+  formatting or lint nit. PRs touching payments, auth, or audit logging additionally
+  require a reviewer to confirm Principles II, III, and IV.
 - **Review.** Code review MUST verify constitution compliance. A reviewer cites the
   specific principle when requesting changes. Unjustified complexity is grounds for
   rejection.
@@ -204,4 +222,4 @@ creep is the primary risk to shipping a single integrated tool the salon can ado
 - **Runtime guidance.** Use `CLAUDE.md` and `docs/system-design.md` for day-to-day
   implementation guidance; this constitution is the stable layer above them.
 
-**Version**: 1.0.1 | **Ratified**: 2026-05-13 | **Last Amended**: 2026-05-13
+**Version**: 1.0.2 | **Ratified**: 2026-05-13 | **Last Amended**: 2026-05-15
