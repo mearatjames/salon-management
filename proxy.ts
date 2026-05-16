@@ -101,7 +101,15 @@ export const config = {
   // Matcher excludes the public auth surfaces, the kiosk path, Square
   // webhook endpoint, Next.js internals, the favicon, and anything with a
   // file extension (static assets). Anything else hits the proxy.
+  //
+  // `reset-password` is added by 010-login-redesign US3 (FR-014..FR-018):
+  // the recovery landing page must be reachable by a user whose PKCE
+  // exchange just established a Supabase session but has NOT yet set the
+  // operator cookie. Without this exemption the user is bounced to
+  // /select-staff before they can submit the new password. The routes
+  // contract (specs/010-login-redesign/contracts/routes.contract.md
+  // § Cross-route invariants) anticipates this exemption.
   matcher: [
-    "/((?!login|select-staff|auth/.*|kiosk/.*|api/webhooks/.*|_next/.*|favicon.ico|.*\\..*).*)",
+    "/((?!login|select-staff|reset-password|auth/.*|kiosk/.*|api/webhooks/.*|_next/.*|favicon.ico|.*\\..*).*)",
   ],
 };

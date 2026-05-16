@@ -1,29 +1,24 @@
 // `/login` — public sign-in page (FR-005 short-circuit applies).
 //
-// Pre-redirect logic:
+// Pre-redirect logic (preserved verbatim from 003-login-flow — guards
+// FR-005 of 003 and US5 of 010-login-redesign):
 //   (a) Supabase user present AND operator cookie verifies →
 //       redirect(sanitizeNext(next)). User is fully authed; skip /select-staff.
 //   (b) Supabase user present but cookie missing/expired/tampered →
 //       redirect('/select-staff?next=...').
-//   (c) Otherwise render the auth card.
+//   (c) Otherwise resolve the active view from the URL and render.
 //
-// Renders (US1 + US4):
-//   - The headline (provided by the auth layout's brand mark, then this h1).
-//   - `<LoginForm next={next} />` — the primary password path.
-//   - `<GoogleSignInButton next={next} />` — visible only when
-//     `NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED === 'true'` (the component itself
-//     gates on the flag; we gate the `.auth-divider` here so the "or"
-//     separator doesn't render with nothing beneath it).
-//   - `<MagicLinkControl next={next} sentTo={magicSent} />` — subordinate
-//     text-link that expands to a one-field magic-link form. When
-//     `searchParams.magic_sent` is present, the control renders the
-//     "Check your email" confirmation instead.
-//   - Inline `<Alert variant="destructive">` for `?error=invalid`,
-//     `?error=network`, or `?error=oauth_failed`.
+// View selection (per routes.contract.md § View selection precedence):
+//   ?reset_sent=<email>   → <ForgotSentView />
+//   ?reset_intent=1       → <ForgotView />
+//   ?magic_sent=<email>   → <MagicSentView />
+//   ?magic_intent=1       → <MagicView />
+//   otherwise             → <SignInView />
 //
-// Important: when `magic_sent` is present, the password form STILL renders.
-// The confirmation appears alongside, not as a replacement — so the user can
-// keep trying the password if they prefer.
+// In Phase 2 only the <SignInView> branch is functionally complete; the
+// other four are stubs that render an empty pane (US3 / US4 land their
+// real contents in Phases 5 + 6). The page wires the active view's
+// props (`next`, `error`, `email`) through unchanged.
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
@@ -35,17 +30,21 @@ import {
 } from "@/lib/auth/cookie";
 import { sanitizeNext } from "@/lib/auth/next-url";
 import {
-  GoogleSignInButton,
-  isGoogleSignInEnabled,
-} from "@/components/lacquer/google-sign-in-button";
-import { LoginForm } from "@/components/lacquer/login-form";
-import { MagicLinkControl } from "@/components/lacquer/magic-link-control";
-import { Alert } from "@/components/ui/alert";
+  AuthClientRouter,
+  ForgotSentView,
+  ForgotView,
+  MagicSentView,
+  MagicView,
+  SignInView,
+} from "@/components/lacquer/auth-views";
 import { createSupabaseServerClient } from "@/lib/db/server";
 
 type LoginSearchParams = {
   next?: string | string[];
   error?: string | string[];
+  reset_intent?: string | string[];
+  reset_sent?: string | string[];
+  magic_intent?: string | string[];
   magic_sent?: string | string[];
 };
 
@@ -66,9 +65,14 @@ export default async function LoginPage({
   const params = await searchParams;
   const next = pickString(params.next);
   const error = pickString(params.error);
+  const resetIntent = pickString(params.reset_intent);
+  const resetSent = pickString(params.reset_sent);
+  const magicIntent = pickString(params.magic_intent);
   const magicSent = pickString(params.magic_sent);
 
-  // Pre-redirect (FR-005).
+  // Pre-redirect (FR-005). Preserved verbatim from 003-login-flow —
+  // see top-of-file note. Do NOT collapse / refactor this block; the
+  // sequencing of the operator-cookie probe is load-bearing for US5.
   if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     try {
       const supabase = await createSupabaseServerClient();
@@ -113,34 +117,22 @@ export default async function LoginPage({
     }
   }
 
-  return (
-    <>
-      <h1 className="auth-headline">Sign in to Tang Nails Studio</h1>
-
-      {error === "invalid" && <Alert variant="destructive">Email or password is incorrect.</Alert>}
-      {error === "network" && (
-        <Alert variant="destructive">
-          Couldn&apos;t sign you in. Check your connection and try again.
-        </Alert>
-      )}
-      {error === "oauth_failed" && (
-        <Alert variant="destructive">
-          We couldn&apos;t complete that sign-in. Try again or use your password.
-        </Alert>
-      )}
-
-      <LoginForm next={next} />
-
-      {isGoogleSignInEnabled && (
-        <>
-          <div className="auth-divider" role="separator" aria-label="or">
-            <span>or</span>
-          </div>
-          <GoogleSignInButton next={next} />
-        </>
-      )}
-
-      <MagicLinkControl next={next} sentTo={magicSent} />
-    </>
-  );
+  // View selection — precedence per routes.contract.md. The server
+  // picks the initial view from URL params; the <AuthClientRouter>
+  // wrapper takes over on hydration to swap views in-place when the
+  // user clicks an internal `/login?...` link or hits back/forward —
+  // see T062 + research.md R1.
+  let initialView;
+  if (resetSent !== undefined) {
+    initialView = <ForgotSentView email={resetSent} next={next} />;
+  } else if (resetIntent !== undefined) {
+    initialView = <ForgotView next={next} error={error} />;
+  } else if (magicSent !== undefined) {
+    initialView = <MagicSentView email={magicSent} next={next} />;
+  } else if (magicIntent !== undefined) {
+    initialView = <MagicView next={next} error={error} />;
+  } else {
+    initialView = <SignInView next={next} error={error} />;
+  }
+  return <AuthClientRouter>{initialView}</AuthClientRouter>;
 }

@@ -79,8 +79,8 @@ async function removeArchivedSeed(): Promise<void> {
 // (display name "Maya Patel", PIN 1234, linked to owner@tangnails.dev).
 async function signInAsMaya(page: import("@playwright/test").Page) {
   await page.goto("/login?next=%2Fservices");
-  await page.locator("#email").fill("owner@tangnails.dev");
-  await page.getByLabel("Password").fill("tang-nails-dev");
+  await page.locator("#signin-email").fill("owner@tangnails.dev");
+  await page.locator("#signin-password").fill("tang-nails-dev");
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/select-staff\?next=/);
   await page.getByRole("button", { name: /Maya Patel/ }).click();
@@ -1145,8 +1145,8 @@ test.describe("US5: variable-price services with bounds and a note", () => {
 // PIN 9999. The signed-in result is a technician-role studio session.
 async function signInAsSamOnServicesPage(page: import("@playwright/test").Page) {
   await page.goto("/login?next=%2Fservices");
-  await page.locator("#email").fill("owner@tangnails.dev");
-  await page.getByLabel("Password").fill("tang-nails-dev");
+  await page.locator("#signin-email").fill("owner@tangnails.dev");
+  await page.locator("#signin-password").fill("tang-nails-dev");
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/select-staff\?next=/);
   await page.getByRole("button", { name: /Sam Chen/ }).click();

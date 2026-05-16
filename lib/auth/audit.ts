@@ -33,6 +33,8 @@ export type AuditAction =
   | "staff.signed_in"
   | "staff.pin_failed"
   | "staff.switched"
+  // Added by feature 010 (entity_type "auth")
+  | "device.password_reset"
   // Added by feature 006 (entity_type "staff")
   | "staff.added"
   | "staff.updated"

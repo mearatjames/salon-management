@@ -19,6 +19,9 @@ const eslintConfig = defineConfig([
     "playwright-report/**",
     "test-results/**",
     "coverage/**",
+    // Local git worktrees (sibling feature branches checked out under
+    // .worktrees/<branch>) — not part of this branch's source tree.
+    ".worktrees/**",
   ]),
   // Must be last: disables ESLint rules that conflict with Prettier.
   prettier,

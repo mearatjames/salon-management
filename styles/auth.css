@@ -1,35 +1,413 @@
 /* ==========================================================================
-   Tang Nails — Auth surfaces (`/login`, `/select-staff`, studio operator chip)
+   Tang Nails — Auth surfaces (`/login`, `/reset-password`, `/select-staff`,
+   studio operator chip).
    Every value MUST resolve to a `var(--*)` from `styles/tokens.css`.
    Spacing scale: 4/8/12/16/20/24/32/40/48/64. Radii: 4 inputs, 6 buttons,
    8 chips, 12 cards, 16 sheets/dialogs, 999 pills. Constitution Principle I.
+
+   This file is the home of:
+     • The two-panel shell (`.auth-shell`, `.auth-brand-panel`,
+       `.auth-form-panel`, `.auth-form-well`) introduced by 010-login-redesign.
+     • The five-view UI state machine pieces (`.auth-view-pane` with the
+       reduced-motion-gated `viewIn` keyframe, `.auth-form-header`,
+       `.auth-form-title`, `.auth-form-subtitle`, `.auth-form-body`,
+       `.auth-field`, `.auth-field-row`, `.auth-text-input`,
+       `.auth-input-wrap`, `.auth-suffix-btn`, `.auth-btn` family,
+       `.auth-divider`, `.auth-link-btn`, `.auth-back-btn`, `.auth-alert`,
+       `.auth-confirm-card`, `.auth-solo-mark`).
+     • The `/select-staff` keypad surfaces (`.auth-keypad*`,
+       `.auth-staff-tile`, `.auth-roster`) — untouched by 010 per FR-026.
    ========================================================================== */
 
 /* ---------- Shell ---------- */
 .auth-shell {
+  display: grid;
+  grid-template-columns: 1fr 480px;
   min-height: 100dvh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-6);
   background: var(--background);
   color: var(--foreground);
 }
+.auth-shell.auth-shell-centered {
+  grid-template-columns: 1fr;
+}
 
-/* ---------- Card ---------- */
-.auth-card {
-  width: 100%;
-  max-width: 420px;
-  background: var(--card);
-  color: var(--card-foreground);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xl); /* 16 — sheets/dialogs/cards */
-  box-shadow: var(--shadow-md);
-  padding: var(--space-8);
+/* ---------- Brand panel ---------- */
+.auth-brand-panel {
+  background: var(--rose-50);
+  border-right: 1px solid var(--rose-100);
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  padding: var(--space-10) var(--space-12);
+  position: relative;
+  overflow: hidden;
 }
+.dark .auth-brand-panel {
+  background: var(--card);
+  border-right-color: var(--border);
+}
+
+.auth-brand-deco {
+  position: absolute;
+  width: 380px;
+  height: 380px;
+  top: -90px;
+  right: -70px;
+  opacity: 0.075;
+  pointer-events: none;
+}
+.dark .auth-brand-deco {
+  opacity: 0.05;
+}
+
+.auth-brand-deco-2 {
+  position: absolute;
+  width: 160px;
+  height: 160px;
+  bottom: 48px;
+  right: 40px;
+  opacity: 0.045;
+  pointer-events: none;
+  transform: rotate(18deg);
+}
+.dark .auth-brand-deco-2 {
+  opacity: 0.03;
+}
+
+.auth-brand-wordmark {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  position: relative;
+  z-index: 1;
+}
+.auth-brand-name {
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-snug);
+}
+
+.auth-brand-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding-bottom: var(--space-16);
+  position: relative;
+  z-index: 1;
+}
+.auth-brand-tagline {
+  font-size: var(--text-4xl);
+  font-weight: 600;
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  max-width: 380px;
+}
+.auth-brand-sub {
+  margin-top: var(--space-4);
+  font-size: var(--text-md);
+  color: var(--muted-foreground);
+  line-height: var(--leading-normal);
+  max-width: 340px;
+}
+
+/* ---------- Form panel ---------- */
+.auth-form-panel {
+  background: var(--card);
+  border-left: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-12) var(--space-10);
+  min-height: 100dvh;
+}
+.auth-shell.auth-shell-centered .auth-form-panel {
+  border-left: none;
+}
+
+.auth-form-well {
+  width: 100%;
+  max-width: 360px;
+}
+
+/* ---------- View transitions ---------- */
+.auth-view-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .auth-view-pane {
+    animation: viewIn var(--duration-base) var(--ease-out);
+  }
+
+  @keyframes viewIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+/* ---------- Form pieces ---------- */
+.auth-form-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.auth-form-title {
+  font-size: var(--text-3xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-snug);
+  line-height: var(--leading-snug);
+}
+.auth-form-subtitle {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.auth-form-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.auth-field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.auth-form-well label {
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.auth-text-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-xs);
+  background: var(--background);
+  font-size: var(--text-base);
+  font-family: var(--font-sans);
+  color: var(--foreground);
+  outline: none;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+.auth-text-input::placeholder {
+  color: var(--muted-foreground);
+}
+.auth-text-input:focus {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 18%, transparent);
+}
+.auth-text-input.auth-text-input-suffixed {
+  padding-right: 40px;
+}
+
+.auth-input-wrap {
+  position: relative;
+}
+.auth-suffix-btn {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.auth-suffix-btn:hover {
+  color: var(--foreground);
+}
+
+.auth-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 40px;
+  padding: 0 var(--space-4);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
+  font-weight: 500;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  white-space: nowrap;
+  width: 100%;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.auth-btn-primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.auth-btn-primary:hover {
+  background: color-mix(in oklch, var(--primary) 88%, black);
+}
+.auth-btn-outline {
+  background: transparent;
+  color: var(--foreground);
+  border-color: var(--border);
+}
+.auth-btn-outline:hover {
+  background: var(--accent);
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.auth-link-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  color: var(--muted-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color var(--duration-fast) var(--ease-out);
+  padding: 0;
+  line-height: inherit;
+}
+.auth-link-btn:hover {
+  color: var(--foreground);
+}
+.auth-link-btn.auth-link-btn-xs {
+  font-size: var(--text-xs);
+}
+.auth-link-btn.auth-link-btn-sm {
+  font-size: var(--text-sm);
+}
+
+.auth-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  padding: 0;
+  margin-bottom: var(--space-6);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.auth-back-btn:hover {
+  color: var(--foreground);
+}
+
+.auth-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+}
+.auth-alert-error {
+  background: color-mix(in oklch, var(--destructive) 8%, transparent);
+  color: var(--destructive);
+  border: 1px solid color-mix(in oklch, var(--destructive) 22%, transparent);
+}
+
+.auth-confirm-card {
+  padding: var(--space-5);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.auth-confirm-card p {
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  overflow-wrap: anywhere;
+}
+.auth-confirm-card p.auth-confirm-note {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+.auth-confirm-card strong {
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+/* Solo wordmark (rendered above the form well when the brand panel is
+   collapsed at < 720px viewports). */
+.auth-solo-mark {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-10);
+}
+.auth-solo-mark-name {
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-snug);
+}
+
+/* ---------- Responsive collapse (< 720px) ---------- */
+@media (max-width: 720px) {
+  .auth-shell {
+    grid-template-columns: 1fr !important;
+  }
+  .auth-brand-panel {
+    display: none !important;
+  }
+  .auth-form-panel {
+    border-left: none;
+  }
+  .auth-solo-mark {
+    display: flex;
+  }
+}
+
+/* ==========================================================================
+   /select-staff surfaces — untouched by 010-login-redesign per FR-026.
+   The keypad / roster / staff-tile rules below ship unchanged; the small
+   shared utilities (`.auth-headline`, `.auth-form-row`,
+   `.auth-form-actions`) are kept here because `/select-staff/page.tsx`
+   still references them and FR-026 forbids touching that DOM.
+   ========================================================================== */
 
 /* ---------- Headline ---------- */
 .auth-headline {
@@ -41,7 +419,7 @@
   margin: 0;
 }
 
-/* ---------- Form layout ---------- */
+/* ---------- Form-row + actions utilities ---------- */
 .auth-form-row {
   display: flex;
   flex-direction: column;
@@ -53,89 +431,6 @@
   flex-direction: column;
   gap: var(--space-3);
   margin-top: var(--space-2);
-}
-
-/* ---------- Divider ("or" badge between password and providers) ---------- */
-.auth-divider {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: var(--space-5);
-  color: var(--muted-foreground);
-  font-size: var(--text-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-}
-
-.auth-divider::before,
-.auth-divider::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: var(--border);
-}
-
-.auth-divider > span {
-  padding: 0 var(--space-3);
-  background: var(--card);
-}
-
-/* ---------- Subordinate magic-link control ---------- */
-.auth-magic-link {
-  font-size: var(--text-sm);
-  color: var(--muted-foreground);
-  text-align: center;
-  text-decoration: underline;
-  text-underline-offset: var(--space-1);
-  background: transparent;
-  border: 0;
-  padding: var(--space-2);
-  cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-out);
-}
-
-.auth-magic-link:hover {
-  color: var(--foreground);
-}
-
-/* `<summary>` overrides — strip the default disclosure triangle so the
-   subordinate text-link looks visually unified across browsers. */
-.auth-magic-link-details > summary {
-  list-style: none;
-  cursor: pointer;
-}
-
-.auth-magic-link-details > summary::-webkit-details-marker {
-  display: none;
-}
-
-/* When the form is revealed, give it a calm vertical rhythm matching
-   `.auth-form-row` spacing in `LoginForm`. */
-.auth-magic-link-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-/* "Check your email" confirmation card — same border + radius family as
-   `.auth-card` but inset so it visually nests inside the parent card. */
-.auth-magic-sent {
-  border: 1px solid var(--border);
-  background: var(--muted);
-  color: var(--foreground);
-  border-radius: var(--radius-lg); /* 12 — small card */
-  padding: var(--space-4);
-}
-
-/* ---------- Provider button (Google "Continue with") ---------- */
-.auth-provider-btn {
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  min-height: var(--space-10);
 }
 
 /* ---------- Roster (responsive grid of staff tiles) ---------- */

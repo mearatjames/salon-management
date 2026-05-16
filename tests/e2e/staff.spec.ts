@@ -62,8 +62,8 @@ async function supabaseIsReachable(): Promise<boolean> {
 // owner staff row).
 async function signInAsMaya(page: import("@playwright/test").Page) {
   await page.goto("/login?next=%2Fsettings%2Fstaff");
-  await page.locator("#email").fill("owner@tangnails.dev");
-  await page.getByLabel("Password").fill("tang-nails-dev");
+  await page.locator("#signin-email").fill("owner@tangnails.dev");
+  await page.locator("#signin-password").fill("tang-nails-dev");
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/select-staff\?next=/);
   await page.getByRole("button", { name: /Maya Patel/ }).click();
@@ -884,8 +884,8 @@ test.describe("US5: deactivate, reactivate, remove", () => {
 // makes /settings/staff the target of a later page.goto().
 async function signInAsSam(page: import("@playwright/test").Page) {
   await page.goto("/login?next=%2Fdashboard");
-  await page.locator("#email").fill("owner@tangnails.dev");
-  await page.getByLabel("Password").fill("tang-nails-dev");
+  await page.locator("#signin-email").fill("owner@tangnails.dev");
+  await page.locator("#signin-password").fill("tang-nails-dev");
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/select-staff\?next=/);
   await page.getByRole("button", { name: /Sam Chen/ }).click();
@@ -901,8 +901,8 @@ async function signInAsSam(page: import("@playwright/test").Page) {
 // the seed; PIN 5678.
 async function signInAsJordan(page: import("@playwright/test").Page) {
   await page.goto("/login?next=%2Fsettings%2Fstaff");
-  await page.locator("#email").fill("manager@tangnails.dev");
-  await page.getByLabel("Password").fill("tang-nails-dev");
+  await page.locator("#signin-email").fill("manager@tangnails.dev");
+  await page.locator("#signin-password").fill("tang-nails-dev");
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/select-staff\?next=/);
   await page.getByRole("button", { name: /Jordan Lee/ }).click();

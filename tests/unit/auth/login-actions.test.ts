@@ -55,9 +55,11 @@ vi.mock("@/lib/auth/audit", () => ({
   recordAuth: vi.fn(async () => undefined),
 }));
 
+import { AuthRetryableFetchError } from "@supabase/supabase-js";
+
 import { createSupabaseServerClient } from "@/lib/db/server";
 
-import { signInWithMagicLink } from "@/app/(auth)/login/actions";
+import { sendPasswordReset, signInWithMagicLink } from "@/app/(auth)/login/actions";
 
 type Mocked<T> = T & ReturnType<typeof vi.fn>;
 
@@ -231,5 +233,202 @@ describe("signInWithMagicLink — FR-019: always redirect to ?magic_sent regardl
     expect(url).toContain("/login?error=invalid");
     // SDK never called when email is empty.
     expect(signInWithOtp).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sendPasswordReset (US3 / 010-login-redesign)
+//
+// Mirrors the magic-link enumeration parity: every outcome — success,
+// unknown email, AuthRetryableFetchError, generic SDK throw — MUST land on
+// `/login?reset_sent=<encoded-email>&next=<encoded-next>`. The single
+// permitted divergence is the empty-email defensive branch, which redirects
+// to `/login?error=invalid&reset_intent=1&next=<encoded>`.
+// ---------------------------------------------------------------------------
+
+/** Build a fake Supabase client whose `auth.resetPasswordForEmail` is a `vi.fn()`. */
+function mockSupabaseReset(
+  resetImpl: (
+    email: string,
+    options: { redirectTo?: string }
+  ) => Promise<{ data: unknown; error: unknown }> = async () => ({
+    data: {},
+    error: null,
+  })
+) {
+  const resetPasswordForEmail = vi.fn(async (email: string, options: { redirectTo?: string }) =>
+    resetImpl(email, options)
+  );
+  (createSupabaseServerClient as unknown as Mocked<() => Promise<unknown>>).mockResolvedValue({
+    auth: { resetPasswordForEmail },
+  });
+  return { resetPasswordForEmail };
+}
+
+describe("sendPasswordReset — FR-015 / Invariant 6: always redirect to ?reset_sent regardless of SDK outcome", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  type Case = {
+    name: string;
+    setup: () => void;
+    expectSpyCalled?: boolean;
+  };
+
+  const cases: Case[] = [
+    {
+      name: "success (registered email)",
+      setup: () => mockSupabaseReset(async () => ({ data: {}, error: null })),
+    },
+    {
+      name: "unknown email (SDK returns error-shaped object)",
+      setup: () =>
+        mockSupabaseReset(async () => ({
+          data: null,
+          error: { name: "AuthApiError", message: "User not found", status: 400 },
+        })),
+    },
+    {
+      name: "AuthRetryableFetchError (network)",
+      setup: () =>
+        mockSupabaseReset(async () => {
+          throw new AuthRetryableFetchError("network blip", 0);
+        }),
+      expectSpyCalled: true,
+    },
+    {
+      name: "generic SDK throw",
+      setup: () =>
+        mockSupabaseReset(async () => {
+          throw new Error("unexpected sdk failure");
+        }),
+      expectSpyCalled: true,
+    },
+  ];
+
+  for (const c of cases) {
+    it(`redirects to /login?reset_sent=<email>&next=<next> on ${c.name}`, async () => {
+      c.setup();
+      // Suppress the expected console.error for the throw cases.
+      const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+      let thrown: unknown;
+      try {
+        await sendPasswordReset(formData({ email: "owner@tangnails.dev", next: "/dashboard" }));
+      } catch (err) {
+        thrown = err;
+      }
+      const url = redirectUrlFrom(thrown);
+      expect(url).toContain("/login?reset_sent=");
+      expect(url).toContain(encodeURIComponent("owner@tangnails.dev"));
+      expect(url).toContain(`next=${encodeURIComponent("/dashboard")}`);
+
+      if (c.expectSpyCalled) {
+        expect(errSpy).toHaveBeenCalled();
+      }
+      errSpy.mockRestore();
+    });
+  }
+
+  it("calls supabase.auth.resetPasswordForEmail with redirectTo pointing at /auth/callback and carrying ?next=", async () => {
+    const { resetPasswordForEmail } = mockSupabaseReset();
+
+    try {
+      await sendPasswordReset(formData({ email: "owner@tangnails.dev", next: "/dashboard" }));
+    } catch {
+      // expected NEXT_REDIRECT
+    }
+
+    expect(resetPasswordForEmail).toHaveBeenCalledTimes(1);
+    const [email, options] = resetPasswordForEmail.mock.calls[0] as [
+      string,
+      { redirectTo?: string },
+    ];
+    expect(email).toBe("owner@tangnails.dev");
+    expect(options.redirectTo).toMatch(/^http:\/\/localhost:3000\/auth\/callback\?next=/);
+    expect(options.redirectTo).toContain(encodeURIComponent("/dashboard"));
+  });
+});
+
+describe("sendPasswordReset — empty-email defensive branch", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("redirects to /login?error=invalid&reset_intent=1&next=<next> when email is empty", async () => {
+    const { resetPasswordForEmail } = mockSupabaseReset();
+
+    let thrown: unknown;
+    try {
+      await sendPasswordReset(formData({ email: "", next: "/dashboard" }));
+    } catch (err) {
+      thrown = err;
+    }
+    const url = redirectUrlFrom(thrown);
+    expect(url).toContain("/login?error=invalid");
+    expect(url).toContain("reset_intent=1");
+    expect(url).toContain(`next=${encodeURIComponent("/dashboard")}`);
+    // SDK never called when email is empty.
+    expect(resetPasswordForEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("sendPasswordReset vs signInWithMagicLink — enumeration parity (Invariant 6 / R5)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("produces identically-shaped redirects for registered vs unknown emails", async () => {
+    // Registered email path.
+    mockSupabaseReset(async () => ({ data: {}, error: null }));
+    let registeredUrl = "";
+    try {
+      await sendPasswordReset(formData({ email: "owner@tangnails.dev", next: "/dashboard" }));
+    } catch (err) {
+      registeredUrl = redirectUrlFrom(err);
+    }
+
+    vi.clearAllMocks();
+    // Unknown email path — SDK returns an error-shaped object (Supabase's
+    // observed behaviour for unknown emails on resetPasswordForEmail).
+    mockSupabaseReset(async () => ({
+      data: null,
+      error: { name: "AuthApiError", message: "User not found", status: 400 },
+    }));
+    let unknownUrl = "";
+    try {
+      await sendPasswordReset(formData({ email: "nobody@example.com", next: "/dashboard" }));
+    } catch (err) {
+      unknownUrl = redirectUrlFrom(err);
+    }
+
+    // Both URLs start with the same path + ?reset_sent= prefix and have the
+    // same `next=` value. Only the encoded email differs — that's the
+    // user-supplied input and not a side channel.
+    const registeredParsed = new URL(registeredUrl, "http://localhost:3000");
+    const unknownParsed = new URL(unknownUrl, "http://localhost:3000");
+
+    expect(registeredParsed.pathname).toBe(unknownParsed.pathname);
+    expect(Array.from(registeredParsed.searchParams.keys()).sort()).toEqual(
+      Array.from(unknownParsed.searchParams.keys()).sort()
+    );
+    expect(registeredParsed.searchParams.get("next")).toBe(unknownParsed.searchParams.get("next"));
+    // The reset_sent param exists in both and reflects the user-supplied
+    // email — no surfacing of registered-vs-unknown distinction.
+    expect(registeredParsed.searchParams.get("reset_sent")).toBe("owner@tangnails.dev");
+    expect(unknownParsed.searchParams.get("reset_sent")).toBe("nobody@example.com");
   });
 });

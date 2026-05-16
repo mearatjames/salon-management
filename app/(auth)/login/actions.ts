@@ -123,6 +123,46 @@ export async function signInWithGoogle(formData: FormData): Promise<void> {
   redirect(providerUrl!);
 }
 
+export async function sendPasswordReset(formData: FormData): Promise<void> {
+  const email = String(formData.get("email") ?? "").trim();
+  const next = String(formData.get("next") ?? "");
+
+  // Empty email shouldn't reach us — the `forgot` view's input has `required`
+  // — but bounce defensively. Re-seed the forgot view via `reset_intent=1`
+  // so the alert renders there (not on the default sign-in view).
+  // (server-actions.contract.md § sendPasswordReset behaviour step 1.)
+  if (email.length === 0) {
+    redirect(`/login?error=invalid&reset_intent=1&next=${encodeNext(next)}`);
+  }
+
+  const origin = await getOrigin();
+  // Re-use the existing /auth/callback PKCE plumbing. Supabase appends
+  // `?type=recovery` to this URL automatically; the callback's recovery
+  // branch (T035) then forwards to /reset-password.
+  const redirectTo = `${origin}/auth/callback?next=${encodeNext(next)}`;
+
+  const supabase = await createSupabaseServerClient();
+
+  try {
+    await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+  } catch (err) {
+    // Defensive: even if the SDK throws (network blip, unknown email
+    // returns an error-shaped value, etc.), we MUST NOT leak whether the
+    // email exists. Fall through to the `reset_sent` redirect so the
+    // surface is identical for success / unknown-email / SDK-failure
+    // (Invariant 6 / research R5).
+    if (isNextRedirectError(err)) throw err;
+    // Intentionally swallow — log for forensic visibility only.
+    console.error("sendPasswordReset: SDK error swallowed (no-enum)", err);
+  }
+
+  // Invariant 6: always confirm "we sent a link" regardless of the SDK's
+  // response (Supabase returns success-shaped data for registered emails
+  // and an error-shaped response for unknown — we mirror both to the same
+  // redirect to defeat side-channel enumeration).
+  redirect(`/login?reset_sent=${encodeURIComponent(email)}&next=${encodeNext(next)}`);
+}
+
 export async function signInWithMagicLink(formData: FormData): Promise<void> {
   const email = String(formData.get("email") ?? "").trim();
   const next = String(formData.get("next") ?? "");
