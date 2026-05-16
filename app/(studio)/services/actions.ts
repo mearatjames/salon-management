@@ -265,12 +265,11 @@ export async function addService(formData: FormData): Promise<void> {
 
   // 8: revalidate + redirect. Per Clarifications Q4 the drawer stays open
   // and flips to Edit mode — that's achieved by adding `?selected=<newId>`.
-  // The `&secondary=no_techs_assigned` param is appended when no staff were
-  // assigned so the URL-toast bridge fires the secondary warning toast.
+  // The `&secondary=no_techs_assigned` nudge was removed alongside the
+  // staff-assignment UI; it has no actionable surface in the MVP.
   revalidatePath(SERVICES_PATH);
-  const secondarySuffix = assignments!.length === 0 ? "&secondary=no_techs_assigned" : "";
   redirect(
-    `${SERVICES_PATH}?selected=${encodeURIComponent(newId)}&toast=service_added&name=${encodeURIComponent(name!)}${secondarySuffix}`
+    `${SERVICES_PATH}?selected=${encodeURIComponent(newId)}&toast=service_added&name=${encodeURIComponent(name!)}`
   );
 }
 
@@ -636,13 +635,10 @@ export async function updateService(formData: FormData): Promise<void> {
     viewer.staff.id
   );
 
-  // 8: revalidate + redirect. Append `&secondary=no_techs_assigned` when
-  // the final assignment state has zero rows (FR-029 + Phase 9 toast bridge).
+  // 8: revalidate + redirect. The `&secondary=no_techs_assigned` nudge was
+  // removed alongside the staff-assignment UI (FR-029 deferred to next phase).
   revalidatePath(SERVICES_PATH);
-  const secondarySuffix = draftAssignments!.length === 0 ? "&secondary=no_techs_assigned" : "";
-  redirect(
-    `${SERVICES_PATH}?selected=${encodeURIComponent(serviceId!)}&toast=changes_saved${secondarySuffix}`
-  );
+  redirect(`${SERVICES_PATH}?selected=${encodeURIComponent(serviceId!)}&toast=changes_saved`);
 }
 
 // ── 3. archiveService ────────────────────────────────────────────────────

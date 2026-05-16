@@ -1089,23 +1089,6 @@ test.describe("US7: toasts", () => {
   });
 
   test("(b) ?toast=changes_saved fires 'Changes saved'", async ({ page }) => {
-    // KNOWN PRE-EXISTING FLAKE (any test in this describe block can bounce;
-    // (a), (b), and others have all been seen failing). Verified 2026-05-15
-    // by running this describe block from a clean DB on `main` — same
-    // `[data-sonner-toast]` not-found timeout, same hydration-mismatch
-    // warning pointing at `OperatorChip` / `OperatorMenu` in the studio
-    // topbar. Root cause: `DropdownMenuTrigger` (Radix) calls React
-    // `useId()`; when the second `page.goto(?toast=...)` arrives while the
-    // first PIN-redirect page is still hydrating, the client id counter
-    // diverges from the server-rendered id, React aborts hydration on the
-    // staff page, and `StaffToaster`'s `useEffect` never fires — so the
-    // Sonner toast is never queued.
-    //
-    // This is NOT a feature 008-services-catalog regression: the Phase 8
-    // staff-page inline role gate never redirects here (Maya is owner). CI
-    // hides the flake via `retries: 2`. A proper structural fix lives in
-    // components/lacquer/operator-menu.tsx (wrap in Suspense or stabilize
-    // the trigger id), out of scope for 008. Re-run locally if it bounces.
     await signInAsMaya(page);
     await page.goto("/settings/staff?toast=changes_saved");
 

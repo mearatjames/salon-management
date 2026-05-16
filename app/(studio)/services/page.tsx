@@ -28,12 +28,11 @@ import { PageHeader } from "@/components/lacquer/services/page-header";
 import { ServicesToaster } from "@/components/lacquer/services/services-toaster.client";
 import { loadServiceWithAssignments } from "@/app/(studio)/services/_load";
 import type {
-  AssignableStaff,
   AvatarColorToken,
   CatalogService,
   ServiceDraftBaseline,
 } from "@/app/(studio)/services/_types";
-import { requireStudioSession, type StudioRole } from "@/lib/auth/session";
+import { requireStudioSession } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/db/server";
 
 export const dynamic = "force-dynamic";
@@ -178,14 +177,6 @@ export default async function ServicesPage({
     assignment_count: assignmentCountByService.get(row.id) ?? 0,
   }));
 
-  const assignableStaff: AssignableStaff[] = (staffRes.data ?? []).map((row) => ({
-    id: row.id,
-    display_name: row.display_name,
-    role: row.role as StudioRole,
-    color_token: row.color_token,
-    active: true as const,
-  }));
-
   // Per-service assignment rows for the `?selected=` id. Always an array
   // (possibly empty) when `?selected=` is set so `loadServiceWithAssignments`
   // can build the baseline; `null` when `?selected=` is absent so we don't
@@ -240,7 +231,6 @@ export default async function ServicesPage({
       <Drawer
         mode={drawerMode}
         baseline={drawerBaseline}
-        assignableStaff={assignableStaff}
         categories={categories}
         operatorRole={viewer.staff.role}
       />

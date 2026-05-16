@@ -4,8 +4,11 @@
 //   - service name
 //   - duration pill (e.g. "45 min")
 //   - price pill (via `formatPriceLabel`)
-//   - tech-count pill ("{N} techs" or "No techs" in the warning tone)
 //   - Archived badge (when `active === false`)
+//
+// The tech-count pill is deferred to a later phase — assignment tracking
+// stays in the data model but the UI affordance is hidden until staff
+// assignment is reintroduced.
 //
 // The row is rendered as a child of a `<Link>` (the parent list owns the
 // href + keyboard activation) — keeping the visual a pure server component
@@ -26,7 +29,6 @@ export type CatalogRowProps = {
 };
 
 export function CatalogRow({ service, isSelected }: CatalogRowProps) {
-  const noTechs = service.assignment_count === 0;
   const archived = !service.active;
 
   return (
@@ -63,8 +65,8 @@ export function CatalogRow({ service, isSelected }: CatalogRowProps) {
         {service.name}
       </span>
 
-      {/* Trailing group: duration + price + tech-count + (optional) archived
-          badge. Each pill renders with its own token-bound class. */}
+      {/* Trailing group: duration + price + (optional) archived badge. Each
+          pill renders with its own token-bound class. */}
       <span
         style={{
           display: "inline-flex",
@@ -86,19 +88,6 @@ export function CatalogRow({ service, isSelected }: CatalogRowProps) {
           style={{ fontVariantNumeric: "tabular-nums" }}
         >
           {formatPriceLabel(service)}
-        </span>
-        <span
-          data-slot="service-tech-pill"
-          className="service-tech-pill tnum"
-          data-tone={noTechs ? "warning" : "default"}
-          style={{ fontVariantNumeric: "tabular-nums" }}
-          aria-label={
-            noTechs ? "No techs assigned" : `${service.assignment_count} technicians assigned`
-          }
-        >
-          {noTechs
-            ? "No techs"
-            : `${service.assignment_count} ${service.assignment_count === 1 ? "tech" : "techs"}`}
         </span>
         {archived ? (
           <span data-slot="service-archived-badge" className="service-archived-badge">

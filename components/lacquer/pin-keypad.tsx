@@ -5,15 +5,25 @@
 // Owns local digit-buffer state, paints filled/unfilled dots above a 3×4
 // button grid (1-9, 0, Clear), and submits a hidden `<form action={submitPin}>`
 // when the buffer reaches 4 digits. Keyboard input (numeric keys, Backspace,
-// Enter) is wired via a `useEffect` `keydown` listener.
+// Enter) is wired via a global `keydown` listener attached in a layout effect
+// (see the `keydown` effect below for why layout-phase, not post-paint).
 //
 // The PIN itself is never rendered to the DOM — only the four dots fill in
 // as digits are entered. The submitted form transmits the buffer as a single
 // `pin` hidden input that the Server Action reads.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { submitPin } from "@/app/(auth)/select-staff/actions";
+
+// `useLayoutEffect` runs synchronously after DOM commit, before the browser
+// paints — so the `keydown` listener is wired before the keypad is visible to
+// either a user or Playwright. Plain `useEffect` runs after paint, leaving a
+// race window where the first keystrokes are dropped. SSR uses `useEffect` as
+// a no-op shim to silence React's "useLayoutEffect does nothing on the server"
+// warning; the component is `"use client"` so the layout-effect branch always
+// wins in the browser.
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export type PinKeypadProps = {
   staffId: string;
@@ -28,6 +38,13 @@ export function PinKeypad({ staffId, next }: PinKeypadProps) {
   const formRef = useRef<HTMLFormElement | null>(null);
   const pinInputRef = useRef<HTMLInputElement | null>(null);
   const submittedRef = useRef(false);
+  // Mirror `digits.length` into a ref so the keydown listener can check the
+  // buffer length on Enter without needing `digits.length` in its deps —
+  // otherwise the listener re-attaches on every keystroke.
+  const digitsLengthRef = useRef(0);
+  useEffect(() => {
+    digitsLengthRef.current = digits.length;
+  }, [digits.length]);
 
   const submitForm = useCallback(() => {
     if (submittedRef.current) return;
@@ -64,7 +81,7 @@ export function PinKeypad({ staffId, next }: PinKeypadProps) {
     setDigits([]);
   }, []);
 
-  useEffect(() => {
+  useIsomorphicLayoutEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (DIGIT_KEYS.includes(event.key)) {
@@ -81,7 +98,7 @@ export function PinKeypad({ staffId, next }: PinKeypadProps) {
         // Only submit if the buffer is full — otherwise it's a no-op.
         // The auto-submit path covers the common case; this is for users
         // who paste then press Enter.
-        if (digits.length === PIN_LENGTH) {
+        if (digitsLengthRef.current === PIN_LENGTH) {
           event.preventDefault();
           submitForm();
         }
@@ -95,7 +112,7 @@ export function PinKeypad({ staffId, next }: PinKeypadProps) {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [append, removeLast, submitForm, clearAll, digits.length]);
+  }, [append, removeLast, submitForm, clearAll]);
 
   const pinValue = digits.join("");
 

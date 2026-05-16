@@ -4,6 +4,36 @@
 
 **Input**: Feature specification from `/specs/008-services-catalog/spec.md`
 
+## Scope amendment — 2026-05-16
+
+Per-tech staff assignment UI is deferred to a later phase — see
+`spec.md § Scope amendment — 2026-05-16` for the authoritative list of
+deferred FRs / user stories / success criteria. Implementation impact on
+the file tree below:
+
+- `app/(studio)/services/page.tsx` — no longer maps `AssignableStaff[]`
+  and no longer passes `assignableStaff` to `<Drawer>` (the `staff`
+  query stays — it's still used to filter the `assignment_count` tally).
+- `app/(studio)/services/actions.ts` — both `addService` and
+  `updateService` no longer append `&secondary=no_techs_assigned` to
+  their redirects.
+- `components/lacquer/services/catalog-row.tsx` — no longer renders the
+  `service-tech-pill`.
+- `components/lacquer/services/drawer.client.tsx` — no longer imports or
+  renders `<StaffAssignmentList>`, no longer accepts the
+  `assignableStaff` prop, no longer defines the `handleToggleStaff` /
+  `handleOverrideChange` handlers. The `assignments` field of the draft
+  is still serialized via hidden inputs so existing assignments are
+  preserved on edit.
+- `components/lacquer/services/staff-assignment-list.client.tsx` —
+  **file kept intact** (dormant, ready for re-wire). The Server-Action
+  payload contract is unchanged.
+
+Five Server Actions become four user-visible Server Actions for MVP
+(`loadServiceWithAssignments` still runs to build the drawer baseline so
+existing assignments round-trip). The staff-feature prelude pattern is
+unchanged.
+
 ## Summary
 
 Add a top-level **Services** destination at `/services` and wire the existing sidebar `services` nav item (Sparkles icon, shipped disabled in feature 007) to point at it. An owner or manager can manage the salon's service catalog — add, edit, archive, and restore services and decide which technicians can perform each one (with optional per-tech duration overrides). Reads are open to every authenticated operator; writes are gated to `owner`/`manager` inside every Server Action, and every successful write emits an `audit_log` row with `action='service.*'`.

@@ -22,7 +22,7 @@ Audit payloads use `acting_as_staff_id` as the sole accountability key — this 
 | `duration_min`          | `int`          | `not null check (duration_min > 0)`                                    | Service's default (R2 — no variable duration in v1)               |
 | `price_cents`           | `int`          | `not null check (price_cents >= 0)`                                    | For variable-price = `price_from_cents` or 0 (R1)                |
 | `color_token`           | `text`         | `not null`; one of the 8 `--avatar-*` token names                      | Reuses staff-feature palette (R4 in 006)                         |
-| `taxable`               | `boolean`      | `not null default true`                                                | Captured + stored; no read site outside drawer in v1             |
+| `taxable`               | `boolean`      | `not null default true` (DB); app default is `false` on new services   | Captured + stored; no read site outside drawer in v1             |
 | `active`                | `boolean`      | `not null default true`                                                | `false` = archived (R5)                                          |
 | `variable_price`        | `boolean`      | `not null default false`                                               | Drives UI label; not a duration concept (R2)                     |
 | `price_from_cents`      | `int`          | nullable; `check (price_from_cents is null or price_from_cents >= 0)`  | Variable-price bound                                             |

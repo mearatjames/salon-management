@@ -4,7 +4,51 @@
 
 **Created**: 2026-05-15
 
-**Status**: Draft
+**Status**: Draft (with 2026-05-16 scope amendment — see below)
+
+## Scope amendment — 2026-05-16
+
+Per-tech service assignment is deferred to a later phase for MVP. The
+**data model and Server Action payload are unchanged** — `services` +
+`staff_services` tables, the `assignment_count` field on `CatalogService`,
+the `ServiceAssignment` type, and the `staff_ids[]` / `override_min[*]`
+FormData inputs all still exist and existing assignments are preserved on
+edit. What was **removed from the UI surface and the toast flow**:
+
+- **Catalog list** — the "{N} techs" / "No techs" pill on each row
+  (FR-002 trailing clause, FR-009).
+- **Add / Edit drawer** — the entire "Who can perform this service?"
+  section (FR-011 trailing clause, FR-012), assignment hydration on Edit
+  (FR-017 trailing clause), the assignment-diff contribution to `isDirty`
+  / "Save changes" enabling (FR-019, FR-020 trailing clauses), assignment
+  add / remove on save (FR-021, FR-022), and the read-only operator
+  gating of assignment controls (FR-030 trailing clause).
+- **Toast flow** — the `&secondary=no_techs_assigned` redirect param +
+  companion warning toast (FR-015, FR-036 second sentence).
+- **User Story 3** — every Edit-flow scenario beyond the simple
+  scalar/colour/variable-price fields is paused. The "Edit a service's
+  details" wording in US3's title still applies; "and per-tech
+  assignments" does not.
+- **Success Criteria SC-001** — the "tick the techs who perform it" step
+  is dropped from the 60-second add-a-service workflow.
+
+**Still in scope for MVP**: US1, US2 (happy path minus the assignment
+list), US4, US5, US6 (minus assignment-checkbox assertions), US7 (minus
+the secondary-warning case).
+
+**Tests** — `tests/e2e/services.spec.ts` has US3 (entire describe), US2
+(b), and US7 (c) marked `test.skip`; US1 (a), US2 (a), US6 (b), and US7
+(a) had assignment-specific assertions stripped. Unit suite unaffected
+(the `_diff` helper and its tests stay valid, dormant until the UI
+returns). `quickstart.md` walkthrough steps 2-5 reference the removed
+assignment UI and should be skipped until reinstatement.
+
+**Reinstatement checklist**: un-skip the e2e blocks, restore the tech-pill
+and assignment assertions in the four edited tests, re-add the
+`secondarySuffix` param in `app/(studio)/services/actions.ts`, re-import
++ render `<StaffAssignmentList>` in
+`components/lacquer/services/drawer.client.tsx`, and re-pass
+`assignableStaff` from the page.
 
 **Input**: User description: "Build the Services catalog management surface as a top-level studio destination reachable from the existing sidebar nav (the `services` placeholder item shipped in feature 007). What it does: lets an owner/manager add, edit, archive, and re-order the services the salon sells (e.g. Gel polish, Classic manicure, Nail art). Each service has a name, default duration (minutes), default price (cents), a category, a Lacquer color token, an `active` flag, and a `taxable` flag (reserved for future tax computation — no UI effect in v1). A service can be flagged 'variable price' with optional `price_from` / `price_to` bounds and a note shown in the variable-price sheet later. Also captures per-tech duration overrides (`staff_services` join table): in the service edit view, pick which staff can perform this service and optionally set a per-tech duration that overrides the default. Entry point: `/services` (top-level studio route; the sidebar nav item is wired to it). Reuse: the existing staff management UI patterns at `app/(studio)/settings/staff` as a template for list + drawer pattern and audit-log writes. DB: new `services` table and `staff_services` join (per the data model in `docs/system-design.md`). Migration is part of this phase. Authorization: only owner/manager can write; technicians/front_desk can read. Privileged writes go through a Server Action that checks `staff.role` for the current `acting_as_staff_id` and writes an `audit_log` row with `action='settings.updated'`. Out of scope: Square catalog sync, tax computation, service photos, drag-drop reorder."
 
@@ -43,7 +87,7 @@ The owner opens the Services catalog from the sidebar and immediately sees every
 
 ### User Story 2 — Add a new service (Priority: P1)
 
-The owner clicks "Add service" and a right-side drawer opens with the new-service form: display name, category (with auto-complete from existing categories), default duration in minutes, default price in dollars, a Lacquer color swatch picker (8 swatches), a "taxable" toggle (default on), and a "Variable price" toggle that — when on — reveals optional `From` and `To` bounds plus a short free-text note. Below the basics is a "Who can perform this service?" section listing every active staff member with a checkbox and an optional per-tech duration override field. Saving writes the service and the chosen staff assignments atomically.
+The owner clicks "Add service" and a right-side drawer opens with the new-service form: display name, category (with auto-complete from existing categories), default duration in minutes, default price in dollars, a Lacquer color swatch picker (8 swatches), a "taxable" toggle (default off), and a "Variable price" toggle that — when on — reveals optional `From` and `To` bounds plus a short free-text note. Below the basics is a "Who can perform this service?" section listing every active staff member with a checkbox and an optional per-tech duration override field. Saving writes the service and the chosen staff assignments atomically.
 
 **Why this priority**: Adding services is what unlocks every downstream booking and POS flow — appointments, walk-ins, and checkout all read from the services catalog. Without it, the salon can't sell anything in v1.
 
@@ -51,7 +95,7 @@ The owner clicks "Add service" and a right-side drawer opens with the new-servic
 
 **Acceptance Scenarios**:
 
-1. **Given** the Add drawer is closed, **When** the owner clicks "Add service", **Then** a right-side drawer slides in with the title "Add service", a primary "Save service" button (disabled), and an empty form with default category "Other", default duration "30", default color "Rose", taxable on, variable price off, and no staff selected.
+1. **Given** the Add drawer is closed, **When** the owner clicks "Add service", **Then** a right-side drawer slides in with the title "Add service", a primary "Save service" button (disabled), and an empty form with default category "Other", default duration "30", default color "Rose", taxable off, variable price off, and no staff selected.
 2. **Given** the Add drawer is open, **When** the owner types "Gel" in the category field, **Then** an auto-complete dropdown lists every existing category whose name starts with "Gel" (case-insensitive), plus a "+ Create 'Gel'" option at the bottom if no exact match exists.
 3. **Given** the form has name "Gel polish", category "Manicure", duration `45`, price `35.00`, color Rose, and 2 staff selected, **When** the owner clicks "Save service", **Then** the drawer's title flips to "Edit service", the primary button becomes "Save changes" (disabled, since the baseline now matches the saved values), the "Archive service" action appears at the bottom, a toast reads "Gel polish added to the catalog", and the new row appears in the list under "Manicure" with the chosen color, "45 min", "$35", and "2 techs".
 4. **Given** the "Variable price" toggle is on, **When** the form renders, **Then** the single Price field is replaced by two side-by-side fields labeled "From" and "To" (both optional) and a single-line note field with the placeholder "Tell staff when to use this — e.g. depends on nail length", and the list-row preview uses "From $X" if only From is set, "$X – $Y" if both are set, or "Variable" if neither is set.
@@ -190,7 +234,7 @@ Every mutation (add, edit, archive, restore) shows a single-line confirmation to
 
 #### Add service
 - **FR-010**: A primary "Add service" button above the list MUST open a right-side drawer for creating a new service.
-- **FR-011**: The Add drawer MUST collect, in this order: display name (required, ≥2 characters after trim), category (free-text with auto-complete from existing distinct `services.category` values; required, ≥1 character after trim; pre-seeded with `Other` on a new service so a first-time owner can save without picking a taxonomy), default duration in minutes (required positive integer; required even when `variable_price` is on, since duration is per-booking not per-charge), default price in dollars (required non-negative decimal when `variable_price` is off; hidden when on), color token (required; one of the 8 Lacquer swatches; defaults to Rose), `taxable` toggle (defaults to on), `variable_price` toggle (defaults to off), variable-price `From` and `To` bounds (both optional, both non-negative decimals, To ≥ From when both set; visible only when `variable_price` is on), variable-price note (optional single-line free text; visible only when `variable_price` is on), and the staff-assignment list.
+- **FR-011**: The Add drawer MUST collect, in this order: display name (required, ≥2 characters after trim), category (free-text with auto-complete from existing distinct `services.category` values; required, ≥1 character after trim; pre-seeded with `Other` on a new service so a first-time owner can save without picking a taxonomy), default duration in minutes (required positive integer; required even when `variable_price` is on, since duration is per-booking not per-charge), default price in dollars (required non-negative decimal when `variable_price` is off; hidden when on), color token (required; one of the 8 Lacquer swatches; defaults to Rose), `taxable` toggle (defaults to off), `variable_price` toggle (defaults to off), variable-price `From` and `To` bounds (both optional, both non-negative decimals, To ≥ From when both set; visible only when `variable_price` is on), variable-price note (optional single-line free text; visible only when `variable_price` is on), and the staff-assignment list.
 - **FR-012**: The staff-assignment list MUST render every currently-active staff member as a row with a checkbox, the staff member's avatar + display name + role, and an optional per-tech duration override input (numeric, positive integer, placeholder "{default} min"); the override input MUST be disabled until the checkbox is ticked.
 - **FR-013**: The "Save service" button MUST be disabled until all required fields are valid (per FR-011 and any conditional validations).
 - **FR-014**: On successful save, the drawer MUST remain open and flip to Edit mode for the just-created service (title becomes "Edit service", primary button becomes "Save changes" and is disabled, "Archive service" action appears at the bottom). The new service MUST appear in the list under the correct category group, the list MUST scroll the new row into view, and a toast MUST read "{name} added to the catalog".
@@ -257,7 +301,7 @@ Every mutation (add, edit, archive, restore) shows a single-line confirmation to
 - Categories are free-text strings stored on `services.category` (no separate `categories` table). The auto-complete list is `SELECT DISTINCT category FROM services ORDER BY category`. There is no "manage categories" surface in v1; renaming a category means editing each service in it.
 - "Archive" is a soft delete via the existing `services.active` boolean (not a separate `archived_at` column). The label "Archived" in the UI maps to `active = false`; the label "Active" maps to `active = true`.
 - Prices are entered in dollars (decimal) in the UI but stored as integer cents in the database, consistent with every other money column in the system design.
-- The `taxable` flag is captured and stored but has no UI effect beyond the toggle itself in v1 (it's reserved for the future tax-computation feature). It defaults to `true` on new services.
+- The `taxable` flag is captured and stored but has no UI effect beyond the toggle itself in v1 (it's reserved for the future tax-computation feature). The Add-drawer toggle defaults to `false` on new services so the owner makes an explicit per-service decision. The DB column default in `0003_services_catalog.sql` is still `true` (immutable migration history); the app always provides an explicit value, so the column default is academic.
 - Per-tech duration overrides apply to bookings going forward; this feature does not rewrite historical `appointment_services.duration_min_snapshot` rows on a change.
 - The variable-price note is captured and stored but is not displayed anywhere in v1 beyond the edit drawer itself — it will be surfaced by the checkout variable-price sheet in a later feature.
 - Realtime sync is not required for this surface in v1 — the system design lists `services` and `staff_services` outside the realtime channels table. Last-write-wins is acceptable for concurrent admin edits, matching the staff surface.
