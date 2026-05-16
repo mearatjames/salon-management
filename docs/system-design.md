@@ -315,7 +315,7 @@ All business rules — refund authority, settings edits, manager thresholds — 
 7. `lib/auth/*` — login, select-staff, kiosk pairing, manager-PIN override helper
 8. `app/(auth)/login`, `app/(auth)/select-staff`, middleware (12h hard expiry)
 9. `app/(studio)/layout.tsx` — shell from design system + "Switch staff" button + "Reconnecting…" banner
-10. `app/(studio)/settings/{services,staff,hours,closures,square,kiosk}` — admin first (data prerequisite)
+10. `app/(studio)/settings/{services,staff,onboarding,hours,closures,square,kiosk}` — admin first (data prerequisite). The `onboarding` tab is owner-only and runs the invite / offboard / hard-remove lifecycle for staff who can sign in by email (see `specs/012-user-onboarding/`).
 11. `app/(studio)/calendar` — depends on staff/services + hours/closures
 12. `app/(studio)/clients` — independent
 13. `app/(studio)/walkin` + `app/kiosk/[token]` — pair feature (phone + name kiosk flow)

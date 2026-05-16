@@ -240,10 +240,20 @@ export type Database = {
           color_token: string;
           created_at: string;
           display_name: string;
+          email: string | null;
           id: string;
+          invite_method: string | null;
+          invited_at: string | null;
+          invited_by: string | null;
+          last_sign_in_at: string | null;
+          offboard_reason: string | null;
+          offboarded_at: string | null;
+          offboarded_by: string | null;
           pin_hash: string | null;
+          pin_reset_admin_at: string | null;
           removed_at: string | null;
           role: string;
+          state: string;
           user_id: string | null;
         };
         Insert: {
@@ -251,10 +261,20 @@ export type Database = {
           color_token: string;
           created_at?: string;
           display_name: string;
+          email?: string | null;
           id?: string;
+          invite_method?: string | null;
+          invited_at?: string | null;
+          invited_by?: string | null;
+          last_sign_in_at?: string | null;
+          offboard_reason?: string | null;
+          offboarded_at?: string | null;
+          offboarded_by?: string | null;
           pin_hash?: string | null;
+          pin_reset_admin_at?: string | null;
           removed_at?: string | null;
           role: string;
+          state?: string;
           user_id?: string | null;
         };
         Update: {
@@ -262,13 +282,38 @@ export type Database = {
           color_token?: string;
           created_at?: string;
           display_name?: string;
+          email?: string | null;
           id?: string;
+          invite_method?: string | null;
+          invited_at?: string | null;
+          invited_by?: string | null;
+          last_sign_in_at?: string | null;
+          offboard_reason?: string | null;
+          offboarded_at?: string | null;
+          offboarded_by?: string | null;
           pin_hash?: string | null;
+          pin_reset_admin_at?: string | null;
           removed_at?: string | null;
           role?: string;
+          state?: string;
           user_id?: string | null;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "staff_invited_by_fkey";
+            columns: ["invited_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "staff_offboarded_by_fkey";
+            columns: ["offboarded_by"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       staff_services: {
         Row: {
@@ -439,6 +484,7 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      next_anon_counter: { Args: never; Returns: number };
       pos_take_cash: {
         Args: { p_operator: string; p_ticket_id: string };
         Returns: string;

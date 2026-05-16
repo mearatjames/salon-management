@@ -54,11 +54,20 @@ export type AuditAction =
   | "ticket.line_removed"
   | "ticket.line_tech_assigned"
   | "ticket.discarded"
-  | "payment.captured";
+  | "payment.captured"
+  // Added by feature 012 (entity_type "user")
+  | "user.invited"
+  | "user.invite_resent"
+  | "user.invite_cancelled"
+  | "user.offboarded"
+  | "user.reactivated"
+  | "user.removed"
+  | "user.pin_reset";
 
-function deriveEntityType(
+export function deriveEntityType(
   action: AuditAction
-): "service" | "ticket" | "payment" | "staff" | "auth" {
+): "service" | "ticket" | "payment" | "staff" | "auth" | "user" {
+  if (action.startsWith("user.")) return "user";
   if (action.startsWith("ticket.")) return "ticket";
   if (action.startsWith("payment.")) return "payment";
   if (action.startsWith("service.")) return "service";

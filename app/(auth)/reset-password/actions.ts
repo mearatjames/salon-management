@@ -38,6 +38,11 @@ export async function updatePassword(formData: FormData): Promise<void> {
   // trim either field. The contract is explicit on this point.
   const password = String(formData.get("password") ?? "");
   const confirm = String(formData.get("confirm") ?? "");
+  // `method` distinguishes the 010 recovery flow from the 012-onboarding
+  // invite flow at audit time. Defaults to "recovery" for back-compat
+  // with existing call sites that don't yet emit the field.
+  const methodRaw = String(formData.get("method") ?? "recovery");
+  const method: "recovery" | "invite" = methodRaw === "invite" ? "invite" : "recovery";
 
   // Validation matches FR-023 (carried from 003-login-flow): minimum 8
   // characters, no character-class rules. Equality enforces the second
@@ -94,11 +99,10 @@ export async function updatePassword(formData: FormData): Promise<void> {
   }
 
   // Cross-action invariant 1: audit BEFORE redirect on the success path.
-  // payload.method = "recovery" — distinguishes this from a future
-  // self-service password change (Settings → Change Password) which will
-  // pass { method: "self_service" } per audit.contract.md § Future
-  // extension.
-  await recordAuth("device.password_reset", userId, null, { method: "recovery" });
+  // payload.method = "recovery" (010-login-redesign) or "invite"
+  // (012-user-onboarding); the field comes from the form's hidden
+  // <input name="method"> and is normalised above.
+  await recordAuth("device.password_reset", userId, null, { method });
 
   // Reset complete. Hand off to /select-staff so the operator pins in.
   // The `next` query is not propagated here — the reset flow is

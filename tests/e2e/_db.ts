@@ -122,8 +122,36 @@ export async function resetStaffToSeed(): Promise<void> {
     .not("id", "in", `(${seedIds.map((id) => `"${id}"`).join(",")})`);
   if (delErr) throw new Error(`staff cleanup failed: ${delErr.message}`);
 
-  // 2. Upsert the seed rows back to their canonical state.
-  const { error: upErr } = await c.from("staff").upsert(SEEDED_STAFF, { onConflict: "id" });
+  // 2. Upsert the seed rows back to their canonical state. The seed shape
+  // explicitly clears the feature-012 lifecycle columns (state, email,
+  // invite/offboard metadata, pin_reset_admin_at, last_sign_in_at) so a
+  // previous test that flipped them — e.g. soft-offboarding Jordan in the
+  // US3 offboard spec — doesn't leak into the next test. Without this,
+  // the canonical 3 columns get restored but the lifecycle columns stay
+  // at their previous values and the seed appears in the wrong bucket.
+  // Email mirror: keep staff.email in sync with auth.users.email for the
+  // seeded operators so feature-012's Send-password-reset (and any other
+  // path that reads staff.email) can resolve them. Sam has no auth user
+  // and stays email=null.
+  const SEED_EMAILS: Record<string, string | null> = {
+    "10000000-0000-0000-0000-000000000001": "owner@tangnails.dev",
+    "10000000-0000-0000-0000-000000000002": "manager@tangnails.dev",
+    "10000000-0000-0000-0000-000000000003": null,
+  };
+  const SEEDED_STAFF_FULL = SEEDED_STAFF.map((s) => ({
+    ...s,
+    state: "active" as const,
+    email: SEED_EMAILS[s.id] ?? null,
+    invited_at: null,
+    invited_by: null,
+    invite_method: null,
+    offboarded_at: null,
+    offboarded_by: null,
+    offboard_reason: null,
+    last_sign_in_at: null,
+    pin_reset_admin_at: null,
+  }));
+  const { error: upErr } = await c.from("staff").upsert(SEEDED_STAFF_FULL, { onConflict: "id" });
   if (upErr) throw new Error(`staff seed upsert failed: ${upErr.message}`);
 }
 

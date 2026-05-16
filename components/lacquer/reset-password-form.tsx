@@ -1,38 +1,52 @@
 "use client";
 
-// reset-password-form.tsx — the client island for `/reset-password` (US3).
-// Renders the two new-password fields, each with its own Eye/EyeOff
-// reveal toggle (mirrors the `<SignInView>` pattern from US2). Submits
-// to the `updatePassword` Server Action.
+// reset-password-form.tsx — the client island for `/reset-password`.
 //
-// Reveal toggle behaviour matches FR-011 / FR-012:
-//   • Each field has an independent `useState<boolean>` for visibility,
-//     defaulting to hidden.
-//   • Toggling never changes the other field's state.
-//   • State resets on unmount (e.g. when the page re-renders after a
-//     submit redirect) — React's natural lifecycle.
+// Shared between the 010-login-redesign US3 recovery flow and the
+// 012-user-onboarding invite-acceptance flow. The `type` prop carries the
+// flow distinction:
+//   • `"recovery"` (default) — heading "Set a new password",
+//                              submit "Set new password",
+//                              hidden field method="recovery"
+//   • `"invite"`              — heading "Set your password",
+//                              submit "Set password and continue",
+//                              hidden field method="invite"
 //
-// Visual contract per ui-views.contract.md § Password-reveal toggle.
+// The hidden `method` field is what `updatePassword` reads to tag the
+// audit row (`payload.method`). Recovery and invite are otherwise
+// structurally identical — same validation, same SDK call.
+//
+// Reveal toggle behaviour per ui-views.contract.md § Password-reveal
+// toggle: each field has its own independent visibility state.
 
 import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 
 import { updatePassword } from "@/app/(auth)/reset-password/actions";
 
-export function ResetPasswordForm() {
+type Props = {
+  type?: "recovery" | "invite";
+};
+
+export function ResetPasswordForm({ type = "recovery" }: Props) {
   const [shownPassword, setShownPassword] = useState(false);
   const [shownConfirm, setShownConfirm] = useState(false);
 
+  const isInvite = type === "invite";
+  const heading = isInvite ? "Set your password" : "Set a new password";
+  const submitLabel = isInvite ? "Set password and continue" : "Set new password";
+
   return (
-    <div className="auth-view-pane" key="reset-password">
+    <div className="auth-view-pane" key={isInvite ? "invite-form" : "reset-password"}>
       <div className="auth-form-header">
-        <h1 className="auth-form-title">Set a new password</h1>
+        <h1 className="auth-form-title">{heading}</h1>
         <p className="auth-form-subtitle">
           Pick something you&apos;ll remember — 8 characters or more.
         </p>
       </div>
 
       <form action={updatePassword}>
+        <input type="hidden" name="method" value={isInvite ? "invite" : "recovery"} />
         <div className="auth-form-body">
           <div className="auth-field">
             <label htmlFor="reset-password">New password</label>
@@ -89,7 +103,7 @@ export function ResetPasswordForm() {
           </div>
 
           <button type="submit" className="auth-btn auth-btn-primary">
-            Set new password
+            {submitLabel}
           </button>
         </div>
       </form>
