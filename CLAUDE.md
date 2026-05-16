@@ -45,8 +45,26 @@ Run them in this order so the cheapest checks fail fast:
    `--workers=1` for the full suite to avoid `audit_log` truncate races
    between spec files.
 
-All five MUST be green locally. Constitution v1.0.2 § Development Workflow
+All five MUST be green locally. Constitution v1.0.3 § Development Workflow
 & Quality Gates is the authority.
+
+## Supabase migrations
+
+`supabase/migrations/**` are applied automatically by GitHub Actions —
+**never run `supabase db push` against the hosted projects by hand** unless
+explicitly recovering from a CI failure:
+
+- `.github/workflows/db-migrate-preview.yml` — runs on every PR that touches
+  `supabase/migrations/**`. Applies to the preview Supabase project so the
+  Vercel preview deploy of that PR has the matching schema.
+- `.github/workflows/db-migrate-prod.yml` — runs on push to `main`. Applies
+  to the production Supabase project.
+
+Both workflows need three repo secrets (`SUPABASE_ACCESS_TOKEN`,
+`SUPABASE_PREVIEW_DB_PASSWORD`, `SUPABASE_PROD_DB_PASSWORD`) and two repo
+variables (`SUPABASE_PREVIEW_PROJECT_REF`, `SUPABASE_PROD_PROJECT_REF`).
+Constitution v1.0.3 § Development Workflow & Quality Gates — "Schema drift
+forbidden" — is the authority.
 
 ## Stack reminder
 
