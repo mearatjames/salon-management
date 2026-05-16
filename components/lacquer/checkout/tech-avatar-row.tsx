@@ -1,0 +1,156 @@
+"use client";
+
+// TechAvatarRow — adapted from `design-system/prototypes/transaction/FlowSingle.jsx`
+// § tech assignment block (single-select variant, lines 185-199 of the
+// prototype). Two render states per FR-006 / FR-007:
+//
+//   pre-pick:  a horizontal row of staff avatars (initials inside a tinted
+//              swatch derived from `staff.color_token`). The first tap
+//              selects the tech for the whole transaction.
+//   post-pick: the row collapses to a compact chip ("● Maya Patel") + a
+//              "Change" text link that returns to the pre-pick state.
+//
+// All visuals trace to Lacquer tokens. No emoji in chrome; the colored
+// dot in the chip is a `<span>` background, not a glyph (Principle I).
+
+type ActiveStaff = {
+  id: string;
+  display_name: string;
+  color_token: string;
+};
+
+export type TechAvatarRowProps = {
+  /** Active staff roster to choose from. */
+  staff: ReadonlyArray<ActiveStaff>;
+  /** Currently selected staff id; `null` when no tech is picked yet. */
+  selectedStaffId: string | null;
+  /** Called with a staff id when the operator picks (pre-pick state only). */
+  onPick: (staffId: string) => void;
+  /** Called when the operator taps "Change" in the post-pick chip. */
+  onClear: () => void;
+};
+
+function initials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+export function TechAvatarRow({ staff, selectedStaffId, onPick, onClear }: TechAvatarRowProps) {
+  const selected = selectedStaffId ? (staff.find((s) => s.id === selectedStaffId) ?? null) : null;
+
+  if (selected) {
+    // Post-pick: collapsed chip.
+    return (
+      <div
+        data-slot="checkout-tech-chip"
+        data-staff-id={selected.id}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--space-2)",
+          padding: "var(--space-2) var(--space-3)",
+          background: "var(--card)",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius-full)",
+        }}
+      >
+        <span
+          aria-hidden="true"
+          style={{
+            display: "inline-block",
+            width: "var(--space-2)",
+            height: "var(--space-2)",
+            borderRadius: "var(--radius-full)",
+            background: `var(${selected.color_token})`,
+          }}
+        />
+        <span
+          style={{
+            fontSize: "var(--text-sm)",
+            fontWeight: 500,
+            color: "var(--foreground)",
+          }}
+        >
+          {selected.display_name}
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          data-slot="change-tech-link"
+          style={{
+            marginLeft: "var(--space-2)",
+            background: "transparent",
+            border: "none",
+            color: "var(--primary)",
+            fontSize: "var(--text-xs)",
+            fontWeight: 500,
+            cursor: "pointer",
+            padding: 0,
+          }}
+        >
+          Change
+        </button>
+      </div>
+    );
+  }
+
+  // Pre-pick: avatar row.
+  return (
+    <div
+      data-slot="checkout-tech-row"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-3)",
+        flexWrap: "wrap",
+      }}
+    >
+      <span
+        style={{
+          fontSize: "var(--text-xs)",
+          textTransform: "uppercase",
+          letterSpacing: "var(--tracking-wide)",
+          color: "var(--muted-foreground)",
+          fontWeight: 500,
+        }}
+      >
+        Assign a tech to start
+      </span>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+        {staff.map((s) => {
+          const tint = `oklch(from var(${s.color_token}) l c h / 0.15)`;
+          const fg = `var(${s.color_token})`;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => onPick(s.id)}
+              data-staff-name={s.display_name}
+              data-staff-id={s.id}
+              title={s.display_name}
+              aria-label={`Assign ${s.display_name} as the tech for this sale`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "var(--space-8)",
+                height: "var(--space-8)",
+                borderRadius: "var(--radius-full)",
+                background: tint,
+                color: fg,
+                fontWeight: 600,
+                fontSize: "var(--text-xs)",
+                border: "1px solid var(--border)",
+                cursor: "pointer",
+              }}
+            >
+              {initials(s.display_name)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

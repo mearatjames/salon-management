@@ -28,6 +28,66 @@ export type Database = {
   };
   public: {
     Tables: {
+      appointments: {
+        Row: {
+          client_id: string;
+          created_at: string;
+          created_by_staff_id: string | null;
+          created_by_user_id: string | null;
+          end_at: string;
+          id: string;
+          notes: string | null;
+          source: string;
+          staff_id: string;
+          start_at: string;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          client_id: string;
+          created_at?: string;
+          created_by_staff_id?: string | null;
+          created_by_user_id?: string | null;
+          end_at: string;
+          id?: string;
+          notes?: string | null;
+          source: string;
+          staff_id: string;
+          start_at: string;
+          status: string;
+          updated_at?: string;
+        };
+        Update: {
+          client_id?: string;
+          created_at?: string;
+          created_by_staff_id?: string | null;
+          created_by_user_id?: string | null;
+          end_at?: string;
+          id?: string;
+          notes?: string | null;
+          source?: string;
+          staff_id?: string;
+          start_at?: string;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "appointments_created_by_staff_id_fkey";
+            columns: ["created_by_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "appointments_staff_id_fkey";
+            columns: ["staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       audit_log: {
         Row: {
           acting_as_staff_id: string | null;
@@ -65,6 +125,60 @@ export type Database = {
             columns: ["acting_as_staff_id"];
             isOneToOne: false;
             referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      payments: {
+        Row: {
+          amount_cents: number;
+          created_at: string;
+          id: string;
+          kind: Database["public"]["Enums"]["payment_kind"];
+          method: Database["public"]["Enums"]["payment_method"];
+          processed_at: string;
+          status: Database["public"]["Enums"]["payment_status"];
+          taken_by_staff_id: string;
+          ticket_id: string;
+          tip_cents: number;
+        };
+        Insert: {
+          amount_cents: number;
+          created_at?: string;
+          id?: string;
+          kind: Database["public"]["Enums"]["payment_kind"];
+          method: Database["public"]["Enums"]["payment_method"];
+          processed_at?: string;
+          status: Database["public"]["Enums"]["payment_status"];
+          taken_by_staff_id: string;
+          ticket_id: string;
+          tip_cents?: number;
+        };
+        Update: {
+          amount_cents?: number;
+          created_at?: string;
+          id?: string;
+          kind?: Database["public"]["Enums"]["payment_kind"];
+          method?: Database["public"]["Enums"]["payment_method"];
+          processed_at?: string;
+          status?: Database["public"]["Enums"]["payment_status"];
+          taken_by_staff_id?: string;
+          ticket_id?: string;
+          tip_cents?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "payments_taken_by_staff_id_fkey";
+            columns: ["taken_by_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payments_ticket_id_fkey";
+            columns: ["ticket_id"];
+            isOneToOne: false;
+            referencedRelation: "tickets";
             referencedColumns: ["id"];
           },
         ];
@@ -195,15 +309,147 @@ export type Database = {
           },
         ];
       };
+      ticket_items: {
+        Row: {
+          assigned_staff_id: string;
+          created_at: string;
+          id: string;
+          kind: Database["public"]["Enums"]["ticket_item_kind"];
+          name_snapshot: string;
+          price_unconfirmed: boolean;
+          qty: number;
+          ref_id: string;
+          ticket_id: string;
+          unit_price_cents: number;
+        };
+        Insert: {
+          assigned_staff_id: string;
+          created_at?: string;
+          id?: string;
+          kind: Database["public"]["Enums"]["ticket_item_kind"];
+          name_snapshot: string;
+          price_unconfirmed?: boolean;
+          qty?: number;
+          ref_id: string;
+          ticket_id: string;
+          unit_price_cents: number;
+        };
+        Update: {
+          assigned_staff_id?: string;
+          created_at?: string;
+          id?: string;
+          kind?: Database["public"]["Enums"]["ticket_item_kind"];
+          name_snapshot?: string;
+          price_unconfirmed?: boolean;
+          qty?: number;
+          ref_id?: string;
+          ticket_id?: string;
+          unit_price_cents?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "ticket_items_assigned_staff_id_fkey";
+            columns: ["assigned_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "ticket_items_ref_id_fkey";
+            columns: ["ref_id"];
+            isOneToOne: false;
+            referencedRelation: "services";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "ticket_items_ticket_id_fkey";
+            columns: ["ticket_id"];
+            isOneToOne: false;
+            referencedRelation: "tickets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      tickets: {
+        Row: {
+          appointment_id: string | null;
+          closed_at: string | null;
+          closed_by_staff_id: string | null;
+          created_at: string;
+          id: string;
+          opened_by_staff_id: string;
+          status: Database["public"]["Enums"]["ticket_status"];
+          subtotal_cents: number;
+          tax_cents: number;
+          total_cents: number;
+          updated_at: string;
+        };
+        Insert: {
+          appointment_id?: string | null;
+          closed_at?: string | null;
+          closed_by_staff_id?: string | null;
+          created_at?: string;
+          id?: string;
+          opened_by_staff_id: string;
+          status?: Database["public"]["Enums"]["ticket_status"];
+          subtotal_cents?: number;
+          tax_cents?: number;
+          total_cents?: number;
+          updated_at?: string;
+        };
+        Update: {
+          appointment_id?: string | null;
+          closed_at?: string | null;
+          closed_by_staff_id?: string | null;
+          created_at?: string;
+          id?: string;
+          opened_by_staff_id?: string;
+          status?: Database["public"]["Enums"]["ticket_status"];
+          subtotal_cents?: number;
+          tax_cents?: number;
+          total_cents?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "tickets_appointment_id_fkey";
+            columns: ["appointment_id"];
+            isOneToOne: false;
+            referencedRelation: "appointments";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tickets_closed_by_staff_id_fkey";
+            columns: ["closed_by_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "tickets_opened_by_staff_id_fkey";
+            columns: ["opened_by_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      pos_take_cash: {
+        Args: { p_operator: string; p_ticket_id: string };
+        Returns: string;
+      };
     };
     Enums: {
-      [_ in never]: never;
+      payment_kind: "payment";
+      payment_method: "cash";
+      payment_status: "succeeded" | "pending" | "failed";
+      ticket_item_kind: "service";
+      ticket_status: "open" | "paid" | "discarded";
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -331,6 +577,12 @@ export const Constants = {
     Enums: {},
   },
   public: {
-    Enums: {},
+    Enums: {
+      payment_kind: ["payment"],
+      payment_method: ["cash"],
+      payment_status: ["succeeded", "pending", "failed"],
+      ticket_item_kind: ["service"],
+      ticket_status: ["open", "paid", "discarded"],
+    },
   },
 } as const;

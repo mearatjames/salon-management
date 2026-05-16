@@ -1,0 +1,209 @@
+/* ==========================================================================
+   Lacquer — Checkout (cash-only sale) layout
+   Adapted from `design-system/prototypes/transaction/FlowSingle.jsx`.
+   Single-screen cart: header row across the top, two columns below — the
+   left column is the cart (lines + totals + payment tiles), the right
+   column is the service catalog (tech-avatar row + search + tiles).
+   Every value resolves to a `var(--*)` token from `styles/tokens.css`.
+   ========================================================================== */
+
+/* Outer shell: full-height, single column. Mirrors `.settings-shell`. */
+.checkout-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Transaction header row: title on the left, Cancel + Discard on the
+   right (FR-005). Sticks to the top of the shell so the cart + catalog
+   below scroll independently. */
+.checkout-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+
+.checkout-header-title {
+  font-size: var(--text-lg);
+  line-height: var(--leading-snug);
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0;
+}
+
+.checkout-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Two-column body: cart on the left, catalog on the right.
+   `min-height: 0` lets the inner overflow regions reclaim height. */
+.checkout-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
+  gap: var(--space-6);
+  padding: var(--space-6);
+  overflow: hidden;
+}
+
+/* Cart column: line list + totals + payment tiles, stacked. */
+.checkout-cart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  padding: var(--space-5);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+}
+
+.checkout-cart-lines {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow: auto;
+}
+
+/* Catalog column: tech-avatar row across the top, then search input,
+   category chips, and the service tile grid. */
+.checkout-catalog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-height: 0;
+  padding: var(--space-5);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+}
+
+.checkout-catalog-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-3);
+  overflow: auto;
+  align-content: start;
+}
+
+/* Cart line: name + per-line tech chip on the left, qty + remove + price
+   on the right. Tabular numerals on the price (Principle I — type rule 5). */
+.checkout-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+
+.checkout-line-name {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.checkout-line-price {
+  font-size: var(--text-base);
+  font-weight: 500;
+  font-feature-settings: "tnum", "cv02", "cv03";
+  font-variant-numeric: tabular-nums;
+}
+
+/* Totals block sits between the line list and the payment tiles. */
+.checkout-totals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border);
+}
+
+.checkout-total-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: var(--text-base);
+}
+
+.checkout-total-row.is-grand {
+  font-size: var(--text-lg);
+  font-weight: 600;
+}
+
+.checkout-total-row .checkout-total-amount {
+  font-feature-settings: "tnum", "cv02", "cv03";
+  font-variant-numeric: tabular-nums;
+}
+
+/* Payment tiles: 2x2 grid (cash | card | gift | split). Cash is the only
+   enabled one in v1; the rest carry `aria-disabled="true"`. */
+.checkout-payment-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+/* DoneScreen: full-screen "Charged $X" + New sale button. Renders in place
+   of `.checkout-body` when the ticket's status is 'paid'. */
+.checkout-done {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+  padding: var(--space-12);
+  text-align: center;
+}
+
+.checkout-done-amount {
+  font-size: var(--text-5xl);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  font-weight: 600;
+  font-feature-settings: "tnum", "cv02", "cv03";
+  font-variant-numeric: tabular-nums;
+}
+
+/* Receipt print stylesheet (FR-024, FR-025).
+   The receipt route at `/checkout/[ticketId]/receipt/` already breaks out
+   of the studio shell via its local `layout.tsx` override, so the
+   sidebar/topbar are not in the DOM at all. The `.studio-chrome` rule
+   below is defensive belt-and-suspenders for any future surface that
+   accidentally inherits the studio layout. `12mm` / `80mm` are literal
+   physical-paper units — the ONLY correct unit for print sizing — and
+   are an intentional exception to Principle I's spacing scale (which is
+   for on-screen layout). Per research.md § R4. */
+@media print {
+  .studio-chrome {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+  .receipt-page {
+    padding: 12mm;
+    max-width: 80mm;
+    margin: 0 auto;
+    /* tabular numerals stay applied on inline spans; nothing extra needed. */
+  }
+}
