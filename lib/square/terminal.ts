@@ -24,9 +24,26 @@
 // `idempotencyKey`. Retrying the same paymentId returns the same
 // checkout; retrying a fresh paymentId yields a brand-new attempt.
 
+import { createHash } from "node:crypto";
+
 import { getSquareClient } from "@/lib/square/client";
 import { readDecryptedTokens } from "@/lib/square/oauth";
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
+
+/**
+ * Deterministic Square `idempotency_key` derived from `(ticketId, paymentId)`.
+ *
+ * Square caps `terminals.createCheckout`'s idempotency_key at 64 characters,
+ * but two joined UUIDs `${ticketId}:${paymentId}` is 73 — so we SHA-256 the
+ * canonical input and emit the 64-char hex digest. Same input ⇒ same key
+ * (retries dedupe correctly); fresh `paymentId` per attempt ⇒ fresh key
+ * (per-attempt-row contract holds). Constitution Principle III's
+ * "deterministic from ticket_id + payment_id" is preserved by the hash —
+ * only the on-wire representation changes.
+ */
+export function buildIdempotencyKey(ticketId: string, paymentId: string): string {
+  return createHash("sha256").update(`${ticketId}:${paymentId}`).digest("hex");
+}
 
 export type TerminalDevice = {
   squareDeviceId: string;
@@ -98,7 +115,7 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
 
   const client = getSquareClient(connection.accessToken);
 
-  const idempotencyKey = `${input.ticketId}:${input.paymentId}`;
+  const idempotencyKey = buildIdempotencyKey(input.ticketId, input.paymentId);
 
   // The SDK accepts a typed CreateTerminalCheckoutRequest. We construct it
   // manually so the test-mocked fake gets a stable arg shape.

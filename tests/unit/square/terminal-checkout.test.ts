@@ -67,8 +67,8 @@ describe("lib/square/terminal — createCheckout", () => {
     vi.clearAllMocks();
   });
 
-  it("(a) sends idempotencyKey === `${ticketId}:${paymentId}` exactly", async () => {
-    const { createCheckout } = await import("@/lib/square/terminal");
+  it("(a) sends idempotencyKey derived deterministically from (ticketId, paymentId), <=64 chars", async () => {
+    const { createCheckout, buildIdempotencyKey } = await import("@/lib/square/terminal");
 
     fakeCreate.mockResolvedValueOnce({
       checkout: { id: "tco_ABC", status: "PENDING" },
@@ -87,7 +87,11 @@ describe("lib/square/terminal — createCheckout", () => {
 
     expect(fakeCreate).toHaveBeenCalledTimes(1);
     const callArg = fakeCreate.mock.calls[0][0] as { idempotencyKey: string };
-    expect(callArg.idempotencyKey).toBe(`${ticketId}:${paymentId}`);
+    // Square caps the key at 64 chars; we hash to fit. Same (ticket, payment)
+    // ⇒ same key (idempotency contract preserved).
+    expect(callArg.idempotencyKey).toBe(buildIdempotencyKey(ticketId, paymentId));
+    expect(callArg.idempotencyKey.length).toBeLessThanOrEqual(64);
+    expect(callArg.idempotencyKey).toMatch(/^[a-f0-9]{64}$/);
   });
 
   it("(a) two different paymentIds for the same ticket yield different keys", async () => {
@@ -116,10 +120,11 @@ describe("lib/square/terminal — createCheckout", () => {
       referenceId: ticketId,
     });
 
+    const { buildIdempotencyKey } = await import("@/lib/square/terminal");
     const keyA = (fakeCreate.mock.calls[0][0] as { idempotencyKey: string }).idempotencyKey;
     const keyB = (fakeCreate.mock.calls[1][0] as { idempotencyKey: string }).idempotencyKey;
-    expect(keyA).toBe(`${ticketId}:${paymentA}`);
-    expect(keyB).toBe(`${ticketId}:${paymentB}`);
+    expect(keyA).toBe(buildIdempotencyKey(ticketId, paymentA));
+    expect(keyB).toBe(buildIdempotencyKey(ticketId, paymentB));
     expect(keyA).not.toBe(keyB);
   });
 

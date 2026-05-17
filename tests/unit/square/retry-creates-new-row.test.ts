@@ -226,10 +226,11 @@ describeIfUp("sendCardToTerminal — retry semantics (per-attempt row)", () => {
 
     // Idempotency keys passed to Square differ.
     expect(fakeCreate).toHaveBeenCalledTimes(2);
+    const { buildIdempotencyKey } = await import("@/lib/square/terminal");
     const keyA = (fakeCreate.mock.calls[0][0] as { idempotencyKey: string }).idempotencyKey;
     const keyB = (fakeCreate.mock.calls[1][0] as { idempotencyKey: string }).idempotencyKey;
-    expect(keyA).toBe(`${ticketId}:${first.paymentId}`);
-    expect(keyB).toBe(`${ticketId}:${second.paymentId}`);
+    expect(keyA).toBe(buildIdempotencyKey(ticketId, first.paymentId));
+    expect(keyB).toBe(buildIdempotencyKey(ticketId, second.paymentId));
     expect(keyA).not.toBe(keyB);
   });
 });
