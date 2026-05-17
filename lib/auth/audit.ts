@@ -75,13 +75,22 @@ export type AuditAction =
   | "integration.square_disconnected"
   | "integration.square_token_refreshed"
   | "integration.square_device_renamed"
-  | "integration.square_device_default_set";
+  | "integration.square_device_default_set"
+  // Added by feature 018 (entity_type "payment"/"gift_card")
+  | "payment.draft_created"
+  | "payment.draft_removed"
+  | "gift_card.balance_looked_up"
+  | "gift_card.redeemed";
 
 export function deriveEntityType(
   action: AuditAction
-): "service" | "ticket" | "payment" | "staff" | "auth" | "user" | "integration" {
+): "service" | "ticket" | "payment" | "staff" | "auth" | "user" | "integration" | "gift_card" {
   if (action.startsWith("user.")) return "user";
   if (action.startsWith("ticket.")) return "ticket";
+  // Feature 018 — gift_card.* verbs (placed before payment.* so the
+  // prefix dispatch resolves correctly; the gift_card.redeemed verb is
+  // emitted alongside the gift-card leg's settlement).
+  if (action.startsWith("gift_card.")) return "gift_card";
   if (action.startsWith("payment.")) return "payment";
   if (action.startsWith("service.")) return "service";
   // Feature 013 — line/discount/bill verbs all entity_type="ticket".

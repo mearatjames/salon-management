@@ -16,6 +16,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  handlePaymentUpdated,
   handleTerminalCheckoutUpdated,
   MerchantMismatchError,
   parseEvent,
@@ -56,7 +57,22 @@ export async function POST(request: Request): Promise<Response> {
   });
 
   try {
-    const result = await handleTerminalCheckoutUpdated(event);
+    // Event-type dispatch — feature 015 ships terminal.checkout.updated;
+    // feature 018 adds payment.updated for gift-card legs. Any other
+    // event type returns a 200 with an ignored flag so Square stops
+    // retrying.
+    let result;
+    if (event.type === "terminal.checkout.updated") {
+      result = await handleTerminalCheckoutUpdated(event);
+    } else if (event.type === "payment.updated") {
+      result = await handlePaymentUpdated(event);
+    } else {
+      return NextResponse.json(
+        { ok: true, ignored: true, reason: `unsupported_event_type_${event.type}` },
+        { status: 200 }
+      );
+    }
+
     if ("ignored" in result && result.ignored) {
       return NextResponse.json({ ok: true, ignored: true }, { status: 200 });
     }

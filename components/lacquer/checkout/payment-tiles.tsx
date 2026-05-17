@@ -29,6 +29,18 @@ export type PaymentTilesProps = {
   amountCents?: number;
   onSendCard?: () => void;
   cardSendDisabled?: boolean;
+  /**
+   * Feature 018 — fired in addition to onChange('gift') when the Gift tile
+   * is tapped. Surfaces the parent's "open GAN entry sheet" callback so
+   * the gift-card flow can begin in one tap.
+   */
+  onPickGift?: () => void;
+  /**
+   * Feature 018 — fired when the Split tile is tapped. Split mode is more
+   * of an "enter split-tender composition mode" action than a method pick;
+   * the parent uses this to swap the cart footer to the split layout.
+   */
+  onPickSplit?: () => void;
 };
 
 type TileSpec = {
@@ -71,6 +83,8 @@ export function PaymentTiles({
   amountCents,
   onSendCard,
   cardSendDisabled,
+  onPickGift,
+  onPickSplit,
 }: PaymentTilesProps) {
   const cardEnabled = squareConnected && devicesAvailable >= 1;
   const cardDisabledReason = !squareConnected
@@ -78,6 +92,15 @@ export function PaymentTiles({
     : devicesAvailable < 1
       ? "No Square Terminal paired — pair one in the Square Dashboard"
       : undefined;
+
+  // Feature 018: Gift uses the same OAuth as Card (gated by squareConnected
+  // only — gift redemption is a Payments-API call, not a Terminal call, so
+  // device count is irrelevant). Split has no upstream dependency — it
+  // just composes legs locally.
+  const giftEnabled = squareConnected;
+  const giftDisabledReason = !squareConnected
+    ? "Connect Square in settings to accept gift cards"
+    : undefined;
 
   const tiles: ReadonlyArray<TileSpec> = [
     { id: "cash", label: "Cash", icon: Banknote, enabled: true },
@@ -88,13 +111,18 @@ export function PaymentTiles({
       enabled: cardEnabled,
       disabledReason: cardDisabledReason,
     },
-    { id: "gift", label: "Gift", icon: Gift, enabled: false, disabledReason: "Coming soon" },
+    {
+      id: "gift",
+      label: "Gift",
+      icon: Gift,
+      enabled: giftEnabled,
+      disabledReason: giftDisabledReason,
+    },
     {
       id: "split",
       label: "Split",
       icon: SplitSquareHorizontal,
-      enabled: false,
-      disabledReason: "Coming soon",
+      enabled: true,
     },
   ];
 
@@ -121,7 +149,14 @@ export function PaymentTiles({
                 aria-checked={active ? "true" : "false"}
                 data-slot="payment-tile"
                 data-method={t.id}
-                onClick={() => onChange(t.id)}
+                onClick={() => {
+                  onChange(t.id);
+                  // Feature 018: extra side-callbacks for Gift + Split so
+                  // the parent can open the GAN entry sheet / switch the
+                  // cart footer to split-tender mode in one tap.
+                  if (t.id === "gift" && onPickGift) onPickGift();
+                  if (t.id === "split" && onPickSplit) onPickSplit();
+                }}
                 style={tileStyle(active, true)}
               >
                 <Icon size={20} strokeWidth={1.5} aria-hidden="true" />

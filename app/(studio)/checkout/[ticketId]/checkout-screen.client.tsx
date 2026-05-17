@@ -29,36 +29,57 @@ import { Plus, Printer } from "lucide-react";
 import { toast } from "sonner";
 
 import {
+  activateCashDraft,
+  activateGiftDraft,
   addDiscountLine,
   addServiceLine,
   cancelTerminalPayment,
+  composeDraftLeg,
   discardTicket,
   emailBillStub,
+  lookupGiftCard,
+  redeemGiftCardWholeTicket,
   removeDiscountLine,
+  removeDraftLeg,
   removeLine,
   sendCardToTerminal,
   setLinePrice,
   setLineTech,
   takeCash,
+  type LookupGiftCardResult,
 } from "@/app/(studio)/checkout/actions";
 import {
   CashPaymentFailedError,
   DiscountInvalidError,
+  DraftLegNotFoundError,
+  GiftCardNotRedeemableError,
+  GiftCardZeroBalanceError,
+  InvalidGanError,
   InvalidPriceError,
+  LegAmountInvalidError,
+  LegSumMismatchError,
   PaymentNotCancellableError,
   PaymentNotFoundError,
   ServiceArchivedError,
   SquareCheckoutCreateFailedError,
+  SquareGiftCardLookupFailedError,
+  SquareGiftCardPaymentFailedError,
   SquareNotConnectedError,
   SquareReconnectRequiredError,
   StaffNotActiveError,
   TerminalDeviceRequiredError,
+  TicketAlreadyBeingChargedError,
   TicketAlreadyTerminalError,
   TicketEmptyError,
   TicketHasUnpricedItemsError,
   TicketNotOpenError,
 } from "@/app/(studio)/checkout/_errors";
+import { GanNumpadSheet } from "@/components/lacquer/checkout/gan-numpad-sheet";
+import { GiftCardBalanceSheet } from "@/components/lacquer/checkout/gift-card-balance-sheet";
 import { CardWaiting } from "@/components/lacquer/checkout/card-waiting";
+import { MethodPickerPopover } from "@/components/lacquer/checkout/method-picker-popover";
+import { SplitCartFooter } from "@/components/lacquer/checkout/split-cart-footer";
+import type { PaymentLegRowView } from "@/components/lacquer/checkout/payment-leg-row";
 import { subscribePaymentChanges } from "@/lib/realtime/payments";
 
 import { BillSheet, type BillSnapshot } from "@/components/lacquer/checkout/bill-sheet";
@@ -102,6 +123,19 @@ export type CheckoutScreenProps = {
   pairedDevices?: TerminalDevicePropView[];
   /** US2: `square_oauth.refresh_failed_at IS NOT NULL`. */
   requiresReconnect?: boolean;
+  /**
+   * Feature 018 (US2): existing non-failed legs loaded by the page server.
+   * Empty when the ticket has never been split-composed; populated when
+   * the operator reloads mid-flow (FR-014a) or US3's partial-gift case
+   * has already composed one leg.
+   */
+  initialLegs?: SplitLeg[];
+};
+
+// Feature 018 (US2): the leg shape we hold in client state. Drives the
+// split-tender footer; pushed back to the server on activate/remove.
+type SplitLeg = PaymentLegRowView & {
+  status: "draft" | "pending" | "succeeded" | "failed";
 };
 
 function tempId(): string {
@@ -110,6 +144,35 @@ function tempId(): string {
 
 function fmt(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
+}
+
+/**
+ * In Next.js' production build, errors thrown from a Server Action are
+ * serialized as plain Errors on the client — the original class is lost
+ * and `instanceof CheckoutError` returns false. The `code` field is also
+ * stripped (only `message` + `digest` survive). This helper matches by
+ * the canonical error message string when `instanceof` fails, so the
+ * client island can branch correctly under both runtimes.
+ *
+ * Note: the strings below are the constructors' default `message` values
+ * from `_errors.ts`. Keep them in sync if those messages change.
+ */
+function isErrorCode(err: unknown, code: string): boolean {
+  if (!err || typeof err !== "object") return false;
+  const c = (err as { code?: unknown }).code;
+  return typeof c === "string" && c === code;
+}
+
+function isErrorMessage(err: unknown, message: string): boolean {
+  if (!err || typeof err !== "object") return false;
+  const m = (err as { message?: unknown }).message;
+  return typeof m === "string" && m === message;
+}
+
+function isTicketAlreadyBeingCharged(err: unknown): boolean {
+  if (err instanceof TicketAlreadyBeingChargedError) return true;
+  if (isErrorCode(err, "TICKET_ALREADY_BEING_CHARGED")) return true;
+  return isErrorMessage(err, "ticket is already being charged on another device");
 }
 
 export function CheckoutScreen({
@@ -123,6 +186,7 @@ export function CheckoutScreen({
   defaultDeviceFriendlyName = null,
   pairedDevices = [],
   requiresReconnect = false,
+  initialLegs = [],
 }: CheckoutScreenProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -165,6 +229,54 @@ export function CheckoutScreen({
   useEffect(() => {
     activeCardPaymentRef.current = activeCardPaymentId;
   }, [activeCardPaymentId]);
+
+  // Feature 018 — Gift card flow state. Stages:
+  //   idle    → default (Gift tile not yet tapped, or post-cancel).
+  //   numpad  → GanNumpadSheet visible.
+  //   balance → GiftCardBalanceSheet visible with the lookup result.
+  //   waiting → redeem in flight; subscribe + poll the gift-card payment.
+  type GiftStage = "idle" | "numpad" | "balance" | "waiting";
+  const [giftStage, setGiftStage] = useState<GiftStage>("idle");
+  const [giftBusy, setGiftBusy] = useState(false);
+  const [giftLookup, setGiftLookup] = useState<LookupGiftCardResult | null>(null);
+  const [giftGan, setGiftGan] = useState<string | null>(null);
+  const [activeGiftPaymentId, setActiveGiftPaymentId] = useState<string | null>(null);
+  const activeGiftPaymentRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeGiftPaymentRef.current = activeGiftPaymentId;
+  }, [activeGiftPaymentId]);
+
+  // ----------------------------------------------------------------------
+  // Feature 018 (US2) — split-tender state.
+  //
+  //   `splitMode` is true when the operator either tapped the Split tile
+  //   OR there are already non-failed legs server-side (covers reload-
+  //   mid-flow + US3's auto-entry from the partial-gift case).
+  //   `legs` is the live leg list, hydrated from `initialLegs` and kept
+  //   in sync via the `subscribePaymentChanges` channel + optimistic
+  //   client updates on compose/remove.
+  //   `splitBusy` locks the footer while an activate/remove call is in flight.
+  //   `splitGanPaymentId` holds the draft id while the GanNumpadSheet is
+  //   open for a gift leg's activation.
+  // ----------------------------------------------------------------------
+  const [legs, setLegs] = useState<SplitLeg[]>(initialLegs);
+  const [splitModeManuallyOpened, setSplitModeManuallyOpened] = useState(false);
+  const [splitBusy, setSplitBusy] = useState(false);
+  const [splitGanPaymentId, setSplitGanPaymentId] = useState<string | null>(null);
+  const hasNonFailedLegs = legs.some(
+    (l) => l.status === "draft" || l.status === "pending" || l.status === "succeeded"
+  );
+  const splitMode = splitModeManuallyOpened || hasNonFailedLegs;
+
+  // Feature 018 (US3 / T052) — second-leg method picker state. Opens
+  // automatically when `redeemGiftCardWholeTicket` returns
+  // `{kind: 'partial_split', nextLegAmountCents}`. The operator's pick
+  // drives a regular `composeDraftLeg` + `activate*Draft` round-trip
+  // (no server-side second-draft synthesis).
+  const [methodPicker, setMethodPicker] = useState<{
+    amountCents: number;
+  } | null>(null);
+  const [methodPickerBusy, setMethodPickerBusy] = useState(false);
 
   const staffById = useMemo(() => {
     const m = new Map<string, Staff>();
@@ -233,22 +345,45 @@ export function CheckoutScreen({
 
     startTransition(async () => {
       try {
-        const { lineId } = await addServiceLine({
+        const result = await addServiceLine({
           ticketId,
           serviceId: svc.id,
           assignedStaffId: selectedStaffId,
         });
+        // Feature 018 (US2): the action returns a typed refusal when the
+        // ticket has an in-flight leg — surface the spec's banner copy.
+        if ("refusedReason" in result) {
+          setLines((prev) => prev.filter((l) => l.id !== tmp));
+          if (result.refusedReason === "ticket_already_being_charged") {
+            setErrorBanner("Ticket is already being charged on another device");
+          }
+          return;
+        }
         // Swap the temp id for the server-returned one.
-        setLines((prev) => prev.map((l) => (l.id === tmp ? { ...l, id: lineId } : l)));
+        setLines((prev) => prev.map((l) => (l.id === tmp ? { ...l, id: result.lineId } : l)));
+        // Feature 018 (US2 / T045): the cart-edit invalidated existing
+        // split-tender drafts. Surface a toast so the operator knows
+        // their leg composition was wiped.
+        if (result.draftsDiscarded && result.draftsDiscarded > 0) {
+          toast.message(
+            `${result.draftsDiscarded} split-tender leg${
+              result.draftsDiscarded === 1 ? "" : "s"
+            } cleared because the cart changed`
+          );
+          setLegs([]);
+          setSplitModeManuallyOpened(false);
+        }
         // FR-001: auto-open the price sheet for variable-priced services
         // as soon as the server confirms the row exists.
         if (svc.variable_price) {
-          setPriceSheet({ lineId, isOverride: false });
+          setPriceSheet({ lineId: result.lineId, isOverride: false });
         }
       } catch (err) {
         // Revert the optimistic insert.
         setLines((prev) => prev.filter((l) => l.id !== tmp));
-        if (err instanceof StaffNotActiveError) {
+        if (isTicketAlreadyBeingCharged(err)) {
+          setErrorBanner("Ticket is already being charged on another device");
+        } else if (err instanceof StaffNotActiveError) {
           setErrorBanner("That tech is no longer active. Pick another.");
         } else if (err instanceof ServiceArchivedError) {
           setErrorBanner("That service is no longer available.");
@@ -733,6 +868,523 @@ export function CheckoutScreen({
     toast.success(`Bill emailed to ${address}`);
   }
 
+  // ----------------------------------------------------------------------
+  // Feature 018 — Gift card flow.
+  //
+  //   1. Operator taps Gift tile → opens <GanNumpadSheet/>.
+  //   2. On submit → lookupGiftCard → renders <GiftCardBalanceSheet/>.
+  //   3. On Redeem → redeemGiftCardWholeTicket → giftStage='waiting'.
+  //   4. Waiting subscribes to subscribePaymentChanges + polls
+  //      /api/square/payment/[paymentId] every 5s. On 'succeeded' →
+  //      router.refresh() to render the paid branch. On 'failed' →
+  //      toast + return to picker.
+  //   5. Error toasts for the typed gift-card errors.
+  // ----------------------------------------------------------------------
+
+  function openGiftFlow() {
+    setGiftLookup(null);
+    setGiftGan(null);
+    setActiveGiftPaymentId(null);
+    setGiftBusy(false);
+    setGiftStage("numpad");
+  }
+
+  function closeGiftFlow() {
+    setGiftStage("idle");
+    setGiftLookup(null);
+    setGiftGan(null);
+    setActiveGiftPaymentId(null);
+    setGiftBusy(false);
+    setPaymentMethod(null);
+  }
+
+  async function handleGanSubmit(gan: string) {
+    if (giftBusy) return;
+    setGiftBusy(true);
+    setErrorBanner(null);
+    try {
+      const result = await lookupGiftCard(gan);
+      setGiftLookup(result);
+      setGiftGan(gan);
+      setGiftStage("balance");
+    } catch (err) {
+      if (err instanceof InvalidGanError) {
+        toast.error("That gift card number isn't valid.");
+      } else if (err instanceof SquareGiftCardLookupFailedError) {
+        toast.error("Couldn't reach Square to look up the gift card. Try again.");
+      } else if (err instanceof SquareNotConnectedError) {
+        toast.error("Square isn't connected. Connect it in settings to accept gift cards.");
+      } else if (err instanceof SquareReconnectRequiredError) {
+        toast.error("Square needs to be reconnected. Open settings to fix it.");
+      } else {
+        toast.error("Couldn't look up that gift card. Try again.");
+      }
+    } finally {
+      setGiftBusy(false);
+    }
+  }
+
+  async function handleGiftRedeem() {
+    if (giftBusy || !giftGan || !giftLookup) return;
+    if (giftLookup.kind !== "found") return;
+    setGiftBusy(true);
+    setErrorBanner(null);
+    try {
+      const result = await redeemGiftCardWholeTicket(ticketId, giftGan);
+      if (result.kind === "fully_paid") {
+        setActiveGiftPaymentId(result.paymentId);
+        setGiftStage("waiting");
+      } else if (result.kind === "partial_split") {
+        // US3 (T052) — close the gift-card sheets so the picker sits on
+        // top of the cart with the live "Owes $Y" footer visible behind
+        // it. Add an optimistic pending leg for the gift charge so the
+        // split footer reflects what's already been allocated; realtime
+        // will reconcile the eventual succeeded state.
+        setLegs((prev) => {
+          if (prev.some((l) => l.id === result.paymentId)) return prev;
+          return [
+            ...prev,
+            {
+              id: result.paymentId,
+              method: "gift",
+              amountCents: totals.totalCents - result.nextLegAmountCents,
+              status: "pending",
+              last4Mask: giftGan ? giftGan.replace(/\s/g, "").slice(-4) : null,
+            },
+          ];
+        });
+        setSplitModeManuallyOpened(true);
+        setActiveGiftPaymentId(result.paymentId);
+        setGiftStage("idle");
+        setGiftLookup(null);
+        setGiftGan(null);
+        setPaymentMethod(null);
+        setMethodPicker({ amountCents: result.nextLegAmountCents });
+      } else if (result.kind === "lookup_zero_balance") {
+        toast.error("That card has no balance to redeem.");
+        closeGiftFlow();
+      } else if (result.kind === "lookup_not_redeemable") {
+        toast.error(`That gift card is ${result.state.toLowerCase()} and can't be redeemed.`);
+        closeGiftFlow();
+      } else if (result.kind === "lookup_not_found") {
+        toast.error("Gift card not found. Re-enter the number.");
+        setGiftStage("numpad");
+      }
+    } catch (err) {
+      if (err instanceof TicketAlreadyBeingChargedError) {
+        toast.error("This ticket is already being charged on another device.");
+        closeGiftFlow();
+      } else if (err instanceof GiftCardNotRedeemableError) {
+        toast.error(`That gift card is ${err.state.toLowerCase()} and can't be redeemed.`);
+        closeGiftFlow();
+      } else if (err instanceof GiftCardZeroBalanceError) {
+        toast.error("That card has no balance to redeem.");
+        closeGiftFlow();
+      } else if (err instanceof SquareGiftCardPaymentFailedError) {
+        toast.error("Square rejected the gift-card payment. Try again or pick another method.");
+        closeGiftFlow();
+      } else if (err instanceof SquareGiftCardLookupFailedError) {
+        toast.error("Couldn't reach Square. Try again.");
+      } else if (err instanceof TicketHasUnpricedItemsError) {
+        toast.error("Set price on highlighted items before charging.");
+        closeGiftFlow();
+      } else if (err instanceof TicketNotOpenError) {
+        toast.error("This ticket is no longer open.");
+        closeGiftFlow();
+      } else {
+        toast.error("Couldn't redeem the gift card. Try again.");
+        closeGiftFlow();
+      }
+    } finally {
+      setGiftBusy(false);
+    }
+  }
+
+  // US3 (T052) — second-leg method picker handler. The operator picked
+  // a method for the remainder; compose a draft for that method and
+  // immediately activate it. Cash activates inline; card routes to the
+  // terminal CardWaiting flow; gift opens the GAN numpad sheet against
+  // the new draft id.
+  async function handleMethodPickerPick(method: "cash" | "card" | "gift") {
+    const picker = methodPicker;
+    if (!picker || methodPickerBusy) return;
+    setMethodPickerBusy(true);
+    setSplitBusy(true);
+    setErrorBanner(null);
+    try {
+      const { paymentId: nextDraftId } = await composeDraftLeg(
+        ticketId,
+        method,
+        picker.amountCents
+      );
+      // Optimistic — push the draft into legs (the realtime channel
+      // will reconcile if anything differs).
+      setLegs((prev) => [
+        ...prev,
+        {
+          id: nextDraftId,
+          method,
+          amountCents: picker.amountCents,
+          status: "draft",
+          last4Mask: null,
+        },
+      ]);
+      setMethodPicker(null);
+
+      if (method === "cash") {
+        const result = await activateCashDraft(nextDraftId);
+        setLegs((prev) =>
+          prev.map((l) => (l.id === nextDraftId ? { ...l, status: "succeeded" } : l))
+        );
+        if (result.ticketFlippedToPaid) router.refresh();
+      } else if (method === "card") {
+        const { paymentId: confirmedId } = await sendCardToTerminal(ticketId, {
+          deviceId: defaultDeviceId ?? undefined,
+          existingDraftId: nextDraftId,
+        });
+        setActiveCardPaymentId(confirmedId);
+        setLegs((prev) =>
+          prev.map((l) => (l.id === nextDraftId ? { ...l, status: "pending" } : l))
+        );
+        setCardStage("waiting");
+      } else {
+        // gift — open the GAN numpad against this new draft id; the
+        // existing split-leg gift activation path takes it from there.
+        setSplitGanPaymentId(nextDraftId);
+        setGiftBusy(false);
+        setGiftStage("numpad");
+      }
+    } catch (err) {
+      toast.error(classifySplitError(err));
+      refreshLegs();
+    } finally {
+      setMethodPickerBusy(false);
+      setSplitBusy(false);
+    }
+  }
+
+  async function pollGiftPaymentOnce(): Promise<void> {
+    const id = activeGiftPaymentRef.current;
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/square/payment/${id}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const body = (await res.json()) as {
+        status: "draft" | "pending" | "succeeded" | "failed";
+        failureReason: string | null;
+      };
+      if (body.status === "succeeded") {
+        router.refresh();
+      } else if (body.status === "failed") {
+        toast.error("Gift card payment failed. Pick another method.");
+        closeGiftFlow();
+      }
+    } catch {
+      // Network blip; next interval will retry.
+    }
+  }
+
+  useEffect(() => {
+    if (giftStage !== "waiting" || !activeGiftPaymentId) return;
+    const unsubscribe = subscribePaymentChanges(ticketId, () => {
+      void pollGiftPaymentOnce();
+    });
+    const interval = window.setInterval(() => {
+      void pollGiftPaymentOnce();
+    }, 5000);
+    // Fire one immediate poll asynchronously so the channel-loss case
+    // still resolves in ~5s. setTimeout(0) defers off the effect's
+    // render commit so any setState calls inside pollGiftPaymentOnce
+    // don't trigger a cascading render warning.
+    const initialPoll = window.setTimeout(() => {
+      void pollGiftPaymentOnce();
+    }, 0);
+    return () => {
+      unsubscribe();
+      window.clearInterval(interval);
+      window.clearTimeout(initialPoll);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [giftStage, activeGiftPaymentId, ticketId]);
+
+  // ----------------------------------------------------------------------
+  // Feature 018 (US2) — split-tender handlers.
+  //
+  //   When `splitMode` is active (any non-failed leg exists, or the
+  //   operator tapped Split), we subscribe to the realtime channel so
+  //   the leg list updates on webhook-driven settlements (card / gift).
+  //   The fallback polling for individual gift legs is the existing
+  //   `/api/square/payment/[paymentId]` endpoint — the realtime channel
+  //   is the primary signal.
+  // ----------------------------------------------------------------------
+
+  // Realtime: when split mode is active, listen for UPDATE events on the
+  // ticket's payment rows. Webhook-driven flips (card / gift settlement)
+  // bring `status` from 'pending' → 'succeeded' or 'failed'. We optimistic-
+  // update on activate/remove; the realtime callback patches the local
+  // leg list. A separate effect watches `legs` for the all-settled
+  // condition and triggers `router.refresh()` outside the setter chain
+  // (calling navigation methods inside a state-setter return value is a
+  // React no-no and can fault the error boundary in production).
+  useEffect(() => {
+    if (!splitMode) return;
+    const unsubscribe = subscribePaymentChanges(ticketId, (payload) => {
+      const row = payload.new;
+      if (!row || !row.id) return;
+      const newStatus = row.status;
+      if (newStatus !== "pending" && newStatus !== "succeeded" && newStatus !== "failed") return;
+      setLegs((prev) => {
+        const exists = prev.find((l) => l.id === row.id);
+        if (!exists) return prev;
+        return prev.map((l) =>
+          l.id === row.id ? { ...l, status: newStatus as SplitLeg["status"] } : l
+        );
+      });
+    });
+    return () => {
+      unsubscribe();
+    };
+  }, [splitMode, ticketId]);
+
+  // Auto-refresh the page once every leg has settled (succeeded/failed),
+  // at least one succeeded. The page's paid-status branch then renders
+  // <DoneScreen/>. Decoupled from the realtime callback so React can
+  // commit the setLegs update before the navigation fires.
+  useEffect(() => {
+    if (!splitMode || legs.length === 0) return;
+    const allSettled = legs.every((l) => l.status === "succeeded" || l.status === "failed");
+    const anySucceeded = legs.some((l) => l.status === "succeeded");
+    if (allSettled && anySucceeded) {
+      router.refresh();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [legs, splitMode]);
+
+  // US3 (T052) — polling fallback for pending gift legs in split mode.
+  // The realtime channel is the primary signal for `pending → succeeded`
+  // settlements, but if it misses (test env without realtime publication
+  // / network blip) we still want the UI to react. Polls /api/square/
+  // payment/[id] every 3s while any gift leg sits in `pending` and patches
+  // the leg list on settlement.
+  useEffect(() => {
+    if (!splitMode) return;
+    const pendingGiftLegs = legs.filter((l) => l.method === "gift" && l.status === "pending");
+    if (pendingGiftLegs.length === 0) return;
+    const ids = pendingGiftLegs.map((l) => l.id);
+    let cancelled = false;
+    async function pollOnce() {
+      for (const id of ids) {
+        if (cancelled) return;
+        try {
+          const res = await fetch(`/api/square/payment/${id}`, { cache: "no-store" });
+          if (!res.ok) continue;
+          const body = (await res.json()) as {
+            status: "draft" | "pending" | "succeeded" | "failed";
+          };
+          if (body.status === "succeeded" || body.status === "failed") {
+            setLegs((prev) => prev.map((l) => (l.id === id ? { ...l, status: body.status } : l)));
+          }
+        } catch {
+          // Network blip; next interval retries.
+        }
+      }
+    }
+    const interval = window.setInterval(() => void pollOnce(), 3000);
+    const initial = window.setTimeout(() => void pollOnce(), 0);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.clearTimeout(initial);
+    };
+  }, [splitMode, legs]);
+
+  // No-op refresh helper retained as a hook for future server-side
+  // re-hydration if the realtime channel misses an event. Currently a
+  // router.refresh() pulls fresh server data via the page's RSC fetch.
+  function refreshLegs(): void {
+    router.refresh();
+  }
+
+  function handlePickSplit() {
+    if (inflight || splitBusy) return;
+    if (!totals.chargeEligible || lines.some((l) => l.priceUnconfirmed)) {
+      toast.error("Set a price on every line before charging.");
+      return;
+    }
+    setSplitModeManuallyOpened(true);
+    setPaymentMethod(null);
+  }
+
+  function classifySplitError(err: unknown): string {
+    if (isTicketAlreadyBeingCharged(err))
+      return "Ticket is already being charged on another device";
+    if (
+      err instanceof LegSumMismatchError ||
+      isErrorCode(err, "LEG_SUM_MISMATCH") ||
+      isErrorMessage(err, "legs must sum to total")
+    )
+      return "Add more legs to cover the bill before charging.";
+    if (
+      err instanceof LegAmountInvalidError ||
+      isErrorCode(err, "LEG_AMOUNT_INVALID") ||
+      isErrorMessage(err, "leg amount must fit the remaining-owed total")
+    )
+      return "That amount doesn't fit the remaining bill.";
+    if (
+      err instanceof DraftLegNotFoundError ||
+      isErrorCode(err, "DRAFT_LEG_NOT_FOUND") ||
+      isErrorMessage(err, "draft leg not found or already settled")
+    )
+      return "That leg is no longer available.";
+    if (err instanceof TicketHasUnpricedItemsError || isErrorCode(err, "TICKET_HAS_UNPRICED_ITEMS"))
+      return "Set price on highlighted items before charging.";
+    if (err instanceof TicketNotOpenError || isErrorCode(err, "TICKET_NOT_OPEN"))
+      return "This ticket is no longer open.";
+    return "Something went wrong. Try again.";
+  }
+
+  async function handleComposeLeg(method: "cash" | "card" | "gift", amountCents: number) {
+    if (splitBusy) return;
+    setSplitBusy(true);
+    setErrorBanner(null);
+    try {
+      const result = await composeDraftLeg(ticketId, method, amountCents);
+      // Optimistic insert; the realtime channel will reconcile.
+      setLegs((prev) => [
+        ...prev,
+        {
+          id: result.paymentId,
+          method,
+          amountCents,
+          status: "draft",
+          last4Mask: null,
+        },
+      ]);
+    } catch (err) {
+      toast.error(classifySplitError(err));
+    } finally {
+      setSplitBusy(false);
+    }
+  }
+
+  async function handleRemoveDraftLeg(paymentId: string) {
+    if (splitBusy) return;
+    setSplitBusy(true);
+    setErrorBanner(null);
+    try {
+      await removeDraftLeg(paymentId);
+      setLegs((prev) => prev.filter((l) => l.id !== paymentId));
+    } catch (err) {
+      toast.error(classifySplitError(err));
+      refreshLegs();
+    } finally {
+      setSplitBusy(false);
+    }
+  }
+
+  async function handleExitSplit() {
+    if (splitBusy) return;
+    setSplitBusy(true);
+    setErrorBanner(null);
+    try {
+      const drafts = legs.filter((l) => l.status === "draft");
+      for (const d of drafts) {
+        try {
+          await removeDraftLeg(d.id);
+        } catch (err) {
+          // Best-effort wipe — continue on per-leg failure.
+          console.warn("handleExitSplit: removeDraftLeg failed", err);
+        }
+      }
+      setLegs([]);
+      setSplitModeManuallyOpened(false);
+    } finally {
+      setSplitBusy(false);
+    }
+  }
+
+  async function handleActivateCashLeg(paymentId: string) {
+    if (splitBusy) return;
+    setSplitBusy(true);
+    setErrorBanner(null);
+    try {
+      const result = await activateCashDraft(paymentId);
+      setLegs((prev) => prev.map((l) => (l.id === paymentId ? { ...l, status: "succeeded" } : l)));
+      if (result.ticketFlippedToPaid) {
+        router.refresh();
+      }
+    } catch (err) {
+      toast.error(classifySplitError(err));
+      refreshLegs();
+    } finally {
+      setSplitBusy(false);
+    }
+  }
+
+  async function handleActivateCardLeg(paymentId: string) {
+    if (splitBusy || cardStage !== "cart") return;
+    setSplitBusy(true);
+    setErrorBanner(null);
+    try {
+      const { paymentId: confirmedId } = await sendCardToTerminal(ticketId, {
+        deviceId: defaultDeviceId ?? undefined,
+        existingDraftId: paymentId,
+      });
+      setActiveCardPaymentId(confirmedId);
+      setLegs((prev) => prev.map((l) => (l.id === paymentId ? { ...l, status: "pending" } : l)));
+      setCardStage("waiting");
+    } catch (err) {
+      toast.error(classifySplitError(err));
+      refreshLegs();
+    } finally {
+      setSplitBusy(false);
+    }
+  }
+
+  function handleActivateGiftLeg(paymentId: string) {
+    if (splitBusy) return;
+    setSplitGanPaymentId(paymentId);
+    setGiftBusy(false);
+    setGiftStage("numpad");
+  }
+
+  async function handleSplitGanSubmit(gan: string) {
+    const targetId = splitGanPaymentId;
+    if (!targetId || giftBusy) return;
+    setGiftBusy(true);
+    setSplitBusy(true);
+    setErrorBanner(null);
+    try {
+      await activateGiftDraft(targetId, gan);
+      setLegs((prev) => prev.map((l) => (l.id === targetId ? { ...l, status: "pending" } : l)));
+      setActiveGiftPaymentId(targetId);
+      setSplitGanPaymentId(null);
+      setGiftStage("waiting");
+    } catch (err) {
+      if (err instanceof InvalidGanError) {
+        toast.error("That gift card number isn't valid.");
+      } else if (err instanceof GiftCardNotRedeemableError) {
+        toast.error(`That gift card is ${err.state.toLowerCase()} and can't be redeemed.`);
+        setGiftStage("idle");
+        setSplitGanPaymentId(null);
+      } else if (err instanceof SquareGiftCardLookupFailedError) {
+        toast.error("Couldn't reach Square to look up the gift card. Try again.");
+      } else if (err instanceof SquareGiftCardPaymentFailedError) {
+        toast.error("Square rejected the gift-card payment. Try again or pick another method.");
+        setGiftStage("idle");
+        setSplitGanPaymentId(null);
+      } else {
+        toast.error(classifySplitError(err));
+        setGiftStage("idle");
+        setSplitGanPaymentId(null);
+      }
+      refreshLegs();
+    } finally {
+      setGiftBusy(false);
+      setSplitBusy(false);
+    }
+  }
+
   const priceSheetLine = priceSheet
     ? (lines.find((l) => l.id === priceSheet.lineId) ?? null)
     : null;
@@ -1010,68 +1662,97 @@ export function CheckoutScreen({
               {errorBanner}
             </p>
           ) : null}
-          <PaymentTiles
-            value={paymentMethod}
-            onChange={setPaymentMethod}
-            squareConnected={squareConnected && !requiresReconnect}
-            devicesAvailable={pairedDevices.length}
-            amountCents={totals.totalCents}
-            onSendCard={handleSendCard}
-            cardSendDisabled={
-              inflight || !totals.chargeEligible || lines.some((l) => l.priceUnconfirmed)
-            }
-          />
-          {/* US4 (T041): Bill + Charge sit side-by-side in the cart footer.
-              Bill is the token-styled secondary button per the prototype;
-              clicking it captures a frozen snapshot and opens the BillSheet
-              overlay. The Bill button is enabled even when Charge isn't —
-              the operator can print/email a bill at any point before payment. */}
-          <div
-            style={{
-              display: "flex",
-              gap: "var(--space-2)",
-              alignItems: "stretch",
-            }}
-          >
-            <button
-              type="button"
-              onClick={handleOpenBill}
-              data-slot="bill-button"
-              className="tx-btn secondary"
-              disabled={inflight || lines.length === 0}
-              style={{
-                height: "var(--space-10)",
-              }}
-            >
-              <Printer size={16} strokeWidth={1.5} aria-hidden="true" /> Bill
-            </button>
-            <button
-              type="button"
-              onClick={handleTakeCash}
-              disabled={!takeCashEnabled}
-              data-slot="take-cash-button"
-              style={{
-                flex: "1 1 auto",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                height: "var(--space-10)",
-                padding: "0 var(--space-4)",
-                background: takeCashEnabled ? "var(--primary)" : "var(--muted)",
-                color: takeCashEnabled ? "var(--primary-foreground)" : "var(--muted-foreground)",
-                border: "none",
-                borderRadius: "var(--radius-sm)",
-                fontSize: "var(--text-base)",
-                fontWeight: 600,
-                cursor: takeCashEnabled ? "pointer" : "not-allowed",
-                fontVariantNumeric: "tabular-nums",
-              }}
-            >
-              {lines.some((l) => l.priceUnconfirmed)
-                ? "Set price on highlighted items"
-                : `Take cash · ${fmt(totals.totalCents)}`}
-            </button>
-          </div>
+          {splitMode ? (
+            <SplitCartFooter
+              ticketTotalCents={totals.totalCents}
+              legs={legs}
+              busy={splitBusy}
+              cardEnabled={squareConnected && !requiresReconnect && pairedDevices.length >= 1}
+              giftEnabled={squareConnected && !requiresReconnect}
+              onComposeLeg={(method, amountCents) => void handleComposeLeg(method, amountCents)}
+              onRemoveDraft={(paymentId) => void handleRemoveDraftLeg(paymentId)}
+              onExitSplit={() => void handleExitSplit()}
+              onActivateCash={(paymentId) => void handleActivateCashLeg(paymentId)}
+              onActivateCard={(paymentId) => void handleActivateCardLeg(paymentId)}
+              onActivateGift={(paymentId) => handleActivateGiftLeg(paymentId)}
+            />
+          ) : (
+            <>
+              <PaymentTiles
+                value={paymentMethod}
+                onChange={setPaymentMethod}
+                squareConnected={squareConnected && !requiresReconnect}
+                devicesAvailable={pairedDevices.length}
+                amountCents={totals.totalCents}
+                onSendCard={handleSendCard}
+                cardSendDisabled={
+                  inflight || !totals.chargeEligible || lines.some((l) => l.priceUnconfirmed)
+                }
+                onPickGift={() => {
+                  if (!totals.chargeEligible || lines.some((l) => l.priceUnconfirmed)) {
+                    toast.error("Set a price on every line before charging.");
+                    setPaymentMethod(null);
+                    return;
+                  }
+                  openGiftFlow();
+                }}
+                onPickSplit={handlePickSplit}
+              />
+              {/* US4 (T041): Bill + Charge sit side-by-side in the cart footer.
+                  Bill is the token-styled secondary button per the prototype;
+                  clicking it captures a frozen snapshot and opens the BillSheet
+                  overlay. The Bill button is enabled even when Charge isn't —
+                  the operator can print/email a bill at any point before payment. */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: "var(--space-2)",
+                  alignItems: "stretch",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={handleOpenBill}
+                  data-slot="bill-button"
+                  className="tx-btn secondary"
+                  disabled={inflight || lines.length === 0}
+                  style={{
+                    height: "var(--space-10)",
+                  }}
+                >
+                  <Printer size={16} strokeWidth={1.5} aria-hidden="true" /> Bill
+                </button>
+                <button
+                  type="button"
+                  onClick={handleTakeCash}
+                  disabled={!takeCashEnabled}
+                  data-slot="take-cash-button"
+                  style={{
+                    flex: "1 1 auto",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    height: "var(--space-10)",
+                    padding: "0 var(--space-4)",
+                    background: takeCashEnabled ? "var(--primary)" : "var(--muted)",
+                    color: takeCashEnabled
+                      ? "var(--primary-foreground)"
+                      : "var(--muted-foreground)",
+                    border: "none",
+                    borderRadius: "var(--radius-sm)",
+                    fontSize: "var(--text-base)",
+                    fontWeight: 600,
+                    cursor: takeCashEnabled ? "pointer" : "not-allowed",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {lines.some((l) => l.priceUnconfirmed)
+                    ? "Set price on highlighted items"
+                    : `Take cash · ${fmt(totals.totalCents)}`}
+                </button>
+              </div>
+            </>
+          )}
         </section>
 
         {/* RIGHT: catalog column */}
@@ -1132,6 +1813,114 @@ export function CheckoutScreen({
 
       {emailDialogOpen ? (
         <EmailBillDialog onSubmit={handleEmailBill} onCancel={() => setEmailDialogOpen(false)} />
+      ) : null}
+
+      {/* Feature 018 — Gift card flow sheets. */}
+      {giftStage === "numpad" ? (
+        <GanNumpadSheet
+          onSubmit={(gan) =>
+            splitGanPaymentId ? void handleSplitGanSubmit(gan) : void handleGanSubmit(gan)
+          }
+          onCancel={() => {
+            if (splitGanPaymentId) {
+              setSplitGanPaymentId(null);
+              setGiftStage("idle");
+              setGiftBusy(false);
+            } else {
+              closeGiftFlow();
+            }
+          }}
+          busy={giftBusy}
+        />
+      ) : null}
+      {giftStage === "balance" && giftLookup ? (
+        <GiftCardBalanceSheet
+          result={giftLookup}
+          onRedeem={() => void handleGiftRedeem()}
+          onCancel={closeGiftFlow}
+          onReenter={() => {
+            setGiftLookup(null);
+            setGiftGan(null);
+            setGiftStage("numpad");
+          }}
+          busy={giftBusy}
+          remainingOwedCents={(() => {
+            // US3 (T051): the sheet uses this to render the partial
+            // copy ("Ticket needs $Y · split needed") when the gift
+            // balance won't cover the bill. Computed off live totals
+            // minus succeeded legs (drafts/pending don't count — gift
+            // redemption wipes them via discardDraftLegs).
+            const succeeded = legs
+              .filter((l) => l.status === "succeeded")
+              .reduce((sum, l) => sum + l.amountCents, 0);
+            return Math.max(0, totals.totalCents - succeeded);
+          })()}
+        />
+      ) : null}
+      {/* Feature 018 (US3 / T052) — second-leg method picker for the
+          partial-gift auto-split flow. Opens automatically when
+          redeemGiftCardWholeTicket resolves with `partial_split`. */}
+      {methodPicker ? (
+        <MethodPickerPopover
+          amountCents={methodPicker.amountCents}
+          onPick={(method) => void handleMethodPickerPick(method)}
+          onCancel={() => setMethodPicker(null)}
+          busy={methodPickerBusy}
+        />
+      ) : null}
+      {giftStage === "waiting" ? (
+        <div
+          data-slot="gift-card-waiting"
+          role="status"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "color-mix(in oklch, var(--background) 92%, transparent)",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "var(--space-3)",
+            zIndex: 50,
+          }}
+        >
+          <div
+            style={{
+              width: "var(--space-12)",
+              height: "var(--space-12)",
+              borderRadius: "var(--radius-full)",
+              background: "color-mix(in oklch, var(--primary) 12%, transparent)",
+              color: "var(--primary)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "var(--text-base)",
+              fontWeight: 600,
+              fontVariantNumeric: "tabular-nums",
+            }}
+            aria-hidden="true"
+          >
+            ...
+          </div>
+          <div
+            style={{
+              fontSize: "var(--text-lg)",
+              fontWeight: 600,
+              color: "var(--foreground)",
+            }}
+          >
+            Redeeming gift card…
+          </div>
+          <div
+            style={{
+              fontSize: "var(--text-sm)",
+              color: "var(--muted-foreground)",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            Waiting for Square to confirm the payment.
+          </div>
+        </div>
       ) : null}
     </div>
   );

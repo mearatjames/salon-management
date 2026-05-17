@@ -50,9 +50,16 @@ export function subscribePaymentChanges(
   const supabase = createBrowserClient<Database>(url, anonKey);
 
   // Channel name is scoped to the ticket so multiple open tabs don't
-  // collide. Supabase de-dupes channel subscriptions with the same name.
+  // collide. Each subscriber gets a unique suffix so multiple useEffect
+  // hooks in the same client island (e.g. card-waiting + split-mode
+  // listeners) can coexist without tripping Supabase's "cannot add
+  // postgres_changes after subscribe" guard.
+  const subscriberId =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
   const channel: RealtimeChannel = supabase
-    .channel(`payments:ticket:${ticketId}`)
+    .channel(`payments:ticket:${ticketId}:${subscriberId}`)
     .on(
       "postgres_changes" as never,
       {
