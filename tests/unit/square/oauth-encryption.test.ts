@@ -21,8 +21,23 @@ import { Client } from "pg";
 const DB_URL =
   process.env.SUPABASE_LOCAL_DB_URL ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
 
-const haveDb = Boolean(DB_URL);
-const describeIfDb = haveDb ? describe : describe.skip;
+// `Boolean(DB_URL)` is always true (DB_URL has a default fallback), so we
+// need a real reachability probe — otherwise `beforeAll` tries to open a
+// pg.Client connection that ECONNREFUSEs in CI's unit-test phase (the
+// Supabase stack is booted later, just before the e2e step). Mirror the
+// pattern used by `cancel-vs-succeed-race.test.ts` etc.
+async function isPgReachable(): Promise<boolean> {
+  const probe = new Client({ connectionString: DB_URL, connectionTimeoutMillis: 1500 });
+  try {
+    await probe.connect();
+    await probe.end();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const describeIfDb = (await isPgReachable()) ? describe : describe.skip;
 
 describeIfDb("Square OAuth encryption (pgcrypto + GUC)", () => {
   let client: Client;
