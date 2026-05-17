@@ -8,8 +8,8 @@ export type SecondaryActionsProps = {
 };
 
 // Server component — renders the fixed four-row quick-action stack. The
-// `QuickAction` list is provided by `buildDashboardData()` (single source of
-// truth in `lib/dashboard/aggregate.ts`); this component never hardcodes it.
+// `QuickAction` list is provided by `loadDashboard()` (single source of
+// truth in `lib/dashboard/queries.ts`); this component never hardcodes it.
 // Each row is a Next <Link> styled via the `.tx-secondary-action` chrome.
 export function SecondaryActions({ actions, cols = 1 }: SecondaryActionsProps) {
   return (

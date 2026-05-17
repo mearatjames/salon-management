@@ -1,4 +1,4 @@
-import type { Technician } from "@/lib/dashboard/mock-data";
+import type { Technician } from "@/lib/dashboard/aggregate";
 
 export type TechAvatarProps = {
   tech: Technician;
@@ -6,18 +6,17 @@ export type TechAvatarProps = {
   ring?: boolean;
 };
 
-// Server component — circular initials avatar with a tone-derived OKLCH
-// background. Ports `design-system/prototypes/transaction/TechPicker.jsx:12-31`
-// verbatim modulo TypeScript types. The OKLCH literals `oklch(0.86 0.045 ${tone})`
-// and `oklch(0.32 0.06 ${tone})` are intentional hue-driven shading and are not
-// expressible as Lacquer tokens (Phase-5 orchestrator note).
+// Server component — circular initials avatar. The new `Technician` shape
+// from the live read model carries `colorToken` (e.g. `"--avatar-rose"`) and
+// `displayName`; the initials come from the first two whitespace-separated
+// tokens of `displayName`.
 //
 // `ring` is `false` in v1 — kept on the prop surface for future reuse (e.g.
 // the new-transaction picker in a later feature).
 export function TechAvatar({ tech, size = 36, ring = false }: TechAvatarProps) {
-  const bg = `oklch(0.86 0.045 ${tech.tone})`;
-  const fg = `oklch(0.32 0.06 ${tech.tone})`;
-  const initials = tech.full
+  // Build CSS var reference; fall back to a neutral if the token is missing.
+  const bg = tech.colorToken ? `var(${tech.colorToken})` : "var(--muted)";
+  const initials = tech.displayName
     .split(/\s+/)
     .slice(0, 2)
     .map((token) => token[0] ?? "")
@@ -27,13 +26,14 @@ export function TechAvatar({ tech, size = 36, ring = false }: TechAvatarProps) {
   return (
     <div
       data-slot="tech-avatar"
+      data-staff-name={tech.displayName}
       className="tx-tech-avatar"
       style={{
         width: size,
         height: size,
         borderRadius: 9999,
         background: bg,
-        color: fg,
+        color: "var(--primary-foreground)",
         fontSize: Math.round(size * 0.38),
         fontWeight: 600,
         letterSpacing: "0.01em",

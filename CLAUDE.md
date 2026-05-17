@@ -120,6 +120,6 @@ forbidden" — is the authority.
 Next.js 16 (App Router, RSC + Server Actions) · Vercel · Supabase (Postgres/RLS, Auth, Realtime, Storage) · Square SDK (server-side) · shadcn/ui + Tailwind + Lucide. See `docs/system-design.md` for the full picture.
 
 <!-- SPECKIT START -->
-Active feature plan: `specs/015-square-terminal-payment/plan.md` — read it for the
+Active feature plan: `specs/016-dashboard-data-wiring/plan.md` — read it for the
 current feature's technical context, project structure, and build steps.
 <!-- SPECKIT END -->

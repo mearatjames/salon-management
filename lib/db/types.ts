@@ -651,7 +651,7 @@ export type Database = {
     };
     Enums: {
       payment_kind: "payment";
-      payment_method: "cash" | "card";
+      payment_method: "cash" | "card" | "gift";
       payment_status: "succeeded" | "pending" | "failed";
       ticket_item_kind: "service" | "discount";
       ticket_status: "open" | "paid" | "discarded";
@@ -784,7 +784,7 @@ export const Constants = {
   public: {
     Enums: {
       payment_kind: ["payment"],
-      payment_method: ["cash", "card"],
+      payment_method: ["cash", "card", "gift"],
       payment_status: ["succeeded", "pending", "failed"],
       ticket_item_kind: ["service", "discount"],
       ticket_status: ["open", "paid", "discarded"],

@@ -1,20 +1,26 @@
 import "@/styles/dashboard.css";
 
 import { requireStudioSession } from "@/lib/auth/session";
-import { buildDashboardData } from "@/lib/dashboard/aggregate";
+import { loadDashboard } from "@/lib/dashboard/queries";
+import { createSupabaseServerClient } from "@/lib/db/server";
 import { NewTransactionCTA } from "@/components/lacquer/new-transaction-cta";
 import { PeriodProvider, PeriodToggle } from "@/components/lacquer/period-toggle";
 import { PeriodSummary } from "@/components/lacquer/period-summary.client";
 import { RecentTransactionsFeed } from "@/components/lacquer/recent-transactions-feed";
 import { SecondaryActions } from "@/components/lacquer/secondary-actions";
-import { TechsOnShiftTile } from "@/components/lacquer/techs-on-shift-tile";
+
+// FR-027: every navigation re-queries Supabase — no static caching of the
+// dashboard read. The page's data freshness target is "what's true right
+// now", not what was true at build time.
+export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   await requireStudioSession();
-  const data = buildDashboardData();
+  const supabase = await createSupabaseServerClient();
+  const data = await loadDashboard(supabase);
 
   return (
-    <PeriodProvider summaries={data.summaries} comparisons={data.comparisons}>
+    <PeriodProvider summaries={data.summaries}>
       <div className="tx-landing">
         <div
           className="tx-landing-top"
@@ -58,7 +64,11 @@ export default async function DashboardPage() {
             display: "flex",
             flexDirection: "column",
             gap: 16,
-            overflow: "auto",
+            // FR-012: the body must clip — when the feed has many rows, the
+            // overflow happens INSIDE `.tx-feed-list`, not on this wrapper.
+            // If this were `overflow: auto` the wrapper would absorb the
+            // scroll and the feed would grow unbounded.
+            overflow: "hidden",
           }}
         >
           <PeriodSummary />
@@ -66,10 +76,8 @@ export default async function DashboardPage() {
             <div className="tx-landing-bottom-left">
               <div className="muted">Quick actions</div>
               <SecondaryActions actions={data.quickActions} cols={1} />
-              <div className="muted">Techs on shift</div>
-              <TechsOnShiftTile staff={data.staff} />
             </div>
-            <RecentTransactionsFeed rows={data.recent} />
+            <RecentTransactionsFeed rows={data.recent} staff={data.staff} />
           </div>
         </div>
       </div>
