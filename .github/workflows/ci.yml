@@ -77,6 +77,15 @@ jobs:
             echo "SQUARE_APPLICATION_SECRET=placeholder"
             echo "SQUARE_ENVIRONMENT=sandbox"
             echo "SQUARE_WEBHOOK_SIGNATURE_KEY=placeholder"
+            # Route server-side Square fetches at the local Playwright stub
+            # (_square-server-stub.ts, port 4567) so e2e never hits Square's
+            # real sandbox host.
+            echo "SQUARE_API_BASE_URL=http://127.0.0.1:4567"
+            # Vault secret name used by lib/square/oauth.ts when encrypting
+            # tokens at rest; matches the e2e setup that seeds vault.secrets.
+            echo "SQUARE_OAUTH_KEY_VAULT_NAME=square_oauth_key"
+            # Cron auth shared with /api/square/refresh-token tests.
+            echo "CRON_SECRET=ci-placeholder-cron-secret"
           } >> $GITHUB_ENV
 
       - name: Install Playwright browsers
