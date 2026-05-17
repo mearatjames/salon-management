@@ -54,11 +54,11 @@ Emitted by `pos_compose_payment_draft` (inside the RPC, via `insert into audit_l
 | `method`                | text    | `'cash' | 'card' | 'gift'`. |
 | `amount_cents`          | int     | The leg's amount. |
 | `remaining_owed_cents`  | int     | The ticket's remaining-owed *before* this draft was inserted (for forensic reconstruction). |
-| `auto_split_from_gift`  | bool?   | Present and `true` when this draft was synthesized by `redeemGiftCardWholeTicket` as the remainder leg after a partial gift-card charge. Omitted otherwise. |
-| `pending_method_pick`   | bool?   | Present and `true` when `auto_split_from_gift = true` — signals to the UI that this draft's method needs to be picked by the operator before activation. |
 
 **entity_type**: `payment`
 **entity_id**: the new payment row's id
+
+> Note: there is no per-row marker for "this draft was created as the follow-up to a partial gift-card charge" — the server never synthesizes such a draft (see [research.md § R6](../research.md#r6--partial-gift-auto-split-flow-story-3--fr-006)). When `redeemGiftCardWholeTicket` returns `{kind: 'partial_split', nextLegAmountCents: X}`, the client auto-opens the method picker and the operator's pick triggers a normal `composeDraftLeg(ticketId, picked_method, X)` — producing an ordinary `payment.draft_created` audit row indistinguishable from any other compose action. Forensic correlation between the two events is via timestamp proximity and the same `ticket_id`, not via the audit payload.
 
 ### 3.b `payment.draft_removed`
 

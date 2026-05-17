@@ -133,7 +133,7 @@ Succeeded legs (`status = 'succeeded'`) are not touched. Pending legs (`status =
 
 ## R6 — Partial-gift auto-split flow (Story 3 / FR-006)
 
-**Decision**: One Server Action `redeemGiftCardWholeTicket(ticketId, gan)` performs the full Story 1 / Story 3 transition atomically:
+**Decision**: One Server Action `redeemGiftCardWholeTicket(ticketId, gan)` performs the full Story 1 transition atomically, and surfaces a typed result that lets the client drive the Story 3 second-leg flow without persisting any "pending method pick" state on the server:
 
 1. Look up the card via Square (uses the typed result from R3).
 2. If `kind = "not_found" | "not_redeemable" | "zero_balance"` → return that to the UI; no DB writes (apart from the `gift_card.balance_looked_up` audit row + the gift-card cache row).
@@ -141,8 +141,10 @@ Succeeded legs (`status = 'succeeded'`) are not touched. Pending legs (`status =
    - `amountToCharge = min(balanceCents, ticket.total_cents - sumSucceededLegs)`
    - Insert a gift-card payment row at `status = 'draft'`, amount = `amountToCharge`.
    - Activate it via `activateGiftDraft(paymentId, gan)` — which creates the Square payment.
-   - If `amountToCharge < ticket.total_cents - sumSucceededLegs` (partial coverage): synthesize a *second* draft row at `amount = remainingOwed`, `method = ?`. **Open question:** what method does the pre-populated draft default to? Spec FR-006: "The staff MUST only need to pick a method and activate that pre-populated leg". So the draft has `amount` set but **no method yet**. Schema impact: `payments.method` is currently NOT NULL — the pre-populated row would need a sentinel value or the column would need to become nullable.
-     - **Sub-decision**: keep `payments.method` NOT NULL. The pre-populated leg uses `method = 'cash'` as the placeholder (the most common default in a salon) but is rendered in the UI as "Pick a method" with no amount-edit affordance; tapping it opens the method picker which UPDATEs the row's `method` and then runs the activation flow. The audit row for this transition is `payment.draft_created` with payload `{auto_split_from_gift: true, pending_method_pick: true}`.
+   - If `amountToCharge == ticket.total_cents - sumSucceededLegs`: return `{kind: 'fully_paid', paymentId, ticketFlippedToPaid: true}` (the eventual webhook flips the ticket).
+   - If `amountToCharge < ticket.total_cents - sumSucceededLegs` (partial coverage): return `{kind: 'partial_split', paymentId, nextLegAmountCents: <remaining owed>}`. **No second draft is synthesized server-side.** The client uses this return value to auto-open the method picker pre-aimed at the owed amount; the operator's tap on a method then triggers a normal `composeDraftLeg(ticketId, picked_method, nextLegAmountCents)` + the method-appropriate `activate*Draft(...)` round-trip — both server-side, fully audited via the existing `payment.draft_created` + activation verbs. No new audit verb, no marker column, no `method='cash'` placeholder.
+
+**Why no server-side synthesis**: a synthesized draft with `method='cash'` placeholder would be indistinguishable on the `payments` row from a regular cash draft. The UI would need either (a) a new boolean column (`pending_method_pick`) — schema sprawl for a transient state — or (b) a cross-cutting `audit_log` payload query on every render — fragile and slow. Letting the client manage the "method picker is open" state for a single tap (with the server-derived owed amount as the canonical authority) avoids both problems. The owed amount is always recoverable on reload as `tickets.total_cents - sum(succeeded legs)`; on a tab close before the operator picks a method, the cart returns to a clean "Owes $25" state and the operator can use the regular Split flow. This satisfies SC-003 ("at most one staff tap between the gift-card success and the second method's entry screen") because the method picker is auto-opened by the client immediately on the action's return — one tap on a method picks-and-activates in one round-trip.
 
 **Rationale**:
 - Atomicity: the cart never sees a half-applied state. If the activation fails midway, the whole transaction rolls back.

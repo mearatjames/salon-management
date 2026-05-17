@@ -151,7 +151,7 @@ create or replace function public.pos_compose_payment_draft(
 2. Refuse if any `ticket_items` has `price_unconfirmed = true` (mirrors `pos_take_cash` — drafts can't be composed against an unpriced cart).
 3. Compute `remaining_owed = tickets.total_cents - sum(amount_cents) FROM payments WHERE ticket_id = $1 AND status IN ('draft','pending','succeeded')`. Refuse with `legs_must_fit_remaining` if `p_amount > remaining_owed` or `p_amount <= 0`.
 4. Insert a payment row with `status = 'draft'`, `kind = 'payment'`, the provided method, amount, and `p_operator`. For `method = 'cash'` and `method = 'gift'`, `tip_cents = 0`. For `method = 'card'`, `tip_cents = 0` (the actual tip is captured at terminal-settlement time and updated by `pos_record_card_payment`).
-5. Insert `audit_log` row: `action = 'payment.draft_created'`, `entity_type = 'payment'`, `entity_id = new payment id`, `payload = {ticket_id, method, amount_cents, remaining_owed}`.
+5. Insert `audit_log` row: `action = 'payment.draft_created'`, `entity_type = 'payment'`, `entity_id = new payment id`, `payload = {ticket_id, method, amount_cents, remaining_owed_cents}` per [contracts/audit.contract.md § 3.a](./contracts/audit.contract.md).
 6. Return the new payment id.
 
 ### 6.b `pos_remove_payment_draft`

@@ -147,7 +147,7 @@ export async function redeemGiftCardWholeTicket(
 
 export type RedeemGiftCardResult =
   | { kind: "fully_paid";                  paymentId: string; ticketFlippedToPaid: true }
-  | { kind: "partial_split";               paymentId: string; nextDraftPaymentId: string; nextDraftAmountCents: number }
+  | { kind: "partial_split";               paymentId: string; nextLegAmountCents: number }
   | { kind: "lookup_zero_balance";         last4Mask: string }
   | { kind: "lookup_not_redeemable";       last4Mask: string; state: "PENDING" | "BLOCKED" | "DEACTIVATED" }
   | { kind: "lookup_not_found" };
@@ -164,10 +164,10 @@ export type RedeemGiftCardResult =
    - Wipe any existing draft legs for this ticket (calls `discardDraftLegs` — the operator picked Gift as a fresh path; old drafts are stale).
    - Compose a gift-card draft for `amountToCharge` (via `pos_compose_payment_draft`).
    - Activate it via `activateGiftDraft(paymentId, gan)`.
-   - If `amountToCharge < remainingOwed` (partial coverage): compose a second draft for `remainingOwed - amountToCharge`, method `'cash'` as the placeholder per [R6 sub-decision](../research.md#r6--partial-gift-auto-split-flow-story-3--fr-006). The audit payload includes `auto_split_from_gift: true, pending_method_pick: true`. Return `{kind: 'partial_split', ...}`.
+   - If `amountToCharge < remainingOwed` (partial coverage): return `{kind: 'partial_split', paymentId, nextLegAmountCents: remainingOwed - amountToCharge}`. **No second draft is created server-side** — the client uses `nextLegAmountCents` to auto-open the method picker; the operator's pick triggers a normal `composeDraftLeg` + `activate*Draft` round-trip ([R6](../research.md#r6--partial-gift-auto-split-flow-story-3--fr-006)).
    - Else return `{kind: 'fully_paid', ...}` — the activation's eventual webhook will flip the ticket to paid.
 
-**Why one action, not two**: the spec's SC-003 demands "at most one staff tap between the gift-card success and the second method's entry screen". Splitting this into "lookup" + "redeem" + "compose-second-draft" actions would require the UI to chain three round-trips with conditional logic; bundling them ensures atomicity and a single round-trip.
+**Why one action, not two**: the spec's SC-003 demands "at most one staff tap between the gift-card success and the second method's entry screen". Splitting the lookup + redeem-gift-leg into two actions would require the UI to chain round-trips with conditional logic; bundling them ensures atomicity. The "second method's entry screen" is opened by the client on receipt of `kind = 'partial_split'` — that's still one round-trip from the operator's perspective, then one tap to pick a method.
 
 **Errors**:
 - All errors from `lookupGiftCard`, `composeDraftLeg`, `activateGiftDraft`.
