@@ -129,6 +129,66 @@ export type Database = {
           },
         ];
       };
+      cash_drawer_sessions: {
+        Row: {
+          business_day: string;
+          closed_at: string | null;
+          closed_by_staff_id: string | null;
+          counted_cents: number | null;
+          created_at: string;
+          expected_cents: number | null;
+          id: string;
+          notes: string | null;
+          opened_at: string;
+          opened_by_staff_id: string;
+          opening_cents: number;
+          variance_cents: number | null;
+        };
+        Insert: {
+          business_day: string;
+          closed_at?: string | null;
+          closed_by_staff_id?: string | null;
+          counted_cents?: number | null;
+          created_at?: string;
+          expected_cents?: number | null;
+          id?: string;
+          notes?: string | null;
+          opened_at?: string;
+          opened_by_staff_id: string;
+          opening_cents?: number;
+          variance_cents?: number | null;
+        };
+        Update: {
+          business_day?: string;
+          closed_at?: string | null;
+          closed_by_staff_id?: string | null;
+          counted_cents?: number | null;
+          created_at?: string;
+          expected_cents?: number | null;
+          id?: string;
+          notes?: string | null;
+          opened_at?: string;
+          opened_by_staff_id?: string;
+          opening_cents?: number;
+          variance_cents?: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "cash_drawer_sessions_closed_by_staff_id_fkey";
+            columns: ["closed_by_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "cash_drawer_sessions_opened_by_staff_id_fkey";
+            columns: ["opened_by_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       gift_cards: {
         Row: {
           balance_cents_cached: number;
@@ -667,6 +727,17 @@ export type Database = {
           ticket_flipped_to_paid: boolean;
           ticket_id: string;
         }[];
+      };
+      pos_close_cash_drawer: {
+        Args: {
+          p_business_day: string;
+          p_counted_cents: number;
+          p_device_user_id: string;
+          p_expected_cents: number;
+          p_notes: string;
+          p_operator: string;
+        };
+        Returns: string;
       };
       pos_compose_payment_draft: {
         Args: {
