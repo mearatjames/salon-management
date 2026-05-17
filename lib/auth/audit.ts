@@ -80,11 +80,22 @@ export type AuditAction =
   | "payment.draft_created"
   | "payment.draft_removed"
   | "gift_card.balance_looked_up"
-  | "gift_card.redeemed";
+  | "gift_card.redeemed"
+  // Added by feature 019 (entity_type "cash_drawer")
+  | "cash_drawer.closed";
 
 export function deriveEntityType(
   action: AuditAction
-): "service" | "ticket" | "payment" | "staff" | "auth" | "user" | "integration" | "gift_card" {
+):
+  | "service"
+  | "ticket"
+  | "payment"
+  | "staff"
+  | "auth"
+  | "user"
+  | "integration"
+  | "gift_card"
+  | "cash_drawer" {
   if (action.startsWith("user.")) return "user";
   if (action.startsWith("ticket.")) return "ticket";
   // Feature 018 — gift_card.* verbs (placed before payment.* so the
@@ -101,6 +112,8 @@ export function deriveEntityType(
   if (action.startsWith("bill.")) return "ticket";
   // Feature 015 — Square OAuth + device-management verbs.
   if (action.startsWith("integration.")) return "integration";
+  // Feature 019 — cash_drawer.closed (lazy-open inside the close RPC).
+  if (action.startsWith("cash_drawer.")) return "cash_drawer";
   if (
     action === "staff.added" ||
     action === "staff.updated" ||

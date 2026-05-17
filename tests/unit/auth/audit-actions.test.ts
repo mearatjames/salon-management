@@ -52,3 +52,13 @@ describe("audit — 012 user.* extension", () => {
     expect(deriveEntityType("staff.pin_failed")).toBe("auth");
   });
 });
+
+// Feature 019 — cash_drawer.* extension. The close RPC writes a
+// `cash_drawer.closed` audit row using the prefix dispatch added in T002;
+// without the extension the row would fall through to entity_type='auth'
+// and any forensic query against entity_type='cash_drawer' would miss it.
+describe("audit — 019 cash_drawer.* extension", () => {
+  it("treats cash_drawer.closed as entity_type 'cash_drawer'", () => {
+    expect(deriveEntityType("cash_drawer.closed")).toBe("cash_drawer");
+  });
+});
