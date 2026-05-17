@@ -54,10 +54,18 @@ const MANAGER_STAFF_ID = "10000000-0000-0000-0000-000000000002";
 
 async function wipeSpecSessions(): Promise<void> {
   const admin = adminClient();
+  const ids = [SEED_SESSIONS.clean, SEED_SESSIONS.over, SEED_SESSIONS.short];
+  await admin.from("cash_drawer_sessions").delete().in("id", ids);
+  // The change-history accordion (loadCashHistoryDetail) reads ALL
+  // cash_drawer.edited rows for a session id, not just ones after a
+  // cursor — so deterministic spec session ids would otherwise inherit
+  // audit rows from prior tests/runs. Clear them with the sessions.
   await admin
-    .from("cash_drawer_sessions")
+    .from("audit_log")
     .delete()
-    .in("id", [SEED_SESSIONS.clean, SEED_SESSIONS.over, SEED_SESSIONS.short]);
+    .eq("action", "cash_drawer.edited")
+    .eq("entity_type", "cash_drawer")
+    .in("entity_id", ids);
 }
 
 // Insert three closed sessions on three distinct historic business days.
