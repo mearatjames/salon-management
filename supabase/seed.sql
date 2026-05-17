@@ -289,3 +289,119 @@ begin
   end if;
 end
 $$;
+
+-- ---------------------------------------------------------------------------
+-- 015-dashboard-data-wiring: five paid tickets dated today (salon TZ), used
+-- by the dashboard's live read model so the local-dev experience matches the
+-- production read path. Wrapped in a DO block guarded on the seed owner
+-- user so this fixture NEVER executes against a production database that
+-- has never had the dev-only seed user.
+--
+-- Method coverage: card, cash, gift, split-tender (cash + card on one
+-- ticket), and a card sale that includes a kind='discount' line so the
+-- read-model's discount-exclusion projection is exercised.
+-- Tips: 4 of 5 tickets carry non-zero tip_cents.
+-- Techs: mixed across Maya / Jordan / Sam from the staff seed above.
+--
+-- All timestamps are pinned to today in America/Los_Angeles via
+--   date_trunc('day', (now() at time zone 'America/Los_Angeles'))
+--     at time zone 'America/Los_Angeles' + interval 'N hours'
+-- which yields a UTC timestamptz that corresponds to N:00 local time today.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_today_local_midnight timestamptz := (date_trunc('day', (now() at time zone 'America/Los_Angeles')) at time zone 'America/Los_Angeles');
+  v_owner uuid := '10000000-0000-0000-0000-000000000001';
+  v_jordan uuid := '10000000-0000-0000-0000-000000000002';
+  v_sam uuid := '10000000-0000-0000-0000-000000000003';
+  v_svc_classic_mani uuid := '20000000-0000-0000-0000-000000000001';
+  v_svc_gel_polish   uuid := '20000000-0000-0000-0000-000000000002';
+  v_svc_classic_pedi uuid := '20000000-0000-0000-0000-000000000003';
+  v_svc_spa_pedi     uuid := '20000000-0000-0000-0000-000000000004';
+  v_svc_nail_art     uuid := '20000000-0000-0000-0000-000000000005';
+begin
+  if not exists (select 1 from auth.users where email = 'owner@tangnails.dev') then
+    return;
+  end if;
+
+  -- Tax is pinned to 0 by the tickets_tax_cents_check on public.tickets (the
+  -- salon is currently tax-free); totals are subtotal + 0.
+  --
+  -- ---- Ticket 1 ---- card, 1 service (classic mani $25), 20% tip = $5 → 500c
+  insert into public.tickets (id, status, subtotal_cents, tax_cents, total_cents, opened_by_staff_id, closed_by_staff_id, closed_at)
+  values ('30000000-0000-0000-0000-000000000001', 'paid', 2500, 0, 2500, v_owner, v_owner, v_today_local_midnight + interval '9 hours' + interval '12 minutes')
+  on conflict (id) do nothing;
+
+  insert into public.ticket_items (ticket_id, kind, ref_id, name_snapshot, unit_price_cents, qty, assigned_staff_id, price_unconfirmed)
+  values ('30000000-0000-0000-0000-000000000001', 'service', v_svc_classic_mani, 'Classic manicure', 2500, 1, v_owner, false)
+  on conflict do nothing;
+
+  insert into public.payments (ticket_id, method, kind, amount_cents, tip_cents, status, taken_by_staff_id, processed_at)
+  values ('30000000-0000-0000-0000-000000000001', 'card', 'payment', 2500, 500, 'succeeded', v_owner, v_today_local_midnight + interval '9 hours' + interval '12 minutes')
+  on conflict do nothing;
+
+  -- ---- Ticket 2 ---- cash, 2 services (gel polish $35 + classic pedi $40 = $75), 18% tip = $13.50 → 1350c
+  insert into public.tickets (id, status, subtotal_cents, tax_cents, total_cents, opened_by_staff_id, closed_by_staff_id, closed_at)
+  values ('30000000-0000-0000-0000-000000000002', 'paid', 7500, 0, 7500, v_jordan, v_jordan, v_today_local_midnight + interval '10 hours' + interval '34 minutes')
+  on conflict (id) do nothing;
+
+  insert into public.ticket_items (ticket_id, kind, ref_id, name_snapshot, unit_price_cents, qty, assigned_staff_id, price_unconfirmed)
+  values
+    ('30000000-0000-0000-0000-000000000002', 'service', v_svc_gel_polish,   'Gel polish',       3500, 1, v_jordan, false),
+    ('30000000-0000-0000-0000-000000000002', 'service', v_svc_classic_pedi, 'Classic pedicure', 4000, 1, v_jordan, false)
+  on conflict do nothing;
+
+  insert into public.payments (ticket_id, method, kind, amount_cents, tip_cents, status, taken_by_staff_id, processed_at)
+  values ('30000000-0000-0000-0000-000000000002', 'cash', 'payment', 7500, 1350, 'succeeded', v_jordan, v_today_local_midnight + interval '10 hours' + interval '34 minutes')
+  on conflict do nothing;
+
+  -- ---- Ticket 3 ---- gift, 1 service (classic pedi $40), 0% tip
+  insert into public.tickets (id, status, subtotal_cents, tax_cents, total_cents, opened_by_staff_id, closed_by_staff_id, closed_at)
+  values ('30000000-0000-0000-0000-000000000003', 'paid', 4000, 0, 4000, v_sam, v_sam, v_today_local_midnight + interval '11 hours' + interval '48 minutes')
+  on conflict (id) do nothing;
+
+  insert into public.ticket_items (ticket_id, kind, ref_id, name_snapshot, unit_price_cents, qty, assigned_staff_id, price_unconfirmed)
+  values ('30000000-0000-0000-0000-000000000003', 'service', v_svc_classic_pedi, 'Classic pedicure', 4000, 1, v_sam, false)
+  on conflict do nothing;
+
+  insert into public.payments (ticket_id, method, kind, amount_cents, tip_cents, status, taken_by_staff_id, processed_at)
+  values ('30000000-0000-0000-0000-000000000003', 'gift', 'payment', 4000, 0, 'succeeded', v_sam, v_today_local_midnight + interval '11 hours' + interval '48 minutes')
+  on conflict do nothing;
+
+  -- ---- Ticket 4 ---- split-tender (cash + card on same ticket), 2 services (classic mani $25 + spa pedi $55 = $80), 22% tip total = $17.60 → 1760c
+  -- Split: $40 in cash + $40 in card. Each payment carries half the tip.
+  insert into public.tickets (id, status, subtotal_cents, tax_cents, total_cents, opened_by_staff_id, closed_by_staff_id, closed_at)
+  values ('30000000-0000-0000-0000-000000000004', 'paid', 8000, 0, 8000, v_owner, v_jordan, v_today_local_midnight + interval '13 hours' + interval '5 minutes')
+  on conflict (id) do nothing;
+
+  insert into public.ticket_items (ticket_id, kind, ref_id, name_snapshot, unit_price_cents, qty, assigned_staff_id, price_unconfirmed)
+  values
+    ('30000000-0000-0000-0000-000000000004', 'service', v_svc_classic_mani, 'Classic manicure', 2500, 1, v_owner,  false),
+    ('30000000-0000-0000-0000-000000000004', 'service', v_svc_spa_pedi,     'Spa pedicure',     5500, 1, v_jordan, false)
+  on conflict do nothing;
+
+  insert into public.payments (ticket_id, method, kind, amount_cents, tip_cents, status, taken_by_staff_id, processed_at)
+  values
+    ('30000000-0000-0000-0000-000000000004', 'cash', 'payment', 4000, 880, 'succeeded', v_jordan, v_today_local_midnight + interval '13 hours' + interval '5 minutes'),
+    ('30000000-0000-0000-0000-000000000004', 'card', 'payment', 4000, 880, 'succeeded', v_jordan, v_today_local_midnight + interval '13 hours' + interval '5 minutes' + interval '1 minute')
+  on conflict do nothing;
+
+  -- ---- Ticket 5 ---- card, 3 service items (classic mani + classic pedi + nail art $35) + 1 discount line (-$10), 25% tip
+  -- Subtotal: 2500 + 4000 + 3500 - 1000 = 9000c. Total: 9000c (tax-free). Tip: 9000 * 0.25 = 2250c.
+  insert into public.tickets (id, status, subtotal_cents, tax_cents, total_cents, opened_by_staff_id, closed_by_staff_id, closed_at)
+  values ('30000000-0000-0000-0000-000000000005', 'paid', 9000, 0, 9000, v_sam, v_sam, v_today_local_midnight + interval '15 hours' + interval '22 minutes')
+  on conflict (id) do nothing;
+
+  insert into public.ticket_items (ticket_id, kind, ref_id, name_snapshot, unit_price_cents, qty, assigned_staff_id, price_unconfirmed)
+  values
+    ('30000000-0000-0000-0000-000000000005', 'service',  v_svc_classic_mani, 'Classic manicure',  2500, 1, v_sam, false),
+    ('30000000-0000-0000-0000-000000000005', 'service',  v_svc_classic_pedi, 'Classic pedicure',  4000, 1, v_sam, false),
+    ('30000000-0000-0000-0000-000000000005', 'service',  v_svc_nail_art,     'Nail art',          3500, 1, v_sam, false),
+    ('30000000-0000-0000-0000-000000000005', 'discount', null,               'Loyalty discount', -1000, 1, null,  false)
+  on conflict do nothing;
+
+  insert into public.payments (ticket_id, method, kind, amount_cents, tip_cents, status, taken_by_staff_id, processed_at)
+  values ('30000000-0000-0000-0000-000000000005', 'card', 'payment', 9000, 2250, 'succeeded', v_sam, v_today_local_midnight + interval '15 hours' + interval '22 minutes')
+  on conflict do nothing;
+end
+$$;

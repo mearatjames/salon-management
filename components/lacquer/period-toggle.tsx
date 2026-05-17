@@ -2,31 +2,30 @@
 
 import { createContext, useCallback, useContext, useState } from "react";
 import type { ReactNode } from "react";
-import type { DashboardData, DashboardSummary } from "@/lib/dashboard/aggregate";
-import type { DashboardPeriod } from "@/lib/dashboard/mock-data";
+import type { DashboardPeriod, DashboardSummary } from "@/lib/dashboard/aggregate";
 
 type Summaries = Record<DashboardPeriod, DashboardSummary>;
-type Comparisons = DashboardData["comparisons"];
 
 type PeriodContextValue = {
   period: DashboardPeriod;
   setPeriod: (next: DashboardPeriod) => void;
   summary: DashboardSummary;
-  comparisons: Comparisons;
 };
 
 const PeriodContext = createContext<PeriodContextValue | null>(null);
 
 export type PeriodProviderProps = {
   summaries: Summaries;
-  comparisons: Comparisons;
   children: ReactNode;
 };
 
 // Island root — owns the active-period state shared by `<PeriodToggle />`
 // (header) and `<PeriodSummary />` (stat grid). Both consumers read from the
 // same React Context; toggling is a pure render swap (no network).
-export function PeriodProvider({ summaries, comparisons, children }: PeriodProviderProps) {
+//
+// FR-020: comparison badges (`+3 vs avg`, `+12%`) are removed in feature
+// 015, so the provider no longer accepts or carries a `comparisons` field.
+export function PeriodProvider({ summaries, children }: PeriodProviderProps) {
   const [period, setPeriodState] = useState<DashboardPeriod>("today");
 
   const setPeriod = useCallback(
@@ -43,7 +42,6 @@ export function PeriodProvider({ summaries, comparisons, children }: PeriodProvi
     period,
     setPeriod,
     summary: summaries[period],
-    comparisons,
   };
 
   return <PeriodContext.Provider value={value}>{children}</PeriodContext.Provider>;
