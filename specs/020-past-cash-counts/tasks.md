@@ -37,7 +37,7 @@ Next.js single-app repo. Paths in tasks are relative to repo root:
 
 **Purpose**: Folder scaffolding. The repo and the EOD module are already set up by feature 019; this phase only adds the new sub-directories.
 
-- [ ] T001 Create directory scaffolding at `app/(studio)/end-of-day/history/`, `app/(studio)/end-of-day/history/[sessionId]/`, and `components/lacquer/eod/history/`. Verify; do not touch existing files under `app/(studio)/end-of-day/` or `components/lacquer/eod/`.
+- [X] T001 Create directory scaffolding at `app/(studio)/end-of-day/history/`, `app/(studio)/end-of-day/history/[sessionId]/`, and `components/lacquer/eod/history/`. Verify; do not touch existing files under `app/(studio)/end-of-day/` or `components/lacquer/eod/`.
 
 ---
 
