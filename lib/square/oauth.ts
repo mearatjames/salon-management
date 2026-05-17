@@ -215,20 +215,22 @@ async function fetchSquareTokenSet(grant: {
     scope?: string;
     token_type?: string;
   };
-  if (
-    !json.access_token ||
-    !json.refresh_token ||
-    !json.expires_at ||
-    !json.merchant_id ||
-    !json.scope
-  ) {
+  // Square's /oauth2/token response does NOT include `scope` — it's a
+  // request-only parameter on /oauth2/authorize. We re-derive it from the
+  // constant we sent at authorize time (SCOPES) since the granted scope
+  // equals the requested scope in our flow (no scope downgrades).
+  if (!json.access_token || !json.refresh_token || !json.expires_at || !json.merchant_id) {
+    console.error(
+      "square_oauth_token_invalid_response: missing required fields in response",
+      { presentKeys: Object.keys(json) }
+    );
     throw new Error("square_oauth_token_invalid_response");
   }
   return {
     accessToken: json.access_token,
     refreshToken: json.refresh_token,
     expiresAt: new Date(json.expires_at),
-    scope: json.scope,
+    scope: json.scope ?? SCOPES.replace(/\+/g, " "),
     merchantId: json.merchant_id,
   };
 }
