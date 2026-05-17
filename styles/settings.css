@@ -284,19 +284,16 @@
 /* === 021-services-deductions === */
 
 /* --- .services-two-pane ---
-   Two-pane shell: 440px catalog list on the left, edit inspector on the
-   right. Prototype gap is 18px; the Lacquer spacing scale jumps 16 → 20,
-   so we pick `--space-4` (16px) — the nearest 4px-multiple token, marginally
-   tighter than the prototype's 18px. Adding an `--space-18` would violate
-   the spacing scale (CLAUDE.md § 7). At narrow viewports (<= 1023px) the
-   panel collapses to a single column so the inspector flows beneath the
+   Two-pane shell: 50/50 split between the catalog list (left) and the edit
+   inspector (right). Prototype gap is 18px; the Lacquer spacing scale jumps
+   16 → 20, so we pick `--space-4` (16px) — the nearest 4px-multiple token,
+   marginally tighter than the prototype's 18px. Adding an `--space-18` would
+   violate the spacing scale (CLAUDE.md § 7). At narrow viewports (<= 1023px)
+   the panel collapses to a single column so the inspector flows beneath the
    list instead of crushing it. */
 .services-two-pane {
   display: grid;
-  /* 440px = 64px (--space-16) * 6 + 48px (--space-12) + 8px (--space-2). */
-  grid-template-columns:
-    minmax(0, calc(var(--space-16) * 6 + var(--space-12) + var(--space-2)))
-    minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: var(--space-4);
   flex: 1;
   min-height: 0;
@@ -369,15 +366,24 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Scroll area inside the panel — the form mounts here. */
+/* Scroll area inside the panel — the form mounts here. `overflow-y: auto`
+   without an explicit `overflow-x` would let wide children trigger a
+   horizontal scrollbar (per CSS spec, setting one axis non-visible flips the
+   other to auto). Pin X to hidden so content stays within the column. The
+   `min-width: 0` lets flex children shrink past their intrinsic min-content
+   width — the classic flex-overflow guard. The 4px horizontal inset gives
+   focus rings and selection outlines (e.g. the color swatch's selection
+   ring) room before the `overflow-x: hidden` clips them. */
 .services-edit-panel__scroll {
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-1) 0;
+  padding: var(--space-1);
 }
 
 /* Empty-state (mode='closed'): 44px muted circle for the Info icon, centred
@@ -462,6 +468,7 @@
   gap: var(--space-4);
   flex: 1;
   min-height: 0;
+  min-width: 0;
   animation: services-edit-panel-fade-in var(--duration-fast) var(--ease-out);
 }
 
