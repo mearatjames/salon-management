@@ -7,14 +7,6 @@ import {
   formatServiceLabel,
   paymentMixWidths,
 } from "@/lib/dashboard/format";
-import type { Service, TxLineItem } from "@/lib/dashboard/mock-data";
-
-const SERVICES: readonly Service[] = [
-  { id: "a", name: "A", cat: "Manicure", time: 30, price: 10 },
-  { id: "b", name: "B", cat: "Manicure", time: 30, price: 10 },
-  { id: "c", name: "C", cat: "Manicure", time: 30, price: 10 },
-  { id: "d", name: "D", cat: "Manicure", time: 30, price: 10 },
-];
 
 describe("formatCurrency", () => {
   it("renders integer dollar amounts with comma thousands", () => {
@@ -42,22 +34,25 @@ describe("formatCount", () => {
   });
 });
 
-describe("formatServiceLabel", () => {
-  it("joins 1-2 items with a comma", () => {
-    const items: TxLineItem[] = [
-      { id: "a", qty: 1 },
-      { id: "b", qty: 1 },
-    ];
-    expect(formatServiceLabel(items, SERVICES)).toBe("A, B");
+describe("formatServiceLabel (new (names: readonly string[]) signature)", () => {
+  it("(a) zero names → empty string", () => {
+    expect(formatServiceLabel([])).toBe("");
   });
 
-  it("uses '+N more' shortener for 3+ items", () => {
-    const items: TxLineItem[] = [
-      { id: "a", qty: 1 },
-      { id: "b", qty: 1 },
-      { id: "c", qty: 1 },
-    ];
-    expect(formatServiceLabel(items, SERVICES)).toBe("A +2 more");
+  it("(b) one name → that name", () => {
+    expect(formatServiceLabel(["A"])).toBe("A");
+  });
+
+  it("(c) two names → 'A, B'", () => {
+    expect(formatServiceLabel(["A", "B"])).toBe("A, B");
+  });
+
+  it("(d) three names → 'A, +2 more'", () => {
+    expect(formatServiceLabel(["A", "B", "C"])).toBe("A, +2 more");
+  });
+
+  it("(e) five names → 'A, +4 more'", () => {
+    expect(formatServiceLabel(["A", "B", "C", "D", "E"])).toBe("A, +4 more");
   });
 });
 

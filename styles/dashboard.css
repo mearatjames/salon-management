@@ -246,11 +246,18 @@
 }
 
 /* ---------- Recent transactions feed ---------- */
+/* FR-012: `.tx-feed` is a flex column so its `.tx-feed-list` child can take
+   the remaining vertical space and scroll inside it. `min-height: 0` is
+   required for the inner `max-height: 100%` on `.tx-feed-list` to bound
+   instead of grow when nested inside the lower-split grid. */
 .tx-feed {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 12px;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .tx-feed-h {
   padding: 12px 16px;
@@ -263,13 +270,27 @@
   font-size: 13px;
   font-weight: 600;
 }
+/* FR-012: when the row count overflows the feed's available height the
+   scroll happens INSIDE this list, not on the outer page. `min-height: 0`
+   lets the flex/grid parent shrink the list below its content height;
+   `max-height: 100%` caps the list to its slot; `overflow-y: auto` gives
+   it the inner scrollbar. The outer `.tx-feed` already has
+   `overflow: hidden` so the scrollbar stays clipped to the card chrome.*/
 .tx-feed-list {
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  max-height: 100%;
+  min-height: 0;
 }
 .tx-feed-row {
   display: grid;
-  grid-template-columns: 56px minmax(0, 1.2fr) minmax(0, 1.4fr) auto auto auto;
+  /* Five columns (US1 FR-023): time | svc | techs | method | amt.
+     The legacy `.client` column was 1.2fr; its allocation is redistributed
+     into the `.svc` column so service labels can breathe (svc grows from
+     1.4fr to 2fr; techs/method/amt remain `auto`). All values stay on the
+     4px-base scale via the existing 56px first track and `gap: 12px`. */
+  grid-template-columns: 56px minmax(0, 2fr) auto auto auto;
   gap: 12px;
   align-items: center;
   padding: 10px 16px;
@@ -283,13 +304,6 @@
   font-variant-numeric: tabular-nums;
   color: var(--muted-foreground);
   font-size: 11px;
-}
-.tx-feed-row .client {
-  font-weight: 500;
-  color: var(--foreground);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .tx-feed-row .svc {
   color: var(--muted-foreground);
@@ -334,6 +348,14 @@
 .tx-meth-pill.gift {
   background: color-mix(in oklch, var(--amber-500) 16%, transparent);
   color: oklch(0.42 0.1 75);
+}
+/* Split-tender variant (FR-014a): neutral muted fill, same chrome as the
+   other variants. Marks a ticket that resolved with ≥2 distinct succeeded
+   payment methods. */
+.tx-meth-pill.split {
+  background: var(--muted);
+  color: var(--foreground);
+  border: 1px solid var(--border);
 }
 
 /* ---------- Tech avatars (stack + overflow) ---------- */
@@ -403,6 +425,24 @@
 }
 .tx-link:hover {
   text-decoration: underline;
+}
+
+/* ---------- Loading-state pulse ---------- */
+/* Ambient 1500ms pulse for the dashboard `loading.tsx` placeholders. The
+   constitution's 150 / 200 / 300 ms reactive-affordance bands govern
+   user-driven feedback; this is a calm in-flight indicator with no
+   relationship to user input, so the longer cadence is intentional. */
+@keyframes tx-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+.tx-skeleton {
+  animation: tx-skeleton-pulse 1500ms ease-in-out infinite;
 }
 
 /* ---------- Utilities ---------- */

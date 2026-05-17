@@ -1,5 +1,3 @@
-import type { Service, TxLineItem } from "@/lib/dashboard/mock-data";
-
 const CURRENCY_FMT = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -27,19 +25,18 @@ export function formatCount(n: number): string {
   return COUNT_FMT.format(n);
 }
 
-export function formatServiceLabel(
-  items: readonly TxLineItem[],
-  services: readonly Service[]
-): string {
-  if (items.length === 0) return "";
-  const nameFor = (id: string): string => {
-    const svc = services.find((s) => s.id === id);
-    return svc ? svc.name : id;
-  };
-  if (items.length <= 2) {
-    return items.map((it) => nameFor(it.id)).join(", ");
-  }
-  return `${nameFor(items[0].id)} +${items.length - 1} more`;
+// formatServiceLabel — drops the (items, services) lookup in favor of a
+// pre-resolved names list. The query layer hands us non-discount item
+// name_snapshots directly.
+//   0 names → ""
+//   1 name  → "{name}"
+//   2 names → "{a}, {b}"
+//   3+      → "{first}, +N more"
+export function formatServiceLabel(names: readonly string[]): string {
+  if (names.length === 0) return "";
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]}, ${names[1]}`;
+  return `${names[0]}, +${names.length - 1} more`;
 }
 
 export function paymentMixWidths(
