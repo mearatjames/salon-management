@@ -1,6 +1,8 @@
 import "@/styles/end-of-day.css";
 
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { History } from "lucide-react";
 
 import { requireStudioSession } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/db/server";
@@ -88,6 +90,22 @@ export default async function EndOfDayPage() {
           >
             {isOpen ? "Open" : "Closed"}
           </span>
+          <Link
+            href="/end-of-day/history"
+            data-slot="eod-history-link"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: 12,
+              color: "var(--muted-foreground)",
+              textDecoration: "none",
+              transition: "color 150ms var(--ease-out)",
+            }}
+          >
+            <History size={16} strokeWidth={1.5} aria-hidden="true" />
+            View past counts
+          </Link>
         </div>
       </div>
 

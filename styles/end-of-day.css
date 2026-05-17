@@ -429,3 +429,323 @@
   font-style: italic;
   line-height: 1.5;
 }
+
+/*
+ * ── Past cash counts (feature 020) ────────────────────────────────────
+ *
+ * History list, detail view, edit affordance, and change-history
+ * accordion. All values resolve to tokens from `styles/tokens.css` —
+ * Constitution Principle I (Design System Fidelity). Audit with:
+ *   grep -nE '#[0-9a-fA-F]{3,8}' styles/end-of-day.css
+ * MUST return zero matches across the whole file.
+ */
+
+/* ── History list shell ───────────────────────────────────────────── */
+.eod-history-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+  overflow: hidden;
+}
+
+.eod-history-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.eod-history-row {
+  display: grid;
+  grid-template-columns: 132px 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  text-decoration: none;
+  color: var(--foreground);
+  transition: background 150ms var(--ease-out);
+}
+.eod-history-row:hover {
+  background: var(--accent);
+}
+
+.eod-history-date {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+.eod-history-amounts {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.eod-history-amount-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+  margin-bottom: 4px;
+}
+.eod-history-amount-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+/* Variance column color rules (FR-002).
+   Zero variance uses muted-foreground; positive uses warning; negative
+   uses destructive. */
+.eod-history-variance.zero {
+  color: var(--muted-foreground);
+}
+.eod-history-variance.over {
+  color: var(--warning);
+}
+.eod-history-variance.short {
+  color: var(--destructive);
+}
+
+.eod-history-closer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.eod-history-closer-name {
+  font-weight: 500;
+  color: var(--foreground);
+}
+.eod-history-closer-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Edited pill — muted tone per spec FR-009. */
+.eod-edited-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 8px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* Empty-note variant: same muted bubble as .eod-done-note but upright
+   (no italics) to distinguish "no note recorded" from a real note. */
+.eod-done-note.eod-history-note-empty {
+  font-style: normal;
+}
+
+/* Detail-page not-found title — promotes the inline 15/600 styling out
+   of `not-found.tsx` per Lacquer rule 3 (compose in CSS, not inline). */
+.eod-history-empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+/* Empty state */
+.eod-history-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 64px 32px;
+  text-align: center;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* "Show earlier" button under the list */
+.eod-history-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 16px auto 32px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--foreground);
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    background 150ms var(--ease-out),
+    border-color 150ms var(--ease-out);
+}
+.eod-history-more:hover {
+  background: var(--accent);
+  border-color: var(--muted-foreground);
+}
+
+/* ── Detail view ──────────────────────────────────────────────────── */
+.eod-detail-shell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 24px 48px;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+.eod-detail-back {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  text-decoration: none;
+  transition: color 150ms var(--ease-out);
+}
+.eod-detail-back:hover {
+  color: var(--foreground);
+}
+
+.eod-detail-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+.eod-detail-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 20px;
+  font-weight: 600;
+}
+.eod-detail-subtitle {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.eod-detail-last-edited {
+  font-size: 12px;
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+
+.eod-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* ── Change history accordion ─────────────────────────────────────── */
+.eod-change-history {
+  margin-top: 16px;
+  width: 100%;
+  max-width: 480px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+}
+.eod-change-history > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--foreground);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: background 150ms var(--ease-out);
+}
+.eod-change-history > summary::-webkit-details-marker {
+  display: none;
+}
+.eod-change-history > summary:hover {
+  background: var(--accent);
+}
+.eod-change-history > summary::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid var(--muted-foreground);
+  border-bottom: 1.5px solid var(--muted-foreground);
+  transform: rotate(45deg);
+  transition: transform 200ms var(--ease-out);
+}
+.eod-change-history[open] > summary::after {
+  transform: rotate(-135deg);
+}
+
+.eod-change-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+.eod-change-history-entry {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.eod-change-history-entry:last-child {
+  border-bottom: none;
+}
+.eod-change-history-meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.eod-change-history-editor {
+  font-weight: 500;
+  color: var(--foreground);
+}
+.eod-change-history-time {
+  font-variant-numeric: tabular-nums;
+}
+.eod-change-history-blocks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  font-size: 12px;
+}
+.eod-change-history-block {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--muted);
+}
+.eod-change-history-block-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+  margin-bottom: 4px;
+}
+.eod-change-history-block-row {
+  display: flex;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+.eod-change-history-block-notes {
+  margin-top: 4px;
+  font-style: italic;
+  color: var(--muted-foreground);
+  line-height: 1.4;
+}

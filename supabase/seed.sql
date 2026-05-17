@@ -405,3 +405,58 @@ begin
   on conflict do nothing;
 end
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Feature 020 (Past Cash Counts) — three closed cash_drawer_sessions rows on
+-- distinct historic business days. One clean ($0 variance), one over (+$3.50
+-- with a note), one short (−$2.00 with a note). Deterministic UUIDs so re-runs
+-- are idempotent via `on conflict do nothing`. Owner/manager closer mix so the
+-- detail page shows both display names without further fixtures.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_today_local date := (now() at time zone 'America/Los_Angeles')::date;
+  v_owner uuid := '10000000-0000-0000-0000-000000000001';
+  v_jordan uuid := '10000000-0000-0000-0000-000000000002';
+begin
+  if not exists (select 1 from public.staff where id = v_owner) then
+    return;
+  end if;
+
+  -- Clean: 7 days ago, exact match.
+  insert into public.cash_drawer_sessions (
+    id, opened_by_staff_id, opening_cents, closed_by_staff_id, closed_at,
+    expected_cents, counted_cents, variance_cents, notes, business_day, opened_at
+  ) values (
+    '40000000-0000-0000-0000-000000000001',
+    v_owner, 10000, v_owner,
+    ((v_today_local - 7)::timestamp + interval '19 hours') at time zone 'America/Los_Angeles',
+    12500, 22500, 0, null, (v_today_local - 7),
+    ((v_today_local - 7)::timestamp + interval '9 hours') at time zone 'America/Los_Angeles'
+  ) on conflict (id) do nothing;
+
+  -- Over: 3 days ago, +$3.50.
+  insert into public.cash_drawer_sessions (
+    id, opened_by_staff_id, opening_cents, closed_by_staff_id, closed_at,
+    expected_cents, counted_cents, variance_cents, notes, business_day, opened_at
+  ) values (
+    '40000000-0000-0000-0000-000000000002',
+    v_jordan, 10000, v_jordan,
+    ((v_today_local - 3)::timestamp + interval '19 hours') at time zone 'America/Los_Angeles',
+    15000, 25350, 350, 'Customer tipped extra in cash.', (v_today_local - 3),
+    ((v_today_local - 3)::timestamp + interval '9 hours') at time zone 'America/Los_Angeles'
+  ) on conflict (id) do nothing;
+
+  -- Short: 1 day ago, −$2.00.
+  insert into public.cash_drawer_sessions (
+    id, opened_by_staff_id, opening_cents, closed_by_staff_id, closed_at,
+    expected_cents, counted_cents, variance_cents, notes, business_day, opened_at
+  ) values (
+    '40000000-0000-0000-0000-000000000003',
+    v_owner, 10000, v_owner,
+    ((v_today_local - 1)::timestamp + interval '19 hours') at time zone 'America/Los_Angeles',
+    11000, 20800, -200, 'Drawer was off at open.', (v_today_local - 1),
+    ((v_today_local - 1)::timestamp + interval '9 hours') at time zone 'America/Los_Angeles'
+  ) on conflict (id) do nothing;
+end
+$$;
