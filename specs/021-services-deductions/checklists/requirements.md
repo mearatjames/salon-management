@@ -36,6 +36,16 @@
   additive), reuses the existing `audit_log` schema unchanged, and pins
   the Phase 1 / Phase 2 / Phase 3 boundary explicitly so out-of-scope work
   is unambiguous.
+- 2026-05-17 clarifications added two micro-decisions that would otherwise
+  have been defaulted during planning:
+  - Panel header has **no Close (X) affordance** — the two-pane is always
+    visible; deselection happens only by clicking a different row or "Add
+    service" (FR-002 updated).
+  - Custom card-fee amount and supply amount **both capped at $50 (5000
+    cents)** in the validator AND DB CHECK constraint, to guard against
+    fat-finger errors without limiting realistic salon use (FR-010, FR-012,
+    FR-016, FR-019, FR-031 updated; Service entity description updated;
+    US2 scenario 4 and US3 scenario 3 updated).
 - The spec names the existing files the feature MUST extend
   (`_validation.ts`, `actions.ts`, `components/lacquer/services/*`) and
   the design reference (`design-system/ServicesV1.jsx` — V1 only) as
