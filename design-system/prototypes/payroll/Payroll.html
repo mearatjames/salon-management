@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Lacquer — Payroll</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="stylesheet" href="payroll.css" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+  html, body, #root { height: 100%; margin: 0; }
+  body { background: oklch(0.94 0.005 90); font-family: var(--font-sans); }
+  /* Studio frame for each artboard — desktop browser-window style */
+  .studio-frame {
+    width: 100%; height: 100%; display: flex; flex-direction: column;
+    background: var(--background); overflow: hidden;
+    border-radius: 10px;
+  }
+  .studio-frame .app { height: 100%; overflow: hidden; }
+  .studio-frame .app-content { overflow-y: auto; overflow-x: hidden; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="Components.jsx"></script>
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="PayrollLedger.jsx"></script>
+<script type="text/babel" src="PayrollStack.jsx"></script>
+<script type="text/babel" src="PayrollPulse.jsx"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "view": "all",
+  "spacing": "comfortable"
+}/*EDITMODE-END*/;
+
+function StudioArtboard({ children, density }) {
+  return (
+    <div className="studio-frame" data-density={density}>
+      <div className="app">
+        <UMSidebar />
+        <div className="app-main">
+          <UMTopBar />
+          <div className="app-content">
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+  const showLedger = t.view === 'all' || t.view === 'ledger';
+  const showStack  = t.view === 'all' || t.view === 'stack';
+  const showPulse  = t.view === 'all' || t.view === 'pulse';
+
+  return (
+    <>
+      <DesignCanvas
+        title="Lacquer Studio · Payroll"
+        subtitle="Two takes on the twice-monthly payroll review">
+
+        {showLedger && (
+          <DCSection
+            id="ledger"
+            title="Variation 1 — Ledger"
+            subtitle="Spreadsheet-faithful. One row per tech, click any row to review their breakdown and mark them paid in the right panel. Best for owners who already trust the spreadsheet rhythm.">
+            <DCArtboard id="ledger-desktop" label="Studio · 1440 × 920" width={1440} height={920}>
+              <StudioArtboard density={t.spacing}>
+                <PayrollLedger />
+              </StudioArtboard>
+            </DCArtboard>
+          </DCSection>
+        )}
+
+        {showStack && (
+          <DCSection
+            id="stack"
+            title="Variation 2 — Drafts"
+            subtitle="Editorial review stack. One full card per tech with a money-flow waterfall and daily activity chart, designed to be read top-to-bottom and checked off like a punch-list.">
+            <DCArtboard id="stack-desktop" label="Studio · 1440 × 920" width={1440} height={920}>
+              <StudioArtboard density={t.spacing}>
+                <PayrollStack />
+              </StudioArtboard>
+            </DCArtboard>
+          </DCSection>
+        )}
+
+        {showPulse && (
+          <DCSection
+            id="pulse"
+            title="Variation 3 — Pulse"
+            subtitle="Ledger meets activity chart. Every row carries an inline 15-day sparkline so the period's rhythm is visible without leaving the table; the detail panel swaps the day-by-day list for the full Daily Activity chart from Drafts.">
+            <DCArtboard id="pulse-desktop" label="Studio · 1440 × 920" width={1440} height={920}>
+              <StudioArtboard density={t.spacing}>
+                <PayrollPulse />
+              </StudioArtboard>
+            </DCArtboard>
+          </DCSection>
+        )}
+
+        <DCPostIt left={40} top={40} width={300}>
+          <strong>Decoded your spreadsheet</strong><br /><br />
+          Each tech earns <strong>income × commission %</strong> + <strong>card tips × tip %</strong>, both rates set per-tech. A portion of that is paid by physical check (W-2 wage); the rest in cash.<br /><br />
+          Cash tips skip the books — they go straight from client to tech, as you described.<br /><br />
+          Mocked one open period (May 1–15) with Karin pre-paid so both states are visible. Click the chips in <strong>Tweaks</strong> to switch between variations or compare side-by-side.
+        </DCPostIt>
+      </DesignCanvas>
+
+      <TweaksPanel title="Tweaks">
+        <TweakSection label="Which view to show" />
+        <TweakSelect
+          label="Variation"
+          value={t.view}
+          options={[
+            { value: 'all',    label: 'All three' },
+            { value: 'ledger', label: 'V1 · Ledger' },
+            { value: 'stack',  label: 'V2 · Drafts' },
+            { value: 'pulse',  label: 'V3 · Pulse' },
+          ]}
+          onChange={(v) => setTweak('view', v)}
+        />
+      </TweaksPanel>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

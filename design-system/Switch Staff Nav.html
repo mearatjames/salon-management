@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Switch Staff — Nav Bar UX</title>
+  <link rel="stylesheet" href="colors_and_type.css" />
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; width: 100%; overflow: hidden; }
+
+    .topbar-frame {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 24px;
+      height: 56px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-xs);
+    }
+
+    .topbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--text-sm);
+      font-weight: 500;
+      color: var(--foreground);
+      white-space: nowrap;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Operator chip (pill) */
+    .op-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-full);
+      padding: 4px 10px 4px 4px;
+      color: var(--card-foreground);
+      cursor: pointer;
+      font-size: var(--text-sm);
+      font-family: var(--font-sans);
+      line-height: 1;
+      transition: background var(--duration-fast) var(--ease-out);
+    }
+    .op-chip:hover { background: var(--accent); }
+
+    .op-avatar {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 30px;
+      height: 30px;
+      border-radius: var(--radius-full);
+      font-size: var(--text-xs);
+      font-weight: 600;
+      letter-spacing: var(--tracking-wide);
+      flex-shrink: 0;
+    }
+
+    .op-name { font-weight: 500; }
+
+    .op-role {
+      font-size: var(--text-xs);
+      letter-spacing: var(--tracking-wide);
+      text-transform: uppercase;
+      background: var(--muted);
+      color: var(--muted-foreground);
+      padding: 2px 6px;
+      border-radius: var(--radius-full);
+    }
+
+    /* Dropdown */
+    .dropdown {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      background: var(--popover);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-sm);
+      min-width: 156px;
+      z-index: 20;
+      overflow: hidden;
+    }
+    .dropdown-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      font-size: var(--text-sm);
+      color: var(--foreground);
+      cursor: pointer;
+      font-family: var(--font-sans);
+      background: transparent;
+      border: none;
+      width: 100%;
+      text-align: left;
+      transition: background var(--duration-fast) var(--ease-out);
+    }
+    .dropdown-item:hover { background: var(--accent); }
+
+    /* Ghost icon button */
+    .icon-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font-family: var(--font-sans);
+      transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+    }
+    .icon-btn:hover { background: var(--accent); color: var(--foreground); border-color: var(--ring); }
+
+    /* Ghost labeled button */
+    .ghost-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 32px;
+      padding: 0 12px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font-size: var(--text-sm);
+      font-family: var(--font-sans);
+      transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+    }
+    .ghost-btn:hover { background: var(--accent); color: var(--foreground); border-color: var(--ring); }
+
+    /* Split chip */
+    .split-chip {
+      display: inline-flex;
+      align-items: center;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-full);
+      overflow: hidden;
+    }
+    .split-chip-identity {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 10px 4px 4px;
+      background: transparent;
+      border: none;
+      color: var(--card-foreground);
+      cursor: pointer;
+      font-size: var(--text-sm);
+      font-family: var(--font-sans);
+      line-height: 1;
+      transition: background var(--duration-fast) var(--ease-out);
+    }
+    .split-chip-identity:hover { background: var(--accent); }
+
+    .split-chip-divider {
+      width: 1px;
+      height: 32px;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    .split-chip-action {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 40px;
+      background: transparent;
+      border: none;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+    }
+    .split-chip-action:hover { background: var(--accent); color: var(--foreground); }
+
+    /* Tooltip */
+    .tooltip {
+      position: absolute;
+      top: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--foreground);
+      color: var(--background);
+      font-size: var(--text-xs);
+      font-family: var(--font-sans);
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    /* Topbar divider */
+    .topbar-sep {
+      width: 1px;
+      height: 20px;
+      background: var(--border);
+      flex-shrink: 0;
+    }
+
+    /* Annotation bar */
+    .annotation {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      font-size: var(--text-xs);
+      color: var(--muted-foreground);
+      padding: 8px 12px;
+      background: var(--muted);
+      border-radius: var(--radius-md);
+      line-height: var(--leading-snug);
+    }
+    .annotation strong {
+      font-weight: 500;
+      color: var(--foreground);
+      white-space: nowrap;
+    }
+
+    /* Artboard wrapper */
+    .artboard-inner {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      font-family: var(--font-sans);
+    }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useRef } = React;
+
+/* ─── Icons ─────────────────────────────────────────────────────────── */
+function SvgIcon({ children, size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden="true" style={{ flexShrink: 0 }}>
+      {children}
+    </svg>
+  );
+}
+
+function SparklesIcon({ size = 20 }) {
+  return (
+    <SvgIcon size={size}>
+      <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/>
+      <path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M3 18h2"/>
+    </SvgIcon>
+  );
+}
+function RepeatIcon({ size = 16 }) {
+  return (
+    <SvgIcon size={size}>
+      <path d="M17 2l4 4-4 4"/>
+      <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+      <path d="M7 22l-4-4 4-4"/>
+      <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+    </SvgIcon>
+  );
+}
+function LogOutIcon({ size = 16 }) {
+  return (
+    <SvgIcon size={size}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+      <polyline points="16 17 21 12 16 7"/>
+      <line x1="21" y1="12" x2="9" y2="12"/>
+    </SvgIcon>
+  );
+}
+function ChevronDownIcon({ size = 14 }) {
+  return (
+    <SvgIcon size={size}>
+      <polyline points="6 9 12 15 18 9"/>
+    </SvgIcon>
+  );
+}
+
+/* ─── Staff mock ─────────────────────────────────────────────────────── */
+const STAFF = { name: "Maya Chen", initials: "MC", role: "MGR", color: "var(--rose-400)" };
+
+/* ─── Shared sub-components ──────────────────────────────────────────── */
+function Avatar({ staff }) {
+  return (
+    <span className="op-avatar" style={{ background: staff.color, color: "var(--primary-foreground)" }}>
+      {staff.initials}
+    </span>
+  );
+}
+
+function Topbar({ children }) {
+  return (
+    <div className="topbar-frame">
+      <div className="topbar-brand">
+        <SparklesIcon size={20} />
+        Tang Nails
+      </div>
+      <div style={{ flex: 1 }} />
+      <div className="topbar-right">{children}</div>
+    </div>
+  );
+}
+
+function Dropdown({ items, style }) {
+  return (
+    <div className="dropdown" style={style}>
+      {items.map((item, i) => (
+        <button key={i} className="dropdown-item">
+          {item.icon}
+          {item.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ─── Variation 1: Current ───────────────────────────────────────────── */
+function VarCurrent() {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="artboard-inner">
+      <Topbar>
+        <div style={{ position: "relative" }}>
+          <button className="op-chip" onClick={() => setOpen(o => !o)}>
+            <Avatar staff={STAFF} />
+            <span className="op-name">{STAFF.name}</span>
+            <span className="op-role">{STAFF.role}</span>
+            <ChevronDownIcon />
+          </button>
+          {open && (
+            <Dropdown items={[
+              { icon: <RepeatIcon />, label: "Switch staff" },
+              { icon: <LogOutIcon />, label: "Sign out" },
+            ]} />
+          )}
+        </div>
+      </Topbar>
+      <div className="annotation">
+        <strong>Current:</strong>
+        Click name chip → click "Switch staff" in the dropdown. Two separate interactions to reach a frequent action.
+      </div>
+    </div>
+  );
+}
+
+/* ─── Variation 2: Option A — icon button ────────────────────────────── */
+function VarA() {
+  const [tooltip, setTooltip] = useState(false);
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="artboard-inner">
+      <Topbar>
+        {/* Switch staff: standalone icon button */}
+        <div style={{ position: "relative" }}>
+          <button
+            className="icon-btn"
+            onMouseEnter={() => setTooltip(true)}
+            onMouseLeave={() => setTooltip(false)}
+          >
+            <RepeatIcon />
+          </button>
+          {tooltip && <div className="tooltip">Switch staff</div>}
+        </div>
+        <div className="topbar-sep" />
+        {/* Operator chip — now only has Sign out */}
+        <div style={{ position: "relative" }}>
+          <button className="op-chip" onClick={() => setOpen(o => !o)}>
+            <Avatar staff={STAFF} />
+            <span className="op-name">{STAFF.name}</span>
+            <span className="op-role">{STAFF.role}</span>
+            <ChevronDownIcon />
+          </button>
+          {open && (
+            <Dropdown items={[
+              { icon: <LogOutIcon />, label: "Sign out" },
+            ]} />
+          )}
+        </div>
+      </Topbar>
+      <div className="annotation">
+        <strong>A — icon button:</strong>
+        Single <RepeatIcon size={12} /> icon button. Minimal footprint. Hover reveals tooltip. "Switch staff" removed from chip dropdown.
+      </div>
+    </div>
+  );
+}
+
+/* ─── Variation 3: Option B — labeled ghost button ───────────────────── */
+function VarB() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="artboard-inner">
+      <Topbar>
+        {/* Switch staff: labeled ghost button */}
+        <button className="ghost-btn">
+          <RepeatIcon />
+          Switch staff
+        </button>
+        <div className="topbar-sep" />
+        {/* Operator chip */}
+        <div style={{ position: "relative" }}>
+          <button className="op-chip" onClick={() => setOpen(o => !o)}>
+            <Avatar staff={STAFF} />
+            <span className="op-name">{STAFF.name}</span>
+            <span className="op-role">{STAFF.role}</span>
+            <ChevronDownIcon />
+          </button>
+          {open && (
+            <Dropdown items={[
+              { icon: <LogOutIcon />, label: "Sign out" },
+            ]} />
+          )}
+        </div>
+      </Topbar>
+      <div className="annotation">
+        <strong>B — labeled button:</strong>
+        Most discoverable. Label is always visible. Slightly more topbar width; best when techs switch frequently throughout the day.
+      </div>
+    </div>
+  );
+}
+
+/* ─── Variation 4: Option C — split chip ─────────────────────────────── */
+function VarC() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="artboard-inner">
+      <Topbar>
+        <div style={{ position: "relative" }}>
+          <div className="split-chip">
+            {/* Left zone: identity → dropdown (sign out only) */}
+            <button className="split-chip-identity" onClick={() => setOpen(o => !o)}>
+              <Avatar staff={STAFF} />
+              <span className="op-name">{STAFF.name}</span>
+              <span className="op-role">{STAFF.role}</span>
+              <ChevronDownIcon />
+            </button>
+            {/* Hairline separator */}
+            <div className="split-chip-divider" />
+            {/* Right zone: switch staff → direct action */}
+            <button className="split-chip-action" title="Switch staff">
+              <RepeatIcon />
+            </button>
+          </div>
+          {open && (
+            <Dropdown items={[
+              { icon: <LogOutIcon />, label: "Sign out" },
+            ]} />
+          )}
+        </div>
+      </Topbar>
+      <div className="annotation">
+        <strong>C — split chip:</strong>
+        Most compact. Identity and switch action in one unified control. Left half opens the profile menu; right <RepeatIcon size={12} /> fires switch staff directly.
+      </div>
+    </div>
+  );
+}
+
+/* ─── App ────────────────────────────────────────────────────────────── */
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection
+        id="s1"
+        title="Switch staff — top nav"
+        subtitle="One-click access · 4 options compared"
+      >
+        <DCArtboard id="current" label="Baseline · 2 clicks" width={860} height={184}>
+          <VarCurrent />
+        </DCArtboard>
+        <DCArtboard id="opt-a" label="A · Icon button" width={860} height={148}>
+          <VarA />
+        </DCArtboard>
+        <DCArtboard id="opt-b" label="B · Labeled button" width={860} height={148}>
+          <VarB />
+        </DCArtboard>
+        <DCArtboard id="opt-c" label="C · Split chip" width={860} height={148}>
+          <VarC />
+        </DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

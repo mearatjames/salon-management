@@ -19,6 +19,7 @@ TI.Back     = _i(<path d="M15 18l-6-6 6-6"/>);
 TI.User     = _i(<><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></>);
 TI.Backspace= _i(<><path d="M21 5H8L2 12l6 7h13a1 1 0 001-1V6a1 1 0 00-1-1z"/><line x1="18" y1="9" x2="12" y2="15"/><line x1="12" y1="9" x2="18" y2="15"/></>);
 TI.Edit     = _i(<><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 113 3L12 15l-4 1 1-4 9.5-9.5z"/></>);
+TI.History  = _i(<><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l3 2"/></>);
 
 // ─── Cart hook ──────────────────────────────────────────────────
 function useCart(initial = []) {
