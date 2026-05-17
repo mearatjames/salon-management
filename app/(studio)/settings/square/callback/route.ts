@@ -54,9 +54,11 @@ export async function GET(request: NextRequest): Promise<Response> {
     return redirectWithFlash(origin, { error: "oauth_exchange_failed" });
   }
 
+  const redirectUri = `${origin}/settings/square/callback`;
+
   let merchantInfo: { merchantId: string; merchantName: string };
   try {
-    merchantInfo = await exchangeCodeAndPersist(code, viewer.staff.id);
+    merchantInfo = await exchangeCodeAndPersist(code, viewer.staff.id, redirectUri);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("vault_secret_not_found")) {

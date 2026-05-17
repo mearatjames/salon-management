@@ -184,6 +184,7 @@ async function fetchSquareTokenSet(grant: {
   grant_type: "authorization_code" | "refresh_token";
   code?: string;
   refresh_token?: string;
+  redirect_uri?: string;
 }): Promise<TokenSet> {
   const applicationId = process.env.SQUARE_APPLICATION_ID;
   const applicationSecret = process.env.SQUARE_APPLICATION_SECRET;
@@ -240,9 +241,14 @@ async function fetchSquareTokenSet(grant: {
  */
 export async function exchangeCodeAndPersist(
   code: string,
-  operatorStaffId: string
+  operatorStaffId: string,
+  redirectUri: string
 ): Promise<{ merchantId: string; merchantName: string }> {
-  const tokens = await fetchSquareTokenSet({ grant_type: "authorization_code", code });
+  const tokens = await fetchSquareTokenSet({
+    grant_type: "authorization_code",
+    code,
+    redirect_uri: redirectUri,
+  });
 
   // Merchant profile (friendly name) — call Square's `/v2/merchants/{id}`
   // with the freshly-acquired access token.
