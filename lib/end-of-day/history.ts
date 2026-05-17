@@ -187,9 +187,7 @@ export async function loadCashHistoryList(
       varianceCents: r.variance_cents ?? 0,
       notes: r.notes,
       closedByStaffId: r.closed_by_staff_id,
-      closedByName: r.closed_by_staff_id
-        ? (closerNameMap.get(r.closed_by_staff_id) ?? "")
-        : "",
+      closedByName: r.closed_by_staff_id ? (closerNameMap.get(r.closed_by_staff_id) ?? "") : "",
       closedAt: r.closed_at ?? "",
       edited: lastEditedAt !== null,
       lastEditedAt,
@@ -254,10 +252,9 @@ export async function loadCashHistoryDetail(
   // 3. Resolve every editor + the closer to a display name in one read.
   const staffIds = Array.from(
     new Set(
-      [
-        ...audits.map((a) => a.acting_as_staff_id),
-        s.closed_by_staff_id,
-      ].filter((id): id is string => Boolean(id))
+      [...audits.map((a) => a.acting_as_staff_id), s.closed_by_staff_id].filter(
+        (id): id is string => Boolean(id)
+      )
     )
   );
   let nameMap = new Map<string, string>();
@@ -283,9 +280,7 @@ export async function loadCashHistoryDetail(
     varianceCents: s.variance_cents ?? 0,
     notes: s.notes,
     closedByStaffId: s.closed_by_staff_id,
-    closedByName: s.closed_by_staff_id
-      ? (nameMap.get(s.closed_by_staff_id) ?? "")
-      : "",
+    closedByName: s.closed_by_staff_id ? (nameMap.get(s.closed_by_staff_id) ?? "") : "",
     closedAt: s.closed_at ?? "",
     edited: audits.length > 0,
     lastEditedAt,
@@ -297,9 +292,7 @@ export async function loadCashHistoryDetail(
       id: a.id,
       createdAt: a.ts,
       editorStaffId: a.acting_as_staff_id,
-      editorDisplayName: a.acting_as_staff_id
-        ? (nameMap.get(a.acting_as_staff_id) ?? "")
-        : "",
+      editorDisplayName: a.acting_as_staff_id ? (nameMap.get(a.acting_as_staff_id) ?? "") : "",
       before: readPayloadSide(a.payload?.before),
       after: readPayloadSide(a.payload?.after),
     })),

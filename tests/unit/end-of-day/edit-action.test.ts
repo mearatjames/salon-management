@@ -93,20 +93,18 @@ describe("editCashDrawerAction — input validation", () => {
     vi.restoreAllMocks();
   });
 
-  it.each([
-    -1,
-    1.5,
-    Number.NaN,
-    Number.POSITIVE_INFINITY,
-  ])("returns BAD_INPUT when countedCents is %s", async (countedCents) => {
-    const rpcSpy = mockRpc({ data: null, error: null });
+  it.each([-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    "returns BAD_INPUT when countedCents is %s",
+    async (countedCents) => {
+      const rpcSpy = mockRpc({ data: null, error: null });
 
-    const res = await editCashDrawerAction({ ...VALID_INPUT, countedCents });
+      const res = await editCashDrawerAction({ ...VALID_INPUT, countedCents });
 
-    expect(res).toMatchObject({ ok: false, code: "BAD_INPUT" });
-    expect(rpcSpy).not.toHaveBeenCalled();
-    expect(revalidatePath).not.toHaveBeenCalled();
-  });
+      expect(res).toMatchObject({ ok: false, code: "BAD_INPUT" });
+      expect(rpcSpy).not.toHaveBeenCalled();
+      expect(revalidatePath).not.toHaveBeenCalled();
+    }
+  );
 
   it("returns BAD_INPUT when sessionId is an empty string", async () => {
     const rpcSpy = mockRpc({ data: null, error: null });
@@ -186,8 +184,6 @@ describe("editCashDrawerAction — happy path", () => {
     // of either surface picks up the new counted/variance/notes.
     expect(revalidatePath).toHaveBeenCalledTimes(2);
     expect(revalidatePath).toHaveBeenCalledWith("/end-of-day/history");
-    expect(revalidatePath).toHaveBeenCalledWith(
-      `/end-of-day/history/${VALID_INPUT.sessionId}`
-    );
+    expect(revalidatePath).toHaveBeenCalledWith(`/end-of-day/history/${VALID_INPUT.sessionId}`);
   });
 });

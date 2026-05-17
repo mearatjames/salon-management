@@ -74,7 +74,7 @@ function Block({ label, side }: { label: string; side: Side }) {
       {side.notes ? (
         <div className="eod-change-history-block-notes">&ldquo;{side.notes}&rdquo;</div>
       ) : (
-        <div className="eod-change-history-block-notes">No note</div>
+        <div className="eod-change-history-block-notes">No note recorded</div>
       )}
     </div>
   );

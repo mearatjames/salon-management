@@ -30,13 +30,7 @@ export type EditCashDrawerResult =
   | { ok: true; sessionId: string }
   | {
       ok: false;
-      code:
-        | "FORBIDDEN"
-        | "NOT_FOUND"
-        | "NOT_CLOSED"
-        | "NOTE_REQUIRED"
-        | "BAD_INPUT"
-        | "UNEXPECTED";
+      code: "FORBIDDEN" | "NOT_FOUND" | "NOT_CLOSED" | "NOTE_REQUIRED" | "BAD_INPUT" | "UNEXPECTED";
       message: string;
     };
 

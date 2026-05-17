@@ -17,10 +17,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  loadCashHistoryDetail,
-  loadCashHistoryList,
-} from "@/lib/end-of-day/history";
+import { loadCashHistoryDetail, loadCashHistoryList } from "@/lib/end-of-day/history";
 
 type Row = Record<string, unknown>;
 
@@ -30,16 +27,7 @@ type Row = Record<string, unknown>;
 // `.single()` also resolve to the same payload.
 function buildQuery(result: { data: unknown; error: unknown }) {
   const proxy: Record<string, unknown> = {};
-  const methods = [
-    "select",
-    "eq",
-    "in",
-    "is",
-    "not",
-    "order",
-    "limit",
-    "range",
-  ];
+  const methods = ["select", "eq", "in", "is", "not", "order", "limit", "range"];
   for (const m of methods) {
     proxy[m] = vi.fn(() => proxy);
   }
@@ -48,9 +36,8 @@ function buildQuery(result: { data: unknown; error: unknown }) {
   // Make the proxy itself thenable so `await proxy` resolves to the
   // result — supabase queries are awaitable directly without a terminal
   // `.then()`/`.maybeSingle()` for list-shaped reads.
-  (proxy as unknown as { then: (resolve: (v: unknown) => unknown) => unknown }).then = (
-    resolve
-  ) => resolve(result);
+  (proxy as unknown as { then: (resolve: (v: unknown) => unknown) => unknown }).then = (resolve) =>
+    resolve(result);
   return proxy;
 }
 
@@ -112,11 +99,10 @@ describe("loadCashHistoryList", () => {
       audit_log: [{ data: [], error: null }],
     });
 
-    const rows = await loadCashHistoryList(
-      supabase as never,
-      admin as never,
-      { limit: 90, offset: 0 }
-    );
+    const rows = await loadCashHistoryList(supabase as never, admin as never, {
+      limit: 90,
+      offset: 0,
+    });
 
     expect(supabase.from).toHaveBeenCalledWith("cash_drawer_sessions");
     expect(rows).toHaveLength(2);
@@ -151,11 +137,10 @@ describe("loadCashHistoryList", () => {
       ],
     });
 
-    const rows = await loadCashHistoryList(
-      supabase as never,
-      admin as never,
-      { limit: 90, offset: 0 }
-    );
+    const rows = await loadCashHistoryList(supabase as never, admin as never, {
+      limit: 90,
+      offset: 0,
+    });
 
     const sess1 = rows.find((r) => r.sessionId === "sess-1")!;
     const sess2 = rows.find((r) => r.sessionId === "sess-2")!;
@@ -173,11 +158,10 @@ describe("loadCashHistoryList", () => {
       audit_log: [{ data: [], error: null }],
     });
 
-    const rows = await loadCashHistoryList(
-      supabase as never,
-      admin as never,
-      { limit: 90, offset: 90 }
-    );
+    const rows = await loadCashHistoryList(supabase as never, admin as never, {
+      limit: 90,
+      offset: 90,
+    });
 
     expect(rows).toEqual([]);
     expect(supabase.from).toHaveBeenCalledWith("cash_drawer_sessions");
@@ -193,11 +177,7 @@ describe("loadCashHistoryDetail", () => {
       audit_log: [{ data: [], error: null }],
     });
 
-    const detail = await loadCashHistoryDetail(
-      supabase as never,
-      admin as never,
-      "missing-id"
-    );
+    const detail = await loadCashHistoryDetail(supabase as never, admin as never, "missing-id");
 
     expect(detail).toBeNull();
   });
@@ -243,11 +223,7 @@ describe("loadCashHistoryDetail", () => {
       ],
     });
 
-    const detail = await loadCashHistoryDetail(
-      supabase as never,
-      admin as never,
-      "sess-1"
-    );
+    const detail = await loadCashHistoryDetail(supabase as never, admin as never, "sess-1");
 
     expect(detail).not.toBeNull();
     expect(detail!.session.sessionId).toBe("sess-1");
