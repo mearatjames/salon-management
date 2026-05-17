@@ -12,9 +12,11 @@ export const dynamic = "force-dynamic";
 
 export default async function HistoryDetailPage({
   params,
+  searchParams,
 }: {
-  // Next.js 16 App Router — params is a Promise.
+  // Next.js 16 App Router — params + searchParams are both Promises.
   params: Promise<{ sessionId: string }>;
+  searchParams?: Promise<{ edit?: string }>;
 }) {
   const viewer = await requireStudioSession();
 
@@ -23,6 +25,8 @@ export default async function HistoryDetailPage({
   }
 
   const { sessionId } = await params;
+  const sp = (await searchParams) ?? {};
+  const edit = sp.edit === "1";
 
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseServiceRoleClient();
@@ -42,7 +46,7 @@ export default async function HistoryDetailPage({
         overflow: "hidden",
       }}
     >
-      <DetailView detail={detail} />
+      <DetailView detail={detail} edit={edit} />
     </div>
   );
 }

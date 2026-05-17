@@ -18,9 +18,13 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 
 import type { CashHistoryDetail } from "@/lib/end-of-day/history";
+import { EditForm } from "@/components/lacquer/eod/history/edit-form.client";
 
 export type DetailViewProps = {
   detail: CashHistoryDetail;
+  // When true, the breakdown card is swapped for the edit form. Driven
+  // by the `?edit=1` query param on the page (see [sessionId]/page.tsx).
+  edit?: boolean;
 };
 
 // Business-day formatter: salon-local YYYY-MM-DD → "Monday, May 11".
@@ -50,7 +54,7 @@ function parseBusinessDay(businessDay: string): Date {
   return new Date(Date.UTC(y, (m ?? 1) - 1, d ?? 1, 12, 0, 0));
 }
 
-export function DetailView({ detail }: DetailViewProps) {
+export function DetailView({ detail, edit = false }: DetailViewProps) {
   const { session } = detail;
   const state: "match" | "short" | "over" =
     session.varianceCents === 0 ? "match" : session.varianceCents < 0 ? "short" : "over";
@@ -82,46 +86,55 @@ export function DetailView({ detail }: DetailViewProps) {
         </div>
       </div>
 
-      <div className="eod-done-card" data-slot="eod-history-breakdown" data-state={state}>
-        <div className="eod-done-row">
-          <span>Expected cash</span>
-          <span className="tnum">${fmt(session.expectedCents)}</span>
-        </div>
-        <div className="eod-done-row">
-          <span>Counted cash</span>
-          <span className="tnum">${fmt(session.countedCents)}</span>
-        </div>
-        <div style={{ height: 1, background: "var(--border)", margin: "2px 0" }} />
-        <div className={`eod-done-row eod-done-diff ${state}`} data-slot="eod-history-diff">
-          <span>{diffLabel}</span>
-          <span className="tnum">{diffValue}</span>
-        </div>
-        {session.notes ? (
-          <div className="eod-done-note" data-slot="eod-history-note">
-            &ldquo;{session.notes}&rdquo;
+      {edit ? (
+        <EditForm
+          sessionId={session.sessionId}
+          expectedCents={session.expectedCents}
+          openingCents={session.openingCents}
+          initialCountedCents={session.countedCents}
+          initialNotes={session.notes}
+        />
+      ) : (
+        <>
+          <div className="eod-done-card" data-slot="eod-history-breakdown" data-state={state}>
+            <div className="eod-done-row">
+              <span>Expected cash</span>
+              <span className="tnum">${fmt(session.expectedCents)}</span>
+            </div>
+            <div className="eod-done-row">
+              <span>Counted cash</span>
+              <span className="tnum">${fmt(session.countedCents)}</span>
+            </div>
+            <div style={{ height: 1, background: "var(--border)", margin: "2px 0" }} />
+            <div className={`eod-done-row eod-done-diff ${state}`} data-slot="eod-history-diff">
+              <span>{diffLabel}</span>
+              <span className="tnum">{diffValue}</span>
+            </div>
+            {session.notes ? (
+              <div className="eod-done-note" data-slot="eod-history-note">
+                &ldquo;{session.notes}&rdquo;
+              </div>
+            ) : (
+              <div
+                className="eod-done-note eod-history-note-empty"
+                data-slot="eod-history-note-empty"
+              >
+                No note recorded
+              </div>
+            )}
           </div>
-        ) : (
-          <div
-            className="eod-done-note"
-            data-slot="eod-history-note-empty"
-            style={{ fontStyle: "normal" }}
-          >
-            No note recorded
-          </div>
-        )}
-      </div>
 
-      <div className="eod-detail-actions">
-        {/* US1 placeholder — US2 (T026) replaces this with the
-            `?edit=1`-driven edit-form mount. */}
-        <Link
-          href={`/end-of-day/history/${session.sessionId}?edit=1`}
-          className="eod-history-more"
-          data-slot="eod-history-edit-cta"
-        >
-          Edit count
-        </Link>
-      </div>
+          <div className="eod-detail-actions">
+            <Link
+              href={`/end-of-day/history/${session.sessionId}?edit=1`}
+              className="eod-history-more"
+              data-slot="eod-history-edit-cta"
+            >
+              Edit count
+            </Link>
+          </div>
+        </>
+      )}
     </div>
   );
 }

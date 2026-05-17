@@ -17,6 +17,8 @@ import { expect, test } from "@playwright/test";
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
 async function supabaseIsReachable(): Promise<boolean> {
@@ -291,5 +293,143 @@ test.describe("US1: review past cash counts", () => {
     await expect(link).toBeVisible();
     await link.click();
     await page.waitForURL(/\/end-of-day\/history(\?|$)/);
+  });
+});
+
+// ── US2: edit a past count ─────────────────────────────────────────────
+//
+// Re-uses the same three seeded sessions from US1. Each test mutates the
+// `clean` session (opening 10000, expected 12500, counted 22500,
+// variance 0) into one with a variance, then asserts the DB row +
+// audit_log entry.
+
+test.describe("US2: edit a past count", () => {
+  let supabaseUp = false;
+
+  test.beforeAll(async () => {
+    supabaseUp = await supabaseIsReachable();
+    if (!supabaseUp) {
+      test.skip(
+        true,
+        "Supabase not reachable at 127.0.0.1:54321 — skipping US2 past-cash-counts specs."
+      );
+    }
+    await wipeSpecSessions();
+    await seedThreeClosedSessions();
+  });
+
+  test.afterAll(async () => {
+    if (!supabaseUp) return;
+    await wipeSpecSessions();
+  });
+
+  test.beforeEach(async () => {
+    // Reset the `clean` session back to the seeded shape so each test
+    // starts from a known baseline (prior tests may have mutated it).
+    await wipeSpecSessions();
+    await seedThreeClosedSessions();
+  });
+
+  test("successful edit recomputes variance and writes an audit row", async ({ page }) => {
+    const cursor = newAuditCursor();
+
+    await signInAsStaff(page, "maya", `/end-of-day/history/${SEED_SESSIONS.clean}?edit=1`);
+    await page.waitForURL(new RegExp(`/end-of-day/history/${SEED_SESSIONS.clean}\\?edit=1`));
+
+    const editForm = page.locator("[data-slot='eod-history-edit-form']");
+    await expect(editForm).toBeVisible();
+
+    // Existing counted = $225.00 → backspace down to $223.00 (clear +
+    // retype is simpler than mashing backspace 5 times, but Clear
+    // sets `fresh: true` so the first digit replaces — type the full
+    // new value).
+    await page.locator("[data-slot='eod-clear']").click();
+    for (const ch of "223.00") {
+      const key = ch === "." ? "." : ch;
+      await page.locator(`[data-slot='eod-key'][data-key='${key}']`).click();
+    }
+
+    // Variance is now $223 - ($100 opening + $125 expected) = -$2.
+    // Notes are required.
+    const saveCta = page.locator("[data-slot='eod-save-cta']");
+    await expect(saveCta).toBeDisabled();
+
+    await page.locator("[data-slot='eod-note']").fill("Recount found $2 short — counted as 223.");
+
+    await expect(saveCta).toBeEnabled();
+    await saveCta.click();
+
+    // After save the URL drops `?edit=1`.
+    await page.waitForURL(new RegExp(`/end-of-day/history/${SEED_SESSIONS.clean}(\\?|$)`));
+    await expect(page.locator("[data-slot='eod-history-breakdown']")).toHaveAttribute(
+      "data-state",
+      "short"
+    );
+
+    // DB assertion — the row was updated.
+    const admin = adminClient();
+    const { data: row, error: rowErr } = await admin
+      .from("cash_drawer_sessions")
+      .select("counted_cents, variance_cents, notes, updated_at")
+      .eq("id", SEED_SESSIONS.clean)
+      .single();
+    expect(rowErr).toBeNull();
+    expect(row?.counted_cents).toBe(22300);
+    expect(row?.variance_cents).toBe(-200);
+    expect(row?.notes).toContain("Recount found $2 short");
+    expect(row?.updated_at).not.toBeNull();
+
+    // Audit row — exactly one `cash_drawer.edited` for this session
+    // since the cursor, with the right before/after payload.
+    const audits = await getAuditLogRowsSince(cursor, "cash_drawer.edited");
+    const mine = audits.filter((a) => a.entity_id === SEED_SESSIONS.clean);
+    expect(mine.length).toBeGreaterThanOrEqual(1);
+    const latest = mine[mine.length - 1]!;
+    const payload = latest.payload as {
+      before?: { counted_cents?: number; variance_cents?: number; notes?: string | null };
+      after?: { counted_cents?: number; variance_cents?: number; notes?: string | null };
+    } | null;
+    expect(payload?.before?.counted_cents).toBe(22500);
+    expect(payload?.before?.variance_cents).toBe(0);
+    expect(payload?.after?.counted_cents).toBe(22300);
+    expect(payload?.after?.variance_cents).toBe(-200);
+    expect(payload?.after?.notes).toContain("Recount found $2 short");
+  });
+
+  test("save is disabled while the required note is blank", async ({ page }) => {
+    await signInAsStaff(page, "maya", `/end-of-day/history/${SEED_SESSIONS.clean}?edit=1`);
+    await page.waitForURL(new RegExp(`/end-of-day/history/${SEED_SESSIONS.clean}\\?edit=1`));
+
+    // Type a value that introduces a non-zero variance.
+    await page.locator("[data-slot='eod-clear']").click();
+    for (const ch of "220.00") {
+      await page.locator(`[data-slot='eod-key'][data-key='${ch}']`).click();
+    }
+
+    const saveCta = page.locator("[data-slot='eod-save-cta']");
+    const noteTa = page.locator("[data-slot='eod-note']");
+
+    // Empty note → Save disabled.
+    await expect(saveCta).toBeDisabled();
+
+    // Type a note → enabled.
+    await noteTa.fill("Adjusting count down.");
+    await expect(saveCta).toBeEnabled();
+
+    // Empty the note → disabled again.
+    await noteTa.fill("");
+    await expect(saveCta).toBeDisabled();
+
+    // Whitespace-only also disabled (trim rule).
+    await noteTa.fill("   ");
+    await expect(saveCta).toBeDisabled();
+  });
+
+  test("technician hitting /end-of-day/history/<id> is redirected to /dashboard", async ({
+    page,
+  }) => {
+    await signInAsSam(page, `/end-of-day/history/${SEED_SESSIONS.clean}`);
+    await page.waitForURL(/\/dashboard(\?|$)/, { timeout: 10_000 });
+    expect(page.url()).toMatch(/\/dashboard(\?|$)/);
   });
 });

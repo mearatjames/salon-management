@@ -103,7 +103,7 @@ export default async function EndOfDayPage() {
               transition: "color 150ms var(--ease-out)",
             }}
           >
-            <History size={14} strokeWidth={1.5} aria-hidden="true" />
+            <History size={16} strokeWidth={1.5} aria-hidden="true" />
             View past counts
           </Link>
         </div>

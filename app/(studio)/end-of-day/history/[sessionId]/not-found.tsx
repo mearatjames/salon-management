@@ -19,9 +19,7 @@ export default function HistoryDetailNotFound() {
         data-slot="eod-history-detail-not-found"
         style={{ gap: 16 }}
       >
-        <div style={{ fontSize: 15, fontWeight: 600, color: "var(--foreground)" }}>
-          Session not found
-        </div>
+        <div className="eod-history-empty-title">Session not found</div>
         <div>That cash count is no longer available.</div>
         <Link
           href="/end-of-day/history"
