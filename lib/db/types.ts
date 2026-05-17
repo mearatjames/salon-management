@@ -142,6 +142,7 @@ export type Database = {
           opened_at: string;
           opened_by_staff_id: string;
           opening_cents: number;
+          updated_at: string | null;
           variance_cents: number | null;
         };
         Insert: {
@@ -156,6 +157,7 @@ export type Database = {
           opened_at?: string;
           opened_by_staff_id: string;
           opening_cents?: number;
+          updated_at?: string | null;
           variance_cents?: number | null;
         };
         Update: {
@@ -170,6 +172,7 @@ export type Database = {
           opened_at?: string;
           opened_by_staff_id?: string;
           opening_cents?: number;
+          updated_at?: string | null;
           variance_cents?: number | null;
         };
         Relationships: [
@@ -736,6 +739,16 @@ export type Database = {
           p_expected_cents: number;
           p_notes: string;
           p_operator: string;
+        };
+        Returns: string;
+      };
+      pos_edit_cash_drawer: {
+        Args: {
+          p_counted_cents: number;
+          p_device_user_id: string;
+          p_notes: string;
+          p_operator: string;
+          p_session_id: string;
         };
         Returns: string;
       };

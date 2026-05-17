@@ -62,3 +62,13 @@ describe("audit — 019 cash_drawer.* extension", () => {
     expect(deriveEntityType("cash_drawer.closed")).toBe("cash_drawer");
   });
 });
+
+// Feature 020 — cash_drawer.edited. The edit RPC writes a
+// `cash_drawer.edited` audit row using the same prefix dispatch; verified
+// here so the forensic query against entity_type='cash_drawer' captures
+// edits alongside closes.
+describe("audit — 020 cash_drawer.edited extension", () => {
+  it("treats cash_drawer.edited as entity_type 'cash_drawer'", () => {
+    expect(deriveEntityType("cash_drawer.edited")).toBe("cash_drawer");
+  });
+});

@@ -82,7 +82,9 @@ export type AuditAction =
   | "gift_card.balance_looked_up"
   | "gift_card.redeemed"
   // Added by feature 019 (entity_type "cash_drawer")
-  | "cash_drawer.closed";
+  | "cash_drawer.closed"
+  // Added by feature 020 (entity_type "cash_drawer")
+  | "cash_drawer.edited";
 
 export function deriveEntityType(
   action: AuditAction

@@ -27,34 +27,16 @@ import { Check } from "lucide-react";
 import { NumpadButtons, type NumpadKey } from "@/components/lacquer/eod/numpad-buttons";
 import { numpadReduce, type NumpadState } from "@/components/lacquer/eod/numpad-reduce";
 import { closeCashDrawerAction } from "@/app/(studio)/end-of-day/actions";
+import { deriveComparison } from "@/lib/end-of-day/comparison";
 
 export type CashCountProps = {
   expectedCents: number;
 };
 
-// Snapshot what to render for the comparison block + the display border
-// tint. All math is on the local `counted` string + the stable
-// `expectedCents` prop — zero network involved.
-function deriveComparison(counted: string, expectedCents: number) {
-  const hasCounted = counted !== "";
-  // parseFloat("") === NaN; defensively coerce to 0. Multiplying by 100
-  // then rounding pins the cents conversion to an integer — important
-  // because JS floats can otherwise yield 11499 for "114.99".
-  const countedCents = hasCounted ? Math.round(parseFloat(counted) * 100) : 0;
-  const diff = hasCounted ? countedCents - expectedCents : 0;
-  const isMatch = hasCounted && diff === 0;
-  const isOver = hasCounted && diff > 0;
-  const isShort = hasCounted && diff < 0;
-  const hasDiff = hasCounted && diff !== 0;
-  const state: "match" | "over" | "short" | "" = !hasCounted
-    ? ""
-    : isMatch
-      ? "match"
-      : isOver
-        ? "over"
-        : "short";
-  return { hasCounted, countedCents, diff, isMatch, isOver, isShort, hasDiff, state };
-}
+// `deriveComparison` lives in `lib/end-of-day/comparison.ts` (extracted
+// during feature 020 task T010) so the close-screen island and the new
+// edit-form island share a single math source. Behavior is verbatim —
+// the existing close-screen e2e is the regression authority.
 
 export function CashCount({ expectedCents }: CashCountProps) {
   const router = useRouter();
