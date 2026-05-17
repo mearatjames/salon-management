@@ -20,6 +20,7 @@ import { expect, test } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { formatSubtitle, formatTime } from "@/lib/time/format";
+import { todayWindow } from "@/lib/time/period-windows";
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
@@ -435,6 +436,27 @@ async function clearSeededPaidTickets(): Promise<void> {
     .in("id", SEED_TICKET_IDS as readonly string[]);
 }
 
+// Wipes EVERY paid ticket dated today (salon TZ), regardless of source.
+// Why: the dashboard read aggregates all today's paid tickets, so leftover
+// rows from earlier checkout-* specs (cash-sale, bill, discount, etc.) bleed
+// into US1's "expect 5" / "expect 0" assertions on CI's single-worker runs
+// where those specs always sort before dashboard.spec.ts. audit_log is left
+// untouched; only tickets/items/payments tied to today's window are removed.
+async function clearAllTodayPaidTickets(): Promise<void> {
+  const admin = adminClient();
+  const [todayStart] = todayWindow(SALON_TZ, new Date());
+  const { data: ids } = await admin
+    .from("tickets")
+    .select("id")
+    .eq("status", "paid")
+    .gte("closed_at", todayStart.toISOString());
+  const ticketIds = (ids ?? []).map((r) => r.id);
+  if (ticketIds.length === 0) return;
+  await admin.from("ticket_items").delete().in("ticket_id", ticketIds);
+  await admin.from("payments").delete().in("ticket_id", ticketIds);
+  await admin.from("tickets").delete().in("id", ticketIds);
+}
+
 test.describe.configure({ mode: "serial" });
 
 test.describe("US1: today's real numbers", () => {
@@ -454,22 +476,29 @@ test.describe("US1: today's real numbers", () => {
     // the dashboard's `closed_at <= now()` filter excludes them. Replace
     // the rows with timestamps in the recent past so the queries always
     // see them regardless of wall-clock time.
-    await clearSeededPaidTickets();
+    //
+    // Also: earlier checkout-* specs (cash-sale, bill, discount, …) all
+    // create real paid tickets via the POS RPC and don't clean up after
+    // themselves. The dashboard aggregates EVERY today paid ticket, so
+    // those would inflate our "expect 5" assertion. Wipe today's paid
+    // tickets entirely before restoring the canonical seed.
+    await clearAllTodayPaidTickets();
     await restoreSeededPaidTickets();
   });
 
   test.afterAll(async () => {
     if (!supabaseUp) return;
     // Leave the DB with the seed intact so downstream specs can rely on it.
-    await clearSeededPaidTickets();
+    await clearAllTodayPaidTickets();
     await restoreSeededPaidTickets();
   });
 
   test("(a) live tile values, payment-mix legend, subtitle, no comparison badges, no techs tile, no client column, one Split pill", async ({
     page,
   }) => {
-    // Make sure the seed is applied at the start of this test.
-    await clearSeededPaidTickets();
+    // Make sure the seed is applied at the start of this test, with no
+    // residue from other specs that may have created today paid tickets.
+    await clearAllTodayPaidTickets();
     await restoreSeededPaidTickets();
 
     const expected = await readSeededAggregates();
@@ -547,7 +576,10 @@ test.describe("US1: today's real numbers", () => {
   test("(b) empty-state path — truncate today's paid tickets and verify zero tiles, neutral payment-mix segment, empty feed copy, collapsed subtitle", async ({
     page,
   }) => {
-    await clearSeededPaidTickets();
+    // Wipe ALL today's paid tickets (the seeded 5 + any residue from
+    // earlier checkout-* specs) so the dashboard renders the true
+    // empty-state path.
+    await clearAllTodayPaidTickets();
 
     await signInAsMaya(page, "/dashboard");
     // Cursor AFTER sign-in so device.signed_in / staff.signed_in audit rows
@@ -902,10 +934,9 @@ test.describe("US2: period switching across calendar windows", () => {
         "Supabase not reachable at 127.0.0.1:54321 — skipping US2 dashboard specs (Docker unavailable)."
       );
     }
-    // US1's canonical seed pollutes today's window. Clear it so US2 owns
-    // the dashboard read entirely; restore it in afterAll for downstream
-    // specs (US1 also has the same restore pattern in its own afterAll).
-    await clearSeededPaidTickets();
+    // Today's window must contain only US2's own seeded plan: clear the
+    // canonical seed AND any residue from upstream checkout-* specs.
+    await clearAllTodayPaidTickets();
     await clearUs2Fixture();
     plan = buildSeedPlan(new Date());
     await insertUs2Fixture(plan);
@@ -1105,10 +1136,10 @@ test.describe("US3: scrollable today feed", () => {
         "Supabase not reachable at 127.0.0.1:54321 — skipping US3 dashboard specs (Docker unavailable)."
       );
     }
-    // US1's canonical 5-ticket seed and US2's leftovers both add rows that
-    // could fall inside today's window — clear them so US3 owns the feed
-    // count exactly. Both fixtures are restored in afterAll.
-    await clearSeededPaidTickets();
+    // US3 asserts exactly 15 rows in the feed. Wipe every paid ticket
+    // dated today — the canonical seed, US2 leftovers, AND any residue
+    // from upstream checkout-* specs — so the count assertion holds.
+    await clearAllTodayPaidTickets();
     await clearUs2Fixture();
     await clearUs3Fixture();
     await insertUs3Fixture();
