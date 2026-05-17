@@ -20,6 +20,10 @@ function svc(partial: Partial<CatalogService>): CatalogService {
     price_from_cents: null,
     price_to_cents: null,
     variable_price_note: null,
+    card_fee_mode: "default",
+    card_fee_custom_cents: null,
+    supply_amount_cents: null,
+    supply_label: null,
     assignment_count: 0,
     ...partial,
   };

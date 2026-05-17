@@ -403,9 +403,9 @@ test.describe("US2: add a new service via the drawer", () => {
     await page.waitForURL(/\?adding=1/);
 
     // Drawer is visible in add mode.
-    const drawer = page.locator("[data-slot='services-drawer']");
+    const drawer = page.locator("[data-slot='services-edit-panel']");
     await expect(drawer).toHaveAttribute("data-mode", "add");
-    await expect(drawer.locator("[data-slot='services-drawer-title']")).toHaveText("Add service");
+    await expect(drawer).toHaveAttribute("aria-label", "Add service");
 
     // Fill the form. The category field is pre-filled with "Other" per
     // Clarifications Q3 — change it so the new service lands in a known
@@ -421,7 +421,7 @@ test.describe("US2: add a new service via the drawer", () => {
 
     // Staff-assignment UI is deferred to a later phase — service is created
     // with zero assignments here. Save.
-    await page.locator("[data-slot='services-drawer-save']").click();
+    await page.locator("[data-slot='services-edit-panel-save']").click();
 
     // Redirect lands on `?selected=<newId>&toast=service_added&name=Polish%20change`.
     await page.waitForURL(/\?selected=[^&]+&toast=service_added&name=Polish/);
@@ -434,19 +434,17 @@ test.describe("US2: add a new service via the drawer", () => {
 
     // Drawer is now in Edit mode for the just-created service.
     await expect(drawer).toHaveAttribute("data-mode", "edit");
-    await expect(drawer.locator("[data-slot='services-drawer-title']")).toHaveText("Edit service");
+    await expect(drawer).toHaveAttribute("aria-label", "Edit service");
 
     // Primary button label flips to "Save changes" and is disabled (clean
     // baseline = no diff).
-    const save = page.locator("[data-slot='services-drawer-save']");
+    const save = page.locator("[data-slot='services-edit-panel-save']");
     await expect(save).toHaveText("Save changes");
     await expect(save).toBeDisabled();
 
     // The Archive slot is now visible (Phase 4 ships the slot; Phase 6
     // wires the button — for now it renders the label text).
-    await expect(
-      page.locator("[data-slot='services-drawer-bottom-action'][data-archive-state='active']")
-    ).toBeVisible();
+    await expect(page.locator("[data-slot='services-edit-panel-archive-button']")).toBeVisible();
 
     // The new row appears in the catalog list.
     const newRow = page.locator(`[data-slot='service-row'][data-service-id='${newId}']`);
@@ -476,7 +474,7 @@ test.describe("US2: add a new service via the drawer", () => {
     await page.locator("[data-slot='service-form-price-input']").fill("10");
 
     // Intentionally tick no staff — the secondary toast should fire.
-    await page.locator("[data-slot='services-drawer-save']").click();
+    await page.locator("[data-slot='services-edit-panel-save']").click();
 
     // Both `toast=service_added` AND `secondary=no_techs_assigned` must
     // be present in the URL — the URL-toast bridge (Phase 9) consumes both.
@@ -491,7 +489,7 @@ test.describe("US2: add a new service via the drawer", () => {
     expect(url.searchParams.get("secondary")).toBe("no_techs_assigned");
 
     // Drawer flipped to Edit mode for the new service.
-    const drawer = page.locator("[data-slot='services-drawer']");
+    const drawer = page.locator("[data-slot='services-edit-panel']");
     await expect(drawer).toHaveAttribute("data-mode", "edit");
 
     // Tech-count pill on the new row reads "No techs" in warning tone.
@@ -607,9 +605,9 @@ test.describe.skip("US3: edit a service's details and per-tech assignments", () 
     await page.waitForURL(/\?selected=20000000-0000-0000-0000-000000000004/);
 
     // Drawer opens in Edit mode.
-    const drawer = page.locator("[data-slot='services-drawer']");
+    const drawer = page.locator("[data-slot='services-edit-panel']");
     await expect(drawer).toHaveAttribute("data-mode", "edit");
-    await expect(drawer.locator("[data-slot='services-drawer-title']")).toHaveText("Edit service");
+    await expect(drawer).toHaveAttribute("aria-label", "Edit service");
 
     // Every form field is pre-filled from the saved baseline.
     await expect(page.locator("[data-slot='service-form-name-input']")).toHaveValue("Spa pedicure");
@@ -633,7 +631,7 @@ test.describe.skip("US3: edit a service's details and per-tech assignments", () 
     await expect(jordanRow).toHaveAttribute("data-checked", "false");
 
     // Save is disabled because the draft is clean (matches baseline).
-    await expect(page.locator("[data-slot='services-drawer-save']")).toBeDisabled();
+    await expect(page.locator("[data-slot='services-edit-panel-save']")).toBeDisabled();
   });
 
   test("(b) edit Classic pedicure: change price + untick Sam + add a 50-min override for Jordan → save → list row updates + DB reflects the diff", async ({
@@ -648,7 +646,7 @@ test.describe.skip("US3: edit a service's details and per-tech assignments", () 
     await link.press("Enter");
     await page.waitForURL(/\?selected=20000000-0000-0000-0000-000000000003/);
 
-    const drawer = page.locator("[data-slot='services-drawer']");
+    const drawer = page.locator("[data-slot='services-edit-panel']");
     await expect(drawer).toHaveAttribute("data-mode", "edit");
 
     // Baseline state spot-check.
@@ -674,7 +672,7 @@ test.describe.skip("US3: edit a service's details and per-tech assignments", () 
     await jordanOverride.fill("50");
 
     // Save — button is enabled because diff is non-empty.
-    const save = page.locator("[data-slot='services-drawer-save']");
+    const save = page.locator("[data-slot='services-edit-panel-save']");
     await expect(save).toBeEnabled();
     await save.click();
 
@@ -824,9 +822,9 @@ test.describe("US4: archive or restore a service", () => {
 
     // Drawer is in Edit mode and the bottom action reads "Archive service"
     // (baseline.active === true).
-    const drawer = page.locator("[data-slot='services-drawer']");
+    const drawer = page.locator("[data-slot='services-edit-panel']");
     await expect(drawer).toHaveAttribute("data-mode", "edit");
-    const archiveBtn = page.locator("[data-slot='services-drawer-archive-button']");
+    const archiveBtn = page.locator("[data-slot='services-edit-panel-archive-button']");
     await expect(archiveBtn).toBeVisible();
     await expect(archiveBtn).toHaveText("Archive service");
 
@@ -855,16 +853,16 @@ test.describe("US4: archive or restore a service", () => {
     // BEFORE closing the drawer (the toggle assertion below requires the
     // drawer closed because the backdrop intercepts pointer events).
     await expect(drawer).toHaveAttribute("data-mode", "edit");
-    const restoreBtn = page.locator("[data-slot='services-drawer-restore-button']");
+    const restoreBtn = page.locator("[data-slot='services-edit-panel-restore-button']");
     await expect(restoreBtn).toBeVisible();
     await expect(restoreBtn).toHaveText("Restore service");
     // Archive button is no longer rendered.
-    await expect(page.locator("[data-slot='services-drawer-archive-button']")).toHaveCount(0);
+    await expect(page.locator("[data-slot='services-edit-panel-archive-button']")).toHaveCount(0);
 
     // Close the drawer so the catalog list is interactive again. The
     // baseline is clean (no edits) so Cancel closes silently — no discard
     // dialog.
-    await page.locator("[data-slot='services-drawer-cancel']").click();
+    await page.locator("[data-slot='services-edit-panel-cancel']").click();
     await page.waitForURL(/\/services$/);
 
     // Default view (archived hidden): Gel polish row is gone.
@@ -904,7 +902,7 @@ test.describe("US4: archive or restore a service", () => {
     await page.waitForURL(new RegExp(`\\?selected=${GEL_POLISH_ID}`));
 
     // Drawer renders the Restore button (no dialog for restore).
-    const restoreBtn = page.locator("[data-slot='services-drawer-restore-button']");
+    const restoreBtn = page.locator("[data-slot='services-edit-panel-restore-button']");
     await expect(restoreBtn).toBeVisible();
     await expect(restoreBtn).toHaveText("Restore service");
 
@@ -926,10 +924,10 @@ test.describe("US4: archive or restore a service", () => {
     await expect(restoredRow).toHaveAttribute("data-archived", "false");
 
     // Bottom action flips back to "Archive service".
-    const archiveBtn = page.locator("[data-slot='services-drawer-archive-button']");
+    const archiveBtn = page.locator("[data-slot='services-edit-panel-archive-button']");
     await expect(archiveBtn).toBeVisible();
     await expect(archiveBtn).toHaveText("Archive service");
-    await expect(page.locator("[data-slot='services-drawer-restore-button']")).toHaveCount(0);
+    await expect(page.locator("[data-slot='services-edit-panel-restore-button']")).toHaveCount(0);
   });
 });
 
@@ -979,7 +977,7 @@ test.describe("US5: variable-price services with bounds and a note", () => {
     if (opts.to !== undefined) {
       await page.locator("[data-slot='service-form-price-to-input']").fill(String(opts.to));
     }
-    await page.locator("[data-slot='services-drawer-save']").click();
+    await page.locator("[data-slot='services-edit-panel-save']").click();
     await page.waitForURL(/\?selected=[^&]+&toast=service_added&name=/);
     const id = new URL(page.url()).searchParams.get("selected");
     if (!id) throw new Error("createVariablePriceService: no selected= in URL after save");
@@ -1033,7 +1031,7 @@ test.describe("US5: variable-price services with bounds and a note", () => {
     await expect(page.locator("[data-slot='service-form-price-to-input']")).toBeVisible();
     // Leave both bounds blank — save with no bounds set.
 
-    await page.locator("[data-slot='services-drawer-save']").click();
+    await page.locator("[data-slot='services-edit-panel-save']").click();
     await page.waitForURL(/\?selected=[^&]+&toast=service_added&name=Custom/);
 
     const url = new URL(page.url());
@@ -1073,7 +1071,7 @@ test.describe("US5: variable-price services with bounds and a note", () => {
     const id = await createVariablePriceService(page);
     await page.goto(`/services?selected=${id}`);
 
-    const drawer = page.locator("[data-slot='services-drawer']");
+    const drawer = page.locator("[data-slot='services-edit-panel']");
     await expect(drawer).toHaveAttribute("data-mode", "edit");
 
     // Set From $20.
@@ -1081,7 +1079,7 @@ test.describe("US5: variable-price services with bounds and a note", () => {
     await fromInput.fill("20");
 
     // Save → "From $20" pill.
-    const save = page.locator("[data-slot='services-drawer-save']");
+    const save = page.locator("[data-slot='services-edit-panel-save']");
     await expect(save).toBeEnabled();
     await save.click();
     await page.waitForURL(new RegExp(`\\?selected=${id}&toast=changes_saved`));
@@ -1117,7 +1115,7 @@ test.describe("US5: variable-price services with bounds and a note", () => {
     await expect(page.getByText('"From" price can\'t be higher than "To" price.')).toBeVisible();
     expect(await variablePriceRow.count()).toBeGreaterThan(0);
 
-    const save = page.locator("[data-slot='services-drawer-save']");
+    const save = page.locator("[data-slot='services-edit-panel-save']");
     await expect(save).toBeDisabled();
 
     // Fix To to 65 (different from the 60 baseline so the draft is dirty
@@ -1148,7 +1146,7 @@ test.describe("US5: variable-price services with bounds and a note", () => {
 
     // Supply a fixed price and save.
     await priceInput.fill("30");
-    const save = page.locator("[data-slot='services-drawer-save']");
+    const save = page.locator("[data-slot='services-edit-panel-save']");
     await expect(save).toBeEnabled();
     await save.click();
     await page.waitForURL(new RegExp(`\\?selected=${id}&toast=changes_saved`));
@@ -1270,7 +1268,7 @@ test.describe("US6: restrict who can manage the catalog", () => {
     await link.press("Enter");
     await page.waitForURL(/\?selected=20000000-0000-0000-0000-000000000001/);
 
-    const drawer = page.locator("[data-slot='services-drawer']");
+    const drawer = page.locator("[data-slot='services-edit-panel']");
     await expect(drawer).toHaveAttribute("data-mode", "edit");
 
     // Every primary form control is disabled.
@@ -1302,21 +1300,21 @@ test.describe("US6: restrict who can manage the catalog", () => {
 
     // The footer renders the "View only" chip in place of the Save button.
     // Cancel stays visible so the operator can close the drawer.
-    await expect(page.locator("[data-slot='services-drawer-view-only-chip']")).toHaveText(
+    await expect(page.locator("[data-slot='services-edit-panel-view-only-chip']")).toHaveText(
       "View only"
     );
-    await expect(page.locator("[data-slot='services-drawer-save']")).toHaveCount(0);
-    await expect(page.locator("[data-slot='services-drawer-cancel']")).toBeVisible();
+    await expect(page.locator("[data-slot='services-edit-panel-save']")).toHaveCount(0);
+    await expect(page.locator("[data-slot='services-edit-panel-cancel']")).toBeVisible();
 
     // Archive/Restore bottom action is suppressed (T041's gate runs on
     // `canWriteCatalog(operatorRole)`; a technician sees neither button).
-    await expect(page.locator("[data-slot='services-drawer-archive-button']")).toHaveCount(0);
-    await expect(page.locator("[data-slot='services-drawer-restore-button']")).toHaveCount(0);
+    await expect(page.locator("[data-slot='services-edit-panel-archive-button']")).toHaveCount(0);
+    await expect(page.locator("[data-slot='services-edit-panel-restore-button']")).toHaveCount(0);
 
     // Cancel closes the drawer silently — draft is clean by definition in
     // read-only mode (every control is disabled, so the discard dialog is
     // unreachable per T046).
-    await page.locator("[data-slot='services-drawer-cancel']").click();
+    await page.locator("[data-slot='services-edit-panel-cancel']").click();
     await page.waitForURL(/\/services$/);
   });
 
@@ -1439,7 +1437,7 @@ test.describe("US7: get clear feedback after every action", () => {
     // Staff-assignment UI deferred; the no_techs_assigned secondary toast
     // was removed alongside it, so this step now asserts the singular
     // success-toast case without any tech ticking.
-    await page.locator("[data-slot='services-drawer-save']").click();
+    await page.locator("[data-slot='services-edit-panel-save']").click();
 
     // Toast fires + params get stripped. Assert the toast first (it appears
     // on the redirect with `?toast=service_added&name=Lacquer%20touch-up`),
@@ -1481,7 +1479,7 @@ test.describe("US7: get clear feedback after every action", () => {
     await priceInput.fill("");
     await priceInput.fill("14");
 
-    const save = page.locator("[data-slot='services-drawer-save']");
+    const save = page.locator("[data-slot='services-edit-panel-save']");
     await expect(save).toBeEnabled();
     await save.click();
 
@@ -1493,7 +1491,7 @@ test.describe("US7: get clear feedback after every action", () => {
     await expect.poll(() => new URL(page.url()).searchParams.get("toast")).toBe(null);
 
     // ── Step 3: archive ─────────────────────────────────────────────────
-    const archiveBtn = page.locator("[data-slot='services-drawer-archive-button']");
+    const archiveBtn = page.locator("[data-slot='services-edit-panel-archive-button']");
     await expect(archiveBtn).toBeVisible();
     await archiveBtn.click();
 
@@ -1509,7 +1507,7 @@ test.describe("US7: get clear feedback after every action", () => {
     await expect.poll(() => new URL(page.url()).searchParams.get("toast")).toBe(null);
 
     // ── Step 4: restore ─────────────────────────────────────────────────
-    const restoreBtn = page.locator("[data-slot='services-drawer-restore-button']");
+    const restoreBtn = page.locator("[data-slot='services-edit-panel-restore-button']");
     await expect(restoreBtn).toBeVisible();
     await restoreBtn.click();
 
@@ -1532,14 +1530,14 @@ test.describe("US7: get clear feedback after every action", () => {
     const CLASSIC_MANI = "20000000-0000-0000-0000-000000000001";
     await page.goto(`/services?selected=${CLASSIC_MANI}`);
 
-    const drawer = page.locator("[data-slot='services-drawer']");
+    const drawer = page.locator("[data-slot='services-edit-panel']");
     await expect(drawer).toHaveAttribute("data-mode", "edit");
 
     // First save: bump price 25 → 26.
     const priceInput = page.locator("[data-slot='service-form-price-input']");
     await priceInput.fill("");
     await priceInput.fill("26");
-    const save = page.locator("[data-slot='services-drawer-save']");
+    const save = page.locator("[data-slot='services-edit-panel-save']");
     await expect(save).toBeEnabled();
     await save.click();
 
@@ -1590,7 +1588,7 @@ test.describe("US7: get clear feedback after every action", () => {
     // Intentionally leave every staff row unticked → server appends
     // `&secondary=no_techs_assigned` to the redirect → the bridge fires two
     // toasts (success primary + warning secondary).
-    await page.locator("[data-slot='services-drawer-save']").click();
+    await page.locator("[data-slot='services-edit-panel-save']").click();
 
     // Both toasts visible.
     await expect

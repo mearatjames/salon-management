@@ -307,6 +307,8 @@ export type Database = {
       services: {
         Row: {
           active: boolean;
+          card_fee_custom_cents: number | null;
+          card_fee_mode: string;
           category: string;
           color_token: string;
           created_at: string;
@@ -317,6 +319,8 @@ export type Database = {
           price_cents: number;
           price_from_cents: number | null;
           price_to_cents: number | null;
+          supply_amount_cents: number | null;
+          supply_label: string | null;
           taxable: boolean;
           updated_at: string;
           variable_price: boolean;
@@ -324,6 +328,8 @@ export type Database = {
         };
         Insert: {
           active?: boolean;
+          card_fee_custom_cents?: number | null;
+          card_fee_mode?: string;
           category?: string;
           color_token: string;
           created_at?: string;
@@ -334,6 +340,8 @@ export type Database = {
           price_cents: number;
           price_from_cents?: number | null;
           price_to_cents?: number | null;
+          supply_amount_cents?: number | null;
+          supply_label?: string | null;
           taxable?: boolean;
           updated_at?: string;
           variable_price?: boolean;
@@ -341,6 +349,8 @@ export type Database = {
         };
         Update: {
           active?: boolean;
+          card_fee_custom_cents?: number | null;
+          card_fee_mode?: string;
           category?: string;
           color_token?: string;
           created_at?: string;
@@ -351,6 +361,8 @@ export type Database = {
           price_cents?: number;
           price_from_cents?: number | null;
           price_to_cents?: number | null;
+          supply_amount_cents?: number | null;
+          supply_label?: string | null;
           taxable?: boolean;
           updated_at?: string;
           variable_price?: boolean;
@@ -742,6 +754,15 @@ export type Database = {
         };
         Returns: string;
       };
+      pos_compose_payment_draft: {
+        Args: {
+          p_amount: number;
+          p_method: Database["public"]["Enums"]["payment_method"];
+          p_operator: string;
+          p_ticket_id: string;
+        };
+        Returns: string;
+      };
       pos_edit_cash_drawer: {
         Args: {
           p_counted_cents: number;
@@ -749,15 +770,6 @@ export type Database = {
           p_notes: string;
           p_operator: string;
           p_session_id: string;
-        };
-        Returns: string;
-      };
-      pos_compose_payment_draft: {
-        Args: {
-          p_amount: number;
-          p_method: Database["public"]["Enums"]["payment_method"];
-          p_operator: string;
-          p_ticket_id: string;
         };
         Returns: string;
       };

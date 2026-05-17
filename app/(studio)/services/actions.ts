@@ -37,19 +37,24 @@ import { recordAudit } from "@/lib/auth/audit";
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 import { requireStudioSession } from "@/lib/auth/session";
 
+import { SERVICE_DIFF_KEYS, buildChanges, type ServiceDiffSnapshot } from "./_audit-diff";
 import { PermissionError, assertCanWriteCatalog } from "./permissions";
 import { staffAssignmentDiff } from "./_diff";
-import type { ServiceAssignment } from "./_types";
+import type { CardFeeMode, ServiceAssignment } from "./_types";
 import {
   ValidationError,
   validateBoundDollars,
   validateBoundsConsistency,
+  validateCardFeeCustomDollars,
+  validateCardFeeMode,
   validateCategory,
   validateColor,
   validateDurationMin,
   validateFixedPriceDollars,
   validateName,
   validateOverrideMin,
+  validateSupplyAmountDollars,
+  validateSupplyLabel,
 } from "./_validation";
 
 // Accepts any 36-char `8-4-4-4-12` hyphenated hex group. Looser than
@@ -154,6 +159,10 @@ export async function addService(formData: FormData): Promise<void> {
   let priceFromCents: number | null;
   let priceToCents: number | null;
   let variablePriceNote: string | null;
+  let cardFeeMode: CardFeeMode;
+  let cardFeeCustomCents: number | null;
+  let supplyAmountCents: number | null;
+  let supplyLabel: string | null;
   let assignments: Array<{ staff_id: string; duration_min_override: number | null }>;
 
   try {
@@ -186,6 +195,29 @@ export async function addService(formData: FormData): Promise<void> {
       variablePriceNote = null;
     }
 
+    // 021-services-deductions: card-fee mode + (when custom) the custom
+    // amount; supply toggle + (when on) amount + label. The validators
+    // ignore the buffer fields when their gating mode/toggle says they
+    // shouldn't apply (per FR-014 / FR-021) — that's why the writes below
+    // resolve to `null` outside the active branch.
+    cardFeeMode = validateCardFeeMode(String(formData.get("card_fee_mode") ?? "default"));
+    if (cardFeeMode === "custom") {
+      cardFeeCustomCents = validateCardFeeCustomDollars(
+        String(formData.get("card_fee_custom") ?? "")
+      );
+    } else {
+      cardFeeCustomCents = null;
+    }
+
+    const supplyOn = formData.get("supply_on") === "on";
+    if (supplyOn) {
+      supplyAmountCents = validateSupplyAmountDollars(String(formData.get("supply_amount") ?? ""));
+      supplyLabel = validateSupplyLabel(String(formData.get("supply_label") ?? ""));
+    } else {
+      supplyAmountCents = null;
+      supplyLabel = null;
+    }
+
     assignments = parseStaffAssignments(formData);
   } catch (err) {
     handleKnownError(err);
@@ -209,6 +241,11 @@ export async function addService(formData: FormData): Promise<void> {
       price_from_cents: priceFromCents!,
       price_to_cents: priceToCents!,
       variable_price_note: variablePriceNote!,
+      // 021-services-deductions
+      card_fee_mode: cardFeeMode!,
+      card_fee_custom_cents: cardFeeCustomCents!,
+      supply_amount_cents: supplyAmountCents!,
+      supply_label: supplyLabel!,
     })
     .select("id")
     .single();
@@ -258,6 +295,11 @@ export async function addService(formData: FormData): Promise<void> {
       price_from_cents: priceFromCents!,
       price_to_cents: priceToCents!,
       variable_price_note: variablePriceNote!,
+      // 021-services-deductions
+      card_fee_mode: cardFeeMode!,
+      card_fee_custom_cents: cardFeeCustomCents!,
+      supply_amount_cents: supplyAmountCents!,
+      supply_label: supplyLabel!,
       assigned_staff_ids: assignments!.map((a) => a.staff_id),
     },
     viewer.staff.id
@@ -274,54 +316,13 @@ export async function addService(formData: FormData): Promise<void> {
 }
 
 // ── 2. updateService ─────────────────────────────────────────────────────
-
-/**
- * The 10 mutable columns on `services` that participate in the
- * `changes` audit field. `active` is part of the snapshot but never
- * differs (archive/restore are separate verbs).
- */
-const SERVICE_DIFF_KEYS = [
-  "name",
-  "category",
-  "duration_min",
-  "price_cents",
-  "color_token",
-  "taxable",
-  "variable_price",
-  "price_from_cents",
-  "price_to_cents",
-  "variable_price_note",
-] as const;
-
-type ServiceDiffKey = (typeof SERVICE_DIFF_KEYS)[number];
-
-type ServiceDiffSnapshot = {
-  name: string;
-  category: string;
-  duration_min: number;
-  price_cents: number;
-  color_token: string;
-  taxable: boolean;
-  variable_price: boolean;
-  price_from_cents: number | null;
-  price_to_cents: number | null;
-  variable_price_note: string | null;
-};
-
-/** Build the `changes` map for the audit payload — only fields whose value
- *  actually changed; each entry `[before, after]`. */
-function buildChanges(
-  before: ServiceDiffSnapshot,
-  after: ServiceDiffSnapshot
-): Record<string, [unknown, unknown]> {
-  const changes: Record<string, [unknown, unknown]> = {};
-  for (const key of SERVICE_DIFF_KEYS) {
-    if (before[key] !== after[key]) {
-      changes[key] = [before[key], after[key]];
-    }
-  }
-  return changes;
-}
+//
+// `SERVICE_DIFF_KEYS`, `ServiceDiffSnapshot`, and `buildChanges` live in
+// the sibling module `./_audit-diff.ts` — `"use server"` files can only
+// export async functions per Next 16's Server Action rules, so the
+// constant + helper are factored out. The contract test imports them
+// directly from `_audit-diff.ts`; this file's import keeps the same
+// behavior the original in-line definition had.
 
 /**
  * Update an existing service + its staff_services assignments.
@@ -359,7 +360,7 @@ export async function updateService(formData: FormData): Promise<void> {
   const baselineRowPromise = admin
     .from("services")
     .select(
-      "id, name, category, duration_min, price_cents, color_token, taxable, active, variable_price, price_from_cents, price_to_cents, variable_price_note"
+      "id, name, category, duration_min, price_cents, color_token, taxable, active, variable_price, price_from_cents, price_to_cents, variable_price_note, card_fee_mode, card_fee_custom_cents, supply_amount_cents, supply_label"
     )
     .eq("id", serviceId!)
     .maybeSingle();
@@ -401,6 +402,10 @@ export async function updateService(formData: FormData): Promise<void> {
   let priceFromCents: number | null;
   let priceToCents: number | null;
   let variablePriceNote: string | null;
+  let cardFeeMode: CardFeeMode;
+  let cardFeeCustomCents: number | null;
+  let supplyAmountCents: number | null;
+  let supplyLabel: string | null;
   let draftAssignments: ServiceAssignment[];
 
   try {
@@ -425,12 +430,39 @@ export async function updateService(formData: FormData): Promise<void> {
       variablePriceNote = null;
     }
 
+    // 021-services-deductions
+    cardFeeMode = validateCardFeeMode(String(formData.get("card_fee_mode") ?? "default"));
+    if (cardFeeMode === "custom") {
+      cardFeeCustomCents = validateCardFeeCustomDollars(
+        String(formData.get("card_fee_custom") ?? "")
+      );
+    } else {
+      cardFeeCustomCents = null;
+    }
+
+    const supplyOn = formData.get("supply_on") === "on";
+    if (supplyOn) {
+      supplyAmountCents = validateSupplyAmountDollars(String(formData.get("supply_amount") ?? ""));
+      supplyLabel = validateSupplyLabel(String(formData.get("supply_label") ?? ""));
+    } else {
+      supplyAmountCents = null;
+      supplyLabel = null;
+    }
+
     draftAssignments = parseStaffAssignments(formData);
   } catch (err) {
     handleKnownError(err, serviceId!);
   }
 
-  // 5: compute the services patch + the assignment diff.
+  // 5: compute the services patch + the assignment diff. The baseline's raw
+  // `text` `card_fee_mode` is narrowed defensively (the DB check constraint
+  // gates writes; this is a last-line guard so a malformed row never breaks
+  // the diff).
+  const baselineCardFeeMode: CardFeeMode =
+    baselineRow.card_fee_mode === "custom" || baselineRow.card_fee_mode === "exempt"
+      ? baselineRow.card_fee_mode
+      : "default";
+
   const before: ServiceDiffSnapshot = {
     name: baselineRow.name,
     category: baselineRow.category,
@@ -442,6 +474,10 @@ export async function updateService(formData: FormData): Promise<void> {
     price_from_cents: baselineRow.price_from_cents,
     price_to_cents: baselineRow.price_to_cents,
     variable_price_note: baselineRow.variable_price_note,
+    card_fee_mode: baselineCardFeeMode,
+    card_fee_custom_cents: baselineRow.card_fee_custom_cents,
+    supply_amount_cents: baselineRow.supply_amount_cents,
+    supply_label: baselineRow.supply_label,
   };
   const after: ServiceDiffSnapshot = {
     name: name!,
@@ -454,6 +490,10 @@ export async function updateService(formData: FormData): Promise<void> {
     price_from_cents: priceFromCents!,
     price_to_cents: priceToCents!,
     variable_price_note: variablePriceNote!,
+    card_fee_mode: cardFeeMode!,
+    card_fee_custom_cents: cardFeeCustomCents!,
+    supply_amount_cents: supplyAmountCents!,
+    supply_label: supplyLabel!,
   };
 
   const changes = buildChanges(before, after);
@@ -615,6 +655,11 @@ export async function updateService(formData: FormData): Promise<void> {
         price_from_cents: baselineRow.price_from_cents,
         price_to_cents: baselineRow.price_to_cents,
         variable_price_note: baselineRow.variable_price_note,
+        // 021-services-deductions
+        card_fee_mode: baselineCardFeeMode,
+        card_fee_custom_cents: baselineRow.card_fee_custom_cents,
+        supply_amount_cents: baselineRow.supply_amount_cents,
+        supply_label: baselineRow.supply_label,
         assignment_ids: baselineAssignmentIds,
       },
       after: {
@@ -629,6 +674,11 @@ export async function updateService(formData: FormData): Promise<void> {
         price_from_cents: priceFromCents!,
         price_to_cents: priceToCents!,
         variable_price_note: variablePriceNote!,
+        // 021-services-deductions
+        card_fee_mode: cardFeeMode!,
+        card_fee_custom_cents: cardFeeCustomCents!,
+        supply_amount_cents: supplyAmountCents!,
+        supply_label: supplyLabel!,
         assignment_ids: afterAssignmentIds,
       },
     },

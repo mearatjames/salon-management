@@ -18,6 +18,12 @@
 // query is already scoped by `service_id` so we drop it from the helper's
 // input — saves one column on the wire and keeps the helper input shape
 // matching what the page actually fetches.
+//
+// 021-services-deductions: the four new deduction columns (`card_fee_mode`,
+// `card_fee_custom_cents`, `supply_amount_cents`, `supply_label`) live on
+// `CatalogService` after T010, so the `...row` spread below carries them
+// through to `ServiceDraftBaseline` automatically. No per-field projection
+// needed — keep them coupled to the typed source of truth.
 
 import type { CatalogService, ServiceDraftBaseline } from "./_types";
 

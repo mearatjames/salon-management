@@ -7,6 +7,8 @@
 // Permission-matrix concerns live in `permissions.ts`; this file is purely
 // shape/format validation.
 
+import type { CardFeeMode } from "./_types";
+
 export type ValidationErrorCode =
   | "name_too_short"
   | "category_required"
@@ -16,7 +18,15 @@ export type ValidationErrorCode =
   | "bounds_inverted"
   | "invalid_color"
   | "invalid_override"
-  | "not_found";
+  | "not_found"
+  // 021-services-deductions
+  | "invalid_card_fee_mode"
+  | "invalid_card_fee_custom"
+  | "card_fee_custom_too_large"
+  | "invalid_supply_amount"
+  | "supply_amount_too_large"
+  | "invalid_supply_label"
+  | "supply_label_too_long";
 
 export class ValidationError extends Error {
   readonly code: ValidationErrorCode;
@@ -173,4 +183,76 @@ export function validateUuid(input: string): string {
     throw new ValidationError("not_found");
   }
   return raw;
+}
+
+// ── 021-services-deductions ────────────────────────────────────────────
+
+const VALID_CARD_FEE_MODES: ReadonlySet<CardFeeMode> = new Set(["default", "custom", "exempt"]);
+
+/** Shared cents-from-dollars conversion (string-padding, no float math).
+ *  Returns the integer cents value when `raw` matches `NON_NEG_DOLLARS`,
+ *  else `null` (caller throws the appropriate code). */
+function parseNonNegCents(raw: string): number | null {
+  if (!NON_NEG_DOLLARS.test(raw)) return null;
+  const [dollarsPart, centsPartRaw = ""] = raw.split(".");
+  const dollars = parseInt(dollarsPart || "0", 10);
+  const centsPart = centsPartRaw.padEnd(2, "0");
+  const cents = parseInt(centsPart || "0", 10);
+  const result = dollars * 100 + cents;
+  if (!Number.isFinite(result) || result < 0) return null;
+  return result;
+}
+
+/** $50 in cents — the per-service cap for both card-fee custom + supply. */
+const DEDUCTION_MAX_CENTS = 5000;
+
+/** Card-fee mode is one of `default` / `custom` / `exempt` (case-sensitive,
+ *  no trim — the form posts a controlled value from the segmented control). */
+export function validateCardFeeMode(input: string): CardFeeMode {
+  // No trim, no case fold — the form is a radio group; an unexpected
+  // shape means the FormData was tampered with.
+  if (!VALID_CARD_FEE_MODES.has(input as CardFeeMode)) {
+    throw new ValidationError("invalid_card_fee_mode");
+  }
+  return input as CardFeeMode;
+}
+
+/** Custom card-fee dollars: `[0, 50]` with ≤ 2 fractional digits. */
+export function validateCardFeeCustomDollars(input: string): number {
+  const raw = readString(input).trim();
+  const cents = parseNonNegCents(raw);
+  if (cents === null) {
+    throw new ValidationError("invalid_card_fee_custom");
+  }
+  if (cents > DEDUCTION_MAX_CENTS) {
+    throw new ValidationError("card_fee_custom_too_large");
+  }
+  return cents;
+}
+
+/** Supply amount dollars: strictly positive `(0, 50]` with ≤ 2 fractional digits. */
+export function validateSupplyAmountDollars(input: string): number {
+  const raw = readString(input).trim();
+  const cents = parseNonNegCents(raw);
+  if (cents === null || cents <= 0) {
+    throw new ValidationError("invalid_supply_amount");
+  }
+  if (cents > DEDUCTION_MAX_CENTS) {
+    throw new ValidationError("supply_amount_too_large");
+  }
+  return cents;
+}
+
+const SUPPLY_LABEL_MAX_LEN = 64;
+
+/** Supply label: trimmed, 1–64 chars. Returns the trimmed value. */
+export function validateSupplyLabel(input: string): string {
+  const trimmed = readString(input).trim();
+  if (trimmed.length === 0) {
+    throw new ValidationError("invalid_supply_label");
+  }
+  if (trimmed.length > SUPPLY_LABEL_MAX_LEN) {
+    throw new ValidationError("supply_label_too_long");
+  }
+  return trimmed;
 }

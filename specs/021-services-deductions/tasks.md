@@ -25,9 +25,9 @@ description: "Task list for 021-services-deductions"
 
 **Purpose**: Confirm primitives, test directories, and CSS scaffold exist so every later phase composes without re-checking the basics.
 
-- [ ] T001 [P] Confirm `tests/unit/services/` exists (created in 008 Phase 1) and is picked up by the Vitest glob. If absent, create the empty directory so the new test files in Phase 2 land where the runner expects them.
-- [ ] T002 [P] Confirm the shadcn primitives this feature uses are present: `components/ui/switch.tsx`, `components/ui/dialog.tsx`, `components/ui/radio-group.tsx`, `components/ui/tooltip.tsx`. Switch + Dialog shipped in 008; vendor any missing ones via `npx shadcn@latest add <name>`. Do NOT edit generated files.
-- [ ] T003 [P] Append a labelled comment block to `styles/settings.css` reserving the section names this feature appends to: `/* === 021-services-deductions === */` followed by section header comments for `.services-two-pane`, `.services-edit-panel`, `.deductions-section`, `.deduction-chip*`, `.segmented*`, `.net-to-tech`. Empty headers only — actual rules land in their respective story phases. Keeps the diff reviewable when each phase appends to the same file.
+- [X] T001 [P] Confirm `tests/unit/services/` exists (created in 008 Phase 1) and is picked up by the Vitest glob. If absent, create the empty directory so the new test files in Phase 2 land where the runner expects them.
+- [X] T002 [P] Confirm the shadcn primitives this feature uses are present: `components/ui/switch.tsx`, `components/ui/dialog.tsx`, `components/ui/radio-group.tsx`, `components/ui/tooltip.tsx`. Switch + Dialog shipped in 008; vendor any missing ones via `npx shadcn@latest add <name>`. Do NOT edit generated files.
+- [X] T003 [P] Append a labelled comment block to `styles/settings.css` reserving the section names this feature appends to: `/* === 021-services-deductions === */` followed by section header comments for `.services-two-pane`, `.services-edit-panel`, `.deductions-section`, `.deduction-chip*`, `.segmented*`, `.net-to-tech`. Empty headers only — actual rules land in their respective story phases. Keeps the diff reviewable when each phase appends to the same file.
 
 ---
 
@@ -37,43 +37,43 @@ description: "Task list for 021-services-deductions"
 
 ### Database & generated types
 
-- [ ] T004 Write `tests/unit/services/audit-diff-keys.test.ts` per `contracts/audit-payload.contract.md § 5`. Asserts (a) the `SERVICE_DIFF_KEYS` constant exported from `app/(studio)/services/actions.ts` contains exactly the 14 expected keys (10 from 008 + the 4 deduction keys), and (b) `buildChanges(before, after)` correctly emits deduction keys only when their before/after differ (no spurious entries for unchanged columns). Test will fail until T016 extends the constant. *(Note: `SERVICE_DIFF_KEYS` and `buildChanges` are not currently exported — T016 also adds the `export` keyword to both so this test can import them.)*
-- [ ] T005 Write `supabase/migrations/0016_services_deductions.sql` per `contracts/db-migration.contract.md` and `data-model.md § 7`: idempotent `add column if not exists` for the four columns, then three `drop constraint if exists` + `add constraint` blocks for `services_card_fee_mode_chk`, `services_card_fee_custom_pair_chk`, `services_supply_pair_chk`. The `card_fee_mode` column carries `not null default 'default'` so existing rows backfill via the default — no separate `UPDATE` statement.
-- [ ] T006 Run `supabase db reset` locally to apply 0016, then regenerate types: `npx supabase gen types typescript --local > lib/db/types.ts`. Confirm the four new fields appear with the documented nullability in `services.Row`, `services.Insert`, and `services.Update` (use the grep check in `quickstart.md § 2`).
+- [X] T004 Write `tests/unit/services/audit-diff-keys.test.ts` per `contracts/audit-payload.contract.md § 5`. Asserts (a) the `SERVICE_DIFF_KEYS` constant exported from `app/(studio)/services/actions.ts` contains exactly the 14 expected keys (10 from 008 + the 4 deduction keys), and (b) `buildChanges(before, after)` correctly emits deduction keys only when their before/after differ (no spurious entries for unchanged columns). Test will fail until T016 extends the constant. *(Note: `SERVICE_DIFF_KEYS` and `buildChanges` are not currently exported — T016 also adds the `export` keyword to both so this test can import them.)*
+- [X] T005 Write `supabase/migrations/0016_services_deductions.sql` per `contracts/db-migration.contract.md` and `data-model.md § 7`: idempotent `add column if not exists` for the four columns, then three `drop constraint if exists` + `add constraint` blocks for `services_card_fee_mode_chk`, `services_card_fee_custom_pair_chk`, `services_supply_pair_chk`. The `card_fee_mode` column carries `not null default 'default'` so existing rows backfill via the default — no separate `UPDATE` statement.
+- [X] T006 Run `supabase db reset` locally to apply 0016, then regenerate types: `npx supabase gen types typescript --local > lib/db/types.ts`. Confirm the four new fields appear with the documented nullability in `services.Row`, `services.Insert`, and `services.Update` (use the grep check in `quickstart.md § 2`).
 
 ### Named constant
 
-- [ ] T007 [P] Create `lib/services/card-fee-default.ts` per `data-model.md § 2.4`: exports `DEFAULT_CARD_FEE_CENTS = 300` and `formatDefaultCardFeeLabel()` returning `"$3"` (Lacquer currency convention — whole dollars rendered without `.00`). Module must be importable from both client and server (no `"use server"` / `"use client"` directive).
+- [X] T007 [P] Create `lib/services/card-fee-default.ts` per `data-model.md § 2.4`: exports `DEFAULT_CARD_FEE_CENTS = 300` and `formatDefaultCardFeeLabel()` returning `"$3"` (Lacquer currency convention — whole dollars rendered without `.00`). Module must be importable from both client and server (no `"use server"` / `"use client"` directive).
 
 ### Pure helpers (tests-first)
 
-- [ ] T008 [P] Extend `tests/unit/services/validation.test.ts` (the existing 008 file) with new `describe` blocks covering the four new validators per `data-model.md § 3`:
+- [X] T008 [P] Extend `tests/unit/services/validation.test.ts` (the existing 008 file) with new `describe` blocks covering the four new validators per `data-model.md § 3`:
   - `validateCardFeeMode`: accepts `'default'` / `'custom'` / `'exempt'`; rejects `''`, `'DEFAULT'`, `'other'`, `'  custom  '` with `invalid_card_fee_mode`.
   - `validateCardFeeCustomDollars`: accepts `'0'`, `'0.00'`, `'4'`, `'4.5'`, `'4.50'`, `'50'`, `'50.00'` (returns correct cents); rejects `''`, `'-1'`, `'abc'`, `'4.501'` with `invalid_card_fee_custom`; rejects `'50.01'`, `'60'`, `'500'` with `card_fee_custom_too_large`.
   - `validateSupplyAmountDollars`: accepts `'0.01'`, `'5'`, `'5.00'`, `'50'`; rejects `''`, `'0'`, `'0.0'`, `'0.00'`, `'-1'`, `'abc'` with `invalid_supply_amount`; rejects `'50.01'`, `'60'`, `'500'` with `supply_amount_too_large`.
   - `validateSupplyLabel`: accepts `'A'`, `'GelX tips & gel'`, `'a' * 64`; rejects `''`, `'   '` with `invalid_supply_label`; rejects `'a' * 65` (and a 100-char value) with `supply_label_too_long`; returns the trimmed value on success. Tests will fail until T011 ships the implementations.
-- [ ] T009 [P] Write `tests/unit/services/deductions.test.ts` covering `effectiveCardFeeCents` and `computeNetToTechCents` per `data-model.md § 2.3`:
+- [X] T009 [P] Write `tests/unit/services/deductions.test.ts` covering `effectiveCardFeeCents` and `computeNetToTechCents` per `data-model.md § 2.3`:
   - `effectiveCardFeeCents`: returns `DEFAULT_CARD_FEE_CENTS` for `mode='default'`; returns the custom cents for `mode='custom'`; returns `0` for `mode='exempt'`; handles `mode='custom'` with `card_fee_custom_cents = null` by returning `0` (defensive).
   - `computeNetToTechCents`: classic case `{price: 5000, mode: 'default', custom: null, supply: 500}` → `{net: 4200, card_fee_cents: 300, supply_cents: 500}`; exempt case → `{net: price-supply, card_fee_cents: 0, supply_cents: ...}`; supply-off → `{net: price-card_fee, supply_cents: 0}`; custom case → uses custom cents; clamps to `0` when net would be negative (`price: 100, default, supply: 500` → `net: 0` with raw breakdown).
   - Tests will fail until T012 ships the implementations.
 
 ### Types, validators, derivations
 
-- [ ] T010 [P] Extend `app/(studio)/services/_types.ts` per `data-model.md § 2.1`: add the `CardFeeMode` exported type and add the four new fields to `CatalogService` (`card_fee_mode: CardFeeMode`, `card_fee_custom_cents: number | null`, `supply_amount_cents: number | null`, `supply_label: string | null`). `ServiceDraftBaseline` picks the four fields up automatically since it extends `CatalogService`.
-- [ ] T011 [P] Extend `app/(studio)/services/_validation.ts` per `data-model.md § 3`: append seven entries to `ValidationErrorCode` (`invalid_card_fee_mode`, `invalid_card_fee_custom`, `card_fee_custom_too_large`, `invalid_supply_amount`, `supply_amount_too_large`, `invalid_supply_label`, `supply_label_too_long`); implement the four new validators (`validateCardFeeMode`, `validateCardFeeCustomDollars`, `validateSupplyAmountDollars`, `validateSupplyLabel`) reusing the same string-padding cents conversion the existing `validateFixedPriceDollars` uses (no float math). Verify T008 now passes.
-- [ ] T012 [P] Create `app/(studio)/services/_deductions.ts` implementing the two pure helpers per `data-model.md § 2.3`: `effectiveCardFeeCents` and `computeNetToTechCents`. Importable from both server (Server Action audit-payload builder) and client (panel preview). Verify T009 now passes.
-- [ ] T013 [P] Extend `app/(studio)/services/_format.ts` with two new render helpers used by `deduction-chips.tsx` and the catalog row:
+- [X] T010 [P] Extend `app/(studio)/services/_types.ts` per `data-model.md § 2.1`: add the `CardFeeMode` exported type and add the four new fields to `CatalogService` (`card_fee_mode: CardFeeMode`, `card_fee_custom_cents: number | null`, `supply_amount_cents: number | null`, `supply_label: string | null`). `ServiceDraftBaseline` picks the four fields up automatically since it extends `CatalogService`.
+- [X] T011 [P] Extend `app/(studio)/services/_validation.ts` per `data-model.md § 3`: append seven entries to `ValidationErrorCode` (`invalid_card_fee_mode`, `invalid_card_fee_custom`, `card_fee_custom_too_large`, `invalid_supply_amount`, `supply_amount_too_large`, `invalid_supply_label`, `supply_label_too_long`); implement the four new validators (`validateCardFeeMode`, `validateCardFeeCustomDollars`, `validateSupplyAmountDollars`, `validateSupplyLabel`) reusing the same string-padding cents conversion the existing `validateFixedPriceDollars` uses (no float math). Verify T008 now passes.
+- [X] T012 [P] Create `app/(studio)/services/_deductions.ts` implementing the two pure helpers per `data-model.md § 2.3`: `effectiveCardFeeCents` and `computeNetToTechCents`. Importable from both server (Server Action audit-payload builder) and client (panel preview). Verify T009 now passes.
+- [X] T013 [P] Extend `app/(studio)/services/_format.ts` with two new render helpers used by `deduction-chips.tsx` and the catalog row:
   - `formatCardFeeChipText(mode, customCents, defaultCents)` → `"$3 card fee"` for default, `"$X card fee"` for custom; throws or returns `null` for exempt (caller decides what to render).
   - `formatSupplyChipText(amountCents, label)` → `"${formatted} {label}"` (e.g. `"$5 GelX tips & gel"`). Both helpers use the existing dollar-formatting convention (whole dollars as `$5`, non-whole as `$4.50`).
 
 ### Page + load extensions
 
-- [ ] T014 Extend `app/(studio)/services/_load.ts` so `loadServiceWithAssignments(roster, selectedAssignments, selectedId)` populates the four new fields on the returned `ServiceDraftBaseline`. (`_load` reads from the `roster` array, which after T015 includes the four new columns, so this is mostly a pass-through — make sure no field is dropped during projection.)
-- [ ] T015 Extend `app/(studio)/services/page.tsx` so the catalog select string includes the four new columns and the `roster` mapping passes them through. Narrow `card_fee_mode` from raw `text` to `CardFeeMode` defensively (mirror the existing `narrowColorToken` pattern: known values pass through, unknown values fall back to `'default'`). Confirm the page still compiles after the type extension.
+- [X] T014 Extend `app/(studio)/services/_load.ts` so `loadServiceWithAssignments(roster, selectedAssignments, selectedId)` populates the four new fields on the returned `ServiceDraftBaseline`. (`_load` reads from the `roster` array, which after T015 includes the four new columns, so this is mostly a pass-through — make sure no field is dropped during projection.)
+- [X] T015 Extend `app/(studio)/services/page.tsx` so the catalog select string includes the four new columns and the `roster` mapping passes them through. Narrow `card_fee_mode` from raw `text` to `CardFeeMode` defensively (mirror the existing `narrowColorToken` pattern: known values pass through, unknown values fall back to `'default'`). Confirm the page still compiles after the type extension.
 
 ### Server Actions
 
-- [ ] T016 Extend `app/(studio)/services/actions.ts` to support the four new fields end-to-end. Single coordinated edit:
+- [X] T016 Extend `app/(studio)/services/actions.ts` to support the four new fields end-to-end. Single coordinated edit:
   - Append the four new keys to `SERVICE_DIFF_KEYS` and the four new fields to `ServiceDiffSnapshot` per `data-model.md § 4` and `contracts/audit-payload.contract.md`. Add `export` to `SERVICE_DIFF_KEYS` and `buildChanges` (was previously file-private) so the test in T004 can import them.
   - In `addService`: parse `card_fee_mode`, `card_fee_custom` (conditional), `supply_on`, `supply_amount` and `supply_label` (conditional) per `contracts/server-actions.contract.md § 2`. Pass the four resolved values into the `INSERT` builder alongside the 008 fields. Echo the four fields in the audit payload.
   - In `updateService`: same parse logic in the try block; extend the `before` / `after` snapshots in the `service.updated` audit payload to include the four fields; the existing `buildChanges` loop naturally picks up the new keys via the extended constant. The patch builder (which currently narrows to only changed keys) requires no edit — the constant drives the loop.
@@ -81,7 +81,7 @@ description: "Task list for 021-services-deductions"
 
 ### Toast vocabulary
 
-- [ ] T017 [P] Extend `app/(studio)/services/toasts.ts` with the seven new error keys from `contracts/server-actions.contract.md § 3`: `invalid_card_fee_mode`, `invalid_card_fee_custom`, `card_fee_custom_too_large`, `invalid_supply_amount`, `supply_amount_too_large`, `invalid_supply_label`, `supply_label_too_long`. Each maps to a destructive Sonner with the documented copy. No new success-toast keys.
+- [X] T017 [P] Extend `app/(studio)/services/toasts.ts` with the seven new error keys from `contracts/server-actions.contract.md § 3`: `invalid_card_fee_mode`, `invalid_card_fee_custom`, `card_fee_custom_too_large`, `invalid_supply_amount`, `supply_amount_too_large`, `invalid_supply_label`, `supply_label_too_long`. Each maps to a destructive Sonner with the documented copy. No new success-toast keys.
 
 **Checkpoint**: Foundation ready. Schema applied, types regenerated, four validators + two derivations live, action extended, audit diff covers the new columns. User stories can begin in priority order.
 
@@ -95,12 +95,12 @@ description: "Task list for 021-services-deductions"
 
 ### Implementation for User Story 1
 
-- [ ] T018 [US1] Create `components/lacquer/services/edit-panel.client.tsx` per `contracts/ui.contract.md § 1–2`. Owns the panel state machine (mode = closed/add/edit), the discard-changes gate firing on row-switch and on Add-service click, and the empty-state render. Header: color swatch + name + secondary line `{category} · {duration} · {price}`; **no Close (X) affordance** (per Clarifications Q1). Footer: Save + Cancel + (edit-only) Archive button — wires into the existing `<ArchiveDialog>`. Renders `<ServiceForm>` (still authored as a client component) inside its scroll area. Imports `<DiscardChangesDialog>` unchanged from 008.
-- [ ] T019 [US1] Edit `components/lacquer/services/service-form.client.tsx`: remove any drawer-specific layout assumptions (the form was authored to mount inside a sheet; now it mounts inside a card grid). Keep the existing field set and validation rules. Add an optional `inspectorChrome: boolean` prop (default `false` for backwards compat in case the file is still imported anywhere else) the panel can pass to toggle the form-internal padding; the panel itself owns the outer padding. Do NOT add the deductions section yet — that lands in Phase 4. Do NOT change the existing draft state shape yet — Phase 4 / 5 will extend it.
-- [ ] T020 [US1] Edit `app/(studio)/services/page.tsx`: remove the `<Drawer>` import and JSX; import and mount `<EditPanel>` inside a `<div className="services-two-pane">` wrapper alongside `<CatalogList>`. The page's panel-mode resolver (`drawerMode` → `panelMode`) stays — same URL params (`?selected`, `?adding`), same baseline loading. Update the wrapper element's `className` and `data-slot` to reflect "two-pane" semantics. The page Server Component now owns the two-pane grid (CSS in T021).
-- [ ] T021 [US1] Append the two-pane shell + empty-state CSS to `styles/settings.css` per `contracts/ui.contract.md § 1`: `.services-two-pane` (440px / 1fr grid, 18px gap, narrow-viewport fallback to single column at `<= 1023px`), `.services-edit-panel` (card surface + border + radius + shadow + padding tokens), `.services-edit-panel__header` (color swatch + name + secondary line layout), `.services-edit-panel__empty` (44px muted circle for the Info icon + centered copy), `.services-edit-panel__footer` (Save/Cancel right-aligned + Archive left-aligned). Every value resolves to a token.
-- [ ] T022 [US1] Delete `components/lacquer/services/drawer.client.tsx`. After T020 removes the import, this file has no callers — delete completely per `research.md § R11`. (`git rm` the file; no archival copy.)
-- [ ] T023 [US1] Create `tests/e2e/services-deductions.spec.ts` with the US1 describe block. Cases:
+- [X] T018 [US1] Create `components/lacquer/services/edit-panel.client.tsx` per `contracts/ui.contract.md § 1–2`. Owns the panel state machine (mode = closed/add/edit), the discard-changes gate firing on row-switch and on Add-service click, and the empty-state render. Header: color swatch + name + secondary line `{category} · {duration} · {price}`; **no Close (X) affordance** (per Clarifications Q1). Footer: Save + Cancel + (edit-only) Archive button — wires into the existing `<ArchiveDialog>`. Renders `<ServiceForm>` (still authored as a client component) inside its scroll area. Imports `<DiscardChangesDialog>` unchanged from 008.
+- [X] T019 [US1] Edit `components/lacquer/services/service-form.client.tsx`: remove any drawer-specific layout assumptions (the form was authored to mount inside a sheet; now it mounts inside a card grid). Keep the existing field set and validation rules. Add an optional `inspectorChrome: boolean` prop (default `false` for backwards compat in case the file is still imported anywhere else) the panel can pass to toggle the form-internal padding; the panel itself owns the outer padding. Do NOT add the deductions section yet — that lands in Phase 4. Do NOT change the existing draft state shape yet — Phase 4 / 5 will extend it.
+- [X] T020 [US1] Edit `app/(studio)/services/page.tsx`: remove the `<Drawer>` import and JSX; import and mount `<EditPanel>` inside a `<div className="services-two-pane">` wrapper alongside `<CatalogList>`. The page's panel-mode resolver (`drawerMode` → `panelMode`) stays — same URL params (`?selected`, `?adding`), same baseline loading. Update the wrapper element's `className` and `data-slot` to reflect "two-pane" semantics. The page Server Component now owns the two-pane grid (CSS in T021).
+- [X] T021 [US1] Append the two-pane shell + empty-state CSS to `styles/settings.css` per `contracts/ui.contract.md § 1`: `.services-two-pane` (440px / 1fr grid, 18px gap, narrow-viewport fallback to single column at `<= 1023px`), `.services-edit-panel` (card surface + border + radius + shadow + padding tokens), `.services-edit-panel__header` (color swatch + name + secondary line layout), `.services-edit-panel__empty` (44px muted circle for the Info icon + centered copy), `.services-edit-panel__footer` (Save/Cancel right-aligned + Archive left-aligned). Every value resolves to a token.
+- [X] T022 [US1] Delete `components/lacquer/services/drawer.client.tsx`. After T020 removes the import, this file has no callers — delete completely per `research.md § R11`. (`git rm` the file; no archival copy.)
+- [X] T023 [US1] Create `tests/e2e/services-deductions.spec.ts` with the US1 describe block. Cases:
   - **two-pane shape**: opens `/services` → asserts left pane is visible with rows AND right pane shows the empty-state inspector. No `[role="dialog"]` is present; no `data-drawer-mode` attribute is in the DOM (the page now uses `data-panel-mode`).
   - **click row → panel pre-fills**: clicks each of two seeded rows in turn → asserts the right pane's name input takes the row's value within ~200ms and the Save button is disabled.
   - **edit + save**: types a new name into the panel → asserts Save enables → submits → asserts "Changes saved" toast + the list row text reflects the new name + the panel remains in edit mode.
@@ -123,25 +123,25 @@ description: "Task list for 021-services-deductions"
 
 ### Implementation for User Story 2
 
-- [ ] T024 [P] [US2] Create `components/lacquer/services/deduction-chips.tsx` (server component) per `contracts/ui.contract.md § 4`. Initial implementation covers card-fee chip rendering only — the supply branch is added in US3 (T032). Pure render component: takes the four deduction fields + `DEFAULT_CARD_FEE_CENTS`; uses `formatCardFeeChipText` for the chip text; emits a single `<span data-kind="card-default">` or `<span data-kind="card-custom">` chip for `default` / `custom` modes; emits nothing for `exempt`. Wrap in a `<div role="group" aria-label="Deductions">` with `gap: 6px`.
-- [ ] T025 [P] [US2] Append `.deduction-chip` base rule + `.deduction-chip--card-default` + `.deduction-chip--card-custom` variant rules to `styles/settings.css` per `contracts/ui.contract.md § 4.2`. Token-only — if no existing token matches the prototype's `oklch(0.45 0.13 240)` text color, audit `styles/tokens.css` for an `--info-foreground` / `--info-700` analogue and add the missing token by copying the corresponding line from `design-system/colors_and_type.css` (NOT a raw hex). The blue chip background uses `color-mix(in oklch, var(--info) 12%, transparent)` — `color-mix` is permitted because the input colors are tokens.
-- [ ] T026 [US2] Edit `components/lacquer/services/catalog-row.tsx` to render `<DeductionChips>` in the row's right-hand band, immediately before the duration + price tokens. Pass the four deduction fields + `DEFAULT_CARD_FEE_CENTS`. The duration / price tokens keep their existing positions; the chips appear with a 6px gap to their right. This is a server component edit only — no client island change.
-- [ ] T027 [US2] Create `components/lacquer/services/deductions-section.client.tsx` with the card-fee row only (supply lands in US3, preview in US4). Renders:
+- [X] T024 [P] [US2] Create `components/lacquer/services/deduction-chips.tsx` (server component) per `contracts/ui.contract.md § 4`. Initial implementation covers card-fee chip rendering only — the supply branch is added in US3 (T032). Pure render component: takes the four deduction fields + `DEFAULT_CARD_FEE_CENTS`; uses `formatCardFeeChipText` for the chip text; emits a single `<span data-kind="card-default">` or `<span data-kind="card-custom">` chip for `default` / `custom` modes; emits nothing for `exempt`. Wrap in a `<div role="group" aria-label="Deductions">` with `gap: 6px`.
+- [X] T025 [P] [US2] Append `.deduction-chip` base rule + `.deduction-chip--card-default` + `.deduction-chip--card-custom` variant rules to `styles/settings.css` per `contracts/ui.contract.md § 4.2`. Token-only — if no existing token matches the prototype's `oklch(0.45 0.13 240)` text color, audit `styles/tokens.css` for an `--info-foreground` / `--info-700` analogue and add the missing token by copying the corresponding line from `design-system/colors_and_type.css` (NOT a raw hex). The blue chip background uses `color-mix(in oklch, var(--info) 12%, transparent)` — `color-mix` is permitted because the input colors are tokens.
+- [X] T026 [US2] Edit `components/lacquer/services/catalog-row.tsx` to render `<DeductionChips>` in the row's right-hand band, immediately before the duration + price tokens. Pass the four deduction fields + `DEFAULT_CARD_FEE_CENTS`. The duration / price tokens keep their existing positions; the chips appear with a 6px gap to their right. This is a server component edit only — no client island change.
+- [X] T027 [US2] Create `components/lacquer/services/deductions-section.client.tsx` with the card-fee row only (supply lands in US3, preview in US4). Renders:
   - The "Card fee" heading + "when paid by card or gift card" muted hint.
   - A `<Segmented>` (internally a shadcn `RadioGroup` styled into the prototype's pill shape) with three options: `Default · ${formatDefaultCardFeeLabel()}`, `Custom`, `Exempt`. Active value matches `draft.card_fee_mode`.
   - When mode = `'custom'`: a `$`-prefixed amount input wired to `draft.card_fee_custom_dollars`; format-on-blur to two decimals; inline hints for empty / >$50 per `contracts/ui.contract.md § 3.1`.
   - When mode = `'exempt'`: the muted one-line explainer "Card fee never applies, regardless of payment method."
   - Hidden FormData inputs for `card_fee_mode` and (conditionally) `card_fee_custom` so the form submits the right keys. Use the same `<input type="hidden">` pattern the staff-assignment list used in 008.
   - Accepts a `disabled` prop (defaults `false`) — US5 wires this to `!canWriteCatalog(operatorRole)`.
-- [ ] T028 [US2] Append `.deductions-section` (the bordered card surface inside the form) + `.segmented` + `.segmented__option` + `.segmented__option--active` + `.deductions-card-fee-row` CSS rules to `styles/settings.css` per `contracts/ui.contract.md § 3`. Selected-pill shadow uses `var(--shadow-xs)`; segmented background uses `var(--muted)`; option background flips between `transparent` and `var(--card)` on active. Token-only.
-- [ ] T029 [US2] Edit `components/lacquer/services/service-form.client.tsx` per `data-model.md § 2.2`:
+- [X] T028 [US2] Append `.deductions-section` (the bordered card surface inside the form) + `.segmented` + `.segmented__option` + `.segmented__option--active` + `.deductions-card-fee-row` CSS rules to `styles/settings.css` per `contracts/ui.contract.md § 3`. Selected-pill shadow uses `var(--shadow-xs)`; segmented background uses `var(--muted)`; option background flips between `transparent` and `var(--card)` on active. Token-only.
+- [X] T029 [US2] Edit `components/lacquer/services/service-form.client.tsx` per `data-model.md § 2.2`:
   - Extend `ServiceDraft` with `card_fee_mode: CardFeeMode` and `card_fee_custom_dollars: string` (the on-save-only clearing rule from FR-014 means the draft buffer keeps the typed dollars across mode flips — the value is preserved client-side and ignored server-side when mode != custom).
   - Extend `makeDefaultDraft()` to seed `card_fee_mode: 'default'` and `card_fee_custom_dollars: ''`.
   - Extend `makeDraftFromBaseline(baseline)` to populate the two fields from the baseline (when mode = 'custom', stringify the cents back to dollars: `String((baseline.card_fee_custom_cents ?? 0) / 100)`).
   - Extend `hasFormErrors(draft)` to fail when mode = custom AND `card_fee_custom_dollars` is empty / non-numeric / > 50.
   - Update the dirty-detector in `<EditPanel>` to compare the two new draft fields against the baseline (a mode flip alone is dirty; a typed custom value with mode != custom is NOT dirty per the "ignore stored buffer when mode mismatches" rule — compare only `mode` and, when mode = custom, the parsed cents).
   - Mount `<DeductionsSection>` (from T027) inside the form's vertical stack, immediately after the Color field and before the (already-deferred) staff assignments section.
-- [ ] T030 [US2] Add US2 cases to `tests/e2e/services-deductions.spec.ts`:
+- [X] T030 [US2] Add US2 cases to `tests/e2e/services-deductions.spec.ts`:
   - **Default chip on existing service**: asserts a seeded service that pre-dates 021 shows a `$3 card fee` blue chip on its row.
   - **Default → Custom round-trip**: opens a service → clicks Custom → types `4.50` → saves → asserts list row shows `$4.50 card fee` chip + re-opening the panel renders the saved value in the input.
   - **Custom → Exempt**: opens the same service → clicks Exempt → asserts the custom input disappears → saves → asserts no card-fee chip on the row (the muted "No fees" chip appears in US3; here we only assert "no blue chip").
@@ -165,26 +165,26 @@ description: "Task list for 021-services-deductions"
 
 ### Implementation for User Story 3
 
-- [ ] T031 [US3] Extend `components/lacquer/services/deductions-section.client.tsx` with the Supply row per `contracts/ui.contract.md § 3.2`. Renders:
+- [X] T031 [US3] Extend `components/lacquer/services/deductions-section.client.tsx` with the Supply row per `contracts/ui.contract.md § 3.2`. Renders:
   - "Supply deduction" heading + "any payment method" muted hint + a right-aligned `Switch` wired to `draft.supply_on`.
   - When toggle on: a two-column grid (`100px 1fr`) with `$`-prefixed amount input + label input. Placeholder for label: `"e.g. GelX tips & gel, Chrome powder, OPI bottle wear"`. On toggle-off → on, pre-fill `draft.supply_amount_dollars = '5.00'` only if currently empty (so re-toggling on after a typed value preserves it per FR-021) and move focus to the label input.
   - Inline validation hints per `contracts/ui.contract.md § 3.2`: amount empty/zero/negative → "Enter a positive amount up to $50, or turn Supply off."; amount > $50 → "Supply can't exceed $50."; label empty → "Add a short label so staff know what this covers, or turn Supply off."; label > 64 → "Label must be 64 characters or fewer."
   - Live character counter on the label when length is within 8 chars of the 64 limit.
   - Hidden FormData inputs for `supply_on`, `supply_amount`, `supply_label`. When toggle is off, render only `supply_on=""` (absent value); when on, render all three.
   - Honors the `disabled` prop (US5 wires it).
-- [ ] T032 [US3] Extend `components/lacquer/services/deduction-chips.tsx` with the supply chip branch + combined / exempt-no-fees behavior per `contracts/ui.contract.md § 4.1`:
+- [X] T032 [US3] Extend `components/lacquer/services/deduction-chips.tsx` with the supply chip branch + combined / exempt-no-fees behavior per `contracts/ui.contract.md § 4.1`:
   - When `supply_amount_cents` is present → emit a `<span data-kind="supply">` chip after the card-fee chip (if any).
   - When `card_fee_mode = 'exempt'` AND no supply → emit a single `<span data-kind="exempt-no-fees">` muted chip reading "No fees".
   - When `card_fee_mode = 'exempt'` AND supply present → emit ONLY the supply chip (no card-fee chip, no "No fees" chip).
   - All chips remain inside the `<div role="group">` wrapper.
-- [ ] T033 [US3] Extend `components/lacquer/services/service-form.client.tsx` per `data-model.md § 2.2`:
+- [X] T033 [US3] Extend `components/lacquer/services/service-form.client.tsx` per `data-model.md § 2.2`:
   - Extend `ServiceDraft` with `supply_on: boolean`, `supply_amount_dollars: string`, `supply_label: string`.
   - Extend `makeDefaultDraft()` to seed `{ supply_on: false, supply_amount_dollars: '', supply_label: '' }`.
   - Extend `makeDraftFromBaseline(baseline)` to populate from the baseline (supply_on derived from `baseline.supply_amount_cents !== null`; dollars/label populated when on).
   - Extend `hasFormErrors(draft)` to fail when `supply_on` is true AND (amount empty / non-numeric / 0 / > 50, OR label empty after trim / > 64 chars).
   - Update the dirty-detector to compare the three supply fields appropriately (a toggle flip is dirty; typed values when toggle is off are NOT dirty per the same buffer rule as card-fee).
-- [ ] T034 [US3] Append the supply chip + exempt-no-fees chip CSS to `styles/settings.css`: `.deduction-chip--supply` (amber background via `color-mix(in oklch, var(--amber-500) 16%, transparent)`, amber-700 text color via a Lacquer token — add if missing per the T025 pattern), `.deduction-chip--exempt-no-fees` (background `var(--secondary)`, text `var(--muted-foreground)`). Append the supply-row CSS: `.deductions-supply-row` (`grid-template-columns: 100px 1fr` for the input pair) and `.deductions-supply-row__char-count` for the 64-char counter helper.
-- [ ] T035 [US3] Add US3 cases to `tests/e2e/services-deductions.spec.ts`:
+- [X] T034 [US3] Append the supply chip + exempt-no-fees chip CSS to `styles/settings.css`: `.deduction-chip--supply` (amber background via `color-mix(in oklch, var(--amber-500) 16%, transparent)`, amber-700 text color via a Lacquer token — add if missing per the T025 pattern), `.deduction-chip--exempt-no-fees` (background `var(--secondary)`, text `var(--muted-foreground)`). Append the supply-row CSS: `.deductions-supply-row` (`grid-template-columns: 100px 1fr` for the input pair) and `.deductions-supply-row__char-count` for the 64-char counter helper.
+- [X] T035 [US3] Add US3 cases to `tests/e2e/services-deductions.spec.ts`:
   - **Default state of pre-existing service**: asserts a seeded service shows no supply chip and the panel renders Supply toggle off with inputs hidden.
   - **Toggle on + first-on defaults**: flips toggle → asserts amount input is pre-filled `5.00`, label input is empty + focused.
   - **Save with valid values**: types label `GelX tips & gel` → saves → asserts amber chip on row reads `$5 GelX tips & gel` (or whatever the seeded amount is) + persisted columns match (verify via the e2e DB helper).
@@ -215,15 +215,15 @@ description: "Task list for 021-services-deductions"
 
 ### Implementation for User Story 4
 
-- [ ] T036 [US4] Extend `components/lacquer/services/deductions-section.client.tsx` with the Net-to-tech preview block per `contracts/ui.contract.md § 3.3`:
+- [X] T036 [US4] Extend `components/lacquer/services/deductions-section.client.tsx` with the Net-to-tech preview block per `contracts/ui.contract.md § 3.3`:
   - Below the supply row, separated by a 1px top border.
   - Calls `computeNetToTechCents(input)` (from T012) wrapped in `useMemo` over the draft's relevant fields: `price` (or `price_from` when `variable_price = true`), `card_fee_mode`, `card_fee_custom_dollars` (parsed), `supply_on`, `supply_amount_dollars` (parsed).
   - Renders the headline `NET TO TECH (CARD)` (uppercase, tracked, muted, 11px font), the amount in 22px tabular numerals via `font-variant-numeric: tabular-nums`, and the right-aligned breakdown lines (`{price} service`, `−{fee} card fee`, `−{amount} {label or 'supply'}`).
   - The card-fee breakdown line is omitted when `card_fee_mode = 'exempt'` (FR-027); the supply breakdown line is omitted when Supply is off (FR-027); the "{price} service" line is always shown.
   - When the inputs produce a negative net, displays `$0` and still shows the raw breakdown lines.
   - Pure presentation — preview never writes to the DB and is never disabled by the role gate (read-only by nature; FR-029).
-- [ ] T037 [US4] Append `.deductions-net-to-tech` (the bordered block) + `.deductions-net-to-tech__headline` + `.deductions-net-to-tech__amount` + `.deductions-net-to-tech__breakdown` + `.deductions-net-to-tech__breakdown-line` + `.deductions-net-to-tech__breakdown-line--card-fee` + `.deductions-net-to-tech__breakdown-line--supply` CSS rules to `styles/settings.css` per `contracts/ui.contract.md § 3.3`. The card-fee line color uses the existing `--info-foreground` / `--info-700` token added in T025; the supply line uses the amber token added in T034. Tabular numerals enforced on both the amount and the breakdown.
-- [ ] T038 [US4] Add US4 cases to `tests/e2e/services-deductions.spec.ts`:
+- [X] T037 [US4] Append `.deductions-net-to-tech` (the bordered block) + `.deductions-net-to-tech__headline` + `.deductions-net-to-tech__amount` + `.deductions-net-to-tech__breakdown` + `.deductions-net-to-tech__breakdown-line` + `.deductions-net-to-tech__breakdown-line--card-fee` + `.deductions-net-to-tech__breakdown-line--supply` CSS rules to `styles/settings.css` per `contracts/ui.contract.md § 3.3`. The card-fee line color uses the existing `--info-foreground` / `--info-700` token added in T025; the supply line uses the amber token added in T034. Tabular numerals enforced on both the amount and the breakdown.
+- [X] T038 [US4] Add US4 cases to `tests/e2e/services-deductions.spec.ts`:
   - **Classic case**: opens service with `$50`, default, supply `$5 chrome` → asserts preview reads `$42` and breakdown lines render in order: `$50 service`, `−$3 card fee`, `−$5 chrome`.
   - **Live price keystroke**: types `60` into price → waits ≤200ms → asserts preview reads `$52` (no Save click required).
   - **Switch to exempt**: clicks Exempt → asserts preview becomes `$55` AND the card-fee breakdown line is no longer present in the DOM.
@@ -246,13 +246,13 @@ description: "Task list for 021-services-deductions"
 
 ### Implementation for User Story 5
 
-- [ ] T039 [US5] Thread the `operatorRole` prop through the panel and form so the deductions controls disable consistently with the existing 008 fields:
+- [X] T039 [US5] Thread the `operatorRole` prop through the panel and form so the deductions controls disable consistently with the existing 008 fields:
   - `app/(studio)/services/page.tsx` already passes `viewer.staff.role` to `<EditPanel>` (formerly `<Drawer>`). Confirm the prop name + shape match.
   - `components/lacquer/services/edit-panel.client.tsx` passes `operatorRole` into `<ServiceForm>`.
   - `components/lacquer/services/service-form.client.tsx` computes `canWrite = canWriteCatalog(operatorRole)` and passes `disabled={!canWrite}` to `<DeductionsSection>`. The Save button and the Archive button also flip to `disabled={!canWrite}` (already the case for the 008 fields; confirm coverage for the new state).
   - `components/lacquer/services/deductions-section.client.tsx` respects the `disabled` prop on the Segmented control (`aria-disabled` + pointer-events none + tabIndex -1 on each option), the custom amount input, the Supply toggle (`aria-disabled` + click no-op), and the supply amount + label inputs (`disabled={true}`). Wrap each disabled control in the existing `<OwnerOnlyTooltip>` (from 008's `service-form.client.tsx`) so the same "Only owners and managers can edit the catalog." copy appears on hover / focus.
   - The Net-to-tech preview continues to render regardless of role (read-only by nature).
-- [ ] T040 [US5] Add US5 cases to `tests/e2e/services-deductions.spec.ts` (uses the existing `loginAsTechnician` / `loginAsManager` helpers from prior specs; if those helpers don't exist, follow the staff-feature spec's PIN-session bootstrap pattern):
+- [X] T040 [US5] Add US5 cases to `tests/e2e/services-deductions.spec.ts` (uses the existing `loginAsTechnician` / `loginAsManager` helpers from prior specs; if those helpers don't exist, follow the staff-feature spec's PIN-session bootstrap pattern):
   - **Technician sees chips**: logs in as technician → navigates to `/services` → asserts every chip from US2/US3 renders on the rows (read works).
   - **Technician sees disabled controls**: opens the panel → asserts the Segmented control has `aria-disabled="true"`, the custom amount input is `disabled`, the Supply toggle is `aria-disabled="true"`, the supply inputs (if rendered) are `disabled`, and the Save button is `disabled`. Hovers each → asserts tooltip "Only owners and managers can edit the catalog." appears.
   - **Net preview still renders for technician**: asserts the preview amount + breakdown are present (read-only).
@@ -273,16 +273,16 @@ description: "Task list for 021-services-deductions"
 
 **Purpose**: Visual fidelity + accessibility + the final full gate set. Per CLAUDE.md § "Skill-level optimizations", `/speckit-implement` will dispatch `speckit-design-auditor` automatically after phases that touched `components/` or `styles/`; this phase makes the dispatch explicit and runs the final pre-push gate.
 
-- [ ] T041 [P] Run `speckit-design-auditor` against the updated `/services` surface (the agent auto-fires on any UI-touching phase per CLAUDE.md, but a final pass after all five stories is the canonical gate). Address any token violations the auditor flags (most likely candidate: the chip text colors `oklch(0.45 0.13 240)` and `oklch(0.45 0.14 75)` in the prototype — confirm they resolve to existing Lacquer tokens or add the closest analogue per the T025 / T034 pattern). Re-run until the auditor reports zero violations.
-- [ ] T042 [P] Manually verify the accessibility expectations in `contracts/ui.contract.md § 8`:
+- [X] T041 [P] Run `speckit-design-auditor` against the updated `/services` surface (the agent auto-fires on any UI-touching phase per CLAUDE.md, but a final pass after all five stories is the canonical gate). Address any token violations the auditor flags (most likely candidate: the chip text colors `oklch(0.45 0.13 240)` and `oklch(0.45 0.14 75)` in the prototype — confirm they resolve to existing Lacquer tokens or add the closest analogue per the T025 / T034 pattern). Re-run until the auditor reports zero violations.
+- [X] T042 [P] Manually verify the accessibility expectations in `contracts/ui.contract.md § 8`:
   - Segmented control: `role="radiogroup"`, each option `role="radio"`, `aria-checked` reflects active.
   - Supply toggle: `role="switch"` with `aria-checked`.
   - Inline validation hints connected via `aria-describedby`.
   - Disabled controls: `aria-disabled="true"` + descriptive `aria-label` so screen readers announce the reason.
   - Empty-state inspector: `role="region"` with `aria-labelledby` on the headline.
   - Focus management: after clicking a row, focus does NOT jump to the panel (avoids disorienting keyboard users); after flipping Supply on, focus DOES move to the label input (FR-018).
-- [ ] T043 Run `quickstart.md § 5` manually in the browser for US1–US5 against `npm run dev`. Capture any UI nits (spacing, alignment, focus, color drift) in a punch list and address before the final gate.
-- [ ] T044 **Final gate** — full pre-push suite per CLAUDE.md § "Pre-push quality gates":
+- [X] T043 Run `quickstart.md § 5` manually in the browser for US1–US5 against `npm run dev`. Capture any UI nits (spacing, alignment, focus, color drift) in a punch list and address before the final gate.
+- [X] T044 **Final gate** — full pre-push suite per CLAUDE.md § "Pre-push quality gates":
   ```bash
   npm run format:check && \
   npm run lint && \
@@ -291,7 +291,7 @@ description: "Task list for 021-services-deductions"
   npm run test:e2e
   ```
   All five MUST be green locally before opening the PR. If `test:e2e` flakes under parallel workers, retry with `PLAYWRIGHT_PROD=1 npm run test:e2e` (the prebuilt server matches CI more closely).
-- [ ] T045 Confirm `CLAUDE.md` § SPECKIT block points at `specs/021-services-deductions/plan.md` (already updated in `/speckit-plan` — this task is just the safety check). If the marker drifted, fix and re-stage.
+- [X] T045 Confirm `CLAUDE.md` § SPECKIT block points at `specs/021-services-deductions/plan.md` (already updated in `/speckit-plan` — this task is just the safety check). If the marker drifted, fix and re-stage.
 
 ---
 

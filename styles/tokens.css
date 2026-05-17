@@ -41,6 +41,15 @@
   --amber-500: oklch(0.76 0.14 75);
   --red-500: oklch(0.58 0.18 25);
   --blue-500: oklch(0.6 0.13 240);
+  /* Darker info shade for chip text on tinted backgrounds — mirrors the
+     `--rose-700` darker-than-primary pattern. Used by
+     `.deduction-chip--card-default` in `styles/settings.css`. */
+  --blue-700: oklch(0.45 0.13 240);
+  /* Darker amber shade for chip text on tinted backgrounds — mirrors the
+     `--blue-700` pattern. Used by `.deduction-chip--supply` in
+     `styles/settings.css`. Sourced from `design-system/ServicesV1.jsx`
+     supply-chip color (`oklch(0.45 0.14 75)`). */
+  --amber-700: oklch(0.45 0.14 75);
 
   /* Avatar swatches — 8 distinct hues for staff initials backgrounds.
      Same OKLCH values apply in both light and dark mode. */
@@ -81,6 +90,9 @@
   --success: var(--green-500);
   --warning: var(--amber-500);
   --info: var(--blue-500);
+  /* Foreground colour pairing with `--info` — used for chip text on the
+     12%-tinted info background (per `021-services-deductions` § 4.2). */
+  --info-foreground: var(--blue-700);
 
   --border: var(--neutral-200);
   --input: var(--neutral-200);

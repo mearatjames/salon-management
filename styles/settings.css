@@ -280,3 +280,602 @@
   font-size: var(--text-sm);
   color: var(--muted-foreground);
 }
+
+/* === 021-services-deductions === */
+
+/* --- .services-two-pane ---
+   Two-pane shell: 440px catalog list on the left, edit inspector on the
+   right. Prototype gap is 18px; the Lacquer spacing scale jumps 16 → 20,
+   so we pick `--space-4` (16px) — the nearest 4px-multiple token, marginally
+   tighter than the prototype's 18px. Adding an `--space-18` would violate
+   the spacing scale (CLAUDE.md § 7). At narrow viewports (<= 1023px) the
+   panel collapses to a single column so the inspector flows beneath the
+   list instead of crushing it. */
+.services-two-pane {
+  display: grid;
+  /* 440px = 64px (--space-16) * 6 + 48px (--space-12) + 8px (--space-2). */
+  grid-template-columns:
+    minmax(0, calc(var(--space-16) * 6 + var(--space-12) + var(--space-2)))
+    minmax(0, 1fr);
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+}
+
+@media (max-width: 1023px) {
+  .services-two-pane {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+}
+
+/* --- .services-edit-panel ---
+   Always-mounted card surface housing the EditPanel header + scroll area +
+   footer. No fixed/absolute positioning, no backdrop — this is the new
+   two-pane replacement for the off-canvas drawer. */
+.services-edit-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-5);
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  min-height: 0;
+  height: 100%;
+}
+
+/* Header: color swatch (24px — prototype spec'd 26 — snapped to scale) +
+   name + secondary line. No Close (X). */
+.services-edit-panel__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.services-edit-panel__header-swatch {
+  width: var(--space-6);
+  height: var(--space-6);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.services-edit-panel__header-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+
+.services-edit-panel__header-name {
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--foreground);
+  line-height: var(--leading-snug);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.services-edit-panel__header-secondary {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  margin-top: var(--space-1);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Scroll area inside the panel — the form mounts here. */
+.services-edit-panel__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-1) 0;
+}
+
+/* Empty-state (mode='closed'): 44px muted circle for the Info icon, centred
+   copy. */
+.services-edit-panel__empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--space-6);
+}
+
+.services-edit-panel__empty-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: calc(var(--space-16) * 5);
+}
+
+.services-edit-panel__empty-icon {
+  width: calc(var(--space-10) + var(--space-1));
+  height: calc(var(--space-10) + var(--space-1));
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--space-3);
+}
+
+.services-edit-panel__empty-headline {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--foreground);
+  margin: 0 0 var(--space-1) 0;
+}
+
+.services-edit-panel__empty-body {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  margin: 0;
+  line-height: var(--leading-normal);
+}
+
+/* Footer: Archive left, Save + Cancel right. */
+.services-edit-panel__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.services-edit-panel__footer-end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+/* --- Panel mode fade (021 Phase 3 audit advisory #2) ---
+   The inner content swap between closed/edit/add modes now fades opacity
+   over 150ms ease-out per `contracts/ui.contract.md § 9`. The form/empty
+   wrapper takes a `key={panelMode}` in the React tree so the @keyframes
+   re-runs on every mode change. */
+@keyframes services-edit-panel-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.services-edit-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+  animation: services-edit-panel-fade-in var(--duration-fast) var(--ease-out);
+}
+
+/* --- Panel action buttons (021 Phase 3 audit advisory #4) ---
+   Hoisted out of inline `style={{…}}` blocks on Save / Cancel / Archive /
+   Restore / View-only chip. All values were already token-backed; this
+   refactor only moves them from the JSX to named classes. */
+.services-edit-panel__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground);
+  transition:
+    opacity var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.services-edit-panel__action--primary {
+  padding: var(--space-2) var(--space-4);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: transparent;
+  font-weight: 600;
+}
+
+.services-edit-panel__action--primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.services-edit-panel__action--ghost {
+  color: var(--muted-foreground);
+}
+
+.services-edit-panel__action--destructive {
+  color: var(--destructive);
+}
+
+.services-edit-panel__action--archived-chip {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border-color: transparent;
+  cursor: default;
+}
+
+/* --- .deductions-section ---
+   The bordered card surface inside the form that groups the card-fee + (in
+   US3) supply + (in US4) net-to-tech blocks. Token-only. */
+.deductions-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  background: color-mix(in oklch, var(--muted) 55%, var(--background));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.deductions-section__heading {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.deductions-section__hint {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.deductions-section__explainer {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  line-height: var(--leading-normal);
+}
+
+/* --- .deductions-card-fee-row ---
+   The Card-fee block: heading + segmented + (conditional) custom amount
+   input or exempt explainer. Layout matches `ServicesV1.jsx:561-595`. */
+.deductions-card-fee-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.deductions-card-fee-row__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.deductions-card-fee-row__custom {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  animation: services-edit-panel-fade-in var(--duration-fast) var(--ease-out);
+}
+
+.deductions-card-fee-row__custom-input {
+  width: calc(var(--space-16) + var(--space-6) + var(--space-1));
+  /* 64 + 24 + 4 = 92px to mirror the prototype's `width: 92` for the
+     `$`-prefixed amount input. */
+  padding: var(--space-2) var(--space-3);
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-xs);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.deductions-card-fee-row__custom-prefix {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+.deductions-card-fee-row__hint--error {
+  font-size: var(--text-xs);
+  color: var(--destructive);
+  margin-top: var(--space-1);
+}
+
+/* --- .segmented* ---
+   shadcn RadioGroup styled into the prototype's pill shape per
+   `contracts/ui.contract.md § 3`. Active-pill background flips to `var(--card)`
+   and gains `var(--shadow-xs)`; transitions use 150ms ease-out (§ 9). */
+.segmented {
+  display: inline-flex;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-1);
+  gap: var(--space-1);
+}
+
+.segmented__option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--muted-foreground);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    font-weight var(--duration-fast) var(--ease-out);
+}
+
+.segmented__option:hover:not(.segmented__option--active):not([aria-disabled="true"]) {
+  color: var(--foreground);
+}
+
+.segmented__option--active {
+  background: var(--card);
+  color: var(--foreground);
+  font-weight: 600;
+  box-shadow: var(--shadow-xs);
+}
+
+.segmented__option[aria-disabled="true"] {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.segmented__option:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* --- .deduction-chip* ---
+   Pill-shaped chips rendered on each catalog row by
+   `components/lacquer/services/deduction-chips.tsx`. The wrapping group
+   uses `gap: var(--space-1)` (4px; the prototype's 6px snaps to the
+   nearest scale token — CLAUDE.md § 7). */
+.deduction-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.deduction-chip {
+  display: inline-flex;
+  align-items: center;
+  /* 2px vertical chip padding is intentionally off-scale: the chip is a
+     tight inline pill and the closest on-scale token (`--space-1` = 4px)
+     would make the chip ~18px tall, breaking visual rhythm with the 20px
+     duration / price pills. Matches the prototype's `padding: 2px 8px`. */
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1.4;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "cv02", "cv03";
+}
+
+.deduction-chip--card-default {
+  background: color-mix(in oklch, var(--info) 12%, transparent);
+  color: var(--info-foreground);
+}
+
+.deduction-chip--card-custom {
+  background: color-mix(in oklch, var(--primary) 14%, transparent);
+  color: var(--rose-700);
+}
+
+/* Supply chip — amber-tinted background + darker amber text. The
+   `--amber-700` token (added alongside this rule in `styles/tokens.css`)
+   mirrors the `--blue-700` darker-info-text pattern from T025. */
+.deduction-chip--supply {
+  background: color-mix(in oklch, var(--amber-500) 16%, transparent);
+  color: var(--amber-700);
+}
+
+/* Exempt-no-fees chip — muted neutral pill rendered when a service is
+   exempt AND has no supply set. Reads as secondary metadata so the row
+   doesn't grow visually for the empty case. */
+.deduction-chip--exempt-no-fees {
+  background: var(--secondary);
+  color: var(--muted-foreground);
+}
+
+/* --- .deductions-supply-row ---
+   The Supply block: heading + toggle in the header row, then (when on) a
+   100px / 1fr grid pairing the `$`-prefixed amount input with the label
+   input. Layout matches `ServicesV1.jsx:598-624`. */
+.deductions-supply-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+
+.deductions-supply-row__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.deductions-supply-row__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.deductions-supply-row__inputs {
+  display: grid;
+  /* Prototype spec'd `100px 1fr` — 100 isn't on the Lacquer 4px scale, but
+     it composes cleanly from on-scale tokens. `--space-12` = 48, plus a
+     second `--space-12`, plus `--space-1` (4) = 100. */
+  grid-template-columns: calc(var(--space-12) + var(--space-12) + var(--space-1)) 1fr;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+  animation: services-edit-panel-fade-in var(--duration-fast) var(--ease-out);
+}
+
+.deductions-supply-row__amount-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-xs);
+}
+
+.deductions-supply-row__amount-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-2) 0;
+  background: transparent;
+  color: var(--foreground);
+  border: none;
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+
+.deductions-supply-row__label-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.deductions-supply-row__label-input {
+  padding: var(--space-2) var(--space-3);
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-xs);
+  font-size: var(--text-sm);
+  outline: none;
+}
+
+/* Live character counter — only rendered when the label is within 8 chars
+   of the 64-char limit (FR-018). 11px is below the scale's `--text-xs`
+   (12px) — we use `--text-xs` for the closest on-scale token, matching the
+   inline-hint helper style. */
+.deductions-supply-row__char-count {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- .deductions-net-to-tech (US4 / T037) ---
+   Live Net-to-tech preview placed below the supply row inside the
+   deductions card. Layout matches `ServicesV1.jsx:626-644`: headline +
+   amount on the left, breakdown lines stacked + right-aligned. The block
+   is read-only and never role-gated (FR-029).
+
+   The amount uses a literal 22px font-size — there's no token at that
+   size in `styles/tokens.css` (the scale jumps `--text-2xl` 20px →
+   `--text-3xl` 24px). Adding a `--text-display-sm` token for a single
+   one-off usage would inflate the design-system surface area for no
+   reuse. The literal is documented inline; the auditor advisory is
+   tracked.
+
+   Tabular numerals + the in-place numeric digits keep the amount + the
+   breakdown columns rock-steady across keystrokes (no layout jitter,
+   no `transition` on the amount — per § 9 of the UI contract). */
+.deductions-net-to-tech {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
+}
+
+.deductions-net-to-tech__primary {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.deductions-net-to-tech__headline {
+  /* 11px isn't on the scale (`--text-xs` is 12px); the headline mirrors
+     the eyebrow pattern documented in `tokens.css` § `.eyebrow`. We use
+     `--text-xs` for the closest on-scale token. */
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+
+.deductions-net-to-tech__amount {
+  /* 22px — prototype headline amount; no on-scale token at this size yet
+     (see block comment above). */
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: var(--tracking-snug);
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "cv02", "cv03";
+}
+
+.deductions-net-to-tech__breakdown {
+  display: flex;
+  flex-direction: column;
+  /* Prototype uses `line-height: 1.6` and zero vertical gap; the breakdown
+     lines stack tightly inside their own line-box. Keep gap: 0 so the
+     prototype's "lh: 1.6" alone controls the vertical rhythm. */
+  gap: 0;
+  text-align: right;
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "cv02", "cv03";
+}
+
+.deductions-net-to-tech__breakdown-line {
+  /* Inherits the parent's color + size; per-line variants override colour
+     for the card-fee + supply rows. */
+  color: inherit;
+}
+
+.deductions-net-to-tech__breakdown-line--card-fee {
+  color: var(--info-foreground);
+}
+
+.deductions-net-to-tech__breakdown-line--supply {
+  color: var(--amber-700);
+}
+
+/* The "service" / "card fee" / supply-label words are rendered slightly
+   faded so the dollar values lead the eye. Matches `ServicesV1.jsx`'s
+   `opacity: 0.6 / 0.7` on the suffix spans. */
+.deductions-net-to-tech__breakdown-suffix {
+  opacity: 0.7;
+}

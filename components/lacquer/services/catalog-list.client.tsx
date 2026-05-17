@@ -318,6 +318,13 @@ export function CatalogList({ roster, selectedId, operatorRole }: CatalogListPro
                     key={svc.id}
                     href={buildRowHref(svc.id, selectedId)}
                     aria-current={svc.id === selectedId ? "true" : undefined}
+                    // 021-services-deductions § Phase 3 / US1: the EditPanel
+                    // intercepts clicks on row anchors via a capture-phase
+                    // listener and routes through the discard guard when the
+                    // current draft is dirty. The attribute carries the
+                    // target service id so the panel can navigate after
+                    // confirmation. No-op when the panel is closed/clean.
+                    data-services-row-link={svc.id}
                     style={{ textDecoration: "none" }}
                   >
                     <CatalogRow service={svc} isSelected={svc.id === selectedId} />

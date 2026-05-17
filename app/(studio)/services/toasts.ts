@@ -90,6 +90,36 @@ export const TOASTS = {
     variant: "destructive",
     text: () => "Something went wrong. Please try again.",
   },
+
+  // 021-services-deductions ----------------------------------------------
+  invalid_card_fee_mode: {
+    variant: "destructive",
+    text: () => "Couldn't save service — card-fee mode is invalid.",
+  },
+  invalid_card_fee_custom: {
+    variant: "destructive",
+    text: () => "Couldn't save service — custom card fee amount is invalid.",
+  },
+  card_fee_custom_too_large: {
+    variant: "destructive",
+    text: () => "Couldn't save service — card fee can't exceed $50.",
+  },
+  invalid_supply_amount: {
+    variant: "destructive",
+    text: () => "Couldn't save service — supply amount is invalid.",
+  },
+  supply_amount_too_large: {
+    variant: "destructive",
+    text: () => "Couldn't save service — supply can't exceed $50.",
+  },
+  invalid_supply_label: {
+    variant: "destructive",
+    text: () => "Couldn't save service — supply label is required.",
+  },
+  supply_label_too_long: {
+    variant: "destructive",
+    text: () => "Couldn't save service — supply label is too long (max 64).",
+  },
 } as const satisfies Record<string, ToastEntry>;
 
 export type ToastKey = keyof typeof TOASTS;
