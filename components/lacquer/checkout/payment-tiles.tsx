@@ -2,12 +2,13 @@
 
 // PaymentTiles — 2×2 grid of payment methods (cash | card | gift | split).
 // Adapted from `design-system/prototypes/transaction/components.jsx`
-// § PaymentTiles. For v1 only `cash` is enabled (FR-017); the other three
-// render with `aria-disabled="true"` and a Lacquer tooltip "Coming soon".
+// § PaymentTiles.
 //
-// The active method is highlighted with the primary ring; disabled tiles
-// are visually muted but remain in the IA so the operator can see what
-// will come later.
+// US2 (feature 015) enables the Card tile when `squareConnected &&
+// devicesAvailable >= 1`. When disabled, the tooltip explains why
+// (connect Square or pair a device). The "Send to Square Terminal · $X"
+// CTA renders below the grid when Card is the picked method, so the
+// operator has a single, sharp affordance to dispatch the payment.
 
 import { Banknote, CreditCard, Gift, SplitSquareHorizontal } from "lucide-react";
 
@@ -18,8 +19,16 @@ export type PaymentMethod = "cash" | "card" | "gift" | "split";
 export type PaymentTilesProps = {
   /** The currently selected method, or null when nothing is picked. */
   value: PaymentMethod | null;
-  /** Fires only when an enabled tile is tapped (currently only "cash"). */
+  /** Fires only when an enabled tile is tapped. */
   onChange: (method: PaymentMethod) => void;
+  /** Whether the salon has an active Square OAuth connection (US2). */
+  squareConnected?: boolean;
+  /** How many paired terminal devices are visible (US2). */
+  devicesAvailable?: number;
+  /** Card-CTA wiring (US2). Renders the "Send to Square Terminal · $X" button below the grid. */
+  amountCents?: number;
+  onSendCard?: () => void;
+  cardSendDisabled?: boolean;
 };
 
 type TileSpec = {
@@ -27,14 +36,8 @@ type TileSpec = {
   label: string;
   icon: typeof Banknote;
   enabled: boolean;
+  disabledReason?: string;
 };
-
-const TILES: ReadonlyArray<TileSpec> = [
-  { id: "cash", label: "Cash", icon: Banknote, enabled: true },
-  { id: "card", label: "Card", icon: CreditCard, enabled: false },
-  { id: "gift", label: "Gift", icon: Gift, enabled: false },
-  { id: "split", label: "Split", icon: SplitSquareHorizontal, enabled: false },
-];
 
 function tileStyle(active: boolean, enabled: boolean): React.CSSProperties {
   return {
@@ -56,7 +59,47 @@ function tileStyle(active: boolean, enabled: boolean): React.CSSProperties {
   };
 }
 
-export function PaymentTiles({ value, onChange }: PaymentTilesProps) {
+function fmt(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+export function PaymentTiles({
+  value,
+  onChange,
+  squareConnected = false,
+  devicesAvailable = 0,
+  amountCents,
+  onSendCard,
+  cardSendDisabled,
+}: PaymentTilesProps) {
+  const cardEnabled = squareConnected && devicesAvailable >= 1;
+  const cardDisabledReason = !squareConnected
+    ? "Connect Square in settings to accept cards"
+    : devicesAvailable < 1
+      ? "No Square Terminal paired — pair one in the Square Dashboard"
+      : undefined;
+
+  const tiles: ReadonlyArray<TileSpec> = [
+    { id: "cash", label: "Cash", icon: Banknote, enabled: true },
+    {
+      id: "card",
+      label: "Card",
+      icon: CreditCard,
+      enabled: cardEnabled,
+      disabledReason: cardDisabledReason,
+    },
+    { id: "gift", label: "Gift", icon: Gift, enabled: false, disabledReason: "Coming soon" },
+    {
+      id: "split",
+      label: "Split",
+      icon: SplitSquareHorizontal,
+      enabled: false,
+      disabledReason: "Coming soon",
+    },
+  ];
+
+  const showCardCta = value === "card" && cardEnabled && onSendCard && amountCents != null;
+
   return (
     <TooltipProvider delayDuration={200}>
       <div
@@ -65,7 +108,7 @@ export function PaymentTiles({ value, onChange }: PaymentTilesProps) {
         role="radiogroup"
         aria-label="Payment method"
       >
-        {TILES.map((t) => {
+        {tiles.map((t) => {
           const Icon = t.icon;
           const active = value === t.id;
 
@@ -87,7 +130,6 @@ export function PaymentTiles({ value, onChange }: PaymentTilesProps) {
             );
           }
 
-          // Disabled: render the tile but wrap in a tooltip explaining why.
           return (
             <Tooltip key={t.id}>
               <TooltipTrigger asChild>
@@ -106,11 +148,38 @@ export function PaymentTiles({ value, onChange }: PaymentTilesProps) {
                   {t.label}
                 </button>
               </TooltipTrigger>
-              <TooltipContent>Coming soon</TooltipContent>
+              <TooltipContent>{t.disabledReason ?? "Coming soon"}</TooltipContent>
             </Tooltip>
           );
         })}
       </div>
+      {showCardCta ? (
+        <button
+          type="button"
+          data-slot="send-to-terminal-button"
+          onClick={onSendCard}
+          disabled={cardSendDisabled}
+          style={{
+            marginTop: "var(--space-2)",
+            width: "100%",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "var(--space-10)",
+            padding: "0 var(--space-4)",
+            background: cardSendDisabled ? "var(--muted)" : "var(--primary)",
+            color: cardSendDisabled ? "var(--muted-foreground)" : "var(--primary-foreground)",
+            border: "none",
+            borderRadius: "var(--radius-sm)",
+            fontSize: "var(--text-base)",
+            fontWeight: 600,
+            cursor: cardSendDisabled ? "not-allowed" : "pointer",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          Send to Square Terminal · {fmt(amountCents!)}
+        </button>
+      ) : null}
     </TooltipProvider>
   );
 }

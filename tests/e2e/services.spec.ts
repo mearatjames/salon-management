@@ -290,7 +290,7 @@ test.describe("US1 (empty-state): zero services in the catalog", () => {
     const snapshot = await c
       .from("services")
       .select(
-        "id, name, category, duration_min, price_cents, color_token, taxable, active, variable_price, price_from_cents, price_to_cents, variable_price_note"
+        "id, name, category, duration_min, price_cents, color_token, taxable, active, variable_price, price_from_cents, price_to_cents, variable_price_note, presets"
       );
     if (snapshot.error) throw new Error(`snapshot read failed: ${snapshot.error.message}`);
     const assignmentsSnapshot = await c

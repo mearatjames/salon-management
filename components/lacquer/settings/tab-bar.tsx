@@ -28,6 +28,9 @@ const TABS: readonly Tab[] = [
   // 012-user-onboarding FR-001 — Onboarding tab sits between Staff and
   // Notifications. The page enforces the owner-only role gate inline.
   { id: "onboarding", label: "Onboarding", href: "/settings/onboarding" },
+  // 015-square-terminal-payment FR-001 — Square tab gates owner/manager
+  // inline on the page; layout stays open.
+  { id: "square", label: "Square", href: "/settings/square" },
   { id: "notifications", label: "Notifications", href: "/settings/notifications" },
   { id: "billing", label: "Billing", href: "/settings/billing" },
 ] as const;

@@ -133,10 +133,14 @@ export type Database = {
         Row: {
           amount_cents: number;
           created_at: string;
+          failure_reason: string | null;
           id: string;
           kind: Database["public"]["Enums"]["payment_kind"];
           method: Database["public"]["Enums"]["payment_method"];
           processed_at: string;
+          raw: Json | null;
+          square_payment_id: string | null;
+          square_terminal_checkout_id: string | null;
           status: Database["public"]["Enums"]["payment_status"];
           taken_by_staff_id: string;
           ticket_id: string;
@@ -145,10 +149,14 @@ export type Database = {
         Insert: {
           amount_cents: number;
           created_at?: string;
+          failure_reason?: string | null;
           id?: string;
           kind: Database["public"]["Enums"]["payment_kind"];
           method: Database["public"]["Enums"]["payment_method"];
           processed_at?: string;
+          raw?: Json | null;
+          square_payment_id?: string | null;
+          square_terminal_checkout_id?: string | null;
           status: Database["public"]["Enums"]["payment_status"];
           taken_by_staff_id: string;
           ticket_id: string;
@@ -157,10 +165,14 @@ export type Database = {
         Update: {
           amount_cents?: number;
           created_at?: string;
+          failure_reason?: string | null;
           id?: string;
           kind?: Database["public"]["Enums"]["payment_kind"];
           method?: Database["public"]["Enums"]["payment_method"];
           processed_at?: string;
+          raw?: Json | null;
+          square_payment_id?: string | null;
+          square_terminal_checkout_id?: string | null;
           status?: Database["public"]["Enums"]["payment_status"];
           taken_by_staff_id?: string;
           ticket_id?: string;
@@ -254,6 +266,92 @@ export type Database = {
           value?: Json;
         };
         Relationships: [];
+      };
+      square_devices: {
+        Row: {
+          created_at: string;
+          friendly_name: string;
+          id: string;
+          is_default: boolean;
+          last_seen_at: string;
+          square_device_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          friendly_name: string;
+          id?: string;
+          is_default?: boolean;
+          last_seen_at?: string;
+          square_device_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          friendly_name?: string;
+          id?: string;
+          is_default?: boolean;
+          last_seen_at?: string;
+          square_device_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      square_oauth: {
+        Row: {
+          access_token_encrypted: string;
+          access_token_expires_at: string;
+          connected_at: string;
+          connected_by_staff_id: string;
+          created_at: string;
+          id: boolean;
+          last_refreshed_at: string | null;
+          merchant_id: string;
+          merchant_name: string;
+          refresh_failed_at: string | null;
+          refresh_token_encrypted: string;
+          scope: string;
+          updated_at: string;
+        };
+        Insert: {
+          access_token_encrypted: string;
+          access_token_expires_at: string;
+          connected_at?: string;
+          connected_by_staff_id: string;
+          created_at?: string;
+          id?: boolean;
+          last_refreshed_at?: string | null;
+          merchant_id: string;
+          merchant_name: string;
+          refresh_failed_at?: string | null;
+          refresh_token_encrypted: string;
+          scope: string;
+          updated_at?: string;
+        };
+        Update: {
+          access_token_encrypted?: string;
+          access_token_expires_at?: string;
+          connected_at?: string;
+          connected_by_staff_id?: string;
+          created_at?: string;
+          id?: boolean;
+          last_refreshed_at?: string | null;
+          merchant_id?: string;
+          merchant_name?: string;
+          refresh_failed_at?: string | null;
+          refresh_token_encrypted?: string;
+          scope?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "square_oauth_connected_by_staff_id_fkey";
+            columns: ["connected_by_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       staff: {
         Row: {
@@ -511,15 +609,49 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      decrypt_square_token: { Args: { ciphertext: string }; Returns: string };
+      encrypt_square_token: {
+        Args: { plain: string; vault_secret_name: string };
+        Returns: string;
+      };
       next_anon_counter: { Args: never; Returns: number };
+      pos_record_card_payment: {
+        Args: {
+          p_failure_reason: string;
+          p_new_status: Database["public"]["Enums"]["payment_status"];
+          p_payment_id: string;
+          p_raw: Json;
+          p_square_payment_id: string;
+          p_tip_cents: number;
+        };
+        Returns: {
+          ticket_flipped_to_paid: boolean;
+          ticket_id: string;
+        }[];
+      };
       pos_take_cash: {
         Args: { p_operator: string; p_ticket_id: string };
         Returns: string;
       };
+      read_square_oauth_decrypted: {
+        Args: { vault_secret_name: string };
+        Returns: {
+          access_token: string;
+          access_token_expires_at: string;
+          connected_at: string;
+          connected_by_staff_id: string;
+          last_refreshed_at: string;
+          merchant_id: string;
+          merchant_name: string;
+          refresh_failed_at: string;
+          refresh_token: string;
+          scope: string;
+        }[];
+      };
     };
     Enums: {
       payment_kind: "payment";
-      payment_method: "cash";
+      payment_method: "cash" | "card";
       payment_status: "succeeded" | "pending" | "failed";
       ticket_item_kind: "service" | "discount";
       ticket_status: "open" | "paid" | "discarded";
@@ -652,7 +784,7 @@ export const Constants = {
   public: {
     Enums: {
       payment_kind: ["payment"],
-      payment_method: ["cash"],
+      payment_method: ["cash", "card"],
       payment_status: ["succeeded", "pending", "failed"],
       ticket_item_kind: ["service", "discount"],
       ticket_status: ["open", "paid", "discarded"],

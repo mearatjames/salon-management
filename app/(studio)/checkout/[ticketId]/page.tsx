@@ -49,6 +49,18 @@ export default async function CheckoutTicketPage({
     .eq("id", ticketId)
     .maybeSingle();
 
+  // US2 (015 — Square Terminal): the checkout screen needs to know whether
+  // Square is connected, which device is default, and whether reconnect
+  // is required. These read from the singleton oauth row + paired devices.
+  const squareOauthPromise = supabase
+    .from("square_oauth")
+    .select("merchant_id, refresh_failed_at")
+    .eq("id", true)
+    .maybeSingle();
+  const squareDevicesPromise = supabase
+    .from("square_devices")
+    .select("square_device_id, friendly_name, is_default");
+
   const itemsPromise = supabase
     .from("ticket_items")
     .select(
@@ -81,16 +93,27 @@ export default async function CheckoutTicketPage({
   const salonAddressPromise = getSetting<string>("salon.address");
   const salonPhonePromise = getSetting<string>("salon.phone");
 
-  const [ticketRes, itemsRes, staffRes, servicesRes, salonName, salonAddress, salonPhone] =
-    await Promise.all([
-      ticketPromise,
-      itemsPromise,
-      staffPromise,
-      servicesPromise,
-      salonNamePromise,
-      salonAddressPromise,
-      salonPhonePromise,
-    ]);
+  const [
+    ticketRes,
+    itemsRes,
+    staffRes,
+    servicesRes,
+    salonName,
+    salonAddress,
+    salonPhone,
+    squareOauthRes,
+    squareDevicesRes,
+  ] = await Promise.all([
+    ticketPromise,
+    itemsPromise,
+    staffPromise,
+    servicesPromise,
+    salonNamePromise,
+    salonAddressPromise,
+    salonPhonePromise,
+    squareOauthPromise,
+    squareDevicesPromise,
+  ]);
 
   const salonInfo = {
     name: salonName ?? "Tang Nails",
@@ -163,11 +186,26 @@ export default async function CheckoutTicketPage({
   const servicesById = new Map<string, (typeof servicesRes.data)[number]>();
   for (const s of servicesRes.data ?? []) servicesById.set(s.id, s);
 
+  // US2 (015): derive Square props for the checkout screen.
+  const squareConnected = Boolean(squareOauthRes.data);
+  const requiresReconnect = Boolean(squareOauthRes.data?.refresh_failed_at);
+  const pairedDevices = (squareDevicesRes.data ?? []).map((d) => ({
+    squareDeviceId: d.square_device_id,
+    friendlyName: d.friendly_name,
+    isDefault: d.is_default ?? false,
+  }));
+  const defaultDevice = pairedDevices.find((d) => d.isDefault) ?? null;
+
   // status === 'open' — render the cart island with the loaded snapshot.
   return (
     <CheckoutScreen
       ticketId={ticket.id}
       salonInfo={salonInfo}
+      squareConnected={squareConnected}
+      defaultDeviceId={defaultDevice?.squareDeviceId ?? null}
+      defaultDeviceFriendlyName={defaultDevice?.friendlyName ?? null}
+      pairedDevices={pairedDevices}
+      requiresReconnect={requiresReconnect}
       initialItems={(itemsRes.data ?? [])
         // US3 (T031): both service AND discount rows now surface. Discount
         // rows have ref_id=null / assigned_staff_id=null (CHECK-enforced in

@@ -67,11 +67,19 @@ export type AuditAction =
   | "line.price_set"
   | "discount.added"
   | "discount.removed"
-  | "bill.emailed";
+  | "bill.emailed"
+  // Added by feature 015 (entity_type "payment"/"integration")
+  | "payment.failed"
+  | "payment.cancelled"
+  | "integration.square_connected"
+  | "integration.square_disconnected"
+  | "integration.square_token_refreshed"
+  | "integration.square_device_renamed"
+  | "integration.square_device_default_set";
 
 export function deriveEntityType(
   action: AuditAction
-): "service" | "ticket" | "payment" | "staff" | "auth" | "user" {
+): "service" | "ticket" | "payment" | "staff" | "auth" | "user" | "integration" {
   if (action.startsWith("user.")) return "user";
   if (action.startsWith("ticket.")) return "ticket";
   if (action.startsWith("payment.")) return "payment";
@@ -82,6 +90,8 @@ export function deriveEntityType(
   if (action.startsWith("line.")) return "ticket";
   if (action.startsWith("discount.")) return "ticket";
   if (action.startsWith("bill.")) return "ticket";
+  // Feature 015 — Square OAuth + device-management verbs.
+  if (action.startsWith("integration.")) return "integration";
   if (
     action === "staff.added" ||
     action === "staff.updated" ||
