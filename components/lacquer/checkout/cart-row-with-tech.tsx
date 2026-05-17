@@ -24,12 +24,46 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 export type CartLineView = {
   /** May be a temp id during optimistic insert; the row is keyed by this. */
   id: string;
-  serviceId: string;
+  /** US3 widening: `null` for discount rows (no underlying service). */
+  serviceId: string | null;
   name: string;
+  /** Negative for discount rows. */
   unitPriceCents: number;
   qty: number;
+  /** Always false for discount rows. */
   priceUnconfirmed: boolean;
-  assignedStaffId: string;
+  /** US3 widening: `null` for discount rows (CHECK-enforced server-side). */
+  assignedStaffId: string | null;
+  /**
+   * Variable-price metadata snapshotted from the source service at insert
+   * time. Carries the bounds, the operator note, and any preset chips —
+   * everything the `<PriceSheet/>` needs to render the context note and
+   * the quick-pick row without a second round trip. `null` for lines
+   * where the source service is fixed-price OR for rows whose tile data
+   * is not in scope (e.g., the initial server-loaded items list, which
+   * page.tsx hydrates from a partial select; the operator can still
+   * override the price — the sheet just renders without preset chips
+   * and uses the generic "Adjust price for this sale" context note).
+   */
+  serviceMeta?: {
+    variable: boolean;
+    priceFromCents: number | null;
+    priceToCents: number | null;
+    variableNote: string | null;
+    presets: Array<{ label: string; price_cents: number }> | null;
+  } | null;
+  // ----------------------------------------------------------------------
+  // US3 (T030/T031) additions for discount-row rendering.
+  // ----------------------------------------------------------------------
+  /** Row kind discriminator. Service rows render the existing tech-chip layout;
+   *  discount rows render the negative-amount layout (no chip, no price edit). */
+  kind: "service" | "discount";
+  /** Operator-entered note (≤ 80 chars). Present on discount rows when the
+   *  operator filled the note field; null otherwise. Always null on service rows. */
+  note: string | null;
+  /** Whole-percent value (1..100) for percent-shape discounts; null for flat
+   *  discounts AND for all service rows. */
+  discountPct: number | null;
 };
 
 type ActiveStaff = {
@@ -55,6 +89,8 @@ export type CartRowWithTechProps = {
 };
 
 function fmtMoney(cents: number): string {
+  // US3: discount-row totals are negative; render as "-$X.XX" not "$-X.XX".
+  if (cents < 0) return `-$${(Math.abs(cents) / 100).toFixed(2)}`;
   return `$${(cents / 100).toFixed(2)}`;
 }
 
@@ -72,13 +108,103 @@ export function CartRowWithTech({
   onEditPrice,
   onSetTech,
 }: CartRowWithTechProps) {
-  const staff = staffById.get(line.assignedStaffId);
-  const lineTotalCents = line.unitPriceCents * line.qty;
-  const needsPrice = line.priceUnconfirmed;
   // Controlled Popover state so the item-pick handler can dismiss the
   // overlay after firing `onSetTech` (Radix Content does NOT auto-close on
-  // inner button clicks).
+  // inner button clicks). Declared at the top of the component so the hook
+  // order stays stable across the kind='service' vs kind='discount' branches
+  // (react-hooks/rules-of-hooks).
   const [popoverOpen, setPopoverOpen] = useState(false);
+
+  // ----------------------------------------------------------------------
+  // US3 (T030): discount-row branch. Discount rows render WITHOUT the tech
+  // chip, WITHOUT a price-edit button (setLinePrice throws on kind='discount'
+  // — caught in Phase 3), and with the amount in the destructive token.
+  // Remove is wired to the parent's `onRemove` callback (the parent picks
+  // the right Server Action — `removeDiscountLine` for kind='discount',
+  // `removeLine` for kind='service' — based on the line.kind it dispatched).
+  // ----------------------------------------------------------------------
+  if (line.kind === "discount") {
+    const amountCents = line.unitPriceCents * line.qty;
+    return (
+      <div
+        data-slot="cart-line"
+        data-line-id={line.id}
+        data-line-kind="discount"
+        data-needs-price="false"
+        className="checkout-line"
+      >
+        <div style={{ minWidth: 0, flex: "1 1 auto" }}>
+          <div
+            className="checkout-line-name"
+            data-slot="cart-line-name"
+            style={{
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              color: "var(--destructive)",
+            }}
+          >
+            {line.name}
+          </div>
+          {line.note ? (
+            <div
+              data-slot="cart-line-note"
+              style={{
+                marginTop: "var(--space-1)",
+                fontSize: "var(--text-xs)",
+                color: "var(--muted-foreground)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {line.note}
+            </div>
+          ) : null}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+          <span
+            data-slot="cart-line-price"
+            style={{
+              padding: "var(--space-1) var(--space-2)",
+              color: "var(--destructive)",
+              fontSize: "var(--text-sm)",
+              fontWeight: 500,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {fmtMoney(amountCents)}
+          </span>
+          <button
+            type="button"
+            onClick={onRemove}
+            data-slot="cart-line-remove"
+            aria-label={`Remove ${line.name} from cart`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: "var(--space-6)",
+              height: "var(--space-6)",
+              background: "transparent",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-sm)",
+              cursor: "pointer",
+              color: "var(--muted-foreground)",
+            }}
+          >
+            <X size={16} strokeWidth={1.5} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Service-row path (unchanged from US1/US2).
+  const staff = line.assignedStaffId != null ? staffById.get(line.assignedStaffId) : undefined;
+  const lineTotalCents = line.unitPriceCents * line.qty;
+  const needsPrice = line.priceUnconfirmed;
 
   // Sort the staff roster by display_name for a stable popover order.
   // (The Map insertion order from the caller is not guaranteed alphabetical.)
@@ -90,7 +216,8 @@ export function CartRowWithTech({
     <div
       data-slot="cart-line"
       data-line-id={line.id}
-      data-service-id={line.serviceId}
+      data-line-kind="service"
+      data-service-id={line.serviceId ?? undefined}
       data-needs-price={needsPrice ? "true" : "false"}
       className="checkout-line"
     >

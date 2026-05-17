@@ -184,6 +184,536 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ==========================================================================
+   013-cart-polish — Price sheet (modal). Adapted 1:1 from
+   `design-system/prototypes/transaction/transaction.css` § "Price sheet
+   (modal)". Every value resolves to a Lacquer token; pixel/measure
+   numbers map to the 4px spacing scale.
+   ========================================================================== */
+
+.tx-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in oklch, var(--foreground) 45%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: var(--space-5);
+  animation: txfade var(--duration-fast) var(--ease-out);
+}
+
+@keyframes txfade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.tx-sheet {
+  background: var(--card);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 480px;
+  max-height: calc(100% - var(--space-10));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: txrise var(--duration-base) var(--ease-out);
+}
+
+@keyframes txrise {
+  from {
+    transform: translateY(var(--space-3));
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.tx-sheet-h {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tx-sheet-body {
+  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  overflow: auto;
+}
+
+.tx-sheet-foot {
+  padding: var(--space-3) var(--space-5) var(--space-4);
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  background: var(--card);
+}
+
+.tx-bigprice-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in oklch, var(--primary) 5%, var(--card));
+  border: 2px dashed color-mix(in oklch, var(--primary) 35%, var(--border));
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-6xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.tx-bigprice-btn:hover {
+  border-color: var(--primary);
+  background: color-mix(in oklch, var(--primary) 8%, var(--card));
+}
+
+.tx-bigprice-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--primary);
+  font-variant-numeric: normal;
+}
+
+.tx-pad-pop {
+  background: color-mix(in oklch, var(--muted) 60%, var(--card));
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+}
+
+.tx-presets {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-2);
+}
+
+.tx-preset {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-family: var(--font-sans);
+}
+
+.tx-preset:hover {
+  border-color: var(--ring);
+}
+
+.tx-preset.active {
+  border-color: var(--primary);
+  background: color-mix(in oklch, var(--primary) 7%, transparent);
+}
+
+.tx-preset .lbl {
+  font-weight: 500;
+  font-size: var(--text-sm);
+  color: var(--foreground);
+}
+
+.tx-preset .pr {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.tx-quickadj {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.tx-quickadj button {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
+.tx-quickadj button:hover {
+  border-color: var(--ring);
+  background: var(--accent);
+}
+
+.tx-stepper-btn {
+  width: var(--space-6);
+  height: var(--space-6);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--card);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+
+.tx-stepper-btn:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.tx-btn {
+  height: var(--space-10);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: none;
+  font-size: var(--text-base);
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.tx-btn:hover {
+  background: color-mix(in oklch, var(--primary) 92%, black);
+}
+
+.tx-btn:disabled {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  cursor: not-allowed;
+}
+
+.tx-btn.secondary {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  border: 1px solid var(--border);
+}
+
+.tx-btn.secondary:hover {
+  background: var(--accent);
+}
+
+.tx-btn.ghost {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.tx-btn.ghost:hover {
+  background: var(--accent);
+}
+
+.tx-link {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-sans);
+  text-decoration: underline;
+  text-underline-offset: var(--space-1);
+}
+
+.tx-numpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+}
+
+.tx-numkey {
+  height: var(--space-16);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  border: 1px solid var(--border);
+  font-size: var(--text-2xl);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  color: var(--foreground);
+}
+
+.tx-numkey:hover {
+  background: var(--accent);
+}
+
+.tx-numkey:active {
+  background: color-mix(in oklch, var(--accent) 70%, var(--primary));
+}
+
+.tx-numkey.fn {
+  background: var(--muted);
+}
+
+/* ==========================================================================
+   013-cart-polish — Bill preview sheet (US4). Adapted 1:1 from
+   `design-system/prototypes/transaction/transaction.css` § "Bill preview".
+   Wider variant of the .tx-sheet family — uses the shared
+   `.tx-sheet-backdrop` for the overlay, then a `.tx-bill-sheet` that
+   reads as a slightly larger sibling of `.tx-sheet`. Every value
+   resolves to a Lacquer token; pixel/measure numbers map to the 4px
+   spacing scale. (The print stylesheet at the bottom of this file
+   targets `.lacquer-bill-doc` so the bill doc — and only the bill doc —
+   appears in the print preview.)
+   ========================================================================== */
+
+.tx-bill-sheet {
+  background: var(--card);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 460px;
+  max-height: calc(100% - var(--space-8));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: txrise var(--duration-base) var(--ease-out);
+}
+
+.tx-bill-sheet-h {
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--card);
+}
+
+.tx-bill-sheet-foot {
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  background: var(--card);
+}
+
+/* The actual printable document — paper-textured, framed in a scrolling
+   wrapper inside the sheet. Under @media print (see bottom of this file)
+   the wrapper chrome is hidden and the `.lacquer-bill-doc` lays out at
+   the page origin in physical mm units. */
+.tx-bill-doc-wrap {
+  flex: 1;
+  overflow: auto;
+  background: var(--muted);
+  padding: var(--space-4);
+}
+
+.lacquer-bill-doc,
+.tx-bill-doc {
+  background: var(--card);
+  border-radius: var(--radius-xs);
+  padding: var(--space-5) var(--space-6) var(--space-4);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  color: var(--foreground);
+  line-height: var(--leading-normal, 1.5);
+}
+
+.tx-bill-mast {
+  text-align: center;
+  margin-bottom: var(--space-3);
+}
+
+.tx-bill-mast .logo {
+  font-family: var(--font-sans);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+}
+
+.tx-bill-mast .addr {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  margin-top: var(--space-1);
+}
+
+.tx-bill-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1) var(--space-4);
+  font-size: var(--text-xs);
+}
+
+.tx-bill-meta > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.tx-bill-meta .lbl {
+  color: var(--muted-foreground);
+}
+
+.tx-bill-meta .val {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+.tx-bill-divider {
+  border-top: 1px solid var(--border);
+  margin: var(--space-3) 0;
+}
+
+.tx-bill-divider.dashed {
+  border-top-style: dashed;
+}
+
+.tx-bill-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tx-bill-row {
+  display: grid;
+  grid-template-columns: var(--space-6) 1fr auto;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  align-items: start;
+}
+
+.tx-bill-row .qty {
+  color: var(--muted-foreground);
+}
+
+.tx-bill-row .nm {
+  color: var(--foreground);
+}
+
+.tx-bill-row .amt {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+.tx-bill-totals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+}
+
+.tx-bill-totals .row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.tx-bill-totals .row.total {
+  font-weight: 600;
+  font-size: var(--text-sm);
+  padding-top: var(--space-1);
+  margin-top: var(--space-1);
+  border-top: 1px dashed var(--border);
+}
+
+.tx-bill-tip-block {
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in oklch, var(--primary) 5%, transparent);
+  border-radius: var(--radius-xs);
+  border: 1px dashed color-mix(in oklch, var(--primary) 25%, var(--border));
+}
+
+.tx-bill-tip-block .lbl {
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--primary);
+  margin-bottom: var(--space-1);
+}
+
+.tx-bill-tip-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  padding: var(--space-1) 0;
+}
+
+.tx-bill-tip-row .t {
+  color: var(--foreground);
+}
+
+.tx-bill-write {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+}
+
+.tx-bill-write .row {
+  display: grid;
+  grid-template-columns: var(--space-16) 1fr;
+  align-items: end;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+
+.tx-bill-write .row.sig {
+  grid-template-columns: var(--space-16) 1fr;
+}
+
+.tx-bill-write .line {
+  height: var(--space-3);
+  border-bottom: 1px solid var(--muted-foreground);
+}
+
+.tx-bill-write .line.wide {
+  height: var(--space-5);
+}
+
+.tx-bill-foot {
+  margin-top: var(--space-3);
+  text-align: center;
+  font-size: var(--text-xs);
+  color: var(--foreground);
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
 /* Receipt print stylesheet (FR-024, FR-025).
    The receipt route at `/checkout/[ticketId]/receipt/` already breaks out
    of the studio shell via its local `layout.tsx` override, so the
@@ -205,5 +735,33 @@
     max-width: 80mm;
     margin: 0 auto;
     /* tabular numerals stay applied on inline spans; nothing extra needed. */
+  }
+}
+
+/* Bill preview print path (US4 / T039 / research.md § R13). Independent
+   of the receipt-route print rules above — this one targets the bill
+   sheet's `.lacquer-bill-doc` overlay which can open inside the studio
+   shell. Hide everything else on the page, then re-show the bill doc and
+   reposition it at the page origin in physical mm units (the ONLY
+   correct unit for print sizing — an intentional exception to the 4px
+   on-screen spacing scale per CLAUDE.md / Principle I). The two @media
+   print blocks coexist: `.studio-chrome { display: none }` from the
+   receipt path beats `visibility` (display:none removes the box
+   entirely), so the receipt route is unaffected. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .lacquer-bill-doc,
+  .lacquer-bill-doc * {
+    visibility: visible;
+  }
+  .lacquer-bill-doc {
+    position: absolute;
+    inset: 0;
+    padding: 12mm;
+    max-width: 80mm;
+    background: white;
+    box-shadow: none;
   }
 }

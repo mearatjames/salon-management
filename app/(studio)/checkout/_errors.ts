@@ -14,7 +14,18 @@ export type CheckoutActionError =
   | { code: "TICKET_EMPTY" }
   | { code: "STAFF_NOT_ACTIVE" }
   | { code: "SERVICE_ARCHIVED" }
-  | { code: "CASH_PAYMENT_FAILED"; pgError?: string };
+  | { code: "CASH_PAYMENT_FAILED"; pgError?: string }
+  // Added by feature 013-cart-polish
+  | { code: "INVALID_PRICE" }
+  | {
+      code: "DISCOUNT_INVALID";
+      reason:
+        | "flat_value_non_positive"
+        | "percent_out_of_range"
+        | "note_too_long"
+        | "not_a_discount_line";
+    }
+  | { code: "EMAIL_ADDRESS_INVALID" };
 
 export abstract class CheckoutError extends Error {
   abstract readonly code: CheckoutActionError["code"];
@@ -75,5 +86,42 @@ export class CashPaymentFailedError extends CheckoutError {
     super(message);
     this.name = "CashPaymentFailedError";
     this.pgError = pgError;
+  }
+}
+
+// ----------------------------------------------------------------------
+// Feature 013-cart-polish — variable-price / discount / bill-email errors.
+// Contract: `specs/013-cart-polish/contracts/server-actions.md § Errors`.
+// ----------------------------------------------------------------------
+
+export class InvalidPriceError extends CheckoutError {
+  readonly code = "INVALID_PRICE" as const;
+  constructor(message = "invalid price") {
+    super(message);
+    this.name = "InvalidPriceError";
+  }
+}
+
+export type DiscountInvalidReason =
+  | "flat_value_non_positive"
+  | "percent_out_of_range"
+  | "note_too_long"
+  | "not_a_discount_line";
+
+export class DiscountInvalidError extends CheckoutError {
+  readonly code = "DISCOUNT_INVALID" as const;
+  readonly reason: DiscountInvalidReason;
+  constructor(message: string, reason: DiscountInvalidReason) {
+    super(message);
+    this.reason = reason;
+    this.name = "DiscountInvalidError";
+  }
+}
+
+export class EmailAddressInvalidError extends CheckoutError {
+  readonly code = "EMAIL_ADDRESS_INVALID" as const;
+  constructor(message = "email address is invalid") {
+    super(message);
+    this.name = "EmailAddressInvalidError";
   }
 }

@@ -19,6 +19,12 @@ export type ServiceTileService = {
   price_cents: number;
   variable_price: boolean;
   price_from_cents: number | null;
+  // 013-cart-polish additions — surfaced on the tile for forwarding into
+  // the cart-line view so the PriceSheet can render bounds + presets
+  // without a second round trip when the operator opens the sheet.
+  price_to_cents?: number | null;
+  variable_price_note?: string | null;
+  presets?: Array<{ label: string; price_cents: number }> | null;
 };
 
 export type ServiceTilesProps = {
