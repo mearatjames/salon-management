@@ -19,6 +19,7 @@ import { ArrowLeft } from "lucide-react";
 
 import type { CashHistoryDetail } from "@/lib/end-of-day/history";
 import { EditForm } from "@/components/lacquer/eod/history/edit-form.client";
+import { ChangeHistory } from "@/components/lacquer/eod/history/change-history";
 
 export type DetailViewProps = {
   detail: CashHistoryDetail;
@@ -40,6 +41,37 @@ const TIME_FMT = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
   hour12: true,
 });
+
+// Combined "h:mm a · MMM D" formatter for the "Last edited" line under
+// the breakdown card. Intl returns "8:32 PM, May 15"; we re-join with a
+// middle-dot to match the design prototype's rhythm.
+const LAST_EDITED_FMT = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+  month: "short",
+  day: "numeric",
+});
+
+function formatLastEdited(iso: string): string {
+  const d = new Date(iso);
+  const parts = LAST_EDITED_FMT.formatToParts(d);
+  let time = "";
+  let date = "";
+  let mode: "time" | "date" = "time";
+  for (const p of parts) {
+    if (p.type === "month" || p.type === "day") {
+      mode = "date";
+    }
+    if (mode === "time") {
+      time += p.value;
+    } else {
+      date += p.value;
+    }
+  }
+  time = time.replace(/,\s*$/, "");
+  return `${time.trim()} · ${date.trim()}`;
+}
 
 function fmt(cents: number): string {
   return (cents / 100).toFixed(2);
@@ -124,6 +156,13 @@ export function DetailView({ detail, edit = false }: DetailViewProps) {
             )}
           </div>
 
+          {detail.audits.length > 0 ? (
+            <div className="eod-detail-last-edited" data-slot="eod-detail-last-edited">
+              Last edited by {detail.audits[0]!.editorDisplayName || "—"} at{" "}
+              {formatLastEdited(detail.audits[0]!.createdAt)}
+            </div>
+          ) : null}
+
           <div className="eod-detail-actions">
             <Link
               href={`/end-of-day/history/${session.sessionId}?edit=1`}
@@ -133,6 +172,8 @@ export function DetailView({ detail, edit = false }: DetailViewProps) {
               Edit count
             </Link>
           </div>
+
+          <ChangeHistory audits={detail.audits} />
         </>
       )}
     </div>

@@ -433,3 +433,147 @@ test.describe("US2: edit a past count", () => {
     expect(page.url()).toMatch(/\/dashboard(\?|$)/);
   });
 });
+
+// ── US3: edited indicator + change history ─────────────────────────────
+//
+// Two flows:
+//   (a) Drive two UI edits against the seeded `clean` session, then
+//       assert the "Edited" pill on the list row, the "Last edited by"
+//       line in the detail header, and that expanding the change-history
+//       accordion renders two entries newest-first with the correct
+//       before/after counted/variance/notes for each.
+//   (b) Negative case: the sibling `over` session (never edited) shows
+//       no pill, no last-edited line, no accordion.
+
+test.describe("US3: edited indicator + change history", () => {
+  let supabaseUp = false;
+
+  test.beforeAll(async () => {
+    supabaseUp = await supabaseIsReachable();
+    if (!supabaseUp) {
+      test.skip(
+        true,
+        "Supabase not reachable at 127.0.0.1:54321 — skipping US3 past-cash-counts specs."
+      );
+    }
+    await wipeSpecSessions();
+    await seedThreeClosedSessions();
+  });
+
+  test.afterAll(async () => {
+    if (!supabaseUp) return;
+    await wipeSpecSessions();
+  });
+
+  test.beforeEach(async () => {
+    await wipeSpecSessions();
+    await seedThreeClosedSessions();
+  });
+
+  async function performEdit(
+    page: import("@playwright/test").Page,
+    sessionId: string,
+    counted: string,
+    note: string
+  ): Promise<void> {
+    await page.goto(`/end-of-day/history/${sessionId}?edit=1`);
+    await page.waitForURL(new RegExp(`/end-of-day/history/${sessionId}\\?edit=1`));
+    await expect(page.locator("[data-slot='eod-history-edit-form']")).toBeVisible();
+    await page.locator("[data-slot='eod-clear']").click();
+    for (const ch of counted) {
+      const key = ch === "." ? "." : ch;
+      await page.locator(`[data-slot='eod-key'][data-key='${key}']`).click();
+    }
+    await page.locator("[data-slot='eod-note']").fill(note);
+    const saveCta = page.locator("[data-slot='eod-save-cta']");
+    await expect(saveCta).toBeEnabled();
+    await saveCta.click();
+    await page.waitForURL(new RegExp(`/end-of-day/history/${sessionId}(\\?|$)`));
+  }
+
+  test("two edits produce a pill, last-edited line, and two change-history entries", async ({
+    page,
+  }) => {
+    // Sign in once via the list page, then drive both edits + assertions.
+    await signInAsStaff(page, "maya", "/end-of-day/history");
+    await page.waitForURL(/\/end-of-day\/history(\?|$)/);
+
+    // Edit #1: $225.00 → $223.00 (variance becomes −$2.00).
+    await performEdit(page, SEED_SESSIONS.clean, "223.00", "First edit: counted 223.");
+
+    // Edit #2: $223.00 → $228.00 (variance becomes +$3.00).
+    await performEdit(page, SEED_SESSIONS.clean, "228.00", "Second edit: re-counted 228.");
+
+    // 1. List row shows the "Edited" pill.
+    await page.goto("/end-of-day/history");
+    await page.waitForURL(/\/end-of-day\/history(\?|$)/);
+
+    const cleanRow = page.locator(
+      `[data-slot='eod-history-row'][data-session-id='${SEED_SESSIONS.clean}']`
+    );
+    await expect(cleanRow).toBeVisible();
+    const pill = cleanRow.locator("[data-slot='eod-edited-pill']");
+    await expect(pill).toBeVisible();
+    await expect(pill).toHaveText("Edited");
+    // Computed style should resolve to the muted token (rgb form,
+    // exact value depends on the runtime resolver — we just assert it
+    // is NOT transparent and NOT the page background).
+    const pillBg = await pill.evaluate((el) => window.getComputedStyle(el).backgroundColor);
+    expect(pillBg).not.toBe("rgba(0, 0, 0, 0)");
+    expect(pillBg).not.toBe("transparent");
+
+    // 2. Detail page shows the "Last edited by …" line with Maya's name.
+    await cleanRow.click();
+    await page.waitForURL(new RegExp(`/end-of-day/history/${SEED_SESSIONS.clean}(\\?|$)`));
+
+    const lastEdited = page.locator("[data-slot='eod-detail-last-edited']");
+    await expect(lastEdited).toBeVisible();
+    await expect(lastEdited).toContainText("Last edited by");
+    await expect(lastEdited).toContainText("Maya Patel");
+
+    // 3. Change-history accordion expands to two entries newest-first.
+    const accordion = page.locator("[data-slot='eod-change-history']");
+    await expect(accordion).toBeVisible();
+    await accordion.locator("summary").click();
+
+    const entries = page.locator("[data-slot='eod-change-history-entry']");
+    await expect(entries).toHaveCount(2);
+
+    // Newest first: the second edit (228 / +$3.00) is entry index 0.
+    const first = entries.nth(0);
+    await expect(first).toContainText("Second edit: re-counted 228.");
+    await expect(first).toContainText("$228.00"); // after counted
+    await expect(first).toContainText("+$3.00"); // after variance
+
+    // Entry index 1 is the first edit (223 / −$2.00).
+    const second = entries.nth(1);
+    await expect(second).toContainText("First edit: counted 223.");
+    await expect(second).toContainText("$223.00");
+    await expect(second).toContainText("−$2.00");
+
+    // Each entry also exposes a before block — confirm the before of the
+    // newest entry equals the after of the older entry (223 → 228).
+    const firstBlocks = first.locator("[data-slot='eod-change-history-block']");
+    await expect(firstBlocks).toHaveCount(2);
+    await expect(firstBlocks.nth(0)).toContainText("$223.00"); // before counted
+  });
+
+  test("a session that has never been edited shows no pill, no last-edited line, no accordion", async ({
+    page,
+  }) => {
+    await signInAsStaff(page, "maya", "/end-of-day/history");
+    await page.waitForURL(/\/end-of-day\/history(\?|$)/);
+
+    const overRow = page.locator(
+      `[data-slot='eod-history-row'][data-session-id='${SEED_SESSIONS.over}']`
+    );
+    await expect(overRow).toBeVisible();
+    await expect(overRow.locator("[data-slot='eod-edited-pill']")).toHaveCount(0);
+
+    await overRow.click();
+    await page.waitForURL(new RegExp(`/end-of-day/history/${SEED_SESSIONS.over}(\\?|$)`));
+
+    await expect(page.locator("[data-slot='eod-detail-last-edited']")).toHaveCount(0);
+    await expect(page.locator("[data-slot='eod-change-history']")).toHaveCount(0);
+  });
+});

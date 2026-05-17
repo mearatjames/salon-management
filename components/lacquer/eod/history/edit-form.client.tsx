@@ -239,7 +239,7 @@ export function EditForm({
         )}
       </div>
 
-      <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ marginTop: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
         <button
           type="button"
           data-slot="eod-save-cta"
@@ -271,7 +271,7 @@ export function EditForm({
             width: "100%",
             height: 40,
             border: "1px solid var(--border)",
-            borderRadius: 10,
+            borderRadius: 12,
             background: "transparent",
             color: "var(--foreground)",
             fontFamily: "var(--font-sans)",
