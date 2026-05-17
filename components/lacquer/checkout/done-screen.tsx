@@ -16,13 +16,24 @@ import { Check } from "lucide-react";
 
 export type DoneScreenProps = {
   chargedCents: number;
+  /**
+   * Payment method that closed the ticket. Drives the "Paid by …" line.
+   * Defaults to "cash" for backwards-compatibility with the original
+   * cash-only callsite; the card flow (015 Square Terminal) passes "card".
+   */
+  method?: "cash" | "card";
 };
 
 function fmt(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-export function DoneScreen({ chargedCents }: DoneScreenProps) {
+const METHOD_LABEL: Record<NonNullable<DoneScreenProps["method"]>, string> = {
+  cash: "Paid by cash",
+  card: "Paid by card",
+};
+
+export function DoneScreen({ chargedCents, method = "cash" }: DoneScreenProps) {
   return (
     <div className="checkout-done" data-slot="done-screen">
       <span
@@ -52,7 +63,7 @@ export function DoneScreen({ chargedCents }: DoneScreenProps) {
           }}
           data-slot="done-method-line"
         >
-          Paid by cash
+          {METHOD_LABEL[method]}
         </div>
       </div>
       <Link

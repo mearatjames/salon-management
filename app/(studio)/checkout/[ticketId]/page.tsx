@@ -61,6 +61,20 @@ export default async function CheckoutTicketPage({
     .from("square_devices")
     .select("square_device_id, friendly_name, is_default");
 
+  // For the paid render branch: surface "Paid by {method}" on the Done
+  // screen. Pick the most recent succeeded payment row for this ticket;
+  // for a single-method close that's authoritative. (Split-tender is out
+  // of scope per spec; if/when added this query would need to summarize
+  // the mix instead of picking one.)
+  const lastSucceededPaymentPromise = supabase
+    .from("payments")
+    .select("method")
+    .eq("ticket_id", ticketId)
+    .eq("status", "succeeded")
+    .order("processed_at", { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+
   const itemsPromise = supabase
     .from("ticket_items")
     .select(
@@ -103,6 +117,7 @@ export default async function CheckoutTicketPage({
     salonPhone,
     squareOauthRes,
     squareDevicesRes,
+    lastSucceededPaymentRes,
   ] = await Promise.all([
     ticketPromise,
     itemsPromise,
@@ -113,6 +128,7 @@ export default async function CheckoutTicketPage({
     salonPhonePromise,
     squareOauthPromise,
     squareDevicesPromise,
+    lastSucceededPaymentPromise,
   ]);
 
   const salonInfo = {
@@ -130,9 +146,11 @@ export default async function CheckoutTicketPage({
   const ticket = ticketRes.data;
 
   if (ticket.status === "paid") {
+    const paidByMethod: "cash" | "card" =
+      lastSucceededPaymentRes.data?.method === "card" ? "card" : "cash";
     return (
       <div className="checkout-shell" data-slot="checkout-paid">
-        <DoneScreen chargedCents={ticket.total_cents} />
+        <DoneScreen chargedCents={ticket.total_cents} method={paidByMethod} />
       </div>
     );
   }
