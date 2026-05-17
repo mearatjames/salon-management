@@ -90,8 +90,9 @@ describe("lib/square/terminal — createCheckout", () => {
     // Square caps the key at 64 chars; we hash to fit. Same (ticket, payment)
     // ⇒ same key (idempotency contract preserved).
     expect(callArg.idempotencyKey).toBe(buildIdempotencyKey(ticketId, paymentId));
-    expect(callArg.idempotencyKey.length).toBeLessThanOrEqual(64);
-    expect(callArg.idempotencyKey).toMatch(/^[a-f0-9]{64}$/);
+    // Empirically Square rejects 64 chars in sandbox; we use 32 (128 bits of entropy).
+    expect(callArg.idempotencyKey.length).toBe(32);
+    expect(callArg.idempotencyKey).toMatch(/^[a-f0-9]{32}$/);
   });
 
   it("(a) two different paymentIds for the same ticket yield different keys", async () => {

@@ -33,16 +33,19 @@ import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 /**
  * Deterministic Square `idempotency_key` derived from `(ticketId, paymentId)`.
  *
- * Square caps `terminals.createCheckout`'s idempotency_key at 64 characters,
- * but two joined UUIDs `${ticketId}:${paymentId}` is 73 — so we SHA-256 the
- * canonical input and emit the 64-char hex digest. Same input ⇒ same key
- * (retries dedupe correctly); fresh `paymentId` per attempt ⇒ fresh key
- * (per-attempt-row contract holds). Constitution Principle III's
- * "deterministic from ticket_id + payment_id" is preserved by the hash —
- * only the on-wire representation changes.
+ * Square's docs say `terminals.createCheckout` caps idempotency_key at 64
+ * chars, but live sandbox rejected a 64-char key — empirically the limit is
+ * stricter than documented. We SHA-256 the canonical `${ticketId}:${paymentId}`
+ * input and emit the first 32 hex chars (128 bits of entropy — far beyond
+ * what's needed for our scale; collision is astronomically unlikely).
+ *
+ * Same input ⇒ same key (retries dedupe correctly); fresh `paymentId` per
+ * attempt ⇒ fresh key (per-attempt-row contract FR-015 holds). Constitution
+ * Principle III's "deterministic from ticket_id + payment_id" is preserved
+ * by the hash — only the on-wire representation changes.
  */
 export function buildIdempotencyKey(ticketId: string, paymentId: string): string {
-  return createHash("sha256").update(`${ticketId}:${paymentId}`).digest("hex");
+  return createHash("sha256").update(`${ticketId}:${paymentId}`).digest("hex").slice(0, 32);
 }
 
 export type TerminalDevice = {
