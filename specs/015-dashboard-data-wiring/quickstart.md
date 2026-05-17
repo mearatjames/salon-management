@@ -135,7 +135,7 @@ npx playwright test tests/e2e/dashboard.spec.ts -g "US3"
 
 ## 7. Side-by-side design comparison
 
-Open `design-system/preview/transaction-landing.html` in a browser tab next to `http://localhost:3000/dashboard`. Walk through the checklist:
+Open the canonical Variation B reference — `design-system/prototypes/transaction/Landing.jsx` lines 282–372 (the `LandingStats` function) — next to `http://localhost:3000/dashboard`. Walk through the checklist:
 
 - **Layout**: same six-column stat grid, same lower split (Quick Actions left, Recent Transactions right).
 - **Tokens**: every color, spacing, radius, and shadow on the live page traces to a token in `styles/tokens.css`. No raw hex codes, no off-scale spacing.
