@@ -8,6 +8,16 @@
 
 **Input**: User description: "Add Square gift card redemption and split-tender (multiple payments composing one ticket). Gift card flow with GAN entry, balance lookup, partial-balance auto-split, and explicit split mode for composing 2+ payment legs across cash / card / gift methods. Each leg charged through its existing flow; ticket completes when succeeded legs sum to total. Out of scope: selling/issuing gift cards and digital-wallet UI."
 
+## Clarifications
+
+### Session 2026-05-17
+
+- Q: GAN masking in audit logs — what should the audit log persist for a gift-card transaction? → A: Mask to last 4 only (audit row records `••••1234` plus the upstream gift_card_id; the full number is never persisted in the salon's own datastore).
+- Q: After a partial gift-card payment leaves balance owed, how is the next leg set up? → A: Auto-open split mode with the owed amount pre-filled as leg 2; staff only picks a method and activates.
+- Q: Can the staff enter Split mode after a non-split payment leg has already succeeded? → A: Yes — Split is available at any time before the ticket is fully paid, regardless of how many legs have already succeeded.
+- Q: What does the cart allow while a card-on-terminal leg is in-progress? → A: Cart is read-only/frozen until that leg resolves (succeeded, failed, or cancelled). No edits, no other leg activations.
+- Q: How are pending unactivated split legs persisted across page reload / device switch? → A: Persisted server-side per ticket; reload (and a different device that opens the same ticket) restores them. Already aligned with FR-022's server-side awareness of the charging session.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Redeem a gift card that covers the whole ticket (Priority: P1)
@@ -81,28 +91,30 @@ A customer presents a gift card whose remaining balance is less than the amount 
 - **FR-003**: System MUST look up the gift card by number against the upstream payment provider and display the card's available balance to the staff before any charge is attempted.
 - **FR-004**: System MUST distinguish, in the UI, between "card not found", "card found but not redeemable", and "card found with zero balance" so that the staff knows what to do next.
 - **FR-005**: When the gift card's available balance is greater than or equal to the amount due, the system MUST charge exactly the amount due (not the full balance) to the gift card upon staff confirmation.
-- **FR-006**: When the gift card's available balance is greater than zero but less than the amount due, the system MUST charge the available balance to the gift card and leave the ticket in a "balance still owed" state that lets the staff add another payment leg without re-entering split mode manually.
+- **FR-006**: When the gift card's available balance is greater than zero but less than the amount due, the system MUST charge the available balance to the gift card and automatically enter split mode with a pre-populated next leg whose amount equals the remaining owed balance. The staff MUST only need to pick a method and activate that pre-populated leg — no separate "enter amount" step.
 - **FR-007**: System MUST cache a record of each redeemed gift card locally — at minimum its number, its last-known available balance, and the time that balance was last refreshed — so that repeated lookups for the same card within a short window do not require a fresh round-trip if a recent balance is acceptable.
 - **FR-008**: System MUST treat the gift card number as sensitive; it MUST NOT be displayed in plaintext after entry except as a masked tail (e.g., last 4) on receipts and in audit/history views.
 
 #### Split tender
 
-- **FR-009**: System MUST provide an affordance (a "Split" control) on the payment tile row that switches the cart footer into split-composition mode.
+- **FR-009**: System MUST provide an affordance (a "Split" control) on the payment tile row that switches the cart footer into split-composition mode. This control MUST be available at any time before the ticket is fully paid — including after one or more non-split payment legs have already succeeded (in which case Split mode opens with leg amounts that account for the already-succeeded payments and target the still-owed balance).
 - **FR-010**: In split mode, system MUST let the staff add 2 or more payment legs, where each leg has an amount and a payment method (cash, card-on-terminal, or gift card).
 - **FR-011**: System MUST continuously display, in split mode, the running totals: amount paid (sum of succeeded legs), amount due, and amount still owed (amount due − amount paid − sum of pending unactivated legs).
 - **FR-012**: System MUST prevent activating the final leg unless the sum of all legs (succeeded + pending) exactly equals the ticket's amount due.
 - **FR-013**: For each leg, system MUST run that leg through its method's existing flow — cash legs record instantly; card legs send to the terminal for that specific leg amount; gift-card legs prompt for a gift card number.
 - **FR-014**: System MUST allow the staff to remove any leg that has not yet been activated, recompute totals, and continue.
+- **FR-014a**: Pending unactivated split legs (their composed amount and chosen method) MUST be persisted server-side against the ticket so that a browser reload, tab switch, or opening the same ticket from a second device restores the in-progress split composition exactly as it was. Pending legs MUST be discarded only when the staff explicitly removes them, when the ticket flips to paid, when an edit to the cart invalidates them (per the edge-case rule above), or when the ticket itself is voided.
 - **FR-015**: System MUST NOT allow a succeeded leg to be removed or edited from this checkout flow; reversal of a succeeded leg is handled exclusively through the refund flow.
 - **FR-016**: System MUST mark the ticket paid only when the sum of succeeded legs equals the amount due AND there are no pending unactivated legs and no in-progress activations.
 - **FR-017**: System MUST persist all payment legs (their amount, method, and outcome) against the ticket so they appear on receipts and in the ticket's payment history.
 - **FR-018**: System MUST ensure each leg's interaction with the upstream payment provider is idempotent — re-submitting the same leg after a network blip or accidental double-tap MUST NOT result in a second charge.
 - **FR-019**: When a leg fails (decline, timeout, customer cancel), system MUST show the leg as failed without marking the ticket paid, and MUST allow the staff to retry that leg or remove it and compose a different one.
+- **FR-019a**: While a payment leg is in-progress (e.g., a card-on-terminal charge awaiting customer dip/tap, or a gift-card charge awaiting upstream confirmation), the cart MUST be read-only: no cart edits, no leg composition changes, no activation of any other leg, until the in-progress leg resolves to a terminal state (succeeded, failed, or cancelled).
 
 #### Cross-cutting
 
 - **FR-020**: System MUST recover gracefully when the upstream payment provider is slow or unreachable for either lookup or charge — the staff is shown a clear retry-or-cancel state and the ticket is not left in an inconsistent paid/unpaid limbo.
-- **FR-021**: System MUST log each gift-card lookup and each payment-leg attempt (with outcome) to the audit history so that disputes and reconciliation can be investigated after the fact.
+- **FR-021**: System MUST log each gift-card lookup and each payment-leg attempt (with outcome) to the audit history so that disputes and reconciliation can be investigated after the fact. Gift card numbers in audit rows MUST be masked to the last 4 digits only (e.g., `••••1234`); the full gift card number MUST NOT be persisted in the salon's datastore. The upstream payment provider's stable gift_card_id MAY be stored alongside the mask to allow correlation with the provider's own records.
 - **FR-022**: System MUST ensure only one staff member can be actively charging a given ticket at a time — concurrent attempts on the same ticket from different devices MUST be detected and the second attempt rejected with a clear message.
 
 ### Key Entities *(include if feature involves data)*
