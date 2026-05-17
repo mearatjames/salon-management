@@ -220,10 +220,9 @@ async function fetchSquareTokenSet(grant: {
   // constant we sent at authorize time (SCOPES) since the granted scope
   // equals the requested scope in our flow (no scope downgrades).
   if (!json.access_token || !json.refresh_token || !json.expires_at || !json.merchant_id) {
-    console.error(
-      "square_oauth_token_invalid_response: missing required fields in response",
-      { presentKeys: Object.keys(json) }
-    );
+    console.error("square_oauth_token_invalid_response: missing required fields in response", {
+      presentKeys: Object.keys(json),
+    });
     throw new Error("square_oauth_token_invalid_response");
   }
   return {
