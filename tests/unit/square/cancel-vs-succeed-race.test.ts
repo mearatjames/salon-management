@@ -36,12 +36,13 @@ let supabaseUp = false;
 
 // Mock the terminal module so cancelCheckout returns COMPLETED (race-succeeded).
 const fakeCancelCheckout = vi.fn();
+const fakeGetCheckout = vi.fn();
 
 vi.mock("@/lib/square/terminal", () => ({
   cancelCheckout: fakeCancelCheckout,
+  getCheckout: fakeGetCheckout,
   // Keep other exports in case the action imports something else.
   createCheckout: vi.fn(),
-  getCheckout: vi.fn(),
   listDevices: vi.fn(),
 }));
 
@@ -115,6 +116,7 @@ describeIfUp("cancelTerminalPayment — cancel-vs-succeed race (FR-016a, Square 
   beforeEach(async () => {
     if (!supabaseUp) return;
     fakeCancelCheckout.mockReset();
+    fakeGetCheckout.mockReset();
     await cleanup().catch(() => {});
     await seedPendingCardPayment();
   });
@@ -262,5 +264,70 @@ describeIfUp("cancelTerminalPayment — cancel-vs-succeed race (FR-016a, Square 
     );
     expect(failed).toBeUndefined();
     expect(captured).toBeUndefined();
+  });
+
+  it("Square rejects cancel with 'already COMPLETED' → recover via getCheckout → race_succeeded", async () => {
+    if (!supabaseUp) return;
+
+    // Square's real-life response when the customer paid before the cancel
+    // call landed. Shape captured from a live sandbox run during T050.
+    const squareError = {
+      statusCode: 400,
+      body: {
+        errors: [
+          {
+            code: "BAD_REQUEST",
+            detail:
+              "Cannot transition from status COMPLETED to status CANCELED. Valid transitions are [COMPLETED]",
+            field: "status",
+            category: "INVALID_REQUEST_ERROR",
+          },
+        ],
+      },
+    };
+    fakeCancelCheckout.mockRejectedValueOnce(squareError);
+
+    // getCheckout returns the actual completed state Square has recorded.
+    fakeGetCheckout.mockResolvedValueOnce({
+      squareTerminalCheckoutId: checkoutId,
+      status: "completed",
+      tipCents: 600,
+      squarePaymentId: `pay_${checkoutId}`,
+    });
+
+    const cursor = new Date().toISOString();
+
+    const { cancelTerminalPayment } = await import("@/app/(studio)/checkout/actions");
+    const result = await cancelTerminalPayment(paymentId);
+
+    expect(result.ok).toBe(true);
+    expect(result.resolvedStatus).toBe("race_succeeded");
+
+    // Row settled to succeeded with the tip the recovery call surfaced.
+    const { data: payment } = await supabase
+      .from("payments")
+      .select("status, tip_cents, square_payment_id")
+      .eq("id", paymentId)
+      .single();
+    expect(payment?.status).toBe("succeeded");
+    expect(payment?.tip_cents).toBe(600);
+    expect(payment?.square_payment_id).toBe(`pay_${checkoutId}`);
+
+    // Audit: payment.cancelled (intent, resolved_status race_succeeded) +
+    // payment.captured (outcome from the RPC).
+    const { data: auditRows } = await supabase
+      .from("audit_log")
+      .select("action, entity_id, payload")
+      .gte("ts", cursor)
+      .eq("entity_id", paymentId);
+
+    const cancelled = (auditRows ?? []).find((r) => r.action === "payment.cancelled");
+    const captured = (auditRows ?? []).find((r) => r.action === "payment.captured");
+    expect(cancelled).toBeDefined();
+    expect((cancelled!.payload as { resolved_status?: string }).resolved_status).toBe(
+      "race_succeeded"
+    );
+    expect(captured).toBeDefined();
+    expect((captured!.payload as { tip_cents?: number }).tip_cents).toBe(600);
   });
 });

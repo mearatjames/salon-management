@@ -52,7 +52,33 @@ import {
 import {
   cancelCheckout as squareCancelCheckout,
   createCheckout as squareCreateCheckout,
+  getCheckout as squareGetCheckout,
 } from "@/lib/square/terminal";
+
+/**
+ * Square returns 400 INVALID_REQUEST_ERROR with detail mentioning the
+ * existing status when you try to cancel a checkout that's already in a
+ * terminal state (COMPLETED or CANCELED). We catch this specific shape
+ * so the operator-initiated cancel can route through the race-succeeded
+ * path (FR-016a) instead of falling back to "still_pending" + a misleading
+ * "couldn't reach Square" message.
+ */
+function squareCancelTerminalStateFromError(err: unknown): "COMPLETED" | "CANCELED" | null {
+  if (!err || typeof err !== "object") return null;
+  const e = err as {
+    statusCode?: number;
+    body?: { errors?: Array<{ detail?: string; category?: string }> };
+  };
+  if (e.statusCode !== 400) return null;
+  const errors = e.body?.errors ?? [];
+  for (const item of errors) {
+    if (item.category !== "INVALID_REQUEST_ERROR") continue;
+    const detail = item.detail ?? "";
+    if (detail.includes("from status COMPLETED")) return "COMPLETED";
+    if (detail.includes("from status CANCELED")) return "CANCELED";
+  }
+  return null;
+}
 
 // ----------------------------------------------------------------------
 // T035 (US4): shared email regex constant used by `emailBillStub` for
@@ -1437,10 +1463,35 @@ export async function cancelTerminalPayment(
   try {
     cancelResult = await squareCancelCheckout(payment.square_terminal_checkout_id);
   } catch (err) {
-    squareReachable = false;
-    // Log but don't bubble — the operator's intent still gets audited
-    // and the polling/realtime path will resolve the row.
-    console.warn("cancelTerminalPayment: Square cancel call failed", err);
+    // 2a) FR-016a race recovery: Square rejects cancel with 400 when the
+    //     checkout already settled. Look up the actual final state via
+    //     getCheckout and synthesize a cancelResult so the normal resolver
+    //     below routes through race_succeeded / cancelled instead of
+    //     still_pending.
+    const terminalState = squareCancelTerminalStateFromError(err);
+    if (terminalState) {
+      try {
+        const current = await squareGetCheckout(payment.square_terminal_checkout_id);
+        cancelResult = {
+          status: current.status,
+          tipCents: current.tipCents,
+          squarePaymentId: current.squarePaymentId,
+        };
+      } catch (getErr) {
+        // getCheckout itself failed — fall through to still_pending; the
+        // webhook/polling path will resolve the row.
+        squareReachable = false;
+        console.warn(
+          "cancelTerminalPayment: getCheckout recovery failed after cancel rejected",
+          getErr
+        );
+      }
+    } else {
+      squareReachable = false;
+      // Log but don't bubble — the operator's intent still gets audited
+      // and the polling/realtime path will resolve the row.
+      console.warn("cancelTerminalPayment: Square cancel call failed", err);
+    }
   }
 
   // 3) Resolve the row state based on Square's response (or lack thereof).
