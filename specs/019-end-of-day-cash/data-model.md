@@ -73,7 +73,7 @@ The `((true))` expression-index trick gives us a unique index on a constant: at 
 | `counted_cents` | Operator-entered counted amount at close. |
 | `variance_cents` | `counted_cents − (opening_cents + expected_cents)`. Signed. Enforced by check constraint to match the formula. |
 | `notes` | Operator's explanation of a non-zero variance. Required by check constraint when `variance_cents != 0`. |
-| `business_day` | Salon-local date the session belongs to. Set by the close RPC from `current_setting('app.salon_tz')` (or from the RPC's `p_business_day` argument). |
+| `business_day` | Salon-local date the session belongs to. Set by the close RPC from the explicit `p_business_day` argument passed by the Server Action (which derives it from `getSalonTimezone()` + `now()`). No GUC fallback in v1. |
 | `created_at` | Audit timestamp; survives if `opened_at` is ever made nullable. |
 
 ### State machine
@@ -96,9 +96,9 @@ In v1 there is no "reopen" transition. A reopen would require a manager-PIN audi
 
 ## New RPCs
 
-### `public.pos_close_cash_drawer(p_counted_cents int, p_expected_cents int, p_notes text, p_operator uuid, p_business_day date) returns uuid`
+### `public.pos_close_cash_drawer(p_counted_cents int, p_expected_cents int, p_notes text, p_operator uuid, p_device_user_id uuid, p_business_day date) returns uuid`
 
-Returns the closed session's `id`. Atomic: insert-on-conflict the open row, lock it, re-check expected, write the close, write the audit row, all in one transaction. See `contracts/rpc-pos-close-cash-drawer.md` for the full contract including error codes.
+Returns the closed session's `id`. Atomic: insert-on-conflict the open row, lock it, re-check expected, write the close, write the audit row, all in one transaction. `p_business_day` is the salon-local date the caller (Server Action) derived from `getSalonTimezone()` + `now()`; `p_device_user_id` is the device's `auth.uid()` (forwarded so the in-transaction audit insert can populate `audit_log.actor_user_id`). See `contracts/rpc-pos-close-cash-drawer.md` for the full contract including error codes.
 
 `security definer; set search_path = public, pg_temp; revoke all from public; grant execute to service_role`. Mirrors `pos_take_cash`.
 
