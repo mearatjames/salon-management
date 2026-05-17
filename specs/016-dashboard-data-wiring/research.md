@@ -1,6 +1,6 @@
 # Research: Dashboard — Real Supabase Data Wiring
 
-**Feature**: 015-dashboard-data-wiring
+**Feature**: 016-dashboard-data-wiring
 **Date**: 2026-05-16
 **Source**: derived from `spec.md` + clarifications session, the constitution v1.0.3, the existing `lib/dashboard/`, `lib/db/`, `app/(studio)/dashboard/`, `styles/dashboard.css`, and the schema in `supabase/migrations/0001`, `0003`, `0004`, `0006`, `0007`.
 

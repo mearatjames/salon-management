@@ -5,7 +5,7 @@ description: "Task list for Dashboard — Real Supabase Data Wiring"
 
 # Tasks: Dashboard — Real Supabase Data Wiring
 
-**Input**: Design documents from `/specs/015-dashboard-data-wiring/`
+**Input**: Design documents from `/specs/016-dashboard-data-wiring/`
 
 **Prerequisites**: [plan.md](./plan.md) (required), [spec.md](./spec.md) (required), [research.md](./research.md), [data-model.md](./data-model.md), [contracts/queries.md](./contracts/queries.md), [contracts/period-windows.md](./contracts/period-windows.md), [quickstart.md](./quickstart.md).
 
@@ -165,7 +165,7 @@ Repo root: this is the worktree at `/Users/mearathou/Dev/salon-management/.workt
 
 - [X] T037 DELETE `lib/dashboard/mock-data.ts`. Confirm via `grep -rn "from \"@/lib/dashboard/mock-data\"" --include='*.ts' --include='*.tsx'` that no consumer remains; T022 + T023 + T024 migrated the last three component imports, and T015's `aggregate.ts` keeps a temporary import that gets deleted in T038.
 - [X] T038 Clean up `lib/dashboard/aggregate.ts`: delete the now-orphan exports `txAggregate`, `txTotals`, `applyPeriodFactor`, `buildDashboardData`, `PERIOD_FACTOR`, and the `QUICK_ACTIONS` constant (the latter should already have been moved into `queries.ts` by T017 — confirm and delete the duplicate). Delete the mock-data imports. Confirm the only remaining exports are: the types (`DashboardPeriod`, `PaymentMethod`, `Technician`, `DashboardSummary`, `TransactionRow`, `QuickAction`, `DashboardData`), the new `summarizeRows()` function, and the supporting input-row types `summarizeRows()` consumes. `npm run typecheck` must remain green after this delete.
-- [X] T039 [P] Verify the `<!-- SPECKIT START -->` marker block in `CLAUDE.md` line 122–124 still points to `specs/015-dashboard-data-wiring/plan.md` (set by the plan phase). If not, fix it.
+- [X] T039 [P] Verify the `<!-- SPECKIT START -->` marker block in `CLAUDE.md` line 122–124 still points to `specs/016-dashboard-data-wiring/plan.md` (set by the plan phase). If not, fix it.
 - [X] T040 Walk through `quickstart.md §§ 1–7` manually to confirm the developer journey works end-to-end: `supabase db reset` → live tiles populated → period toggle recalculates → salon-timezone change shifts the day boundary → empty-state path renders cleanly → gate suite runs.
 - [X] T041 Side-by-side design comparison per `quickstart.md § 7`: open `design-system/prototypes/transaction/Landing.jsx` lines 282–372 (the `LandingStats` Variation B function) and the live `http://localhost:3000/dashboard` in adjacent windows. Verify (a) every color/spacing/radius/shadow on the live page traces to a token in `styles/tokens.css` (no raw hex, no off-scale spacing); (b) every Lucide icon is at 1.5px stroke, sized 14/16/18/20/24; (c) Inter only, weights 400/500/600; tabular numerals on every currency and count; (d) the five intentional deltas (FR-019 techs-on-shift removed, FR-020 comparison badges removed, FR-021 subtitle clause removed, FR-022 feed scroll + cap removed, FR-023 feed client column removed) all present; (e) the one additive (FR-014a `Split` pill) reuses `.tx-meth-pill` chrome with a muted-family fill; (f) nothing else has drifted vs. 002. Fix any drift before moving to T042.
 - [X] T042 Final full-suite gate (CLAUDE.md § Pre-push quality gates): `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e`. All five MUST be green. If any fails, the feature is not done.

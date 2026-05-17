@@ -1,6 +1,6 @@
 # Contract: Dashboard read-query helpers
 
-**Feature**: 015-dashboard-data-wiring
+**Feature**: 016-dashboard-data-wiring
 **Module**: `lib/dashboard/queries.ts` (new)
 **Related**: `lib/dashboard/aggregate.ts` (rewritten — `summarizeRows()`), `lib/db/settings.ts` (new — settings reader), `lib/time/period-windows.ts` (new — window math)
 

@@ -1,6 +1,6 @@
 # Contract: Timezone & period-window helpers
 
-**Feature**: 015-dashboard-data-wiring
+**Feature**: 016-dashboard-data-wiring
 **Module**: `lib/time/period-windows.ts` (new), `lib/time/format.ts` (new)
 **Mandate**: Constitution v1.0.3 § Security & Data Integrity Constraints — *"All timestamps are stored UTC and formatted through the single `lib/time/*` helper against `SALON_TZ`. No ad-hoc timezone math."*
 

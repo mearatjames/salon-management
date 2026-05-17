@@ -1,8 +1,8 @@
 # Implementation Plan: Dashboard — Real Supabase Data Wiring
 
-**Branch**: `015-dashboard-data-wiring` | **Date**: 2026-05-16 | **Spec**: [spec.md](./spec.md)
+**Branch**: `016-dashboard-data-wiring` | **Date**: 2026-05-16 | **Spec**: [spec.md](./spec.md)
 
-**Input**: Feature specification from `/specs/015-dashboard-data-wiring/spec.md`
+**Input**: Feature specification from `/specs/016-dashboard-data-wiring/spec.md`
 
 ## Summary
 
@@ -51,7 +51,7 @@ Gates derived from `.specify/memory/constitution.md` v1.0.3.
 ### Documentation (this feature)
 
 ```text
-specs/015-dashboard-data-wiring/
+specs/016-dashboard-data-wiring/
 ├── plan.md                # This file (/speckit-plan command output)
 ├── research.md            # Phase 0 — decisions: timezone helper (Intl-only), query strategy (parallel typed reads), index choice, force-dynamic mechanism, empty-state copy, loading skeleton shape, Split-pill color token
 ├── data-model.md          # Phase 1 — 0008 migration shape: settings seed + two indexes; the read-model types for DashboardSummary / TransactionRow as they map to live SQL; the seed-fixture data spec
@@ -262,7 +262,7 @@ tests/
 
 CLAUDE.md                                           # MODIFY (one-line) — update the "Active feature plan" pointer at
                                                     # the bottom of the file from the previous feature to
-                                                    # `specs/015-dashboard-data-wiring/plan.md`.
+                                                    # `specs/016-dashboard-data-wiring/plan.md`.
 ```
 
 **Structure Decision**: Existing single-app structure (no monorepo) per `docs/system-design.md`. The feature adds one new top-level directory under `lib/` (`lib/time/`) — explicitly mandated by the constitution's § Security & Data Integrity Constraints (the "single `lib/time/*` helper against `SALON_TZ`" rule). Everything else slots into existing directories: `app/(studio)/dashboard/`, `components/lacquer/`, `lib/dashboard/`, `lib/db/`, `styles/`, `supabase/migrations/`, `supabase/seed.sql`, and `tests/`.
@@ -329,7 +329,7 @@ The quickstart file walks a developer through: (a) running the migration locally
 
 ### Agent context update
 
-`CLAUDE.md`'s "Active feature plan" line at line 123 — already bracketed by the `<!-- SPECKIT START -->` / `<!-- SPECKIT END -->` marker pair — is updated to point to `specs/015-dashboard-data-wiring/plan.md`.
+`CLAUDE.md`'s "Active feature plan" line at line 123 — already bracketed by the `<!-- SPECKIT START -->` / `<!-- SPECKIT END -->` marker pair — is updated to point to `specs/016-dashboard-data-wiring/plan.md`.
 
 ### Post-design Constitution Re-check
 

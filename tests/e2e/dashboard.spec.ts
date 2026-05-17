@@ -1,4 +1,4 @@
-// E2E for feature 015-dashboard-data-wiring, User Story 1.
+// E2E for feature 016-dashboard-data-wiring, User Story 1.
 //
 // Covers Acceptance Scenarios from `spec.md § US1`:
 //   (a) Live tile values from the seeded paid tickets; Payment-mix legend

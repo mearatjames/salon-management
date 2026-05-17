@@ -291,7 +291,7 @@ end
 $$;
 
 -- ---------------------------------------------------------------------------
--- 015-dashboard-data-wiring: five paid tickets dated today (salon TZ), used
+-- 016-dashboard-data-wiring: five paid tickets dated today (salon TZ), used
 -- by the dashboard's live read model so the local-dev experience matches the
 -- production read path. Wrapped in a DO block guarded on the seed owner
 -- user so this fixture NEVER executes against a production database that

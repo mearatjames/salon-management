@@ -1,6 +1,6 @@
 # Quickstart: Dashboard — Real Supabase Data Wiring
 
-**Feature**: 015-dashboard-data-wiring
+**Feature**: 016-dashboard-data-wiring
 
 A developer's "build, run, verify" walkthrough. Assumes the repo is already set up per `docs/system-design.md` and `supabase` is on the `$PATH`.
 

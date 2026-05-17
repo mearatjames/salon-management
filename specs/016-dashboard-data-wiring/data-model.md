@@ -1,6 +1,6 @@
 # Data Model: Dashboard — Real Supabase Data Wiring
 
-**Feature**: 015-dashboard-data-wiring
+**Feature**: 016-dashboard-data-wiring
 **Date**: 2026-05-16
 **Migration**: `supabase/migrations/0008_dashboard_data_wiring.sql`
 
@@ -17,7 +17,7 @@ The seed-data update in `supabase/seed.sql` adds a small fixture of paid tickets
 
 ```sql
 -- Migration: 0008_dashboard_data_wiring.sql
--- Feature: 015-dashboard-data-wiring
+-- Feature: 016-dashboard-data-wiring
 --
 -- Seeds the salon timezone in public.settings and adds two partial indexes
 -- that turn the dashboard's hot aggregate queries into index-only scans.
