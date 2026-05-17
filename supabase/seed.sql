@@ -270,3 +270,22 @@ begin
    where name = 'Nail art';
 end
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Feature 015 (Square Terminal): dev-only Vault secret used by
+-- `lib/square/oauth.ts` to encrypt OAuth tokens at rest via pgcrypto.
+-- The key value here is dev-only — production uses a per-environment
+-- secret installed manually via the Supabase dashboard. Idempotent so
+-- repeat `supabase db reset` runs don't error.
+-- ---------------------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from vault.secrets where name = 'square_oauth_key') then
+    perform vault.create_secret(
+      'dev-only-square-oauth-symmetric-key-do-not-use-in-prod-32+chars',
+      'square_oauth_key',
+      'DEV ONLY: pgcrypto symmetric key for Square OAuth tokens at rest'
+    );
+  end if;
+end
+$$;

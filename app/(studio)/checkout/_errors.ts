@@ -25,7 +25,12 @@ export type CheckoutActionError =
         | "note_too_long"
         | "not_a_discount_line";
     }
-  | { code: "EMAIL_ADDRESS_INVALID" };
+  | { code: "EMAIL_ADDRESS_INVALID" }
+  // Added by feature 015-square-terminal-payment (US2/US3)
+  | { code: "TERMINAL_DEVICE_REQUIRED" }
+  | { code: "SQUARE_CHECKOUT_CREATE_FAILED"; squareError?: string }
+  | { code: "PAYMENT_NOT_FOUND" }
+  | { code: "PAYMENT_NOT_CANCELLABLE" };
 
 export abstract class CheckoutError extends Error {
   abstract readonly code: CheckoutActionError["code"];
@@ -125,3 +130,57 @@ export class EmailAddressInvalidError extends CheckoutError {
     this.name = "EmailAddressInvalidError";
   }
 }
+
+// ----------------------------------------------------------------------
+// Feature 015-square-terminal-payment — card-payment errors.
+// Contract: `specs/015-square-terminal-payment/contracts/server-actions.md
+// § "Error class layout"`. The Square-connection-state errors
+// (SquareNotConnectedError / SquareReconnectRequiredError) live in
+// `app/(studio)/settings/square/_errors.ts` and are re-exported here for
+// `instanceof` ergonomics from the checkout actions module.
+// ----------------------------------------------------------------------
+
+export class TerminalDeviceRequiredError extends CheckoutError {
+  readonly code = "TERMINAL_DEVICE_REQUIRED" as const;
+  constructor(
+    message = "No Square Terminal selected — pair a device or mark one as default in settings"
+  ) {
+    super(message);
+    this.name = "TerminalDeviceRequiredError";
+  }
+}
+
+export class SquareCheckoutCreateFailedError extends CheckoutError {
+  readonly code = "SQUARE_CHECKOUT_CREATE_FAILED" as const;
+  readonly squareError?: string;
+  constructor(message = "Square could not start the terminal checkout", squareError?: string) {
+    super(message);
+    this.name = "SquareCheckoutCreateFailedError";
+    this.squareError = squareError;
+  }
+}
+
+export class PaymentNotFoundError extends CheckoutError {
+  readonly code = "PAYMENT_NOT_FOUND" as const;
+  constructor(message = "payment not found") {
+    super(message);
+    this.name = "PaymentNotFoundError";
+  }
+}
+
+export class PaymentNotCancellableError extends CheckoutError {
+  readonly code = "PAYMENT_NOT_CANCELLABLE" as const;
+  constructor(message = "payment is not in a cancellable state") {
+    super(message);
+    this.name = "PaymentNotCancellableError";
+  }
+}
+
+// Re-export the Square-connection-state errors so checkout call sites can
+// `import { SquareNotConnectedError } from '@/app/(studio)/checkout/_errors'`
+// instead of reaching into the settings module. The single source of
+// definition stays in `app/(studio)/settings/square/_errors.ts`.
+export {
+  SquareNotConnectedError,
+  SquareReconnectRequiredError,
+} from "@/app/(studio)/settings/square/_errors";

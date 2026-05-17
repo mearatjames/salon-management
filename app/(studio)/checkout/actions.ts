@@ -36,13 +36,49 @@ import {
   DiscountInvalidError,
   EmailAddressInvalidError,
   InvalidPriceError,
+  PaymentNotCancellableError,
+  PaymentNotFoundError,
   ServiceArchivedError,
+  SquareCheckoutCreateFailedError,
+  SquareNotConnectedError,
+  SquareReconnectRequiredError,
   StaffNotActiveError,
+  TerminalDeviceRequiredError,
   TicketAlreadyTerminalError,
   TicketEmptyError,
   TicketHasUnpricedItemsError,
   TicketNotOpenError,
 } from "./_errors";
+import {
+  cancelCheckout as squareCancelCheckout,
+  createCheckout as squareCreateCheckout,
+  getCheckout as squareGetCheckout,
+} from "@/lib/square/terminal";
+
+/**
+ * Square returns 400 INVALID_REQUEST_ERROR with detail mentioning the
+ * existing status when you try to cancel a checkout that's already in a
+ * terminal state (COMPLETED or CANCELED). We catch this specific shape
+ * so the operator-initiated cancel can route through the race-succeeded
+ * path (FR-016a) instead of falling back to "still_pending" + a misleading
+ * "couldn't reach Square" message.
+ */
+function squareCancelTerminalStateFromError(err: unknown): "COMPLETED" | "CANCELED" | null {
+  if (!err || typeof err !== "object") return null;
+  const e = err as {
+    statusCode?: number;
+    body?: { errors?: Array<{ detail?: string; category?: string }> };
+  };
+  if (e.statusCode !== 400) return null;
+  const errors = e.body?.errors ?? [];
+  for (const item of errors) {
+    if (item.category !== "INVALID_REQUEST_ERROR") continue;
+    const detail = item.detail ?? "";
+    if (detail.includes("from status COMPLETED")) return "COMPLETED";
+    if (detail.includes("from status CANCELED")) return "CANCELED";
+  }
+  return null;
+}
 
 // ----------------------------------------------------------------------
 // T035 (US4): shared email regex constant used by `emailBillStub` for
@@ -1142,4 +1178,400 @@ export async function emailBillStub(input: EmailBillStubInput): Promise<{ ok: tr
 export async function startNewSale(): Promise<void> {
   const { ticketId } = await createEmptyTicket();
   redirect(`/checkout/${ticketId}`);
+}
+
+// ----------------------------------------------------------------------
+// 11. sendCardToTerminal — push a card payment to the salon's paired
+//     Square Terminal (US2). Contract:
+//     `specs/015-square-terminal-payment/contracts/server-actions.md`.
+//
+//     Flow (transaction boundaries intentionally split — Square call is
+//     external HTTP and CANNOT roll back our row insert; we must leave a
+//     `failed` row on the audit trail when Square is unreachable):
+//
+//       1. requireStudioSession (auth)
+//       2. ticket must be open (TicketNotOpenError)
+//       3. no unpriced lines (TicketHasUnpricedItemsError — re-used from
+//          the cash path; same operator UX)
+//       4. ticket total > 0 (TicketEmptyError)
+//       5. Square connected (SquareNotConnectedError); not refresh-failed
+//          (SquareReconnectRequiredError)
+//       6. resolve deviceId: arg > is_default > single-device fallback;
+//          else TerminalDeviceRequiredError
+//       7. INSERT a fresh `pending` payment row (always — never reuse a
+//          failed row; per FR-015 retry contract)
+//       8. call lib/square/terminal.createCheckout
+//       9. on success: UPDATE row with square_terminal_checkout_id
+//      10. on Square failure: UPDATE row to status='failed',
+//          failure_reason='square_unreachable'; emit payment.failed audit;
+//          throw SquareCheckoutCreateFailedError
+//
+//     `payment.captured` is NOT emitted here — only on settlement (the
+//     RPC owns it). The `pending` row IS the audit trace for "card
+//     payment initiated."
+// ----------------------------------------------------------------------
+
+export type SendCardToTerminalResult = {
+  paymentId: string;
+  squareTerminalCheckoutId: string;
+};
+
+export async function sendCardToTerminal(
+  ticketId: string,
+  deviceId?: string
+): Promise<SendCardToTerminalResult> {
+  assertUuid(ticketId, "sendCardToTerminal.ticketId");
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  // 1) Ticket must be open + has priced lines + total > 0.
+  const { data: ticket, error: tkErr } = await supabase
+    .from("tickets")
+    .select("id, status, total_cents")
+    .eq("id", ticketId)
+    .single();
+  if (tkErr || !ticket) {
+    throw new Error(`sendCardToTerminal ticket read failed: ${tkErr?.message ?? "not found"}`);
+  }
+  if (ticket.status !== "open") {
+    throw new TicketNotOpenError();
+  }
+
+  // Check for unpriced lines.
+  const { data: itemsRows, error: itemsErr } = await supabase
+    .from("ticket_items")
+    .select("id, price_unconfirmed")
+    .eq("ticket_id", ticketId);
+  if (itemsErr) {
+    throw new Error(`sendCardToTerminal items read failed: ${itemsErr.message}`);
+  }
+  if ((itemsRows ?? []).some((r) => r.price_unconfirmed === true)) {
+    throw new TicketHasUnpricedItemsError();
+  }
+
+  if (ticket.total_cents <= 0) {
+    throw new TicketEmptyError();
+  }
+
+  // 2) Square connection state.
+  const { data: oauthRow, error: oauthErr } = await supabase
+    .from("square_oauth")
+    .select("id, refresh_failed_at")
+    .eq("id", true)
+    .maybeSingle();
+  if (oauthErr) {
+    throw new Error(`sendCardToTerminal oauth read failed: ${oauthErr.message}`);
+  }
+  if (!oauthRow) {
+    throw new SquareNotConnectedError();
+  }
+  if (oauthRow.refresh_failed_at) {
+    throw new SquareReconnectRequiredError();
+  }
+
+  // 3) Resolve deviceId: arg > default > single-device fallback.
+  let resolvedDeviceId: string | null = deviceId ?? null;
+  if (!resolvedDeviceId) {
+    const { data: defaultDevice } = await supabase
+      .from("square_devices")
+      .select("square_device_id")
+      .eq("is_default", true)
+      .maybeSingle();
+    if (defaultDevice?.square_device_id) {
+      resolvedDeviceId = defaultDevice.square_device_id;
+    } else {
+      const { data: allDevices } = await supabase
+        .from("square_devices")
+        .select("square_device_id")
+        .limit(2);
+      if ((allDevices ?? []).length === 1) {
+        resolvedDeviceId = allDevices![0].square_device_id;
+      }
+    }
+  }
+  if (!resolvedDeviceId) {
+    throw new TerminalDeviceRequiredError();
+  }
+
+  // 4) INSERT the pending payment row. This commits in its own
+  //    transaction so the Square call (external HTTP) can fail without
+  //    rolling back the audit trace.
+  const { data: insertedPayment, error: insErr } = await supabase
+    .from("payments")
+    .insert({
+      ticket_id: ticketId,
+      method: "card",
+      kind: "payment",
+      amount_cents: ticket.total_cents,
+      status: "pending",
+      taken_by_staff_id: viewer.staff.id,
+    })
+    .select("id")
+    .single();
+  if (insErr || !insertedPayment) {
+    throw new Error(`sendCardToTerminal payment insert failed: ${insErr?.message ?? "no row"}`);
+  }
+  const paymentId = insertedPayment.id;
+
+  // 5) Push the checkout to Square. The SDK throws on non-2xx.
+  let squareTerminalCheckoutId: string;
+  try {
+    const result = await squareCreateCheckout({
+      ticketId,
+      paymentId,
+      amountCents: ticket.total_cents,
+      deviceId: resolvedDeviceId,
+      referenceId: ticketId,
+    });
+    squareTerminalCheckoutId = result.squareTerminalCheckoutId;
+  } catch (err) {
+    // 6a) Square unreachable. Mark the row failed and emit audit (the RPC
+    //     isn't invoked here — direct write + audit).
+    const squareErrorMsg = err instanceof Error ? err.message : String(err);
+    await supabase
+      .from("payments")
+      .update({
+        status: "failed",
+        failure_reason: "square_unreachable",
+        processed_at: new Date().toISOString(),
+      })
+      .eq("id", paymentId);
+    await recordAudit(
+      "payment.failed",
+      viewer.deviceUserId,
+      paymentId,
+      {
+        ticket_id: ticketId,
+        method: "card",
+        amount_cents: ticket.total_cents,
+        tip_cents: 0,
+        failure_reason: "square_unreachable",
+        square_payment_id: null,
+      },
+      viewer.staff.id
+    );
+    throw new SquareCheckoutCreateFailedError(
+      "Could not reach Square to start the terminal checkout — try again",
+      squareErrorMsg
+    );
+  }
+
+  // 6b) Success. Persist the Square checkout id so the webhook can find
+  //     this row on settlement.
+  const { error: updErr } = await supabase
+    .from("payments")
+    .update({ square_terminal_checkout_id: squareTerminalCheckoutId })
+    .eq("id", paymentId);
+  if (updErr) {
+    // Partial-failure cleanup: the Square checkout exists but our DB
+    // didn't capture the id. Best-effort revert: mark the row failed so
+    // a retry produces a fresh attempt.
+    console.error("sendCardToTerminal: update with checkoutId failed", updErr);
+    await supabase
+      .from("payments")
+      .update({
+        status: "failed",
+        failure_reason: "square_unreachable",
+        processed_at: new Date().toISOString(),
+      })
+      .eq("id", paymentId);
+    throw new SquareCheckoutCreateFailedError(
+      "Square accepted the checkout but our record didn't update — try again",
+      updErr.message
+    );
+  }
+
+  return { paymentId, squareTerminalCheckoutId };
+}
+
+// ----------------------------------------------------------------------
+// 12. cancelTerminalPayment — operator tapped "Cancel and pick a
+//     different method" on the waiting screen (US3). Contract:
+//     `specs/015-square-terminal-payment/contracts/server-actions.md`.
+//
+//     The cancel-vs-success race is "Square wins" (FR-016a). We call
+//     `terminals.cancelCheckout` and inspect Square's response:
+//
+//       - CANCELED   → row settles to failed/cancelled_by_operator
+//                      (operator's intent honoured).
+//       - COMPLETED  → row settles to succeeded with the tip Square
+//                      reported (the customer paid before the cancel
+//                      reached the terminal; Square's record wins).
+//       - unreachable → do NOT mutate the row. The realtime channel
+//                       (or polling fallback / webhook) will resolve it
+//                       eventually.
+//
+//     In ALL three outcomes we emit a `payment.cancelled` audit row
+//     capturing operator intent — independent of the outcome verbs
+//     `payment.failed` / `payment.captured` which the RPC owns. This
+//     separates intent (front desk pressed Cancel) from outcome
+//     (Square decided) per `contracts/audit.contract.md § 3`.
+// ----------------------------------------------------------------------
+
+export type CancelTerminalPaymentResult = {
+  ok: true;
+  resolvedStatus: "cancelled" | "race_succeeded" | "still_pending";
+};
+
+export async function cancelTerminalPayment(
+  paymentId: string
+): Promise<CancelTerminalPaymentResult> {
+  assertUuid(paymentId, "cancelTerminalPayment.paymentId");
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  // 1) Load + validate the payment row.
+  const { data: payment, error: payErr } = await supabase
+    .from("payments")
+    .select("id, ticket_id, method, status, square_terminal_checkout_id")
+    .eq("id", paymentId)
+    .maybeSingle();
+  if (payErr) {
+    throw new Error(`cancelTerminalPayment payment read failed: ${payErr.message}`);
+  }
+  if (!payment) {
+    throw new PaymentNotFoundError();
+  }
+  if (payment.method !== "card" || payment.status !== "pending") {
+    throw new PaymentNotCancellableError(
+      `cannot cancel payment ${paymentId}: method=${payment.method}, status=${payment.status}`
+    );
+  }
+  if (!payment.square_terminal_checkout_id) {
+    // Defensive — a card-method pending row without a checkout id can
+    // only exist if `sendCardToTerminal` partially failed mid-write.
+    // Treat as "still pending"; the polling endpoint expires it after 5m.
+    await recordAudit(
+      "payment.cancelled",
+      viewer.deviceUserId,
+      paymentId,
+      {
+        ticket_id: payment.ticket_id,
+        payment_id: paymentId,
+        resolved_status: "still_pending",
+      },
+      viewer.staff.id
+    );
+    return { ok: true, resolvedStatus: "still_pending" };
+  }
+
+  // 2) Ask Square to cancel.
+  let cancelResult: Awaited<ReturnType<typeof squareCancelCheckout>> | null = null;
+  let squareReachable = true;
+  try {
+    cancelResult = await squareCancelCheckout(payment.square_terminal_checkout_id);
+  } catch (err) {
+    // 2a) FR-016a race recovery: Square rejects cancel with 400 when the
+    //     checkout already settled. Look up the actual final state via
+    //     getCheckout and synthesize a cancelResult so the normal resolver
+    //     below routes through race_succeeded / cancelled instead of
+    //     still_pending.
+    const terminalState = squareCancelTerminalStateFromError(err);
+    if (terminalState) {
+      try {
+        const current = await squareGetCheckout(payment.square_terminal_checkout_id);
+        cancelResult = {
+          status: current.status,
+          tipCents: current.tipCents,
+          squarePaymentId: current.squarePaymentId,
+        };
+      } catch (getErr) {
+        // getCheckout itself failed — fall through to still_pending; the
+        // webhook/polling path will resolve the row.
+        squareReachable = false;
+        console.warn(
+          "cancelTerminalPayment: getCheckout recovery failed after cancel rejected",
+          getErr
+        );
+      }
+    } else {
+      squareReachable = false;
+      // Log but don't bubble — the operator's intent still gets audited
+      // and the polling/realtime path will resolve the row.
+      console.warn("cancelTerminalPayment: Square cancel call failed", err);
+    }
+  }
+
+  // 3) Resolve the row state based on Square's response (or lack thereof).
+  let resolvedStatus: "cancelled" | "race_succeeded" | "still_pending";
+
+  if (!squareReachable || !cancelResult) {
+    resolvedStatus = "still_pending";
+  } else if (cancelResult.status === "completed") {
+    // Square-wins race path — the customer paid first. Settle the row to
+    // `succeeded` with the tip Square reported.
+    type CardPaymentArgs = {
+      p_payment_id: string;
+      p_new_status: "pending" | "succeeded" | "failed";
+      p_tip_cents: number;
+      p_square_payment_id: string | null;
+      p_raw: unknown;
+      p_failure_reason: string | null;
+    };
+    const args: CardPaymentArgs = {
+      p_payment_id: paymentId,
+      p_new_status: "succeeded",
+      p_tip_cents: cancelResult.tipCents ?? 0,
+      p_square_payment_id: cancelResult.squarePaymentId,
+      p_raw: { kind: "cancel_race_succeeded", cancel_response: cancelResult },
+      p_failure_reason: null,
+    };
+    const { error: rpcErr } = await supabase.rpc(
+      "pos_record_card_payment",
+      args as unknown as Parameters<typeof supabase.rpc<"pos_record_card_payment">>[1]
+    );
+    if (rpcErr) {
+      throw new Error(`cancelTerminalPayment race-succeeded RPC failed: ${rpcErr.message}`);
+    }
+    resolvedStatus = "race_succeeded";
+  } else if (cancelResult.status === "canceled") {
+    type CardPaymentArgs = {
+      p_payment_id: string;
+      p_new_status: "pending" | "succeeded" | "failed";
+      p_tip_cents: number;
+      p_square_payment_id: string | null;
+      p_raw: unknown;
+      p_failure_reason: string | null;
+    };
+    const args: CardPaymentArgs = {
+      p_payment_id: paymentId,
+      p_new_status: "failed",
+      p_tip_cents: 0,
+      p_square_payment_id: null,
+      p_raw: { kind: "cancelled_by_operator", cancel_response: cancelResult },
+      p_failure_reason: "cancelled_by_operator",
+    };
+    const { error: rpcErr } = await supabase.rpc(
+      "pos_record_card_payment",
+      args as unknown as Parameters<typeof supabase.rpc<"pos_record_card_payment">>[1]
+    );
+    if (rpcErr) {
+      throw new Error(`cancelTerminalPayment cancelled RPC failed: ${rpcErr.message}`);
+    }
+    resolvedStatus = "cancelled";
+  } else {
+    // Square returned an intermediate status (cancel_requested / pending /
+    // in_progress) — treat as still pending; the realtime/poll path will
+    // resolve it.
+    resolvedStatus = "still_pending";
+  }
+
+  // 4) Always emit payment.cancelled (operator intent) — independent of
+  //    outcome. The RPC emits payment.failed or payment.captured for the
+  //    settled cases.
+  await recordAudit(
+    "payment.cancelled",
+    viewer.deviceUserId,
+    paymentId,
+    {
+      ticket_id: payment.ticket_id,
+      payment_id: paymentId,
+      resolved_status: resolvedStatus,
+    },
+    viewer.staff.id
+  );
+
+  return { ok: true, resolvedStatus };
 }

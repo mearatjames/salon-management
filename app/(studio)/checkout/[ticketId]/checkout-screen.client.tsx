@@ -22,7 +22,7 @@
 // `tickets.total_cents` is the authority — at charge time `pos_take_cash`
 // reads it from the locked row, not from the client view.
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
 import { Plus, Printer } from "lucide-react";
@@ -31,10 +31,12 @@ import { toast } from "sonner";
 import {
   addDiscountLine,
   addServiceLine,
+  cancelTerminalPayment,
   discardTicket,
   emailBillStub,
   removeDiscountLine,
   removeLine,
+  sendCardToTerminal,
   setLinePrice,
   setLineTech,
   takeCash,
@@ -43,13 +45,21 @@ import {
   CashPaymentFailedError,
   DiscountInvalidError,
   InvalidPriceError,
+  PaymentNotCancellableError,
+  PaymentNotFoundError,
   ServiceArchivedError,
+  SquareCheckoutCreateFailedError,
+  SquareNotConnectedError,
+  SquareReconnectRequiredError,
   StaffNotActiveError,
+  TerminalDeviceRequiredError,
   TicketAlreadyTerminalError,
   TicketEmptyError,
   TicketHasUnpricedItemsError,
   TicketNotOpenError,
 } from "@/app/(studio)/checkout/_errors";
+import { CardWaiting } from "@/components/lacquer/checkout/card-waiting";
+import { subscribePaymentChanges } from "@/lib/realtime/payments";
 
 import { BillSheet, type BillSnapshot } from "@/components/lacquer/checkout/bill-sheet";
 import {
@@ -69,6 +79,12 @@ import { computeTotals } from "@/lib/pos/cart";
 
 type Staff = { id: string; display_name: string; color_token: string };
 
+export type TerminalDevicePropView = {
+  squareDeviceId: string;
+  friendlyName: string;
+  isDefault: boolean;
+};
+
 export type CheckoutScreenProps = {
   ticketId: string;
   initialItems: CartLineView[];
@@ -76,6 +92,16 @@ export type CheckoutScreenProps = {
   services: ServiceTileService[];
   /** Salon-info settings for the BillSheet masthead (US4 / T040). */
   salonInfo: { name: string; address: string; phone: string };
+  /** US2: presence of singleton `square_oauth` row. */
+  squareConnected?: boolean;
+  /** US2: the salon's `is_default = true` device, or null. */
+  defaultDeviceId?: string | null;
+  /** US2: friendly name for the default device (or "Square Terminal"). */
+  defaultDeviceFriendlyName?: string | null;
+  /** US2: every paired device, in display order. */
+  pairedDevices?: TerminalDevicePropView[];
+  /** US2: `square_oauth.refresh_failed_at IS NOT NULL`. */
+  requiresReconnect?: boolean;
 };
 
 function tempId(): string {
@@ -92,6 +118,11 @@ export function CheckoutScreen({
   staff,
   services,
   salonInfo,
+  squareConnected = false,
+  defaultDeviceId = null,
+  defaultDeviceFriendlyName = null,
+  pairedDevices = [],
+  requiresReconnect = false,
 }: CheckoutScreenProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -122,6 +153,18 @@ export function CheckoutScreen({
   // mounted on top of the BillSheet.
   const [billSnapshot, setBillSnapshot] = useState<BillSnapshot | null>(null);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
+  // US2 (015) — card payment flow state.
+  // stage: 'cart' = default, 'waiting' = terminal prompt in flight, 'card-failed' = inline retry UI.
+  const [cardStage, setCardStage] = useState<"cart" | "waiting" | "card-failed">("cart");
+  const [activeCardPaymentId, setActiveCardPaymentId] = useState<string | null>(null);
+  const [cardFailureReason, setCardFailureReason] = useState<string | null>(null);
+  // We need a ref to the latest activeCardPaymentId so the polling
+  // setInterval (set up once at waiting-stage start) can read the current
+  // id without re-subscribing on every render.
+  const activeCardPaymentRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeCardPaymentRef.current = activeCardPaymentId;
+  }, [activeCardPaymentId]);
 
   const staffById = useMemo(() => {
     const m = new Map<string, Staff>();
@@ -436,6 +479,209 @@ export function CheckoutScreen({
     router.push("/dashboard");
   }
 
+  // ----------------------------------------------------------------------
+  // US2 (015) — Card payment flow.
+  //
+  // handleSendCard fires when the operator taps "Send to Square Terminal".
+  // It calls sendCardToTerminal (Server Action), transitions to the
+  // waiting stage, and lets the realtime/polling effect take over.
+  //
+  // The realtime+polling useEffect:
+  //   - opens a Supabase Realtime channel scoped to this ticket
+  //   - starts a 5s polling timer against the polling endpoint
+  //   - on EITHER signal observing status=succeeded → router.refresh()
+  //     (which re-renders the page; the paid-status branch shows
+  //     DoneScreen)
+  //   - on status=failed → transitions to card-failed stage for inline
+  //     retry UI
+  //   - tears down both on unmount/cancel/advance (research R10).
+  // ----------------------------------------------------------------------
+
+  async function handleSendCard() {
+    if (cardStage !== "cart" || inflight) return;
+    if (paymentMethod !== "card") return;
+
+    setInflight(true);
+    setErrorBanner(null);
+    try {
+      const { paymentId } = await sendCardToTerminal(ticketId, defaultDeviceId ?? undefined);
+      setActiveCardPaymentId(paymentId);
+      setCardStage("waiting");
+    } catch (err) {
+      if (err instanceof SquareNotConnectedError) {
+        setErrorBanner("Square isn’t connected. Connect it in settings to accept cards.");
+      } else if (err instanceof SquareReconnectRequiredError) {
+        setErrorBanner("Square needs to be reconnected. Open settings to fix it.");
+      } else if (err instanceof TerminalDeviceRequiredError) {
+        setErrorBanner("Pair a Square Terminal (or pick a default in settings) before charging.");
+      } else if (err instanceof SquareCheckoutCreateFailedError) {
+        setErrorBanner("Could not reach Square. Try again or pick a different method.");
+      } else if (err instanceof TicketHasUnpricedItemsError) {
+        setErrorBanner("Set price on highlighted items before charging.");
+      } else if (err instanceof TicketEmptyError) {
+        setErrorBanner("Add at least one priced line before charging.");
+      } else if (err instanceof TicketNotOpenError) {
+        setErrorBanner("This ticket is no longer open.");
+      } else {
+        setErrorBanner("Couldn’t start the card payment. Try again.");
+      }
+    } finally {
+      setInflight(false);
+    }
+  }
+
+  function returnToPickerFromWaiting() {
+    setCardStage("cart");
+    setActiveCardPaymentId(null);
+    setCardFailureReason(null);
+    setPaymentMethod(null);
+  }
+
+  // US3 (T045): wire the waiting-screen Cancel link to the server action.
+  //
+  // The action calls Square's cancelCheckout and returns one of three
+  // resolved statuses:
+  //   - 'cancelled'       → row settled to failed/cancelled_by_operator
+  //                          → return to picker (failure inline screen is
+  //                            unnecessary; the operator's intent was
+  //                            honoured cleanly).
+  //   - 'race_succeeded'  → Square's response said COMPLETED before the
+  //                          cancel reached the terminal. Row is now
+  //                          succeeded; advance to Done with a one-time
+  //                          toast explaining the race outcome.
+  //   - 'still_pending'   → Square unreachable. Keep the waiting screen
+  //                          open; the existing realtime/poll path will
+  //                          resolve the row when Square / webhook catches
+  //                          up. Surface a calm inline note so the operator
+  //                          knows the cancel didn't bite.
+  async function handleCancelTerminalPayment() {
+    const id = activeCardPaymentRef.current;
+    if (!id || inflight) return;
+    setInflight(true);
+    setErrorBanner(null);
+    try {
+      const result = await cancelTerminalPayment(id);
+      if (result.resolvedStatus === "cancelled") {
+        returnToPickerFromWaiting();
+      } else if (result.resolvedStatus === "race_succeeded") {
+        toast.success(
+          "Card was charged before cancel reached the terminal. Showing the successful payment."
+        );
+        // The ticket has flipped to paid via the RPC; refresh the page so
+        // the server-side branch renders the DoneScreen.
+        router.refresh();
+      } else {
+        // still_pending — keep the waiting screen, let the realtime/poll
+        // path finish the job. Surface a soft note so the operator
+        // understands why nothing changed yet.
+        setErrorBanner("Couldn’t reach Square to cancel. Waiting for the terminal to settle.");
+      }
+    } catch (err) {
+      if (err instanceof PaymentNotCancellableError) {
+        // Row already settled — refresh so the latest state renders.
+        router.refresh();
+      } else if (err instanceof PaymentNotFoundError) {
+        setErrorBanner("That payment is no longer pending.");
+        returnToPickerFromWaiting();
+      } else {
+        setErrorBanner("Couldn’t cancel the card payment. Try again.");
+      }
+    } finally {
+      setInflight(false);
+    }
+  }
+
+  async function pollOnce(): Promise<void> {
+    const id = activeCardPaymentRef.current;
+    if (!id) return;
+    try {
+      const res = await fetch(`/api/square/terminal-checkout/${id}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const body = (await res.json()) as
+        | { status: "pending" }
+        | { status: "succeeded"; tipCents: number }
+        | { status: "failed"; reason: string };
+      if (body.status === "succeeded") {
+        router.refresh();
+      } else if (body.status === "failed") {
+        setCardStage("card-failed");
+        setCardFailureReason(body.reason);
+      }
+    } catch {
+      // Network blip; the next interval will re-try.
+    }
+  }
+
+  useEffect(() => {
+    if (cardStage !== "waiting" || !activeCardPaymentId) return;
+
+    // Realtime channel — fires on UPDATE events for this ticket's
+    // payment rows. We re-check the polling endpoint on every event to
+    // get the canonical poll-shaped response (status + reason).
+    const unsubscribe = subscribePaymentChanges(ticketId, () => {
+      void pollOnce();
+    });
+
+    // Polling timer — 5s cadence; fires immediately once on mount so
+    // the first signal arrives within ~5s in the lost-realtime case
+    // (research R5).
+    const interval = window.setInterval(() => {
+      void pollOnce();
+    }, 5000);
+
+    return () => {
+      unsubscribe();
+      window.clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardStage, activeCardPaymentId, ticketId]);
+
+  async function handleCardFailedRetry() {
+    // Insert a fresh attempt — sendCardToTerminal handles the per-attempt
+    // row contract (FR-015): a new pending row, new payment_id. We bypass
+    // `handleSendCard`'s `cardStage !== 'cart'` guard because React state
+    // updates are async and the cart-stage reset wouldn't be visible to
+    // the next call yet. Inline the same body here, then move to waiting.
+    if (inflight) return;
+    setCardFailureReason(null);
+    setInflight(true);
+    setErrorBanner(null);
+    try {
+      const { paymentId } = await sendCardToTerminal(ticketId, defaultDeviceId ?? undefined);
+      setActiveCardPaymentId(paymentId);
+      setCardStage("waiting");
+    } catch (err) {
+      if (err instanceof SquareNotConnectedError) {
+        setErrorBanner("Square isn’t connected. Connect it in settings to accept cards.");
+      } else if (err instanceof SquareReconnectRequiredError) {
+        setErrorBanner("Square needs to be reconnected. Open settings to fix it.");
+      } else if (err instanceof TerminalDeviceRequiredError) {
+        setErrorBanner("Pair a Square Terminal (or pick a default in settings) before charging.");
+      } else if (err instanceof SquareCheckoutCreateFailedError) {
+        setErrorBanner("Could not reach Square. Try again or pick a different method.");
+      } else if (err instanceof TicketHasUnpricedItemsError) {
+        setErrorBanner("Set price on highlighted items before charging.");
+      } else if (err instanceof TicketEmptyError) {
+        setErrorBanner("Add at least one priced line before charging.");
+      } else if (err instanceof TicketNotOpenError) {
+        setErrorBanner("This ticket is no longer open.");
+      } else {
+        setErrorBanner("Couldn’t start the card payment. Try again.");
+      }
+      // Drop back to picker so the operator can recover.
+      setCardStage("cart");
+      setActiveCardPaymentId(null);
+    } finally {
+      setInflight(false);
+    }
+  }
+
+  function handleCardFailedPickAnother() {
+    returnToPickerFromWaiting();
+  }
+
   // US4 (T041): capture a frozen snapshot of the cart at the moment Bill
   // is tapped. Deep-clone the lines so subsequent cart mutations don't
   // bleed into what the operator is looking at on paper (research.md § R14).
@@ -499,6 +745,139 @@ export function CheckoutScreen({
     const s = staffById.get(firstService.assignedStaffId);
     return s ? s.display_name : null;
   })();
+
+  // US2 (015): when a card payment is in flight, render the waiting
+  // screen full-width. The cart + catalog drop out so the operator's
+  // focus is on the terminal. On cancel we return to the picker.
+  if (cardStage === "waiting") {
+    return (
+      <div className="checkout-shell" data-slot="checkout-shell" data-ticket-id={ticketId}>
+        <TxHeader
+          subtitle="Walk-in"
+          onCancel={() => void handleCancelTerminalPayment()}
+          onDiscard={handleDiscard}
+          disabled={inflight}
+        />
+        <CardWaiting
+          amountCents={totals.totalCents}
+          deviceFriendlyName={defaultDeviceFriendlyName ?? "Square Terminal"}
+          onCancel={() => void handleCancelTerminalPayment()}
+        />
+        {errorBanner ? (
+          <p
+            role="alert"
+            data-slot="card-waiting-notice"
+            style={{
+              margin: "0 auto",
+              maxWidth: "calc(var(--space-16) * 6)",
+              padding: "var(--space-2) var(--space-3)",
+              background: "color-mix(in oklch, var(--muted) 60%, transparent)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius-sm)",
+              color: "var(--muted-foreground)",
+              fontSize: "var(--text-sm)",
+              fontWeight: 500,
+              textAlign: "center",
+            }}
+          >
+            {errorBanner}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (cardStage === "card-failed") {
+    // Map failure_reason → calm sentence-case copy per the US3 spec.
+    // Unknown reasons fall back to a generic "Card payment failed".
+    const failureCopy =
+      cardFailureReason === "declined"
+        ? "Card declined"
+        : cardFailureReason === "device_offline"
+          ? "Terminal not reachable"
+          : cardFailureReason === "cancelled_by_operator"
+            ? "Payment cancelled"
+            : cardFailureReason === "expired"
+              ? "Payment timed out"
+              : cardFailureReason === "square_unreachable"
+                ? "Couldn’t reach Square"
+                : "Card payment failed";
+
+    return (
+      <div className="checkout-shell" data-slot="checkout-shell" data-ticket-id={ticketId}>
+        <TxHeader
+          subtitle="Walk-in"
+          onCancel={returnToPickerFromWaiting}
+          onDiscard={handleDiscard}
+          disabled={inflight}
+        />
+        <div
+          data-slot="card-failed"
+          style={{
+            flex: 1,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "var(--space-5)",
+            padding: "var(--space-8)",
+            textAlign: "center",
+          }}
+        >
+          <div
+            data-slot="card-failed-title"
+            style={{
+              fontSize: "var(--text-2xl)",
+              fontWeight: 600,
+              color: "var(--foreground)",
+              letterSpacing: "var(--tracking-snug)",
+            }}
+          >
+            {failureCopy}
+          </div>
+          <div style={{ display: "flex", gap: "var(--space-2)" }}>
+            <button
+              type="button"
+              data-slot="card-failed-retry"
+              onClick={() => void handleCardFailedRetry()}
+              disabled={inflight}
+              style={{
+                height: "var(--space-10)",
+                padding: "0 var(--space-4)",
+                background: "var(--primary)",
+                color: "var(--primary-foreground)",
+                border: "none",
+                borderRadius: "var(--radius-sm)",
+                fontSize: "var(--text-sm)",
+                fontWeight: 600,
+                cursor: inflight ? "not-allowed" : "pointer",
+              }}
+            >
+              Try again
+            </button>
+            <button
+              type="button"
+              data-slot="card-failed-pick-another"
+              onClick={handleCardFailedPickAnother}
+              style={{
+                height: "var(--space-10)",
+                padding: "0 var(--space-4)",
+                background: "transparent",
+                color: "var(--foreground)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                fontSize: "var(--text-sm)",
+                fontWeight: 500,
+                cursor: "pointer",
+              }}
+            >
+              Pick a different method
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="checkout-shell" data-slot="checkout-shell" data-ticket-id={ticketId}>
@@ -631,7 +1010,17 @@ export function CheckoutScreen({
               {errorBanner}
             </p>
           ) : null}
-          <PaymentTiles value={paymentMethod} onChange={setPaymentMethod} />
+          <PaymentTiles
+            value={paymentMethod}
+            onChange={setPaymentMethod}
+            squareConnected={squareConnected && !requiresReconnect}
+            devicesAvailable={pairedDevices.length}
+            amountCents={totals.totalCents}
+            onSendCard={handleSendCard}
+            cardSendDisabled={
+              inflight || !totals.chargeEligible || lines.some((l) => l.priceUnconfirmed)
+            }
+          />
           {/* US4 (T041): Bill + Charge sit side-by-side in the cart footer.
               Bill is the token-styled secondary button per the prototype;
               clicking it captures a frozen snapshot and opens the BillSheet
