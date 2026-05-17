@@ -76,7 +76,11 @@ jobs:
             echo "SQUARE_APPLICATION_ID=placeholder"
             echo "SQUARE_APPLICATION_SECRET=placeholder"
             echo "SQUARE_ENVIRONMENT=sandbox"
-            echo "SQUARE_WEBHOOK_SIGNATURE_KEY=placeholder"
+            # Match the deterministic test key the e2e stub uses when
+            # signing webhook POSTs (tests/e2e/_square-stub.ts reads it
+            # from tests/fixtures/square-webhook-key.txt). Same value, no
+            # secrets — the fixture lives in the repo.
+            echo "SQUARE_WEBHOOK_SIGNATURE_KEY=$(cat tests/fixtures/square-webhook-key.txt)"
             # Route server-side Square fetches at the local Playwright stub
             # (_square-server-stub.ts, port 4567) so e2e never hits Square's
             # real sandbox host.
