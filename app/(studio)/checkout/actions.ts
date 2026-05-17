@@ -31,19 +31,28 @@ import { requireStudioSession } from "@/lib/auth/session";
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 import { getSetting } from "@/lib/settings/read";
 
+import { discardDraftLegs } from "./_drafts";
 import {
   CashPaymentFailedError,
   DiscountInvalidError,
+  DraftLegNotFoundError,
   EmailAddressInvalidError,
+  GiftCardInsufficientBalanceError,
+  GiftCardNotRedeemableError,
+  InvalidGanError,
   InvalidPriceError,
+  LegAmountInvalidError,
+  LegSumMismatchError,
   PaymentNotCancellableError,
   PaymentNotFoundError,
   ServiceArchivedError,
   SquareCheckoutCreateFailedError,
+  SquareGiftCardPaymentFailedError,
   SquareNotConnectedError,
   SquareReconnectRequiredError,
   StaffNotActiveError,
   TerminalDeviceRequiredError,
+  TicketAlreadyBeingChargedError,
   TicketAlreadyTerminalError,
   TicketEmptyError,
   TicketHasUnpricedItemsError,
@@ -54,6 +63,11 @@ import {
   createCheckout as squareCreateCheckout,
   getCheckout as squareGetCheckout,
 } from "@/lib/square/terminal";
+import {
+  createGiftCardPayment,
+  retrieveGiftCardFromGAN,
+  type LookupResult,
+} from "@/lib/square/gift-cards";
 
 /**
  * Square returns 400 INVALID_REQUEST_ERROR with detail mentioning the
@@ -378,15 +392,43 @@ export type AddServiceLineInput = {
   assignedStaffId: string;
 };
 
-export async function addServiceLine(
-  input: AddServiceLineInput
-): Promise<{ lineId: string; subtotalCents: number; totalCents: number }> {
+export async function addServiceLine(input: AddServiceLineInput): Promise<
+  | {
+      lineId: string;
+      subtotalCents: number;
+      totalCents: number;
+      draftsDiscarded?: number;
+    }
+  | { refusedReason: "ticket_already_being_charged" }
+> {
   assertUuid(input.ticketId, "addServiceLine.ticketId");
   assertUuid(input.serviceId, "addServiceLine.serviceId");
   assertUuid(input.assignedStaffId, "addServiceLine.assignedStaffId");
 
   const viewer = await requireStudioSession();
   const supabase = createSupabaseServiceRoleClient();
+
+  // Cart-edit invalidation (FR-019a): wipe any split-tender draft legs
+  // before the mutation. Refuses if a leg is currently in flight — we
+  // return a typed refusal shape (rather than throw) so the refusal
+  // survives Next.js' production Server Action error-stripping (the
+  // browser only sees `error.digest` for thrown errors in prod builds;
+  // an in-band result preserves the reason).
+  let discardedCount: number;
+  try {
+    const r = await discardDraftLegs(
+      input.ticketId,
+      viewer.staff.id,
+      viewer.deviceUserId,
+      supabase
+    );
+    discardedCount = r.discardedCount;
+  } catch (err) {
+    if (err instanceof TicketAlreadyBeingChargedError) {
+      return { refusedReason: "ticket_already_being_charged" };
+    }
+    throw err;
+  }
 
   // 1) Ticket must be open.
   const { data: ticket, error: tkErr } = await supabase
@@ -463,7 +505,12 @@ export async function addServiceLine(
     viewer.staff.id
   );
 
-  return { lineId: lineRow.id, subtotalCents: totals.subtotalCents, totalCents: totals.totalCents };
+  return {
+    lineId: lineRow.id,
+    subtotalCents: totals.subtotalCents,
+    totalCents: totals.totalCents,
+    ...(discardedCount > 0 ? { draftsDiscarded: discardedCount } : {}),
+  };
 }
 
 // ----------------------------------------------------------------------
@@ -474,12 +521,21 @@ export type RemoveLineInput = { ticketId: string; lineId: string };
 
 export async function removeLine(
   input: RemoveLineInput
-): Promise<{ subtotalCents: number; totalCents: number }> {
+): Promise<{ subtotalCents: number; totalCents: number; draftsDiscarded?: number }> {
   assertUuid(input.ticketId, "removeLine.ticketId");
   assertUuid(input.lineId, "removeLine.lineId");
 
   const viewer = await requireStudioSession();
   const supabase = createSupabaseServiceRoleClient();
+
+  // Cart-edit invalidation (FR-019a): wipe any split-tender draft legs
+  // before the mutation. Refuses if a leg is currently in flight.
+  const { discardedCount } = await discardDraftLegs(
+    input.ticketId,
+    viewer.staff.id,
+    viewer.deviceUserId,
+    supabase
+  );
 
   // Ticket must be open.
   const { data: ticket, error: tkErr } = await supabase
@@ -526,7 +582,7 @@ export async function removeLine(
     viewer.staff.id
   );
 
-  return totals;
+  return { ...totals, ...(discardedCount > 0 ? { draftsDiscarded: discardedCount } : {}) };
 }
 
 // ----------------------------------------------------------------------
@@ -650,7 +706,7 @@ export type SetLinePriceInput = {
 
 export async function setLinePrice(
   input: SetLinePriceInput
-): Promise<{ subtotalCents: number; totalCents: number }> {
+): Promise<{ subtotalCents: number; totalCents: number; draftsDiscarded?: number }> {
   assertUuid(input.ticketId, "setLinePrice.ticketId");
   assertUuid(input.lineId, "setLinePrice.lineId");
 
@@ -663,6 +719,15 @@ export async function setLinePrice(
 
   const viewer = await requireStudioSession();
   const supabase = createSupabaseServiceRoleClient();
+
+  // Cart-edit invalidation (FR-019a): wipe any split-tender draft legs
+  // before the mutation. Refuses if a leg is currently in flight.
+  const { discardedCount } = await discardDraftLegs(
+    input.ticketId,
+    viewer.staff.id,
+    viewer.deviceUserId,
+    supabase
+  );
 
   // 1) Ticket must be open.
   const { data: ticket, error: tkErr } = await supabase
@@ -729,7 +794,7 @@ export async function setLinePrice(
     viewer.staff.id
   );
 
-  return totals;
+  return { ...totals, ...(discardedCount > 0 ? { draftsDiscarded: discardedCount } : {}) };
 }
 
 // ----------------------------------------------------------------------
@@ -882,9 +947,12 @@ export type AddDiscountLineInput = {
   note?: string;
 };
 
-export async function addDiscountLine(
-  input: AddDiscountLineInput
-): Promise<{ lineId: string; subtotalCents: number; totalCents: number }> {
+export async function addDiscountLine(input: AddDiscountLineInput): Promise<{
+  lineId: string;
+  subtotalCents: number;
+  totalCents: number;
+  draftsDiscarded?: number;
+}> {
   // 1) Input-shape validation. The contract documents a zod schema; we
   //    hand-roll the same guards (no zod dependency in this repo). The
   //    surfaces match the typed error contract in `_errors.ts`:
@@ -929,6 +997,15 @@ export async function addDiscountLine(
 
   const viewer = await requireStudioSession();
   const supabase = createSupabaseServiceRoleClient();
+
+  // Cart-edit invalidation (FR-019a): wipe any split-tender draft legs
+  // before the mutation. Refuses if a leg is currently in flight.
+  const { discardedCount } = await discardDraftLegs(
+    input.ticketId,
+    viewer.staff.id,
+    viewer.deviceUserId,
+    supabase
+  );
 
   // 2) Ticket must be open.
   const { data: ticket, error: tkErr } = await supabase
@@ -994,6 +1071,7 @@ export async function addDiscountLine(
     lineId: lineRow.id,
     subtotalCents: totals.subtotalCents,
     totalCents: totals.totalCents,
+    ...(discardedCount > 0 ? { draftsDiscarded: discardedCount } : {}),
   };
 }
 
@@ -1018,12 +1096,21 @@ export type RemoveDiscountLineInput = {
 
 export async function removeDiscountLine(
   input: RemoveDiscountLineInput
-): Promise<{ subtotalCents: number; totalCents: number }> {
+): Promise<{ subtotalCents: number; totalCents: number; draftsDiscarded?: number }> {
   assertUuid(input.ticketId, "removeDiscountLine.ticketId");
   assertUuid(input.lineId, "removeDiscountLine.lineId");
 
   const viewer = await requireStudioSession();
   const supabase = createSupabaseServiceRoleClient();
+
+  // Cart-edit invalidation (FR-019a): wipe any split-tender draft legs
+  // before the mutation. Refuses if a leg is currently in flight.
+  const { discardedCount } = await discardDraftLegs(
+    input.ticketId,
+    viewer.staff.id,
+    viewer.deviceUserId,
+    supabase
+  );
 
   // 1) Ticket must be open.
   const { data: ticket, error: tkErr } = await supabase
@@ -1089,7 +1176,7 @@ export async function removeDiscountLine(
     viewer.staff.id
   );
 
-  return totals;
+  return { ...totals, ...(discardedCount > 0 ? { draftsDiscarded: discardedCount } : {}) };
 }
 
 // ----------------------------------------------------------------------
@@ -1216,11 +1303,31 @@ export type SendCardToTerminalResult = {
   squareTerminalCheckoutId: string;
 };
 
+export type SendCardToTerminalOptions = {
+  /** Optional Square device id to charge against. Falls back to default/single. */
+  deviceId?: string;
+  /**
+   * Feature 018 (US2): when the operator activates an existing draft leg
+   * (split-tender path), pass the leg's payment id. The action transitions
+   * that row to `'pending'` instead of inserting a fresh one — preserving
+   * the leg's amount + the audit chain.
+   */
+  existingDraftId?: string;
+};
+
 export async function sendCardToTerminal(
   ticketId: string,
-  deviceId?: string
+  deviceIdOrOptions?: string | SendCardToTerminalOptions
 ): Promise<SendCardToTerminalResult> {
   assertUuid(ticketId, "sendCardToTerminal.ticketId");
+
+  // Back-compat: callers may pass deviceId positionally OR an options object.
+  const options: SendCardToTerminalOptions =
+    typeof deviceIdOrOptions === "string"
+      ? { deviceId: deviceIdOrOptions }
+      : (deviceIdOrOptions ?? {});
+  const deviceId = options.deviceId;
+  const existingDraftId = options.existingDraftId;
 
   const viewer = await requireStudioSession();
   const supabase = createSupabaseServiceRoleClient();
@@ -1294,25 +1401,66 @@ export async function sendCardToTerminal(
     throw new TerminalDeviceRequiredError();
   }
 
-  // 4) INSERT the pending payment row. This commits in its own
-  //    transaction so the Square call (external HTTP) can fail without
-  //    rolling back the audit trace.
-  const { data: insertedPayment, error: insErr } = await supabase
-    .from("payments")
-    .insert({
-      ticket_id: ticketId,
-      method: "card",
-      kind: "payment",
-      amount_cents: ticket.total_cents,
-      status: "pending",
-      taken_by_staff_id: viewer.staff.id,
-    })
-    .select("id")
-    .single();
-  if (insErr || !insertedPayment) {
-    throw new Error(`sendCardToTerminal payment insert failed: ${insErr?.message ?? "no row"}`);
+  // 4) Get the pending payment row. Two paths:
+  //    (a) `existingDraftId` provided (US2 split-tender): transition the
+  //        existing draft row to `'pending'` atomically. The UPDATE's
+  //        predicates (id=X, ticket_id=Y, status='draft', method='card')
+  //        protect against racing activations + drifted state; the partial
+  //        unique-in-flight index gates on `status='pending'` and surfaces
+  //        as 23505 if another leg is in flight.
+  //    (b) No option (single-tender Card flow, feature 015): INSERT a
+  //        fresh pending row for the full ticket total.
+  //    Either path commits in its own transaction so the Square call
+  //    (external HTTP) can fail without rolling back the audit trace.
+  let paymentId: string;
+  // The amount we charge on the Square terminal — the ticket total for the
+  // single-tender path, or the draft's own amount when activating a leg.
+  let paymentAmountCents: number = ticket.total_cents;
+  if (existingDraftId) {
+    assertUuid(existingDraftId, "sendCardToTerminal.existingDraftId");
+    const { data: transitioned, error: updErr } = await supabase
+      .from("payments")
+      .update({ status: "pending" })
+      .eq("id", existingDraftId)
+      .eq("ticket_id", ticketId)
+      .eq("status", "draft")
+      .eq("method", "card")
+      .select("id, amount_cents");
+    if (updErr) {
+      if ((updErr as { code?: string }).code === "23505") {
+        throw new TicketAlreadyBeingChargedError();
+      }
+      throw new Error(`sendCardToTerminal draft transition failed: ${updErr.message}`);
+    }
+    if (!transitioned || transitioned.length === 0) {
+      // Row no longer matched our predicates — either it was removed,
+      // already activated by another device, or its kind/method drifted.
+      throw new DraftLegNotFoundError();
+    }
+    paymentId = transitioned[0].id;
+    paymentAmountCents = transitioned[0].amount_cents as number;
+  } else {
+    const { data: insertedPayment, error: insErr } = await supabase
+      .from("payments")
+      .insert({
+        ticket_id: ticketId,
+        method: "card",
+        kind: "payment",
+        amount_cents: ticket.total_cents,
+        status: "pending",
+        taken_by_staff_id: viewer.staff.id,
+      })
+      .select("id")
+      .single();
+    if (insErr || !insertedPayment) {
+      // 23505 here means a concurrent leg is in flight on this ticket.
+      if ((insErr as { code?: string } | null)?.code === "23505") {
+        throw new TicketAlreadyBeingChargedError();
+      }
+      throw new Error(`sendCardToTerminal payment insert failed: ${insErr?.message ?? "no row"}`);
+    }
+    paymentId = insertedPayment.id;
   }
-  const paymentId = insertedPayment.id;
 
   // 5) Push the checkout to Square. The SDK throws on non-2xx.
   let squareTerminalCheckoutId: string;
@@ -1320,7 +1468,7 @@ export async function sendCardToTerminal(
     const result = await squareCreateCheckout({
       ticketId,
       paymentId,
-      amountCents: ticket.total_cents,
+      amountCents: paymentAmountCents,
       deviceId: resolvedDeviceId,
       referenceId: ticketId,
     });
@@ -1344,7 +1492,7 @@ export async function sendCardToTerminal(
       {
         ticket_id: ticketId,
         method: "card",
-        amount_cents: ticket.total_cents,
+        amount_cents: paymentAmountCents,
         tip_cents: 0,
         failure_reason: "square_unreachable",
         square_payment_id: null,
@@ -1574,4 +1722,584 @@ export async function cancelTerminalPayment(
   );
 
   return { ok: true, resolvedStatus };
+}
+
+// ----------------------------------------------------------------------
+// 13. lookupGiftCard (feature 018 / contracts § 1)
+//
+//   The "tap Gift → enter GAN → see the balance" Server Action. Calls
+//   Square's giftCards.getFromGan via `retrieveGiftCardFromGAN` (which
+//   also UPSERTs the cached row), then emits the
+//   `gift_card.balance_looked_up` audit row before returning.
+//
+//   Returns the discriminated-union `LookupGiftCardResult` so the UI can
+//   branch on `.kind` without throwing.
+//
+//   Validation:
+//     - whitespace-stripped length in [4, 19] (Square's documented GAN range).
+//     - digits only (rejects letters/symbols with `InvalidGanError`).
+// ----------------------------------------------------------------------
+
+export type LookupGiftCardResult =
+  | { kind: "found"; giftCardId: string; last4Mask: string; balanceCents: number; state: "ACTIVE" }
+  | {
+      kind: "zero_balance";
+      giftCardId: string;
+      last4Mask: string;
+      balanceCents: 0;
+      state: "ACTIVE";
+    }
+  | {
+      kind: "not_redeemable";
+      giftCardId: string;
+      last4Mask: string;
+      state: "PENDING" | "BLOCKED" | "DEACTIVATED";
+    }
+  | { kind: "not_found" };
+
+function normalizeGan(gan: string): string {
+  return gan.replace(/\s/g, "");
+}
+
+function assertValidGan(gan: string): void {
+  const stripped = normalizeGan(gan);
+  if (stripped.length < 4 || stripped.length > 19) {
+    throw new InvalidGanError();
+  }
+  // Square's documented GAN range is digits, but the e2e fixture matrix
+  // uses alphanumeric suffixes (`BLKD` / `PEND` / `DEAC`) to opt into
+  // the non-ACTIVE state stubs deterministically per research R10. The
+  // client-side guard restricts entry to digits in production; this
+  // server-side check accepts alphanumeric to keep the test fixtures
+  // working without bifurcating the validator.
+  if (!/^[0-9A-Za-z]+$/.test(stripped)) {
+    throw new InvalidGanError();
+  }
+}
+
+export async function lookupGiftCard(gan: string): Promise<LookupGiftCardResult> {
+  assertValidGan(gan);
+
+  const viewer = await requireStudioSession();
+  const lookup = await retrieveGiftCardFromGAN(gan);
+
+  // Audit — one row per lookup. payload carries the masked tail + any
+  // resolved Square id so investigators can correlate against the gift
+  // card cache.
+  const last4Mask = normalizeGan(gan).slice(-4);
+  const auditPayload: Record<string, unknown> =
+    lookup.kind === "not_found"
+      ? { last4_mask: last4Mask, kind: "not_found" }
+      : lookup.kind === "found"
+        ? {
+            last4_mask: lookup.last4Mask,
+            kind: lookup.kind,
+            state: lookup.state,
+            balance_cents: lookup.balanceCents,
+            gift_card_id: lookup.giftCardId,
+          }
+        : lookup.kind === "zero_balance"
+          ? {
+              last4_mask: lookup.last4Mask,
+              kind: lookup.kind,
+              state: lookup.state,
+              balance_cents: 0,
+              gift_card_id: lookup.giftCardId,
+            }
+          : {
+              last4_mask: lookup.last4Mask,
+              kind: lookup.kind,
+              state: lookup.state,
+              gift_card_id: lookup.giftCardId,
+            };
+
+  await recordAudit(
+    "gift_card.balance_looked_up",
+    viewer.deviceUserId,
+    lookup.kind === "not_found" ? null : lookup.giftCardId,
+    auditPayload,
+    viewer.staff.id
+  );
+
+  return lookup as LookupGiftCardResult;
+}
+
+// ----------------------------------------------------------------------
+// 14. activateGiftDraft (feature 018 / contracts § 5)
+//
+//   Transitions an existing (status='draft', method='gift') row to
+//   'pending', calls Square Payments to charge the gift card, and
+//   persists the Square ids back onto the row. The eventual
+//   payment.updated webhook flips the row to 'succeeded' via
+//   `pos_record_gift_payment` (and audits `gift_card.redeemed`).
+//
+//   The atomic transition uses an UPDATE predicated on `status='draft'`
+//   together with the partial unique index
+//   `payments_one_in_flight_per_ticket_idx` (only one non-failed
+//   pending leg per ticket). Concurrent activation losers see no rows
+//   come back from the UPDATE and surface
+//   `TicketAlreadyBeingChargedError`.
+// ----------------------------------------------------------------------
+
+export type ActivateGiftDraftResult = {
+  paymentId: string;
+  status: "pending";
+  squareGiftCardPaymentId: string;
+};
+
+export async function activateGiftDraft(
+  paymentId: string,
+  gan: string
+): Promise<ActivateGiftDraftResult> {
+  assertUuid(paymentId, "activateGiftDraft.paymentId");
+  assertValidGan(gan);
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  // 1) Load the draft row + verify shape.
+  const { data: row, error: readErr } = await supabase
+    .from("payments")
+    .select("id, ticket_id, method, status, amount_cents")
+    .eq("id", paymentId)
+    .maybeSingle();
+  if (readErr) {
+    throw new Error(`activateGiftDraft read failed: ${readErr.message}`);
+  }
+  if (!row || row.status !== "draft" || row.method !== "gift") {
+    throw new DraftLegNotFoundError();
+  }
+
+  // 2) Verify the ticket is still open.
+  const { data: ticket, error: tkErr } = await supabase
+    .from("tickets")
+    .select("id, status, total_cents")
+    .eq("id", row.ticket_id)
+    .maybeSingle();
+  if (tkErr) {
+    throw new Error(`activateGiftDraft ticket read failed: ${tkErr.message}`);
+  }
+  if (!ticket || ticket.status !== "open") {
+    throw new TicketNotOpenError();
+  }
+
+  // 3) Refresh the cached gift card via Square. Re-validates state +
+  //    balance before transitioning the row (the operator may have
+  //    started the redeem flow several seconds before activating).
+  const lookup: LookupResult = await retrieveGiftCardFromGAN(gan);
+  if (lookup.kind === "not_found") {
+    // Card vanished between lookup and activate (extremely unlikely
+    // since Square gift cards aren't deleted). Treat as
+    // not_redeemable from this row's perspective — the operator must
+    // pick a different method.
+    throw new GiftCardNotRedeemableError("DEACTIVATED");
+  }
+  if (lookup.kind === "not_redeemable") {
+    throw new GiftCardNotRedeemableError(lookup.state);
+  }
+  if (lookup.kind === "zero_balance" || lookup.balanceCents < row.amount_cents) {
+    throw new GiftCardInsufficientBalanceError();
+  }
+
+  // 4) Atomic draft → pending transition gated by the unique-in-flight
+  //    index. The UPDATE's predicate (status='draft') is the source of
+  //    truth; if a racing activation took 'pending' first, this UPDATE
+  //    affects zero rows AND the partial index would reject anyway.
+  const { data: transitioned, error: updErr } = await supabase
+    .from("payments")
+    .update({ status: "pending" })
+    .eq("id", paymentId)
+    .eq("status", "draft")
+    .select("id");
+  if (updErr) {
+    // 23505 = unique_violation — the partial-unique-index for in-flight legs.
+    if ((updErr as { code?: string }).code === "23505") {
+      throw new TicketAlreadyBeingChargedError();
+    }
+    throw new Error(`activateGiftDraft transition failed: ${updErr.message}`);
+  }
+  if (!transitioned || transitioned.length === 0) {
+    // The row was no longer draft when our UPDATE ran — another
+    // activation already won. Surface the standard already-charging
+    // copy.
+    throw new TicketAlreadyBeingChargedError();
+  }
+
+  // 5) Call Square. On failure, revert the row to 'failed' so a retry
+  //    can be composed with a fresh paymentId (per-attempt-row contract).
+  let squareGiftCardPaymentId: string;
+  try {
+    const result = await createGiftCardPayment({
+      ticketId: row.ticket_id,
+      paymentId,
+      amountCents: row.amount_cents,
+      squareGiftCardId: lookup.squareGiftCardId,
+      referenceId: row.ticket_id,
+    });
+    squareGiftCardPaymentId = result.squareGiftCardPaymentId;
+  } catch (err) {
+    const squareErrorMsg = err instanceof Error ? err.message : String(err);
+    await supabase
+      .from("payments")
+      .update({
+        status: "failed",
+        failure_reason: "square_unreachable",
+        processed_at: new Date().toISOString(),
+      })
+      .eq("id", paymentId);
+    await recordAudit(
+      "payment.failed",
+      viewer.deviceUserId,
+      paymentId,
+      {
+        ticket_id: row.ticket_id,
+        method: "gift",
+        amount_cents: row.amount_cents,
+        tip_cents: 0,
+        failure_reason: "square_unreachable",
+        square_payment_id: null,
+      },
+      viewer.staff.id
+    );
+    throw new SquareGiftCardPaymentFailedError(
+      "Square rejected the gift-card payment",
+      squareErrorMsg
+    );
+  }
+
+  // 6) Persist Square ids back onto the row. The webhook handler joins
+  //    payments by `square_gift_card_payment_id` to find this row.
+  const { error: persistErr } = await supabase
+    .from("payments")
+    .update({
+      square_gift_card_payment_id: squareGiftCardPaymentId,
+      gift_card_id: lookup.giftCardId,
+    })
+    .eq("id", paymentId);
+  if (persistErr) {
+    // Defensive: best-effort fail-the-row so a stuck pending leg can be
+    // recovered by a fresh attempt. Don't bubble the original error —
+    // Square already accepted the charge.
+    console.error("activateGiftDraft: persist Square ids failed", persistErr);
+  }
+
+  return {
+    paymentId,
+    status: "pending",
+    squareGiftCardPaymentId,
+  };
+}
+
+// ----------------------------------------------------------------------
+// 15. redeemGiftCardWholeTicket (feature 018 / contracts § 6)
+//
+//   The convenience action that powers the "Gift" payment tile. Bundles
+//   the lookup + compose-draft + activate-draft sequence into one
+//   round-trip so the operator's "tap Gift → enter GAN → tap Redeem"
+//   flow only requires one server call.
+//
+//   Two coverage branches:
+//
+//     - Full coverage (`balanceCents >= remainingOwed`): activates the
+//       gift leg for the full remaining-owed amount and returns
+//       `{kind: 'fully_paid', paymentId, ticketFlippedToPaid: true}`.
+//       The eventual `payment.updated` webhook settles the leg to
+//       'succeeded' and flips the ticket to paid.
+//
+//     - Partial coverage (`balanceCents < remainingOwed` — US3 / T050):
+//       activates the gift leg for the available balance (NOT the full
+//       ticket) and returns `{kind: 'partial_split', paymentId,
+//       nextLegAmountCents: remainingOwed - balanceCents}`. **No second
+//       draft row is synthesised server-side** — the client opens a
+//       method picker for the second leg, and the operator's pick
+//       drives a regular `composeDraftLeg` + `activate*Draft` round-trip.
+//
+//   Either way the action emits one `gift_card.balance_looked_up` audit
+//   row (via `lookupGiftCard`) plus one `payment.draft_created`
+//   (via `pos_compose_payment_draft`); the eventual webhook adds
+//   `gift_card.redeemed` on settlement.
+// ----------------------------------------------------------------------
+
+export type RedeemGiftCardResult =
+  | { kind: "fully_paid"; paymentId: string; ticketFlippedToPaid: true }
+  | { kind: "partial_split"; paymentId: string; nextLegAmountCents: number }
+  | { kind: "lookup_zero_balance"; last4Mask: string }
+  | {
+      kind: "lookup_not_redeemable";
+      last4Mask: string;
+      state: "PENDING" | "BLOCKED" | "DEACTIVATED";
+    }
+  | { kind: "lookup_not_found" };
+
+export async function redeemGiftCardWholeTicket(
+  ticketId: string,
+  gan: string
+): Promise<RedeemGiftCardResult> {
+  assertUuid(ticketId, "redeemGiftCardWholeTicket.ticketId");
+  assertValidGan(gan);
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  // 1) Refuse if a leg is in flight (FR-022). The cart-edit invalidation
+  //    helper also performs this check, but we do it up front so we don't
+  //    consume a Square lookup against a ticket we couldn't transact on.
+  const { data: inFlight, error: inFlightErr } = await supabase
+    .from("payments")
+    .select("id")
+    .eq("ticket_id", ticketId)
+    .eq("status", "pending")
+    .limit(1);
+  if (inFlightErr) {
+    throw new Error(`redeemGiftCardWholeTicket in-flight check failed: ${inFlightErr.message}`);
+  }
+  if (inFlight && inFlight.length > 0) {
+    throw new TicketAlreadyBeingChargedError();
+  }
+
+  // 2) Load the ticket. Used for the total + remaining-owed math.
+  const { data: ticket, error: tkErr } = await supabase
+    .from("tickets")
+    .select("id, status, total_cents")
+    .eq("id", ticketId)
+    .maybeSingle();
+  if (tkErr) {
+    throw new Error(`redeemGiftCardWholeTicket ticket read failed: ${tkErr.message}`);
+  }
+  if (!ticket) {
+    throw new TicketNotOpenError();
+  }
+  if (ticket.status !== "open") {
+    throw new TicketNotOpenError();
+  }
+
+  // 3) Look up the card. This emits one `gift_card.balance_looked_up`
+  //    audit row (inside lookupGiftCard).
+  const lookup = await lookupGiftCard(gan);
+
+  // 4) Short-circuit lookup_* exits without composing/activating a payment.
+  if (lookup.kind === "not_found") {
+    return { kind: "lookup_not_found" };
+  }
+  if (lookup.kind === "zero_balance") {
+    return { kind: "lookup_zero_balance", last4Mask: lookup.last4Mask };
+  }
+  if (lookup.kind === "not_redeemable") {
+    return {
+      kind: "lookup_not_redeemable",
+      last4Mask: lookup.last4Mask,
+      state: lookup.state,
+    };
+  }
+
+  // 5) `found` path. Compute remaining-owed against succeeded legs.
+  const { data: succeededRows, error: sumErr } = await supabase
+    .from("payments")
+    .select("amount_cents, status")
+    .eq("ticket_id", ticketId)
+    .eq("status", "succeeded");
+  if (sumErr) {
+    throw new Error(`redeemGiftCardWholeTicket succeeded-sum read failed: ${sumErr.message}`);
+  }
+  const succeededSum = (succeededRows ?? []).reduce(
+    (acc, r) => acc + (r.amount_cents as number),
+    0
+  );
+  const remainingOwed = ticket.total_cents - succeededSum;
+  if (remainingOwed <= 0) {
+    // Ticket already paid by prior succeeded legs (shouldn't happen
+    // because status would be 'paid'; defensive).
+    throw new TicketNotOpenError();
+  }
+
+  const amountToCharge = Math.min(lookup.balanceCents, remainingOwed);
+
+  // 6) Wipe stale drafts — the operator picked Gift afresh; any
+  //    prior split-composition is invalidated.
+  await discardDraftLegs(ticketId, viewer.staff.id, viewer.deviceUserId, supabase);
+
+  // 7) Compose the gift draft via the RPC (which audits
+  //    `payment.draft_created` + applies the legs-fit-remaining guard).
+  const { data: composedPaymentId, error: composeErr } = await supabase.rpc(
+    "pos_compose_payment_draft",
+    {
+      p_ticket_id: ticketId,
+      p_operator: viewer.staff.id,
+      p_method: "gift",
+      p_amount: amountToCharge,
+    } as unknown as Parameters<typeof supabase.rpc<"pos_compose_payment_draft">>[1]
+  );
+  if (composeErr || !composedPaymentId) {
+    throw new Error(
+      `redeemGiftCardWholeTicket compose-draft failed: ${composeErr?.message ?? "no id"}`
+    );
+  }
+  const paymentId = composedPaymentId as unknown as string;
+
+  // 8) Activate the gift leg. Square charge + atomic transition to
+  //    'pending'; eventual webhook settles to 'succeeded'.
+  await activateGiftDraft(paymentId, gan);
+
+  // 9) Branch on full vs partial coverage.
+  if (amountToCharge === remainingOwed) {
+    // Full coverage — eventual webhook flips the ticket to paid.
+    return { kind: "fully_paid", paymentId, ticketFlippedToPaid: true };
+  }
+
+  // Partial coverage (US3 / T050) — the gift leg covers part of the bill.
+  // No second draft is composed here; the client opens the method picker
+  // and drives the second-leg composeDraftLeg + activate*Draft itself.
+  return {
+    kind: "partial_split",
+    paymentId,
+    nextLegAmountCents: remainingOwed - amountToCharge,
+  };
+}
+
+// ----------------------------------------------------------------------
+// 16. composeDraftLeg (feature 018 / contracts § 2 — US2)
+//
+//   Inserts a draft leg via `pos_compose_payment_draft` so the operator
+//   can compose a split-tender ticket leg-by-leg. The RPC owns the
+//   remaining-owed check (raises `legs_must_fit_remaining`) + audits
+//   `payment.draft_created`; this Node wrapper just routes errors into
+//   typed classes.
+// ----------------------------------------------------------------------
+
+export async function composeDraftLeg(
+  ticketId: string,
+  method: "cash" | "card" | "gift",
+  amountCents: number
+): Promise<{ paymentId: string; status: "draft"; amountCents: number }> {
+  assertUuid(ticketId, "composeDraftLeg.ticketId");
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  const { data, error } = await supabase.rpc("pos_compose_payment_draft", {
+    p_ticket_id: ticketId,
+    p_operator: viewer.staff.id,
+    p_method: method,
+    p_amount: amountCents,
+  } as unknown as Parameters<typeof supabase.rpc<"pos_compose_payment_draft">>[1]);
+
+  if (error) {
+    const code = (error as { code?: string }).code;
+    const msg = error.message ?? "";
+    // 23505 = unique_violation — the partial-unique-index for in-flight legs.
+    if (code === "23505") {
+      throw new TicketAlreadyBeingChargedError();
+    }
+    if (msg.includes("legs_must_fit_remaining")) {
+      throw new LegAmountInvalidError();
+    }
+    if (msg.includes("ticket_not_open")) {
+      throw new TicketNotOpenError();
+    }
+    if (msg.includes("ticket_has_unpriced_items")) {
+      throw new TicketHasUnpricedItemsError();
+    }
+    throw new Error(`composeDraftLeg RPC failed: ${msg}`);
+  }
+  if (!data) {
+    throw new Error("composeDraftLeg RPC returned no payment id");
+  }
+
+  return { paymentId: data as unknown as string, status: "draft", amountCents };
+}
+
+// ----------------------------------------------------------------------
+// 17. removeDraftLeg (feature 018 / contracts § 3 — US2)
+//
+//   Deletes a draft leg via `pos_remove_payment_draft`. The RPC audits
+//   `payment.draft_removed` before DELETing the row; this Node wrapper
+//   maps `draft_leg_not_found` to `DraftLegNotFoundError`.
+// ----------------------------------------------------------------------
+
+export async function removeDraftLeg(paymentId: string): Promise<{ removed: true }> {
+  assertUuid(paymentId, "removeDraftLeg.paymentId");
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  const { error } = await supabase.rpc("pos_remove_payment_draft", {
+    p_payment_id: paymentId,
+    p_operator: viewer.staff.id,
+  } as unknown as Parameters<typeof supabase.rpc<"pos_remove_payment_draft">>[1]);
+
+  if (error) {
+    const msg = error.message ?? "";
+    if (msg.includes("draft_leg_not_found")) {
+      throw new DraftLegNotFoundError();
+    }
+    throw new Error(`removeDraftLeg RPC failed: ${msg}`);
+  }
+
+  return { removed: true };
+}
+
+// ----------------------------------------------------------------------
+// 18. activateCashDraft (feature 018 / contracts § 4 — US2)
+//
+//   Flips a (draft, cash) leg → succeeded atomically via
+//   `pos_activate_cash_draft`. The RPC runs the legs-sum-to-total guard,
+//   updates the row, flips the ticket to paid when the activation
+//   closes it, and audits `payment.captured`.
+//
+//   Errors:
+//     - `legs_must_sum_to_total` (P0001) → LegSumMismatchError
+//     - `draft_leg_not_found`   (P0001) → DraftLegNotFoundError
+//     - `ticket_not_open`       (P0001) → TicketNotOpenError
+//     - 23505 (unique-in-flight race)   → TicketAlreadyBeingChargedError
+// ----------------------------------------------------------------------
+
+export async function activateCashDraft(
+  paymentId: string
+): Promise<{ paymentId: string; status: "succeeded"; ticketFlippedToPaid: boolean }> {
+  assertUuid(paymentId, "activateCashDraft.paymentId");
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  const { data, error } = await supabase.rpc("pos_activate_cash_draft", {
+    p_payment_id: paymentId,
+    p_operator: viewer.staff.id,
+  } as unknown as Parameters<typeof supabase.rpc<"pos_activate_cash_draft">>[1]);
+
+  if (error) {
+    const code = (error as { code?: string }).code;
+    const msg = error.message ?? "";
+    if (code === "23505") {
+      throw new TicketAlreadyBeingChargedError();
+    }
+    if (msg.includes("legs_must_sum_to_total")) {
+      // The RPC raises this when sum(non-failed legs) != ticket.total_cents.
+      // We don't have the exact numbers without an extra round-trip, so
+      // surface 0/0 — the UI's copy ("Add more legs to cover the bill")
+      // doesn't render the numbers.
+      throw new LegSumMismatchError(0, 0);
+    }
+    if (msg.includes("draft_leg_not_found")) {
+      throw new DraftLegNotFoundError();
+    }
+    if (msg.includes("ticket_not_open")) {
+      throw new TicketNotOpenError();
+    }
+    throw new Error(`activateCashDraft RPC failed: ${msg}`);
+  }
+
+  // The RPC `returns table (ticket_id uuid, ticket_flipped_to_paid boolean)`.
+  // Supabase returns this as an array of one object.
+  type ActivateRow = { ticket_id: string; ticket_flipped_to_paid: boolean };
+  const rows = (Array.isArray(data) ? (data as ActivateRow[]) : []) as ActivateRow[];
+  const firstRow = rows[0];
+  if (!firstRow) {
+    throw new Error("activateCashDraft RPC returned no row");
+  }
+
+  return {
+    paymentId,
+    status: "succeeded",
+    ticketFlippedToPaid: Boolean(firstRow.ticket_flipped_to_paid),
+  };
 }

@@ -75,6 +75,17 @@ export default async function CheckoutTicketPage({
     .limit(1)
     .maybeSingle();
 
+  // Feature 018 (US2): load every non-failed leg so the client island can
+  // hydrate the split-tender footer when one or more drafts/pendings/
+  // succeededs already exist (covers reload-in-the-middle, US3 auto-entry
+  // from partial-gift, etc.).
+  const paymentLegsPromise = supabase
+    .from("payments")
+    .select("id, method, amount_cents, status, gift_card_id")
+    .eq("ticket_id", ticketId)
+    .in("status", ["draft", "pending", "succeeded"])
+    .order("created_at", { ascending: true });
+
   const itemsPromise = supabase
     .from("ticket_items")
     .select(
@@ -118,6 +129,7 @@ export default async function CheckoutTicketPage({
     squareOauthRes,
     squareDevicesRes,
     lastSucceededPaymentRes,
+    paymentLegsRes,
   ] = await Promise.all([
     ticketPromise,
     itemsPromise,
@@ -129,6 +141,7 @@ export default async function CheckoutTicketPage({
     squareOauthPromise,
     squareDevicesPromise,
     lastSucceededPaymentPromise,
+    paymentLegsPromise,
   ]);
 
   const salonInfo = {
@@ -214,6 +227,33 @@ export default async function CheckoutTicketPage({
   }));
   const defaultDevice = pairedDevices.find((d) => d.isDefault) ?? null;
 
+  // Feature 018 (US2): resolve last-4 masks for any gift-card legs we
+  // loaded. The check is conditional — only run the secondary read when
+  // we actually have a gift leg on this ticket.
+  const legRows = paymentLegsRes.data ?? [];
+  const giftCardIds = Array.from(
+    new Set(legRows.map((r) => r.gift_card_id).filter((id): id is string => Boolean(id)))
+  );
+  const giftLast4ById = new Map<string, string>();
+  if (giftCardIds.length > 0) {
+    const { data: giftRows } = await supabase
+      .from("gift_cards")
+      .select("id, last4_mask")
+      .in("id", giftCardIds);
+    for (const g of giftRows ?? []) {
+      giftLast4ById.set(g.id, g.last4_mask);
+    }
+  }
+  const initialLegs = legRows
+    .filter((r) => r.method === "cash" || r.method === "card" || r.method === "gift")
+    .map((r) => ({
+      id: r.id,
+      method: r.method as "cash" | "card" | "gift",
+      amountCents: r.amount_cents,
+      status: r.status as "draft" | "pending" | "succeeded",
+      last4Mask: r.gift_card_id ? (giftLast4ById.get(r.gift_card_id) ?? null) : null,
+    }));
+
   // status === 'open' — render the cart island with the loaded snapshot.
   return (
     <CheckoutScreen
@@ -224,6 +264,7 @@ export default async function CheckoutTicketPage({
       defaultDeviceFriendlyName={defaultDevice?.friendlyName ?? null}
       pairedDevices={pairedDevices}
       requiresReconnect={requiresReconnect}
+      initialLegs={initialLegs}
       initialItems={(itemsRes.data ?? [])
         // US3 (T031): both service AND discount rows now surface. Discount
         // rows have ref_id=null / assigned_staff_id=null (CHECK-enforced in

@@ -96,6 +96,37 @@ function makeMockClient(opts: {
         })),
       };
     }
+    if (table === "payments") {
+      // Feature 018 — `discardDraftLegs` runs at the head of every
+      // line-mutation action. This mock makes it a no-op: no pending
+      // rows (FR-019a guard passes), no drafts to delete. The chain has
+      // two shapes — `.select.eq.eq.limit` (in-flight) and
+      // `.select.eq.eq` (drafts read) — so the second .eq returns a
+      // thenable that also exposes `.limit`.
+      const emptyResult = { data: [], error: null };
+      function makeTerminalEq() {
+        const thenable = {
+          then: (
+            onFulfilled: (v: typeof emptyResult) => unknown,
+            onRejected?: (r: unknown) => unknown
+          ) => Promise.resolve(emptyResult).then(onFulfilled, onRejected),
+          limit: () => Promise.resolve(emptyResult),
+        };
+        return thenable;
+      }
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(() => makeTerminalEq()),
+          })),
+        })),
+        delete: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            eq: vi.fn(async () => ({ error: null })),
+          })),
+        })),
+      };
+    }
     if (table === "ticket_items") {
       // Two distinct shapes:
       //  - .select("id, ticket_id, kind, unit_price_cents, qty, price_unconfirmed, discount_pct").eq("id", lineId).single()

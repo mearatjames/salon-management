@@ -17,7 +17,10 @@
 // Each spec mutates this server's response state via the imperative
 // helpers it returns (stubMerchant, stubDevices, etc).
 
+import { createHmac } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { join } from "node:path";
 
 export type DeviceStub = {
   id: string;
@@ -67,6 +70,17 @@ export type ServerStubControls = {
   setCheckoutCancel(checkoutId: string, stub: CheckoutCancelStub | null): void;
   /** Inspect the last minted checkout id (for tests that need to drive a webhook). */
   lastCheckoutId(): string | null;
+  /**
+   * Feature 018 — set the base URL the gift-card auto-webhook should POST
+   * to when a gift-card payment completes. Tests should call this with the
+   * Playwright baseURL once per beforeAll/beforeEach so the auto-fired
+   * payment.updated event arrives at the local Next.js dev server.
+   */
+  setWebhookBaseUrl(url: string | null): void;
+  /** Feature 018 — suppress the auto-fired gift-card payment.updated webhook. */
+  suppressGiftWebhook(): void;
+  /** Feature 018 — re-enable the auto-fired gift-card payment.updated webhook. */
+  unsuppressGiftWebhook(): void;
   reset(): void;
   recordedCalls(): readonly RecordedCall[];
   close(): Promise<void>;
@@ -121,6 +135,56 @@ function json(res: ServerResponse, status: number, body: object | string): void 
   res.end(out);
 }
 
+// Feature 018 — gift-card fixture matrix. Same shape as the browser-side
+// stub in `_square-stub.ts`. The Square SDK posts the GAN in the JSON
+// body of /v2/gift-cards/from-gan; the stub routes on the last-4 chars.
+type GiftCardFixtureKind =
+  | { kind: "ACTIVE"; balanceCents: number }
+  | { kind: "BLOCKED" }
+  | { kind: "PENDING" }
+  | { kind: "DEACTIVATED" }
+  | { kind: "NOT_FOUND" };
+
+function giftCardFixtureFromGan(gan: string): GiftCardFixtureKind {
+  const stripped = gan.replace(/\s/g, "").toUpperCase();
+  const last4 = stripped.slice(-4);
+  switch (last4) {
+    case "0001":
+      return { kind: "ACTIVE", balanceCents: 6000 };
+    case "0002":
+      return { kind: "ACTIVE", balanceCents: 1500 };
+    case "0003":
+      return { kind: "ACTIVE", balanceCents: 500 };
+    case "0000":
+      return { kind: "ACTIVE", balanceCents: 0 };
+    case "BLKD":
+      return { kind: "BLOCKED" };
+    case "PEND":
+      return { kind: "PENDING" };
+    case "DEAC":
+      return { kind: "DEACTIVATED" };
+    default:
+      return { kind: "NOT_FOUND" };
+  }
+}
+
+function loadWebhookKey(): string {
+  try {
+    return readFileSync(
+      join(process.cwd(), "tests/fixtures/square-webhook-key.txt"),
+      "utf-8"
+    ).trim();
+  } catch {
+    const fromEnv = process.env.SQUARE_WEBHOOK_SIGNATURE_KEY;
+    if (!fromEnv) {
+      throw new Error(
+        "square server stub: SQUARE_WEBHOOK_SIGNATURE_KEY not set and tests/fixtures/square-webhook-key.txt missing"
+      );
+    }
+    return fromEnv;
+  }
+}
+
 export async function startSquareServerStub(port = 4567): Promise<ServerStubControls> {
   let merchant: MerchantStub = { ...DEFAULT_MERCHANT };
   let devices: DeviceStub[] = [];
@@ -129,6 +193,11 @@ export async function startSquareServerStub(port = 4567): Promise<ServerStubCont
   const checkoutGetStubs = new Map<string, CheckoutGetStub>();
   const checkoutCancelStubs = new Map<string, CheckoutCancelStub>();
   let lastMintedCheckoutId: string | null = null;
+  let giftWebhookSuppressed = false;
+  let webhookBaseUrl: string | null = null;
+  let giftCardCounter = 0;
+  let giftPaymentCounter = 0;
+  const webhookKey = loadWebhookKey();
   const calls: RecordedCall[] = [];
 
   const server: Server = createServer(async (req, res) => {
@@ -230,6 +299,151 @@ export async function startSquareServerStub(port = 4567): Promise<ServerStubCont
       return json(res, 200, body);
     }
 
+    // Feature 018 - POST /v2/gift-cards/from-gan. Routes through the
+    // deterministic fixture matrix keyed by the GAN's last-4 chars.
+    if (method === "POST" && /^\/v2\/gift-cards\/from-gan\/?$/.test(path)) {
+      const body = await readBody(req);
+      let parsed: { gan?: string } = {};
+      try {
+        parsed = JSON.parse(body) as { gan?: string };
+      } catch {
+        // fall through with empty body
+      }
+      const gan = typeof parsed.gan === "string" ? parsed.gan : "";
+      const fixture = giftCardFixtureFromGan(gan);
+      if (fixture.kind === "NOT_FOUND") {
+        return json(res, 404, {
+          errors: [
+            {
+              category: "INVALID_REQUEST_ERROR",
+              code: "NOT_FOUND",
+              detail: "No gift card found for that GAN.",
+            },
+          ],
+        });
+      }
+      giftCardCounter += 1;
+      const stripped = gan.replace(/\s/g, "");
+      const squareGiftCardId = `gftc_${stripped.slice(-4) || `STUB${giftCardCounter}`}`;
+      return json(res, 200, {
+        gift_card: {
+          id: squareGiftCardId,
+          type: "DIGITAL",
+          gan_source: "OTHER",
+          state: fixture.kind,
+          balance_money:
+            fixture.kind === "ACTIVE"
+              ? { amount: fixture.balanceCents, currency: "USD" }
+              : { amount: 0, currency: "USD" },
+          gan: stripped,
+        },
+      });
+    }
+
+    // Feature 018 - POST /v2/payments (gift-card charges only).
+    if (method === "POST" && /^\/v2\/payments\/?$/.test(path)) {
+      const body = await readBody(req);
+      let parsed: {
+        source_id?: string;
+        amount_money?: { amount?: number; currency?: string };
+        reference_id?: string;
+        source_type?: string;
+      } = {};
+      try {
+        parsed = JSON.parse(body) as typeof parsed;
+      } catch {
+        // fall through; treated as malformed
+      }
+      const sourceId = parsed.source_id ?? "";
+      const isGiftCard = parsed.source_type === "GIFT_CARD" || sourceId.startsWith("gftc_");
+      if (!isGiftCard) {
+        return json(res, 400, {
+          errors: [
+            {
+              category: "INVALID_REQUEST_ERROR",
+              code: "INVALID_REQUEST_ERROR",
+              detail: "non-gift-card payment not supported by stub",
+            },
+          ],
+        });
+      }
+      giftPaymentCounter += 1;
+      // Include a high-resolution timestamp in the id so multiple test runs
+      // (which all share the same Supabase DB) don't collide on the
+      // `square_gift_card_payment_id` column — the webhook handler looks up
+      // payments rows by this id and `.maybeSingle()` throws on duplicates.
+      const squarePaymentId = `pay_gc_${Date.now()}_${giftPaymentCounter}`;
+      const amount = parsed.amount_money?.amount ?? 0;
+      const referenceId = parsed.reference_id ?? "";
+      const responseBody = {
+        payment: {
+          id: squarePaymentId,
+          status: "COMPLETED",
+          source_type: "GIFT_CARD",
+          source_id: sourceId,
+          amount_money: { amount, currency: "USD" },
+          tip_money: { amount: 0, currency: "USD" },
+          reference_id: referenceId,
+        },
+      };
+      // Auto-fire the settlement webhook after 100ms when a baseUrl was
+      // provided by the test. Suppressible via suppressGiftWebhook().
+      if (!giftWebhookSuppressed && webhookBaseUrl) {
+        const evt = {
+          merchant_id: merchant.id,
+          type: "payment.updated",
+          event_id: `evt_${squarePaymentId}`,
+          created_at: new Date().toISOString(),
+          data: {
+            type: "payment",
+            id: squarePaymentId,
+            object: {
+              payment: {
+                id: squarePaymentId,
+                status: "COMPLETED",
+                source_type: "GIFT_CARD",
+                source_id: sourceId,
+                amount_money: { amount, currency: "USD" },
+                reference_id: referenceId,
+              },
+            },
+          },
+        };
+        const captured = webhookBaseUrl;
+        setTimeout(() => {
+          const rawBody = JSON.stringify(evt);
+          const webhookUrl = new URL("/api/webhooks/square", captured).toString();
+          const signature = createHmac("sha256", webhookKey)
+            .update(webhookUrl + rawBody)
+            .digest("base64");
+          fetch(webhookUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-square-hmacsha256-signature": signature,
+            },
+            body: rawBody,
+          }).catch((err) => {
+            console.warn("square server stub: auto-fired gift webhook failed", err);
+          });
+        }, 100);
+      }
+      return json(res, 200, responseBody);
+    }
+
+    // Feature 018 - GET /v2/payments/:id (polling fallback).
+    const paymentGetMatch = /^\/v2\/payments\/([A-Za-z0-9_-]+)\/?$/.exec(path);
+    if (method === "GET" && paymentGetMatch?.[1]) {
+      const paymentId = paymentGetMatch[1];
+      return json(res, 200, {
+        payment: {
+          id: paymentId,
+          status: "COMPLETED",
+          source_type: "GIFT_CARD",
+        },
+      });
+    }
+
     // Catch-all 404.
     return json(res, 404, { error: `unstubbed ${method} ${path}` });
   });
@@ -267,6 +481,15 @@ export async function startSquareServerStub(port = 4567): Promise<ServerStubCont
     lastCheckoutId() {
       return lastMintedCheckoutId;
     },
+    setWebhookBaseUrl(url) {
+      webhookBaseUrl = url;
+    },
+    suppressGiftWebhook() {
+      giftWebhookSuppressed = true;
+    },
+    unsuppressGiftWebhook() {
+      giftWebhookSuppressed = false;
+    },
     reset() {
       merchant = { ...DEFAULT_MERCHANT };
       devices = [];
@@ -275,6 +498,10 @@ export async function startSquareServerStub(port = 4567): Promise<ServerStubCont
       checkoutGetStubs.clear();
       checkoutCancelStubs.clear();
       lastMintedCheckoutId = null;
+      giftWebhookSuppressed = false;
+      webhookBaseUrl = null;
+      giftCardCounter = 0;
+      giftPaymentCounter = 0;
       calls.length = 0;
     },
     recordedCalls() {

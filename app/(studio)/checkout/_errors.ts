@@ -30,7 +30,19 @@ export type CheckoutActionError =
   | { code: "TERMINAL_DEVICE_REQUIRED" }
   | { code: "SQUARE_CHECKOUT_CREATE_FAILED"; squareError?: string }
   | { code: "PAYMENT_NOT_FOUND" }
-  | { code: "PAYMENT_NOT_CANCELLABLE" };
+  | { code: "PAYMENT_NOT_CANCELLABLE" }
+  // Added by feature 018-gift-card-split-tender
+  | { code: "GIFT_CARD_NOT_FOUND" }
+  | { code: "GIFT_CARD_NOT_REDEEMABLE"; state: "PENDING" | "BLOCKED" | "DEACTIVATED" }
+  | { code: "GIFT_CARD_ZERO_BALANCE" }
+  | { code: "GIFT_CARD_INSUFFICIENT_BALANCE" }
+  | { code: "INVALID_GAN" }
+  | { code: "SQUARE_GIFT_CARD_LOOKUP_FAILED"; squareError?: string }
+  | { code: "SQUARE_GIFT_CARD_PAYMENT_FAILED"; squareError?: string }
+  | { code: "TICKET_ALREADY_BEING_CHARGED" }
+  | { code: "LEG_SUM_MISMATCH"; expected: number; actual: number }
+  | { code: "LEG_AMOUNT_INVALID" }
+  | { code: "DRAFT_LEG_NOT_FOUND" };
 
 export abstract class CheckoutError extends Error {
   abstract readonly code: CheckoutActionError["code"];
@@ -184,3 +196,107 @@ export {
   SquareNotConnectedError,
   SquareReconnectRequiredError,
 } from "@/app/(studio)/settings/square/_errors";
+
+// ----------------------------------------------------------------------
+// Feature 018-gift-card-split-tender — gift-card + split-tender errors.
+// Contract: `specs/018-gift-card-split-tender/contracts/server-actions.md
+// § 9`.
+// ----------------------------------------------------------------------
+
+export class GiftCardNotFoundError extends CheckoutError {
+  readonly code = "GIFT_CARD_NOT_FOUND" as const;
+  constructor(message = "no gift card found for that number") {
+    super(message);
+    this.name = "GiftCardNotFoundError";
+  }
+}
+
+export class GiftCardNotRedeemableError extends CheckoutError {
+  readonly code = "GIFT_CARD_NOT_REDEEMABLE" as const;
+  readonly state: "PENDING" | "BLOCKED" | "DEACTIVATED";
+  constructor(state: "PENDING" | "BLOCKED" | "DEACTIVATED", message?: string) {
+    super(message ?? `gift card is ${state} and can't be redeemed`);
+    this.name = "GiftCardNotRedeemableError";
+    this.state = state;
+  }
+}
+
+export class GiftCardZeroBalanceError extends CheckoutError {
+  readonly code = "GIFT_CARD_ZERO_BALANCE" as const;
+  constructor(message = "gift card has $0 balance") {
+    super(message);
+    this.name = "GiftCardZeroBalanceError";
+  }
+}
+
+export class GiftCardInsufficientBalanceError extends CheckoutError {
+  readonly code = "GIFT_CARD_INSUFFICIENT_BALANCE" as const;
+  constructor(message = "gift card balance is less than the leg amount") {
+    super(message);
+    this.name = "GiftCardInsufficientBalanceError";
+  }
+}
+
+export class InvalidGanError extends CheckoutError {
+  readonly code = "INVALID_GAN" as const;
+  constructor(message = "gift card number is invalid") {
+    super(message);
+    this.name = "InvalidGanError";
+  }
+}
+
+export class SquareGiftCardLookupFailedError extends CheckoutError {
+  readonly code = "SQUARE_GIFT_CARD_LOOKUP_FAILED" as const;
+  readonly squareError?: string;
+  constructor(message = "could not reach Square to look up the gift card", squareError?: string) {
+    super(message);
+    this.name = "SquareGiftCardLookupFailedError";
+    this.squareError = squareError;
+  }
+}
+
+export class SquareGiftCardPaymentFailedError extends CheckoutError {
+  readonly code = "SQUARE_GIFT_CARD_PAYMENT_FAILED" as const;
+  readonly squareError?: string;
+  constructor(message = "Square rejected the gift-card payment", squareError?: string) {
+    super(message);
+    this.name = "SquareGiftCardPaymentFailedError";
+    this.squareError = squareError;
+  }
+}
+
+export class TicketAlreadyBeingChargedError extends CheckoutError {
+  readonly code = "TICKET_ALREADY_BEING_CHARGED" as const;
+  constructor(message = "ticket is already being charged on another device") {
+    super(message);
+    this.name = "TicketAlreadyBeingChargedError";
+  }
+}
+
+export class LegSumMismatchError extends CheckoutError {
+  readonly code = "LEG_SUM_MISMATCH" as const;
+  readonly expected: number;
+  readonly actual: number;
+  constructor(expected: number, actual: number, message?: string) {
+    super(message ?? `legs must sum to ${expected} (got ${actual})`);
+    this.name = "LegSumMismatchError";
+    this.expected = expected;
+    this.actual = actual;
+  }
+}
+
+export class LegAmountInvalidError extends CheckoutError {
+  readonly code = "LEG_AMOUNT_INVALID" as const;
+  constructor(message = "leg amount must fit the remaining-owed total") {
+    super(message);
+    this.name = "LegAmountInvalidError";
+  }
+}
+
+export class DraftLegNotFoundError extends CheckoutError {
+  readonly code = "DRAFT_LEG_NOT_FOUND" as const;
+  constructor(message = "draft leg not found or already settled") {
+    super(message);
+    this.name = "DraftLegNotFoundError";
+  }
+}

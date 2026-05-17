@@ -129,16 +129,51 @@ export type Database = {
           },
         ];
       };
+      gift_cards: {
+        Row: {
+          balance_cents_cached: number;
+          created_at: string;
+          id: string;
+          last_synced_at: string;
+          last4_mask: string;
+          square_gift_card_id: string;
+          state: string;
+          updated_at: string;
+        };
+        Insert: {
+          balance_cents_cached: number;
+          created_at?: string;
+          id?: string;
+          last_synced_at?: string;
+          last4_mask: string;
+          square_gift_card_id: string;
+          state: string;
+          updated_at?: string;
+        };
+        Update: {
+          balance_cents_cached?: number;
+          created_at?: string;
+          id?: string;
+          last_synced_at?: string;
+          last4_mask?: string;
+          square_gift_card_id?: string;
+          state?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       payments: {
         Row: {
           amount_cents: number;
           created_at: string;
           failure_reason: string | null;
+          gift_card_id: string | null;
           id: string;
           kind: Database["public"]["Enums"]["payment_kind"];
           method: Database["public"]["Enums"]["payment_method"];
           processed_at: string;
           raw: Json | null;
+          square_gift_card_payment_id: string | null;
           square_payment_id: string | null;
           square_terminal_checkout_id: string | null;
           status: Database["public"]["Enums"]["payment_status"];
@@ -150,11 +185,13 @@ export type Database = {
           amount_cents: number;
           created_at?: string;
           failure_reason?: string | null;
+          gift_card_id?: string | null;
           id?: string;
           kind: Database["public"]["Enums"]["payment_kind"];
           method: Database["public"]["Enums"]["payment_method"];
           processed_at?: string;
           raw?: Json | null;
+          square_gift_card_payment_id?: string | null;
           square_payment_id?: string | null;
           square_terminal_checkout_id?: string | null;
           status: Database["public"]["Enums"]["payment_status"];
@@ -166,11 +203,13 @@ export type Database = {
           amount_cents?: number;
           created_at?: string;
           failure_reason?: string | null;
+          gift_card_id?: string | null;
           id?: string;
           kind?: Database["public"]["Enums"]["payment_kind"];
           method?: Database["public"]["Enums"]["payment_method"];
           processed_at?: string;
           raw?: Json | null;
+          square_gift_card_payment_id?: string | null;
           square_payment_id?: string | null;
           square_terminal_checkout_id?: string | null;
           status?: Database["public"]["Enums"]["payment_status"];
@@ -179,6 +218,13 @@ export type Database = {
           tip_cents?: number;
         };
         Relationships: [
+          {
+            foreignKeyName: "payments_gift_card_id_fkey";
+            columns: ["gift_card_id"];
+            isOneToOne: false;
+            referencedRelation: "gift_cards";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "payments_taken_by_staff_id_fkey";
             columns: ["taken_by_staff_id"];
@@ -615,6 +661,22 @@ export type Database = {
         Returns: string;
       };
       next_anon_counter: { Args: never; Returns: number };
+      pos_activate_cash_draft: {
+        Args: { p_operator: string; p_payment_id: string };
+        Returns: {
+          ticket_flipped_to_paid: boolean;
+          ticket_id: string;
+        }[];
+      };
+      pos_compose_payment_draft: {
+        Args: {
+          p_amount: number;
+          p_method: Database["public"]["Enums"]["payment_method"];
+          p_operator: string;
+          p_ticket_id: string;
+        };
+        Returns: string;
+      };
       pos_record_card_payment: {
         Args: {
           p_failure_reason: string;
@@ -628,6 +690,24 @@ export type Database = {
           ticket_flipped_to_paid: boolean;
           ticket_id: string;
         }[];
+      };
+      pos_record_gift_payment: {
+        Args: {
+          p_failure_reason: string;
+          p_new_status: Database["public"]["Enums"]["payment_status"];
+          p_payment_id: string;
+          p_raw: Json;
+          p_square_gift_card_id: string;
+          p_square_payment_id: string;
+        };
+        Returns: {
+          ticket_flipped_to_paid: boolean;
+          ticket_id: string;
+        }[];
+      };
+      pos_remove_payment_draft: {
+        Args: { p_operator: string; p_payment_id: string };
+        Returns: undefined;
       };
       pos_take_cash: {
         Args: { p_operator: string; p_ticket_id: string };
@@ -652,7 +732,7 @@ export type Database = {
     Enums: {
       payment_kind: "payment";
       payment_method: "cash" | "card" | "gift";
-      payment_status: "succeeded" | "pending" | "failed";
+      payment_status: "succeeded" | "pending" | "failed" | "draft";
       ticket_item_kind: "service" | "discount";
       ticket_status: "open" | "paid" | "discarded";
     };
@@ -785,7 +865,7 @@ export const Constants = {
     Enums: {
       payment_kind: ["payment"],
       payment_method: ["cash", "card", "gift"],
-      payment_status: ["succeeded", "pending", "failed"],
+      payment_status: ["succeeded", "pending", "failed", "draft"],
       ticket_item_kind: ["service", "discount"],
       ticket_status: ["open", "paid", "discarded"],
     },
