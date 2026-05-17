@@ -8,6 +8,15 @@
 
 **Input**: User description: "Add Square Terminal card payment to the existing checkout. OAuth, terminal cloud-to-device, webhook + 5s polling fallback."
 
+## Clarifications
+
+### Session 2026-05-16
+
+- Q: When front desk retries a failed card payment, does the system reuse the original Payment row or create a new one? → A: One Payment row per attempt. Failed rows stay `failed` for audit; each retry creates a fresh row with its own `payment_id`, Square checkout id, and raw payload. The idempotency key `${ticket_id}:${payment_id}` is naturally unique per attempt.
+- Q: When front desk cancels a payment but Square confirms the card was already charged, which signal wins? → A: Square wins. A succeeded webhook always settles the payment to `succeeded` and the ticket to paid, even if front desk had requested cancel. Front desk sees a clear "card was charged before cancel reached the terminal" notice and is advanced to Done. Reversing the charge is a refund (out of scope for this phase).
+- Q: How does front desk pick a terminal when the salon has more than one paired? → A: Owner marks one device as the salon default in settings; the checkout picker pre-selects it and lets front desk override per-checkout with one tap. Single-terminal salons skip the picker entirely.
+- Q: What happens to a card payment that stays `pending` for an extended period (terminal crashed, customer walked away)? → A: After 5 minutes of `pending` with no resolution from webhook or polling, the system auto-marks the payment `failed` with reason `expired`. No new admin UI in this phase. If a late `succeeded` webhook arrives for an expired row, Square still wins (per the cancel-vs-success rule) and the payment flips to `succeeded`.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Connect the salon to Square (Priority: P1)
@@ -69,8 +78,9 @@ While waiting for the customer to tap their card, front desk taps **Cancel and p
 - **Tampered or unsigned webhook**: Any webhook request whose signature does not verify is rejected with HTTP 401 and the payment state is not touched.
 - **Webhook arrives for an unknown checkout**: A webhook for a checkout the system did not create (or has no payment row for) is acknowledged but ignored, never crashing the handler.
 - **Device offline mid-checkout**: If the terminal stops responding before the customer taps, polling surfaces the eventual failure state and the cart returns to the recovery flow described in User Story 3.
-- **Webhook never arrives**: If the polling fallback also fails for an extended period (terminal hung), front desk can cancel and pick a different method; the payment row remains in `pending` for the owner to investigate later.
+- **Webhook never arrives**: If the polling fallback also fails for an extended period (terminal hung), front desk can cancel and pick a different method. The payment row remains `pending` and is auto-marked `failed` (reason `expired`) after 5 minutes; no admin UI is added in this phase to surface stuck rows.
 - **Partial payment coverage**: When existing payments on the ticket plus this terminal payment do not yet cover the total (e.g., partial payment scenarios outside this phase), the ticket does NOT flip to paid even if the terminal succeeded.
+- **Cancel races a successful charge**: If front desk taps Cancel after the customer has already tapped their card, Square is authoritative. A `terminal.checkout.updated → SUCCEEDED` event for the cancel-requested payment still settles the payment to `succeeded` and the ticket to paid. Front desk sees a notice on the Done screen — "Card was charged before cancel reached the terminal." (Refunding is out of scope for this phase.)
 
 ## Requirements *(mandatory)*
 
@@ -91,12 +101,14 @@ While waiting for the customer to tap their card, front desk taps **Cancel and p
 
 - **FR-009**: Front desk MUST be able to pick Card as a payment method whenever Square is connected and at least one terminal is paired.
 - **FR-010**: Front desk MUST be able to pick which named terminal to send the amount to when the salon has more than one paired terminal; a single-terminal salon skips this picker.
+- **FR-010a**: Owners MUST be able to designate exactly one paired terminal as the salon default in settings. At checkout, the terminal picker MUST pre-select the default device, allowing front desk to confirm with one tap on the common path and override per-checkout for the exceptional path. If no default has been set yet (multi-terminal salon with no choice made), the picker shows nothing pre-selected and requires an explicit choice.
 - **FR-011**: When the cart is sent to the terminal, the device MUST display the exact ticket total in dollars and cents.
 - **FR-012**: The customer MUST choose any tip on the Square Terminal device (not in the salon app); the system MUST record the chosen tip amount server-side against the ticket.
 - **FR-013**: While the terminal is waiting on the customer, the cart screen MUST show a clear waiting state with instruction copy ("Hand the terminal to your client") and an option to cancel and pick a different method.
 - **FR-014**: When the payment succeeds, the system MUST mark the corresponding payment as succeeded, flip the ticket to paid if total payments cover the ticket, and advance the cart to the Done screen automatically — no extra tap from front desk.
-- **FR-015**: When the payment fails (decline, cancellation, device error), the system MUST mark the payment as failed and offer to try again or pick a different method, without ever flipping the ticket to paid.
+- **FR-015**: When the payment fails (decline, cancellation, device error), the system MUST mark the payment as failed and offer to try again or pick a different method, without ever flipping the ticket to paid. A retry MUST create a new Payment row; the failed row stays in the database for audit and is never reused or mutated back to `pending`.
 - **FR-016**: Front desk MUST be able to cancel a pending terminal payment from the waiting screen; cancellation MUST cause the terminal to stop prompting the customer.
+- **FR-016a**: Square is the authoritative source on whether money moved. If a `succeeded` event arrives after a cancel was requested (or after the local payment was marked cancelled), the system MUST settle the payment to `succeeded`, flip the ticket to paid, and advance the cart to Done with a notice that the card was charged before cancel could land. The system MUST NOT leave the ticket unpaid when Square has taken the money.
 
 **Settlement signals (system-facing)**
 
@@ -105,6 +117,7 @@ While waiting for the customer to tap their card, front desk taps **Cancel and p
 - **FR-019**: The system MUST handle repeated deliveries of the same payment-update event without producing duplicate payments, duplicate tips, or repeated ticket transitions (idempotent processing).
 - **FR-020**: The system MUST store, against each payment, enough to trace it back to Square: the Square payment identifier, the Square terminal checkout identifier, the tip amount, and the raw event payload for audit.
 - **FR-021**: The system MUST use a deterministic key when creating a Square terminal checkout so that retries from the salon app do not create duplicate Square charges.
+- **FR-021a**: A Payment row that has been `pending` for longer than 5 minutes with no terminal response MUST be auto-marked `failed` with a recorded reason of `expired`. If Square later delivers a `succeeded` event for that same payment, the system MUST still settle it to `succeeded` (Square remains authoritative).
 
 **Operability**
 
@@ -113,8 +126,8 @@ While waiting for the customer to tap their card, front desk taps **Cancel and p
 ### Key Entities
 
 - **Square Connection** — the salon's authorization to act against its Square account; tied to merchant identity and expiring credentials; one per salon.
-- **Terminal Device** — a Square Terminal physical device paired to the salon's merchant account; has a Square-assigned identity and a salon-assigned friendly name; zero or more per salon.
-- **Payment** — a record on a ticket capturing one attempt to collect money via a specific method; for a card payment it carries amount, tip, status (pending/succeeded/failed), a Square payment identifier, a Square terminal checkout identifier, and the raw event payload for audit.
+- **Terminal Device** — a Square Terminal physical device paired to the salon's merchant account; has a Square-assigned identity, a salon-assigned friendly name, and a salon-default flag (at most one device per salon is the default); zero or more per salon.
+- **Payment** — a record on a ticket capturing **one attempt** to collect money via a specific method; for a card payment it carries amount, tip, status (pending/succeeded/failed), a Square payment identifier, a Square terminal checkout identifier, and the raw event payload for audit. A ticket can have multiple Payment rows over its lifetime — for example, a declined card attempt (`failed`) followed by a successful one (`succeeded`).
 - **Ticket** — already exists; for this feature it transitions to **paid** when the sum of succeeded payments covers the ticket total.
 
 ## Success Criteria *(mandatory)*
