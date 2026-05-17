@@ -18,6 +18,15 @@ This feature replaces the dashboard's data layer with live Supabase aggregates w
 
 This feature is read-only. The dashboard never writes; it never subscribes to realtime; it re-fetches on navigation.
 
+## Clarifications
+
+### Session 2026-05-16
+
+- Q: With no `clients` table in the schema and every paid ticket today writing `appointment_id: null`, what should the recent-transactions feed show for the client column? → A: Remove the client column from the feed entirely for v1. The service list and assigned techs become the row's identifying columns. A future client-capture feature can reintroduce the column when there is a real name to display.
+- Q: How fresh is the dashboard on each navigation — is route-level caching allowed, or must every visit re-query Supabase? → A: Always fresh. The dashboard is fully dynamic; every navigation triggers a fresh aggregate query. No route-level cache, no `revalidate` window. The SC-005 performance budget covers the per-visit query cost.
+- Q: When a ticket is paid with split tender (e.g. $20 cash + remainder card), what does the recent-transactions feed's method pill show? → A: A dedicated `Split` pill — a new method-pill variant rendered in place of a single-method pill whenever a ticket's successful payments span two or more methods. Honest about the split, no row-layout change. Single-method tickets continue to render their existing card / cash / gift pill.
+- Q: Are discount line items included in the recent-transactions row's service-summary string? → A: No. The summary string is built from `ticket_items` where `kind != 'discount'`, mirroring FR-003's count rule. A two-service-plus-discount ticket reads as `Service 1, Service 2`; discounts never push other services into the `+N more` collapse.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Today's real numbers on landing (Priority: P1)
@@ -56,7 +65,7 @@ The owner can switch the dashboard between Today, This Week (the current Monday-
 
 ### User Story 3 - Browse the full day's transaction log (Priority: P2)
 
-A front-desk staffer or owner can scroll through every paid ticket from today directly on the dashboard, ordered most-recent first, without leaving the page. Each row shows the time, client name (or `Walk-in`), a service summary, the assigned techs, the payment method, and the dollar total — the same row shape as 002, just no longer capped at 7 rows.
+A front-desk staffer or owner can scroll through every paid ticket from today directly on the dashboard, ordered most-recent first, without leaving the page. Each row shows the time, a service summary, the assigned techs, the payment method, and the dollar total — the row shape is the 002 row minus the client column (see FR-023), and no longer capped at 7 rows.
 
 **Why this priority**: Useful and frequently asked for ("what was that last sale?", "did Maya already cash out the 2 PM appointment?"), but the dashboard is still useful with only the headline tiles. This deepens the surface without being load-bearing for the post-login glance.
 
@@ -67,7 +76,7 @@ A front-desk staffer or owner can scroll through every paid ticket from today di
 1. **Given** today has 15 paid tickets, **When** the user looks at the recent-transactions feed, **Then** they see 15 rows ordered most-recent-first; the feed container scrolls internally; the rest of the page remains visible without horizontal scrolling.
 2. **Given** today has zero paid tickets, **When** the user looks at the recent-transactions feed, **Then** they see a calm empty-state message (e.g. `No sales yet today`) in place of the row list.
 3. **Given** today has paid tickets and the user toggles the period to Week or Month, **When** the toggle settles, **Then** the recent-transactions feed continues to show today's tickets — the feed is pinned to today and is not affected by the period toggle.
-4. **Given** a ticket row is rendered, **When** the user reads it, **Then** the row shows: time of `closed_at` in the salon's local timezone, the client name (or `Walk-in` when the ticket is not tied to a known client), a service-summary string (one or two services comma-separated, three-or-more rendered as `{first}, +N more`), the assigned technicians as stacked avatars, the payment method as a pill, and the total in dollars.
+4. **Given** a ticket row is rendered, **When** the user reads it, **Then** the row shows: time of `closed_at` in the salon's local timezone, a service-summary string (one or two services comma-separated, three-or-more rendered as `{first}, +N more`), the assigned technicians as stacked avatars, the payment method as a pill, and the total in dollars. The client column is not rendered (see FR-023).
 
 ---
 
@@ -83,7 +92,6 @@ A front-desk staffer or owner can scroll through every paid ticket from today di
 - **Salon-timezone first-run**: when a fresh database has no `salon.timezone` setting row, the dashboard must not crash. The bootstrap path inserts the default before the dashboard reads, and the dashboard read also tolerates a missing row by falling back to the default rather than throwing.
 - **Settings cache after timezone change**: if an operator changes `salon.timezone` (via the settings surface that will exist in a future feature), the dashboard must read the new value on its next render — no stale cache that would mis-bucket "today".
 - **Slow or unreachable Supabase**: the dashboard renders a graceful loading state during the first render and a calm error state (not a stack trace, not a blank page) when the aggregate query fails; the page is still navigable away via the studio shell.
-- **Long client names** in the feed continue to truncate with an ellipsis (unchanged from 002).
 - **Period boundary crossings**: when a payment is captured a few seconds before midnight in the salon's local timezone and the page is opened just after midnight, the captured payment must appear in *yesterday*'s Today aggregate (i.e. it does not appear in today's Today), because today's window starts at the new local midnight.
 - **Multiple-day windows that span a daylight-savings transition** must remain consistent — the Week and Month aggregates use the salon's local-time calendar boundaries, not 7×24h / 30×24h spans.
 
@@ -110,7 +118,8 @@ A front-desk staffer or owner can scroll through every paid ticket from today di
 - **FR-011**: The recent-transactions feed MUST show every ticket with `status = 'paid'` and `closed_at` inside *today*'s window in the salon's local timezone, ordered by `closed_at` descending. The feed is pinned to today and MUST NOT change when the period toggle moves to Week or Month.
 - **FR-012**: The recent-transactions feed container MUST scroll vertically inside its existing layout slot when the row list overflows; the rest of the page MUST NOT grow vertically and MUST NOT introduce horizontal scrolling.
 - **FR-013**: When today has zero paid tickets, the recent-transactions feed MUST render a calm empty-state message in place of the row list (sample copy: `No sales yet today`). The feed's header and `View all` control remain visible.
-- **FR-014**: Each recent-transactions row MUST render: time from `closed_at` in salon-local timezone (12-hour with AM/PM); client name from the ticket's appointment-client relationship, or the literal `Walk-in` when the ticket has no client; a service-summary string built from `ticket_items.name_snapshot` (one or two services comma-separated; three-or-more rendered as `{first}, +N more`); assigned technicians as stacked avatars from `ticket_items.assigned_staff_id` joined to `staff`; the dominant payment method as a pill (when a ticket has split tender across methods, the spec defaults to showing the method whose total is largest); and the ticket's `total_cents` formatted as US currency.
+- **FR-014**: Each recent-transactions row MUST render: time from `closed_at` in salon-local timezone (12-hour with AM/PM); a service-summary string built from `ticket_items.name_snapshot` filtered to `kind != 'discount'` (one or two services comma-separated; three-or-more rendered as `{first}, +N more` — discount items never contribute to this count and never push other services into the collapse); assigned technicians as stacked avatars from `ticket_items.assigned_staff_id` joined to `staff` over the same non-discount item set; a payment-method pill (see FR-014a); and the ticket's `total_cents` formatted as US currency. The client column is intentionally not rendered — see FR-023.
+- **FR-014a**: The payment-method pill MUST render the single method's pill (`card` / `cash` / `gift`) when all successful payments on the ticket share one method, and a new `Split` pill variant when the ticket's successful payments span two or more methods. The `Split` pill MUST follow the existing `.tx-meth-pill` chrome (same shape, same Lacquer token surface) with a visually distinct but neutral color. The pill takes the same cell as the single-method pill — no row-layout change.
 
 ### Functional Requirements — visual contract
 
@@ -125,19 +134,20 @@ A front-desk staffer or owner can scroll through every paid ticket from today di
 - **FR-020**: The per-tile comparison strings on Today (`+3 vs avg` on Transactions and `+12%` on Revenue) MUST be removed from the stat tiles. The badge slot collapses with no placeholder. Real period-over-period comparisons are deferred to a future feature; rendering fabricated comparisons is one of the bugs this feature is closing.
 - **FR-021**: The header subtitle's `· N techs on shift` clause MUST be removed (see FR-010). The subtitle's other components (weekday, date, last-sale time) remain.
 - **FR-022**: The recent-transactions feed's previous 7-row cap MUST be removed (see FR-011 and FR-012). The feed now shows every paid ticket from today in a scrollable container.
+- **FR-023**: The recent-transactions feed's `client` column MUST be removed from each row. The current schema has no `clients` table and every paid ticket is created with `appointment_id: null` (no client linkage), so there is no truthful name to display for v1. The row's identifying columns become the service-summary string and the assigned-tech avatar stack. The CSS grid for `.tx-feed-row` collapses from six columns to five (time, service, techs, method pill, amount). A future client-capture feature can reintroduce the column when there is a real name to display.
 
 ### Functional Requirements — non-functional
 
-- **FR-023**: The dashboard MUST be reachable only by an authenticated studio session; the auth-redirect contract from 002 (FR-016) is unchanged.
-- **FR-024**: The dashboard MUST be read-only. No CTAs on this page perform mutations. Navigation away (via the primary CTA, the quick actions, or the studio shell) remains the only state change the page initiates.
-- **FR-025**: The dashboard MUST render a graceful loading indicator during the first server fetch and a calm error state (no stack trace, no blank page) when an aggregate query fails. The page MUST remain navigable away via the studio shell in either state.
-- **FR-026**: The dashboard MUST NOT subscribe to realtime updates. Refresh happens on navigation (server-component re-fetch). Realtime is deferred to a future feature.
+- **FR-024**: The dashboard MUST be reachable only by an authenticated studio session; the auth-redirect contract from 002 (FR-016) is unchanged.
+- **FR-025**: The dashboard MUST be read-only. No CTAs on this page perform mutations. Navigation away (via the primary CTA, the quick actions, or the studio shell) remains the only state change the page initiates.
+- **FR-026**: The dashboard MUST render a graceful loading indicator during the first server fetch and a calm error state (no stack trace, no blank page) when an aggregate query fails. The page MUST remain navigable away via the studio shell in either state.
+- **FR-027**: The dashboard MUST be fully dynamic — every navigation to the dashboard route MUST re-query Supabase for fresh aggregates. No route-level cache, no `revalidate` window, no stale-while-revalidate. The dashboard MUST NOT subscribe to realtime updates either; refresh happens only on navigation. Realtime is deferred to a future feature.
 
 ### Key Entities *(include if feature involves data)*
 
 - **DashboardPeriod** (read-model): One of `today`, `week`, `month`. Drives every numeric value on the page except the recent-transactions feed (which is pinned to today).
 - **DashboardSummary** (read-model): The aggregated numbers for a given period — transaction count, services count, revenue, tips, and the `byMethod` breakdown (`card`, `cash`, `gift`). Derived live from `tickets` + `ticket_items` + `payments`.
-- **TransactionRow** (read-model for the feed): A single paid ticket's display projection — time from `closed_at`, client name (or `Walk-in`), a service-summary string from `ticket_items.name_snapshot`, the assigned techs from `ticket_items.assigned_staff_id`, the dominant payment method, and the total in dollars.
+- **TransactionRow** (read-model for the feed): A single paid ticket's display projection — time from `closed_at`, a service-summary string from `ticket_items.name_snapshot`, the assigned techs from `ticket_items.assigned_staff_id`, the dominant payment method, and the total in dollars. No client name (see FR-023).
 - **SalonTimezone** (settings): The IANA timezone identifier used to compute calendar windows and to format times on the page. Stored on the existing `public.settings` key/value table under the key `salon.timezone`. Default `America/Los_Angeles` (the salon's address per the seeded `salon.address` row).
 - **Staff** (read-only here): The roster joined into the recent-transactions feed for tech avatars. Unchanged from existing schema.
 
@@ -151,12 +161,12 @@ A front-desk staffer or owner can scroll through every paid ticket from today di
 - **SC-004**: With zero paid tickets in the selected period, every numeric tile shows `0` or `$0`, the Payment-mix bar renders without crashing or showing `NaN`, and the recent-transactions feed shows an empty-state message — verified by an end-to-end test that seeds an empty database.
 - **SC-005**: Server-side render of the dashboard completes within **300 ms p95** under typical load (a single salon's ticket history, < 100 tickets per day, < 3000 tickets per month).
 - **SC-006**: The dashboard route renders correctly across viewport widths from 720 px to 1440 px wide without horizontal scrolling and without truncating numeric tile values.
-- **SC-007**: A side-by-side comparison with the prototype-and-002 visual baseline passes the `speckit-design-auditor` spot-check **except** for the four intentional deltas in FR-019, FR-020, FR-021, FR-022 — those deltas are explicitly approved scope rather than violations.
+- **SC-007**: A side-by-side comparison with the prototype-and-002 visual baseline passes the `speckit-design-auditor` spot-check **except** for the five intentional deltas in FR-019, FR-020, FR-021, FR-022, FR-023 — those deltas are explicitly approved scope rather than violations.
 - **SC-008**: The salon's local timezone, as stored in `public.settings.salon.timezone`, governs every "today" / "this week" / "this month" boundary on the page — verified by changing the setting and confirming the dashboard's day boundary shifts on the next render.
 
 ## Assumptions
 
-- The visual baseline (layout, tokens, type, icon usage, copy tone) is `specs/002-dashboard-page/spec.md` and the corresponding implementation under `app/(studio)/dashboard/` and `components/lacquer/`. This feature preserves the contract except for the four deltas in FR-019–FR-022.
+- The visual baseline (layout, tokens, type, icon usage, copy tone) is `specs/002-dashboard-page/spec.md` and the corresponding implementation under `app/(studio)/dashboard/` and `components/lacquer/`. This feature preserves the contract except for the five intentional deltas in FR-019–FR-023, plus one additive: the new `Split` payment-pill variant introduced by FR-014a (split tender wasn't representable in 002's mock data; the pill follows the existing `.tx-meth-pill` chrome and adds a single neutral-color variant).
 - The salon's local timezone default is `America/Los_Angeles`, derived from the seeded `salon.address` row (`218 Hayes St · San Francisco, CA` in `0007_cart_polish.sql`). If the salon's operating timezone differs, the operator overrides it later via the settings surface (separate feature) and the dashboard picks up the new value on its next render.
 - `public.settings` is already an existing key/value table (`key text primary key`, `value jsonb`) from migration `0007_cart_polish.sql`. Adding the salon timezone requires only an idempotent data INSERT; no schema migration to the table itself.
 - The `tickets`, `ticket_items`, `payments`, `staff`, and `services` tables (from migrations `0001`, `0003`, `0004`, `0006`, `0007`) are the authoritative read source. No new tables are introduced.
