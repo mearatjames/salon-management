@@ -26,6 +26,7 @@ UM.Trash       = mkIcon(<><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2
 UM.UserMinus   = mkIcon(<><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="23" y1="11" x2="17" y2="11"/></>);
 UM.UserX       = mkIcon(<><path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="18" y1="8" x2="23" y2="13"/><line x1="23" y1="8" x2="18" y2="13"/></>);
 UM.ChevronRight= mkIcon(<path d="M9 18l6-6-6-6"/>);
+UM.ChevronLeft = mkIcon(<path d="M15 18l-6-6 6-6"/>);
 UM.MoreHoriz   = mkIcon(<><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></>);
 UM.Bell        = mkIcon(<><path d="M18 8a6 6 0 00-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></>);
 UM.CreditCard  = mkIcon(<><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></>);

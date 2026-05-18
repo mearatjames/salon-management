@@ -51,7 +51,20 @@ const ROLE_LABEL: Record<StudioRole, string> = {
   front_desk: "Front desk",
 };
 
-const STEP_LABELS = ["Details", "Set PIN", "Done"] as const;
+// Three-step pill metadata. Keys are stable test selectors via `data-step`.
+const WIZARD_STEPS: ReadonlyArray<{ key: "details" | "set-pin" | "done"; label: string }> = [
+  { key: "details", label: "Details" },
+  { key: "set-pin", label: "Set PIN" },
+  { key: "done", label: "Done" },
+];
+
+// Per-step primary CTA label. Step 3 ("Done") renders its own close button
+// in the success body, so the sticky footer hides the primary at that step.
+const PRIMARY_CTA_LABEL: Record<1 | 2 | 3, string> = {
+  1: "Next: set PIN",
+  2: "Set PIN",
+  3: "Done",
+};
 
 type WizardStep = 1 | 2 | 3;
 type PinPhase = "enter" | "confirm";
@@ -152,12 +165,22 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
 
   const previewName = trimmedName.length > 0 ? trimmedName : "Display name";
 
+  // The footer's primary CTA gesture varies per step:
+  //   Step 1 — advances to step 2 (the keypad takes over from there).
+  //   Step 2 — visually labels "Set PIN" but the actual submit is owned by
+  //            the keypad (the keypad's own confirm button submits the
+  //            entered digits). The footer CTA stays disabled in step 2 so
+  //            the keypad is the single source of truth for the gesture.
+  //   Step 3 — hidden (the success body renders its own Done close button).
+  const primaryDisabled = step === 1 ? !canProceedFromDetails : true;
+  const primaryOnClick = step === 1 ? () => setStep(2) : undefined;
+
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         side="right"
-        data-slot="add-staff-wizard"
-        className="flex flex-col gap-0 p-0 sm:max-w-[420px]"
+        data-slot="add-staff-wizard-sheet"
+        className="add-staff-wizard-sheet flex flex-col gap-0 p-0"
       >
         <SheetHeader className="border-b border-border">
           <SheetTitle>Add staff member</SheetTitle>
@@ -166,82 +189,44 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
           </SheetDescription>
         </SheetHeader>
 
-        {/* Step indicator bar */}
-        <div
-          data-slot="wizard-step-bar"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--space-3)",
-            padding: "var(--space-3) var(--space-4)",
-            borderBottom: "1px solid var(--border)",
-            background: "var(--card)",
-          }}
-        >
-          {STEP_LABELS.map((label, i) => {
+        {/* Three step pills (Details · Set PIN · Done). Presentational —
+            clicking does NOT navigate; the wizard advances on form submit
+            only. Active state binds to the current step index. */}
+        <div className="add-staff-wizard-pills" data-slot="add-staff-wizard-pills">
+          {WIZARD_STEPS.map(({ key, label }, i) => {
             const n = (i + 1) as WizardStep;
-            const isDone = step > n;
             const isActive = step === n;
+            const isDone = step > n;
             return (
-              <div
-                key={label}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "var(--space-2)",
-                  opacity: isActive || isDone ? 1 : 0.5,
-                }}
+              <span
+                key={key}
+                data-step={key}
+                data-active={isActive ? "true" : "false"}
+                data-done={isDone ? "true" : "false"}
+                className="add-staff-wizard-pill"
               >
-                <span
-                  data-slot={`wizard-step-dot-${n}`}
-                  data-active={isActive ? "true" : "false"}
-                  data-done={isDone ? "true" : "false"}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    width: "var(--space-5)",
-                    height: "var(--space-5)",
-                    borderRadius: "var(--radius-full)",
-                    background: isDone
-                      ? "var(--success, var(--primary))"
-                      : isActive
-                        ? "var(--primary)"
-                        : "var(--border)",
-                    color:
-                      isDone || isActive ? "var(--primary-foreground)" : "var(--muted-foreground)",
-                    fontSize: "var(--text-xs)",
-                    fontWeight: 600,
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
-                  {isDone ? <Check size={12} strokeWidth={1.5} aria-hidden="true" /> : n}
-                </span>
-                <span
-                  style={{
-                    fontSize: "var(--text-xs)",
-                    fontWeight: isActive ? 500 : 400,
-                    color: isActive ? "var(--foreground)" : "var(--muted-foreground)",
-                  }}
-                >
-                  {label}
-                </span>
-              </div>
+                {isDone ? (
+                  <Check
+                    size={14}
+                    strokeWidth={1.5}
+                    aria-hidden="true"
+                    className="add-staff-wizard-pill-icon"
+                  />
+                ) : null}
+                {label}
+              </span>
             );
           })}
         </div>
 
-        {/* Step body */}
+        {/* Step body. T068 collapsed the legacy `data-slot="add-staff-wizard"`
+            duplicate slot here — the SheetContent above already exposes
+            `add-staff-wizard-sheet` for presence-only assertions, and
+            `staff.spec.ts` was migrated to that selector. The body keeps
+            its semantic class name for CSS-only targeting. */}
         <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "var(--space-4)",
-            padding: "var(--space-4)",
-            flex: 1,
-            overflowY: "auto",
-          }}
-          data-slot="wizard-body"
+          className="add-staff-wizard-body"
+          data-slot-body="add-staff-wizard-body"
           data-step={step}
         >
           {step === 1 ? (
@@ -253,7 +238,6 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
               colorToken={colorToken}
               setColorToken={setColorToken}
               roleOptions={roleOptions}
-              previewName={previewName}
             />
           ) : null}
 
@@ -275,58 +259,65 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
               onDone={handleClose}
             />
           ) : null}
+
+          {/* Live preview card — mirrors {display_name, role, color_token}
+              in real time across all three steps. Stays in the body flow
+              under the form so the 420px sheet stacks cleanly on mobile. */}
+          <div
+            className="add-staff-wizard-preview"
+            data-slot="add-staff-wizard-preview"
+            aria-label="Roster preview"
+          >
+            <StaffAvatar name={previewName} colorToken={colorToken} size={40} />
+            <div className="add-staff-wizard-preview-text">
+              <span className="add-staff-wizard-preview-name">{previewName}</span>
+              <span className="add-staff-wizard-preview-subtitle">
+                {ROLE_LABEL[role]} ·{" "}
+                {step === 3 ? (
+                  "PIN set"
+                ) : (
+                  <span className="staff-pin-pill staff-pin-pill--no-pin">No PIN</span>
+                )}
+              </span>
+            </div>
+          </div>
         </div>
 
-        {/* Footer — varies per step */}
-        {step === 1 ? (
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: "var(--space-2)",
-              padding: "var(--space-3) var(--space-4)",
-              borderTop: "1px solid var(--border)",
-              background: "var(--card)",
-            }}
+        {/* Sticky footer — Cancel (always) + per-step primary CTA. The
+            primary's label flips through `PRIMARY_CTA_LABEL[step]`; in
+            step 2 it stays disabled because the keypad owns the gesture,
+            in step 3 it's hidden (the success body has its own Done). */}
+        <div
+          className="add-staff-wizard-footer"
+          data-slot="add-staff-wizard-footer"
+          data-step={step}
+        >
+          <button
+            type="button"
+            className="add-staff-wizard-footer-cancel"
+            data-slot="add-staff-wizard-footer-cancel"
+            onClick={handleClose}
           >
+            Cancel
+          </button>
+          {step === 3 ? null : (
+            // T068 collapsed the dual `data-slot="wizard-next"` +
+            // `data-slot-test="add-staff-wizard-footer-primary"` pair to a
+            // single canonical `data-slot="add-staff-wizard-footer-primary"`.
+            // `staff.spec.ts` (the legacy US2 wizard test from 006) and
+            // `staff-add-wizard.spec.ts` (the US7 spec) both target the
+            // canonical slot.
             <button
               type="button"
-              onClick={handleClose}
-              data-slot="wizard-cancel"
-              style={{
-                padding: "var(--space-2) var(--space-3)",
-                background: "transparent",
-                color: "var(--muted-foreground)",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius-sm)",
-                fontSize: "var(--text-sm)",
-                cursor: "pointer",
-              }}
+              className="add-staff-wizard-footer-primary"
+              data-slot="add-staff-wizard-footer-primary"
+              disabled={primaryDisabled}
+              onClick={primaryOnClick}
             >
-              Cancel
+              {PRIMARY_CTA_LABEL[step]}
             </button>
-            <button
-              type="button"
-              data-slot="wizard-next"
-              disabled={!canProceedFromDetails}
-              onClick={() => setStep(2)}
-              style={{
-                padding: "var(--space-2) var(--space-3)",
-                background: "var(--primary)",
-                color: "var(--primary-foreground)",
-                border: "none",
-                borderRadius: "var(--radius-sm)",
-                fontSize: "var(--text-sm)",
-                fontWeight: 600,
-                cursor: canProceedFromDetails ? "pointer" : "not-allowed",
-                opacity: canProceedFromDetails ? 1 : 0.5,
-                transition: "opacity 150ms var(--ease-out)",
-              }}
-            >
-              Next: set PIN
-            </button>
-          </div>
-        ) : null}
+          )}
+        </div>
 
         {/* Hidden form that posts to addStaff. Rendered always so the
            keypad confirm handler can call requestSubmit() reliably. */}
@@ -356,7 +347,6 @@ function Step1Details({
   colorToken,
   setColorToken,
   roleOptions,
-  previewName,
 }: {
   displayName: string;
   setDisplayName: (v: string) => void;
@@ -365,7 +355,6 @@ function Step1Details({
   colorToken: string;
   setColorToken: (t: string) => void;
   roleOptions: StudioRole[];
-  previewName: string;
 }) {
   return (
     <>
@@ -409,30 +398,9 @@ function Step1Details({
       <div style={fieldStyle}>
         <label style={labelStyle}>Avatar color</label>
         <ColorPicker name="color_token_preview" value={colorToken} onChange={setColorToken} />
-
-        {/* Live preview — avatar + name + role */}
-        <div
-          data-slot="wizard-avatar-preview"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--space-3)",
-            marginTop: "var(--space-2)",
-            padding: "var(--space-3)",
-            background: "var(--muted)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius-md, 8px)",
-          }}
-        >
-          <StaffAvatar name={previewName} colorToken={colorToken} size={32} />
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <span style={{ fontSize: "var(--text-sm)", fontWeight: 500 }}>{previewName}</span>
-            <span style={{ fontSize: "var(--text-xs)", color: "var(--muted-foreground)" }}>
-              {ROLE_LABEL[role]} ·{" "}
-              {STAFF_COLOR_OPTIONS.find((o) => o.token === colorToken)?.label ?? "Color"}
-            </span>
-          </div>
-        </div>
+        <span style={hintStyle}>
+          Selected: {STAFF_COLOR_OPTIONS.find((o) => o.token === colorToken)?.label ?? "Color"}
+        </span>
       </div>
     </>
   );

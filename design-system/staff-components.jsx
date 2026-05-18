@@ -55,17 +55,59 @@ function UsersIcon({ size = 40 }) {
 function CheckIcon({ size = 16 }) {
   return <SvgIcon size={size}><polyline points="20 6 9 17 4 12" /></SvgIcon>;
 }
+function CreditCardIcon({ size = 16 }) {
+  return <SvgIcon size={size}><rect x="2" y="5" width="20" height="14" rx="2" /><line x1="2" y1="10" x2="22" y2="10" /></SvgIcon>;
+}
+function PackageIcon({ size = 16 }) {
+  return <SvgIcon size={size}><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></SvgIcon>;
+}
+function InfoIcon({ size = 16 }) {
+  return <SvgIcon size={size}><circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" /></SvgIcon>;
+}
 
 /* ─── Mock roster ────────────────────────────────────────────────────────────── */
+// Each tech carries a `pay` block with independent exemption switches.
+//   - card_fee_exempt: simple boolean
+//   - supply_mode:    'apply' = all supplies deducted (default),
+//                     'partial' = only some supply types are exempt (see supply_except),
+//                     'exempt' = no supply costs ever deducted
+//   - supply_except:  array of SUPPLY_CATEGORIES ids; used only when supply_mode === 'partial'
 const ROSTER = [
-  { id: '1', display_name: 'Maya Chen',    role: 'owner',      color_token: '--avatar-rose',   active: true,  pin_set: true,  created_at: '2023-03-15T00:00:00Z' },
-  { id: '2', display_name: 'Jordan Kim',   role: 'manager',    color_token: '--avatar-blue',   active: true,  pin_set: true,  created_at: '2023-05-02T00:00:00Z' },
-  { id: '3', display_name: 'Priya Nair',   role: 'technician', color_token: '--avatar-green',  active: true,  pin_set: false, created_at: '2023-06-18T00:00:00Z' },
-  { id: '4', display_name: 'Tom Wu',       role: 'technician', color_token: '--avatar-amber',  active: true,  pin_set: true,  created_at: '2023-08-09T00:00:00Z' },
-  { id: '5', display_name: 'Alexa Torres', role: 'front_desk', color_token: '--avatar-teal',   active: true,  pin_set: true,  created_at: '2024-01-20T00:00:00Z' },
-  { id: '6', display_name: 'Marcus Lee',   role: 'technician', color_token: '--avatar-purple', active: false, pin_set: true,  created_at: '2023-11-01T00:00:00Z' },
-  { id: '7', display_name: 'Sasha Tan',    role: 'technician', color_token: '--avatar-orange', active: true,  pin_set: true,  created_at: '2024-02-14T00:00:00Z' },
+  { id: '1', display_name: 'Maya Chen',    role: 'owner',      color_token: '--avatar-rose',   active: true,  pin_set: true,  created_at: '2023-03-15T00:00:00Z',
+    pay: { card_fee_exempt: true,  supply_mode: 'exempt',  supply_except: [] } },
+  { id: '2', display_name: 'Jordan Kim',   role: 'manager',    color_token: '--avatar-blue',   active: true,  pin_set: true,  created_at: '2023-05-02T00:00:00Z',
+    pay: { card_fee_exempt: false, supply_mode: 'apply',   supply_except: [] } },
+  { id: '3', display_name: 'Priya Nair',   role: 'technician', color_token: '--avatar-green',  active: true,  pin_set: false, created_at: '2023-06-18T00:00:00Z',
+    pay: { card_fee_exempt: false, supply_mode: 'apply',   supply_except: [] } },
+  { id: '4', display_name: 'Tom Wu',       role: 'technician', color_token: '--avatar-amber',  active: true,  pin_set: true,  created_at: '2023-08-09T00:00:00Z',
+    pay: { card_fee_exempt: false, supply_mode: 'partial', supply_except: ['st_gelx'] } },
+  { id: '5', display_name: 'Alexa Torres', role: 'front_desk', color_token: '--avatar-teal',   active: true,  pin_set: true,  created_at: '2024-01-20T00:00:00Z',
+    pay: { card_fee_exempt: false, supply_mode: 'apply',   supply_except: [] } },
+  { id: '6', display_name: 'Marcus Lee',   role: 'technician', color_token: '--avatar-purple', active: false, pin_set: true,  created_at: '2023-11-01T00:00:00Z',
+    pay: { card_fee_exempt: false, supply_mode: 'apply',   supply_except: [] } },
+  { id: '7', display_name: 'Sasha Tan',    role: 'technician', color_token: '--avatar-orange', active: true,  pin_set: true,  created_at: '2024-02-14T00:00:00Z',
+    pay: { card_fee_exempt: false, supply_mode: 'apply',   supply_except: [] } },
 ];
+
+// Global card-fee default — shown as the standard amount on the toggle subtitle.
+// In a real build this comes from the policy store (services-data.jsx · POLICY).
+const CARD_FEE_DEFAULT_LABEL = '$3';
+
+// Supply types are managed in services-data.jsx via useSupplyTypes() so
+// renames here update the Services page and vice versa. Usage stats are
+// computed from window.SERVICES_DATA at render time.
+function supplyTypeUsageForStaff(typeId) {
+  const services = window.SERVICES_DATA || [];
+  const using = services.filter(s => s.active && s.supply?.type_id === typeId);
+  const sampleCents = using[0]?.supply?.amount_cents ?? null;
+  return { service_count: using.length, sample_amount_cents: sampleCents };
+}
+
+function fmtPriceCents(cents) {
+  if (cents == null) return '—';
+  const dollars = cents / 100;
+  return '$' + (Number.isInteger(dollars) ? dollars.toFixed(0) : dollars.toFixed(2));
+}
 
 const COLOR_OPTIONS = [
   { token: '--avatar-rose',   label: 'Rose'   },
@@ -168,6 +210,66 @@ function Toggle({ checked, onChange, disabled }) {
         background: 'white', boxShadow: '0 1px 3px rgb(0 0 0 / .2)',
         transition: 'left 150ms var(--ease-out)',
       }} />
+    </button>
+  );
+}
+
+/* ─── Segmented control (3-way) ──────────────────────────────────────────── */
+function Segmented({ value, onChange, options, ariaLabel }) {
+  return (
+    <div role="radiogroup" aria-label={ariaLabel} style={{
+      display: 'inline-flex',
+      background: 'var(--muted)',
+      padding: 2,
+      borderRadius: 'var(--radius-md)',
+      border: '1px solid var(--border)',
+      gap: 2,
+      flexShrink: 0,
+    }}>
+      {options.map(opt => {
+        const sel = opt.value === value;
+        return (
+          <button key={opt.value} type="button" role="radio" aria-checked={sel}
+            onClick={() => onChange(opt.value)}
+            style={{
+              padding: '5px 11px',
+              fontSize: 12,
+              fontWeight: 500,
+              border: 'none',
+              background: sel ? 'var(--card)' : 'transparent',
+              color: sel ? 'var(--foreground)' : 'var(--muted-foreground)',
+              borderRadius: 'calc(var(--radius-md) - 2px)',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-sans)',
+              boxShadow: sel ? 'var(--shadow-xs)' : 'none',
+              transition: 'background 150ms var(--ease-out), color 150ms var(--ease-out)',
+              whiteSpace: 'nowrap',
+            }}>
+            {opt.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─── Checkbox ───────────────────────────────────────────────────────────── */
+function Checkbox({ checked, onChange, ariaLabel }) {
+  return (
+    <button type="button" role="checkbox" aria-checked={checked} aria-label={ariaLabel}
+      onClick={() => onChange(!checked)}
+      style={{
+        width: 18, height: 18, flexShrink: 0,
+        border: checked ? 'none' : '1.5px solid oklch(from var(--foreground) l c h / 0.28)',
+        background: checked ? 'var(--primary)' : 'transparent',
+        borderRadius: 4,
+        cursor: 'pointer',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        color: 'var(--primary-foreground)',
+        padding: 0,
+        transition: 'background 150ms var(--ease-out), border-color 150ms var(--ease-out)',
+      }}>
+      {checked && <CheckIcon size={12} />}
     </button>
   );
 }
@@ -348,6 +450,246 @@ function EmptyPanel() {
   );
 }
 
+/* ─── PayDeductionsSection ───────────────────────────────────────────────────
+ *
+ * Per-tech, fine-grained exemption from each deduction type. Lives on the
+ * staff record (not on individual services) — services define IF a deduction
+ * can apply; this controls WHETHER it does for a given tech.
+ *
+ * Card fee: simple on/off (no per-method granularity yet).
+ * Supply:   3-way mode (Apply all / Some / Exempt all).
+ *           In "Some" mode the owner ticks which supply types this tech is
+ *           exempt from; everything unchecked still applies normally.
+ *
+ * A plain-language summary at the bottom mirrors the resulting state so
+ * the owner doesn't have to translate the toggles.
+ * ───────────────────────────────────────────────────────────────────────── */
+function PayDeductionsSection({ draft, patchPay, toggleExceptCategory, role, firstName }) {
+  const [types] = useSupplyTypes();
+  const activeTypes = types.filter(t => !t.archived);
+  const cardExempt   = draft.pay.card_fee_exempt;
+  const supplyMode   = draft.pay.supply_mode;
+  const supplyExcept = draft.pay.supply_except;
+
+  // Resolved supply state (handles the empty-partial edge case)
+  const supplyFullyExempt    = supplyMode === 'exempt';
+  const supplyPartialApplied = supplyMode === 'partial' && supplyExcept.length > 0;
+  const anyExempt            = cardExempt || supplyFullyExempt || supplyPartialApplied;
+  const bothFully            = cardExempt && supplyFullyExempt;
+
+  // Map ids → labels for prose
+  const exemptLabels = supplyExcept
+    .map(id => activeTypes.find(t => t.id === id)?.name)
+    .filter(Boolean);
+
+  function exemptListProse(labels) {
+    if (labels.length === 0) return '';
+    if (labels.length === 1) return labels[0];
+    if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+    return labels.slice(0, -1).join(', ') + ', and ' + labels[labels.length - 1];
+  }
+
+  // Plain-language summary of the net effect.
+  let summary = null;
+  if (bothFully) {
+    summary = (
+      <>
+        <strong>{firstName} keeps 100% of every payout.</strong> No card fee
+        or supply costs are ever deducted, regardless of payment method or service.
+      </>
+    );
+  } else if (cardExempt && supplyPartialApplied) {
+    summary = (
+      <>
+        <strong>Card fees are skipped for {firstName}, and supply costs
+        for {exemptListProse(exemptLabels)} are too.</strong> All other supply
+        costs still apply.
+      </>
+    );
+  } else if (cardExempt) {
+    summary = (
+      <>
+        <strong>Card fees are skipped for {firstName}.</strong> Per-service
+        supply costs still apply on any service that has one configured.
+      </>
+    );
+  } else if (supplyFullyExempt) {
+    summary = (
+      <>
+        <strong>Supply costs are skipped for {firstName}.</strong> The standard
+        card fee still applies on card- and gift-card-paid services.
+      </>
+    );
+  } else if (supplyPartialApplied) {
+    summary = (
+      <>
+        <strong>{firstName} is exempt from {exemptListProse(exemptLabels)}.</strong> All
+        other supply costs and the standard card fee still apply.
+      </>
+    );
+  }
+
+  // Front-desk roles don't take services — surface that softly so the toggles
+  // don't read as bugs when they appear to do nothing.
+  const isNonServiceRole = role === 'front_desk';
+
+  return (
+    <div className="panel-section">
+      <div className="section-eyebrow">Pay &amp; deductions</div>
+
+      {/* Card fee */}
+      <div className="access-row">
+        <div style={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+          <CreditCardIcon size={15} style={{ color: 'var(--muted-foreground)', marginTop: 2, flexShrink: 0 }} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--foreground)' }}>
+              Card processing fee
+            </div>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted-foreground)', marginTop: 2, lineHeight: 1.5 }}>
+              {cardExempt
+                ? <>Exempt — card fee never deducted from payout.</>
+                : <>Standard {CARD_FEE_DEFAULT_LABEL} deducted on card-paid services.</>
+              }
+            </div>
+          </div>
+        </div>
+        <Toggle
+          checked={!cardExempt}
+          onChange={v => patchPay({ card_fee_exempt: !v })}
+        />
+      </div>
+
+      {/* Supply — header row with 3-way segmented control */}
+      <div className="access-row" style={{ flexWrap: 'wrap', borderBottom: supplyMode === 'partial' ? 'none' : '1px solid var(--border)' }}>
+        <div style={{ minWidth: 0, display: 'flex', alignItems: 'flex-start', gap: 10, flex: '1 1 auto' }}>
+          <PackageIcon size={15} style={{ color: 'var(--muted-foreground)', marginTop: 2, flexShrink: 0 }} />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--foreground)' }}>
+              Supply deductions
+            </div>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted-foreground)', marginTop: 2, lineHeight: 1.5 }}>
+              {supplyMode === 'apply'   && <>Per-service supply cost deducted from payout when configured.</>}
+              {supplyMode === 'partial' && <>Apply most supply costs, but exempt {firstName} from specific types.</>}
+              {supplyMode === 'exempt'  && <>Exempt — no supply costs ever deducted, on any service.</>}
+            </div>
+          </div>
+        </div>
+        <Segmented
+          ariaLabel="Supply deduction mode"
+          value={supplyMode}
+          onChange={v => patchPay({ supply_mode: v })}
+          options={[
+            { value: 'apply',   label: 'Apply all' },
+            { value: 'partial', label: 'Some'      },
+            { value: 'exempt',  label: 'Exempt'    },
+          ]}
+        />
+      </div>
+
+      {/* Supply — per-type picker (only in partial mode) */}
+      {supplyMode === 'partial' && (
+        <div style={{
+          padding: '12px 16px 14px',
+          background: 'var(--muted)',
+          borderTop: '1px solid var(--border)',
+        }}>
+          <div style={{ fontSize: 11, color: 'var(--muted-foreground)', fontWeight: 600, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 10 }}>
+            Exempt {firstName} from these supply types
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {activeTypes.length === 0 && (
+              <div style={{
+                padding: '12px 14px',
+                background: 'var(--card)',
+                border: '1px dashed var(--border)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 12, color: 'var(--muted-foreground)', textAlign: 'center',
+              }}>
+                No supply types defined yet. Add some on the Services page first.
+              </div>
+            )}
+            {activeTypes.map(cat => {
+              const usage = supplyTypeUsageForStaff(cat.id);
+              const checked = supplyExcept.includes(cat.id);
+              return (
+                <label key={cat.id}
+                  onClick={(e) => {
+                    // Block native label behavior so our custom checkbox handles state once.
+                    if (e.target.tagName !== 'BUTTON') {
+                      e.preventDefault();
+                      toggleExceptCategory(cat.id, !checked);
+                    }
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '9px 12px',
+                    background: 'var(--card)',
+                    border: '1px solid ' + (checked ? 'var(--ring)' : 'var(--border)'),
+                    borderRadius: 'var(--radius-sm)',
+                    cursor: 'pointer',
+                    transition: 'border-color 150ms var(--ease-out)',
+                  }}>
+                  <Checkbox
+                    checked={checked}
+                    onChange={v => toggleExceptCategory(cat.id, v)}
+                    ariaLabel={`Exempt from ${cat.name}`}
+                  />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 'var(--text-sm)',
+                      fontWeight: 500,
+                      color: 'var(--foreground)',
+                      textDecoration: checked ? 'line-through' : 'none',
+                      textDecorationColor: 'var(--muted-foreground)',
+                    }}>{cat.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--muted-foreground)', marginTop: 2 }}>
+                      {usage.service_count === 0
+                        ? 'Unused — no services reference this type yet.'
+                        : `${usage.service_count} ${usage.service_count === 1 ? 'service' : 'services'} · typically ${fmtPriceCents(usage.sample_amount_cents)} per ticket`
+                      }
+                    </div>
+                  </div>
+                  {checked && (
+                    <span style={{
+                      fontSize: 11, fontWeight: 500,
+                      padding: '2px 8px',
+                      borderRadius: 9999,
+                      background: 'oklch(from var(--muted-foreground) l c h / 0.14)',
+                      color: 'var(--muted-foreground)',
+                      whiteSpace: 'nowrap',
+                    }}>Exempt</span>
+                  )}
+                </label>
+              );
+            })}
+          </div>
+          {supplyExcept.length === 0 && (
+            <div style={{ fontSize: 11.5, color: 'var(--muted-foreground)', marginTop: 10, lineHeight: 1.5 }}>
+              No supply types selected — all costs will be deducted normally until you tick at least one.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Summary note — only when at least one exemption is in effect */}
+      {summary && (
+        <div className="section-note">
+          <InfoIcon size={13} style={{ color: 'var(--muted-foreground)', marginTop: 1, flexShrink: 0 }} />
+          <span>{summary}</span>
+        </div>
+      )}
+
+      {/* Non-service role hint */}
+      {isNonServiceRole && !anyExempt && (
+        <div className="section-note">
+          <InfoIcon size={13} style={{ color: 'var(--muted-foreground)', marginTop: 1, flexShrink: 0 }} />
+          <span>Front desk staff don't take services, so these settings normally don't affect their payouts. Configure if they occasionally cover service tickets.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── EditPanel ──────────────────────────────────────────────────────────────── */
 function EditPanel({ target, onClose, inSheet }) {
   const [draft, setDraft] = useState({
@@ -355,6 +697,11 @@ function EditPanel({ target, onClose, inSheet }) {
     role:         target.role,
     color_token:  target.color_token,
     active:       target.active,
+    pay: {
+      card_fee_exempt: target.pay?.card_fee_exempt ?? false,
+      supply_mode:     target.pay?.supply_mode     ?? 'apply',
+      supply_except:   [...(target.pay?.supply_except ?? [])],
+    },
   });
 
   // Re-sync when a different row is selected
@@ -364,17 +711,45 @@ function EditPanel({ target, onClose, inSheet }) {
       role:         target.role,
       color_token:  target.color_token,
       active:       target.active,
+      pay: {
+        card_fee_exempt: target.pay?.card_fee_exempt ?? false,
+        supply_mode:     target.pay?.supply_mode     ?? 'apply',
+        supply_except:   [...(target.pay?.supply_except ?? [])],
+      },
     });
   }, [target.id]);
 
   const trimmedName = draft.display_name.trim();
+  const targetPay = {
+    card_fee_exempt: target.pay?.card_fee_exempt ?? false,
+    supply_mode:     target.pay?.supply_mode     ?? 'apply',
+    supply_except:   target.pay?.supply_except   ?? [],
+  };
+  const exceptChanged =
+    draft.pay.supply_except.length !== targetPay.supply_except.length ||
+    draft.pay.supply_except.some(id => !targetPay.supply_except.includes(id));
   const isDirty =
     draft.display_name !== target.display_name ||
     draft.role        !== target.role          ||
     draft.color_token !== target.color_token   ||
-    draft.active      !== target.active;
+    draft.active      !== target.active        ||
+    draft.pay.card_fee_exempt !== targetPay.card_fee_exempt ||
+    draft.pay.supply_mode     !== targetPay.supply_mode     ||
+    exceptChanged;
   const canSave = isDirty && trimmedName.length >= 2;
   const previewName = trimmedName || target.display_name;
+
+  function patchPay(p) {
+    setDraft(d => ({ ...d, pay: { ...d.pay, ...p } }));
+  }
+  function toggleExceptCategory(id, on) {
+    setDraft(d => {
+      const next = on
+        ? [...d.pay.supply_except, id].filter((v, i, a) => a.indexOf(v) === i)
+        : d.pay.supply_except.filter(x => x !== id);
+      return { ...d, pay: { ...d.pay, supply_except: next } };
+    });
+  }
 
   return (
     <div className="edit-panel">
@@ -382,18 +757,29 @@ function EditPanel({ target, onClose, inSheet }) {
       {/* Profile preview */}
       <div className="panel-profile">
         <StaffAvatar name={previewName} colorToken={draft.color_token} size={52} />
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontWeight: 600, fontSize: 'var(--text-md)', color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 'var(--leading-tight)' }}>
             {previewName}
           </div>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--muted-foreground)', marginTop: 4 }}>
             {ROLE_LABEL[draft.role]} · {formatDate(target.created_at)}
           </div>
-          <div style={{ marginTop: 6 }}>
+          <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
             {target.active
               ? <Badge variant="success">Active</Badge>
               : <Badge variant="muted">Inactive</Badge>
             }
+            {(() => {
+              const cf = draft.pay.card_fee_exempt;
+              const sm = draft.pay.supply_mode;
+              const sx = draft.pay.supply_except.length > 0;
+              if (cf && sm === 'exempt')   return <Badge variant="muted">No deductions</Badge>;
+              if (cf && sm === 'partial' && sx) return <Badge variant="muted">Partial deductions</Badge>;
+              if (cf)                      return <Badge variant="muted">Card-fee exempt</Badge>;
+              if (sm === 'exempt')         return <Badge variant="muted">Supply-exempt</Badge>;
+              if (sm === 'partial' && sx)  return <Badge variant="muted">Partial supply exemption</Badge>;
+              return null;
+            })()}
           </div>
         </div>
       </div>
@@ -452,6 +838,15 @@ function EditPanel({ target, onClose, inSheet }) {
           </button>
         </div>
       </div>
+
+      {/* Pay & deductions */}
+      <PayDeductionsSection
+        draft={draft}
+        patchPay={patchPay}
+        toggleExceptCategory={toggleExceptCategory}
+        role={draft.role}
+        firstName={previewName.split(' ')[0]}
+      />
 
       {/* Save */}
       <button className="btn-primary" disabled={!canSave}

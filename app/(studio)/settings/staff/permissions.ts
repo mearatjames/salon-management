@@ -26,7 +26,12 @@ export type StaffAction =
   | "set_pin"
   | "deactivate"
   | "reactivate"
-  | "remove";
+  | "remove"
+  // 023-staff-payout-exemptions: one label covers all three pay-deduction
+  // fields (card_fee_exempt + supply_mode + supply_except) per Clarify Q1 +
+  // research § R11. Not in SELF_BLOCKED_ACTIONS — operators may edit their
+  // own pay-deduction settings; gated by the existing canEditAnyField matrix.
+  | "update_pay_deductions";
 
 export type PermissionContext = {
   operator: { id: string; role: StudioRole };

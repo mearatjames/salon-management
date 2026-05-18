@@ -9,6 +9,7 @@
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
   <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="services-data.jsx"></script>
   <script type="text/babel" src="staff-components.jsx"></script>
   <style>
     /* ── Avatar color tokens (not in colors_and_type.css, defined here) ───── */
@@ -90,12 +91,17 @@
     /* ── Staff grid (desktop: 2-col) ────────────────────────────────────────── */
     .staff-grid {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 356px;
-      gap: 24px;
+      grid-template-columns: minmax(0, 1fr) 440px;
+      gap: 32px;
       padding: 28px 32px;
       height: 100%;
       overflow: hidden;
+      max-width: 1320px;
+      margin: 0 auto;
+      width: 100%;
     }
+    /* Cap the roster column so rows don't sprawl on wide screens */
+    .roster-col { max-width: 760px; }
 
     /* ── Roster column ──────────────────────────────────────────────────────── */
     .roster-col {
@@ -349,10 +355,10 @@
     }
 
     .section-body {
-      padding: 14px;
+      padding: 16px 16px 18px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 16px;
     }
 
     .field { display: flex; flex-direction: column; gap: 5px; }
@@ -375,11 +381,25 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      padding: 12px 14px;
+      gap: 16px;
+      padding: 14px 16px;
       border-bottom: 1px solid var(--border);
     }
     .access-row--last { border-bottom: none; }
+
+    /* Subtle footer note inside a panel-section — used by Pay & deductions */
+    .section-note {
+      padding: 10px 16px 12px;
+      font-size: 11.5px;
+      line-height: 1.5;
+      color: var(--muted-foreground);
+      background: var(--muted);
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .section-note strong { color: var(--foreground); font-weight: 600; }
 
     /* Small ghost button (PIN change) */
     .btn-sm {
@@ -680,7 +700,9 @@
         height: auto;
         overflow: visible;
         gap: 14px;
+        max-width: none;
       }
+      .roster-col   { max-width: none; }
       .page-content { overflow-y: auto; }
       .panel-col    { display: none; }
       .staff-list   { flex: none; overflow-y: visible; min-height: auto; }
@@ -717,7 +739,7 @@
     [data-vp="mobile"] .tab-bar        { padding: 0 12px !important; }
 
     /* Force desktop */
-    [data-vp="desktop"] .staff-grid    { grid-template-columns: minmax(0, 1fr) 356px !important; padding: 28px 32px !important; height: 100% !important; overflow: hidden !important; }
+    [data-vp="desktop"] .staff-grid    { grid-template-columns: minmax(0, 1fr) 440px !important; padding: 28px 32px !important; height: 100% !important; overflow: hidden !important; }
     [data-vp="desktop"] .page-content  { overflow: hidden !important; }
     [data-vp="desktop"] .panel-col     { display: flex !important; }
     [data-vp="desktop"] .staff-list    { flex: 1 !important; overflow-y: auto !important; }

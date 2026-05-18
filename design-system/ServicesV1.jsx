@@ -3,11 +3,13 @@
 //
 // Layout:
 //   - Title bar with summary + Add service
-//   - Slim card-fee policy strip (global default + exempt techs)
+//   - Slim card-fee policy strip (global default + supply count)
 //   - Two-pane: grouped list on the left, always-visible edit panel on the right
 //   - Edit panel has a dedicated "Deductions" card with hybrid card-fee mode
 //     (default / custom / exempt) + per-service supply deduction
 //   - List rows show small deduction chips inline
+//
+// Note: per-tech exemptions live on the Staff Settings page, not here.
 
 const { useState, useMemo, useEffect } = React;
 
@@ -109,7 +111,7 @@ function Switch({ checked, onChange, ariaLabel }) {
 }
 
 // ---------- Policy strip ----------
-function PolicyStrip({ services, policy, exemptTechs, onEditPolicy }) {
+function PolicyStrip({ services, policy, onEditPolicy }) {
   const counts = useMemo(() => {
     const c = { default: 0, custom: 0, exempt: 0, supply: 0 };
     services.forEach(s => {
@@ -124,7 +126,7 @@ function PolicyStrip({ services, policy, exemptTechs, onEditPolicy }) {
   return (
     <div className="v1-policy" style={{
       display: 'grid',
-      gridTemplateColumns: '1fr 1fr 1fr auto',
+      gridTemplateColumns: '1fr 1fr auto',
       alignItems: 'stretch',
       gap: 0,
       padding: 0,
@@ -155,45 +157,6 @@ function PolicyStrip({ services, policy, exemptTechs, onEditPolicy }) {
           <div style={{ fontSize: 12, color: 'var(--muted-foreground)' }}>services</div>
         </div>
         <div style={{ fontSize: 11, color: 'var(--muted-foreground)', marginTop: 4 }}>Chrome · Cat-eye · OPI · GelX tips</div>
-      </div>
-
-      <div style={{ padding: '14px 18px', borderRight: '1px solid var(--border)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-          <IcUserMinus size={14} style={{ color: 'var(--muted-foreground)' }} />
-          <div style={{ fontSize: 10.5, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--muted-foreground)', fontWeight: 500 }}>Exempt techs</div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-          {exemptTechs.map(t => (
-            <span key={t.id} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              padding: '3px 8px 3px 3px',
-              background: 'var(--muted)',
-              borderRadius: 999,
-              fontSize: 12, fontWeight: 500,
-            }}>
-              <span style={{
-                width: 20, height: 20, borderRadius: '50%',
-                background: `var(${t.color})`, color: 'white',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 9.5, fontWeight: 600,
-              }}>{t.initials}</span>
-              {t.name}
-            </span>
-          ))}
-          <button type="button" style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '4px 10px',
-            background: 'transparent',
-            color: 'var(--muted-foreground)',
-            border: '1px dashed var(--border)',
-            borderRadius: 999,
-            fontSize: 11.5, fontWeight: 500,
-            cursor: 'pointer', fontFamily: 'var(--font-sans)',
-          }}>
-            <IcPlus size={11} /> Add
-          </button>
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--muted-foreground)', marginTop: 6 }}>No deductions apply to these techs.</div>
       </div>
 
       <button type="button" onClick={onEditPolicy} aria-label="Edit policy"
@@ -278,7 +241,7 @@ function CatalogRow({ service, selected, onSelect, density }) {
               <DeductionChip kind="custom" amount={fmtPrice(cf)} label="card fee" dense />
             )}
             {service.supply && (
-              <DeductionChip kind="supply" amount={fmtPrice(service.supply.amount_cents)} label={service.supply.label} dense />
+              <DeductionChip kind="supply" amount={fmtPrice(service.supply.amount_cents)} label={supplyTypeName(service.supply.type_id)} dense />
             )}
             {cf == null && service.cardFee?.mode === 'exempt' && (
               <DeductionChip kind="exempt" amount="No fees" dense />
@@ -478,7 +441,7 @@ function EditPanel({ service }) {
   function patch(p) { setDraft(d => ({ ...d, ...p })); }
   function patchCardFee(p) { setDraft(d => ({ ...d, cardFee: { ...d.cardFee, ...p } })); }
   function patchSupply(p) {
-    setDraft(d => ({ ...d, supply: { ...(d.supply ?? { amount_cents: 0, label: '' }), ...p } }));
+    setDraft(d => ({ ...d, supply: { ...(d.supply ?? { amount_cents: 0, type_id: null }), ...p } }));
   }
 
   const cardFeeCents = effectiveCardFeeCents({ cardFee: draft.cardFee });
@@ -603,7 +566,7 @@ function EditPanel({ service }) {
               </div>
               <Switch
                 checked={!!draft.supply}
-                onChange={v => setDraft(d => ({ ...d, supply: v ? (d.supply ?? { amount_cents: 500, label: '' }) : null }))}
+                onChange={v => setDraft(d => ({ ...d, supply: v ? (d.supply ?? { amount_cents: 500, type_id: null }) : null }))}
                 ariaLabel="Supply deduction"
               />
             </div>
@@ -614,10 +577,10 @@ function EditPanel({ service }) {
                   onChange={v => patchSupply({ amount_cents: Math.round(Number(v) * 100) || 0 })}
                   prefix="$" numeric
                 />
-                <TextInput
-                  value={draft.supply.label ?? ''}
-                  onChange={v => patchSupply({ label: v })}
-                  placeholder="e.g. GelX tips & gel, Chrome powder"
+                <SupplyTypePicker
+                  value={draft.supply.type_id}
+                  onChange={id => patchSupply({ type_id: id })}
+                  placeholder="Pick a supply type"
                 />
               </div>
             )}
@@ -638,7 +601,7 @@ function EditPanel({ service }) {
                 <div style={{ color: 'oklch(0.45 0.13 240)' }}>−{fmtPrice(cardFeeCents)} <span style={{ opacity: 0.7 }}>card fee</span></div>
               )}
               {supplyCents > 0 && (
-                <div style={{ color: 'oklch(0.45 0.14 75)' }}>−{fmtPrice(supplyCents)} <span style={{ opacity: 0.7 }}>{draft.supply?.label || 'supply'}</span></div>
+                <div style={{ color: 'oklch(0.45 0.14 75)' }}>−{fmtPrice(supplyCents)} <span style={{ opacity: 0.7 }}>{draft.supply?.type_id ? supplyTypeName(draft.supply.type_id) : 'supply'}</span></div>
               )}
             </div>
           </div>
@@ -784,7 +747,6 @@ function ServicesV1({ density = 'comfortable' }) {
     cardFeeMethods: [...POLICY.cardFeeMethods],
     cardFeeMainCategories: [...POLICY.cardFeeMainCategories],
   }));
-  const [exemptTechs, setExemptTechs] = useState(() => EXEMPT_TECHS);
   const [policyOpen, setPolicyOpen] = useState(false);
 
   function handleSavePolicy(draft) {
@@ -795,9 +757,6 @@ function ServicesV1({ density = 'comfortable' }) {
       cardFeeMethods: draft.cardFeeMethods.map(id => labelMap[id] ?? id),
       cardFeeMainCategories: draft.cardFeeMainCategories,
     });
-    // Look up tech metadata from the roster used inside the sheet.
-    const roster = window.__LACQUER_ROSTER ?? EXEMPT_TECHS;
-    setExemptTechs(draft.exemptTechIds.map(id => roster.find(t => t.id === id)).filter(Boolean));
   }
 
   const activeCount = services.filter(s => s.active).length;
@@ -821,7 +780,6 @@ function ServicesV1({ density = 'comfortable' }) {
       <PolicyStrip
         services={services}
         policy={policy}
-        exemptTechs={exemptTechs}
         onEditPolicy={() => setPolicyOpen(true)}
       />
 
@@ -842,7 +800,6 @@ function ServicesV1({ density = 'comfortable' }) {
         onClose={() => setPolicyOpen(false)}
         policy={policy}
         services={services}
-        exemptTechIds={exemptTechs.map(t => t.id)}
         onSave={handleSavePolicy}
         onJumpToService={setSelectedId}
       />

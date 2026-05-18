@@ -150,7 +150,7 @@ function RationaleCard() {
       <header>
         <h2 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-0.01em', margin: 0 }}>Why two directions</h2>
         <p style={{ fontSize: 13, color: 'var(--muted-foreground)', marginTop: 6, maxWidth: 720 }}>
-          Both variations implement the same data model — hybrid card-fee (default · custom · exempt), per-service supply deduction with a label, and a mini exempt-techs control on the page. They differ in <em>where the deduction math lives in the visual hierarchy</em>.
+          Both variations implement the same data model — hybrid card-fee (default · custom · exempt) and per-service supply deduction with a label. They differ in <em>where the deduction math lives in the visual hierarchy</em>. Per-tech exemptions live on the Staff Settings page.
         </p>
       </header>
 
@@ -158,7 +158,7 @@ function RationaleCard() {
         <Item title="V1 · Refined two-pane" accent="Conservative">
           <p style={{ marginTop: 0 }}><strong style={{ color: 'var(--foreground)' }}>Hierarchy:</strong> Service is the spine. Deductions are a strong but bounded section in the edit panel.</p>
           <p><strong style={{ color: 'var(--foreground)' }}>List rows</strong> stay close to the current visual — color swatch, name, deduction chips, duration, price. Chips surface the rule that's in effect (default $3 · custom · supply −$5 with label).</p>
-          <p><strong style={{ color: 'var(--foreground)' }}>Policy strip</strong> at the top of the page shows the global card-fee default, supply-deduction count, and exempt techs in one row, with a sub‑level "Edit policy" affordance.</p>
+          <p><strong style={{ color: 'var(--foreground)' }}>Policy strip</strong> at the top of the page shows the global card-fee default and supply-deduction count in one row, with a sub‑level "Edit policy" affordance.</p>
           <p><strong style={{ color: 'var(--foreground)' }}>Trade-off:</strong> Owner has to open a service to see the math. But the list reads cleanly even with deductions on every row.</p>
         </Item>
         <Item title="V2 · Payout-first table" accent="Margin-aware">

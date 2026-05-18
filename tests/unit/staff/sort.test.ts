@@ -25,6 +25,10 @@ function mk(
     active: partial.active ?? true,
     created_at: partial.created_at ?? "2026-01-01T00:00:00.000Z",
     pin_set: partial.pin_set ?? true,
+    // 023-staff-payout-exemptions — defaults for the new RosterStaff fields.
+    card_fee_exempt: partial.card_fee_exempt ?? false,
+    supply_mode: partial.supply_mode ?? "apply",
+    supply_except: partial.supply_except ?? [],
   };
 }
 

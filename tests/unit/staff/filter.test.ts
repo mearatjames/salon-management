@@ -9,6 +9,14 @@ import { filterStaff, type RosterStaff } from "@/app/(studio)/settings/staff/_fi
 
 const ROLES: RosterStaff["role"][] = ["owner", "manager", "technician", "front_desk"];
 
+// 023-staff-payout-exemptions — defaults for the three new RosterStaff fields
+// so existing fixtures stay compact.
+const NO_EXEMPTIONS = {
+  card_fee_exempt: false as const,
+  supply_mode: "apply" as const,
+  supply_except: [] as readonly string[],
+};
+
 function makeRoster(size: number): RosterStaff[] {
   // Deterministic synthetic roster. 1/5 of rows are inactive.
   return Array.from({ length: size }).map((_, i) => ({
@@ -19,6 +27,7 @@ function makeRoster(size: number): RosterStaff[] {
     active: i % 5 !== 0,
     created_at: "2026-01-01T00:00:00.000Z",
     pin_set: i % 2 === 0,
+    ...NO_EXEMPTIONS,
   }));
 }
 
@@ -48,6 +57,7 @@ describe("filterStaff — case-insensitive substring search", () => {
         active: true,
         created_at: "2026-01-01T00:00:00.000Z",
         pin_set: true,
+        ...NO_EXEMPTIONS,
       },
       {
         id: "2",
@@ -57,6 +67,7 @@ describe("filterStaff — case-insensitive substring search", () => {
         active: true,
         created_at: "2026-01-01T00:00:00.000Z",
         pin_set: true,
+        ...NO_EXEMPTIONS,
       },
       {
         id: "3",
@@ -66,6 +77,7 @@ describe("filterStaff — case-insensitive substring search", () => {
         active: true,
         created_at: "2026-01-01T00:00:00.000Z",
         pin_set: true,
+        ...NO_EXEMPTIONS,
       },
     ];
     expect(filterStaff(rows, "ma", true).map((r) => r.display_name)).toEqual(["Maya Patel"]);
@@ -83,6 +95,7 @@ describe("filterStaff — case-insensitive substring search", () => {
         active: true,
         created_at: "2026-01-01T00:00:00.000Z",
         pin_set: true,
+        ...NO_EXEMPTIONS,
       },
     ];
     expect(filterStaff(rows, "ate", true).length).toBe(1);
