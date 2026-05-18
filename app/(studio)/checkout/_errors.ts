@@ -31,6 +31,11 @@ export type CheckoutActionError =
   | { code: "SQUARE_CHECKOUT_CREATE_FAILED"; squareError?: string }
   | { code: "PAYMENT_NOT_FOUND" }
   | { code: "PAYMENT_NOT_CANCELLABLE" }
+  // Added by issue #26 — discardTicket money-loss defense
+  | {
+      code: "TICKET_HAS_INFLIGHT_PAYMENT";
+      counts: { draft: number; pending: number; succeeded: number };
+    }
   // Added by feature 018-gift-card-split-tender
   | { code: "GIFT_CARD_NOT_FOUND" }
   | { code: "GIFT_CARD_NOT_REDEEMABLE"; state: "PENDING" | "BLOCKED" | "DEACTIVATED" }
@@ -61,6 +66,32 @@ export class TicketAlreadyTerminalError extends CheckoutError {
   constructor(message = "ticket is already paid or discarded") {
     super(message);
     this.name = "TicketAlreadyTerminalError";
+  }
+}
+
+export type InflightPaymentCounts = {
+  draft: number;
+  pending: number;
+  succeeded: number;
+};
+
+// Issue #26 — typed companion for the "ticket has in-flight payments"
+// refusal. The `discardTicket` Server Action surfaces this condition as
+// an in-band return value (`refusedReason: 'ticket_has_inflight_payment'`)
+// because Next.js' production Server Action build strips error metadata
+// across the client boundary; this class stays defined so same-process
+// callers and unit tests can construct/inspect the typed shape with the
+// structured `counts` payload.
+export class TicketHasInflightPaymentError extends CheckoutError {
+  readonly code = "TICKET_HAS_INFLIGHT_PAYMENT" as const;
+  readonly counts: InflightPaymentCounts;
+  constructor(
+    counts: InflightPaymentCounts,
+    message = "ticket has pending or captured payments and cannot be discarded"
+  ) {
+    super(message);
+    this.name = "TicketHasInflightPaymentError";
+    this.counts = counts;
   }
 }
 

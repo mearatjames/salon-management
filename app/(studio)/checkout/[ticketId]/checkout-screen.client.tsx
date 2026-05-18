@@ -634,7 +634,16 @@ export function CheckoutScreen({
           }
         }
       }
-      await discardTicket({ ticketId });
+      const result = await discardTicket({ ticketId });
+      if (!result.ok && result.refusedReason === "ticket_has_inflight_payment") {
+        // Issue #26 — money-loss defense: the ticket has captured or
+        // pending payments. Refuse to navigate; show the inline banner so
+        // the operator can cancel/void those payments before discarding.
+        setErrorBanner(
+          "This ticket has pending or captured payments. Cancel or void them before discarding."
+        );
+        return;
+      }
       router.push("/dashboard");
     } catch (err) {
       if (err instanceof TicketAlreadyTerminalError) {
