@@ -5,10 +5,10 @@
 //   1. Card fee default — amount, which payment methods trigger it,
 //      which service categories get it by default. (Per-service overrides
 //      still beat these — copy in the sheet says so.)
-//   2. Exempt techs — owners / family / senior techs that never get any
-//      deduction taken.
-//   3. Supply deductions — read-only summary across the menu, since the
+//   2. Supply deductions — read-only summary across the menu, since the
 //      money lives per-service (configured in the Edit panel).
+//
+// Per-tech exemptions live in Staff Settings, not on this page.
 //
 // Implementation notes:
 //   - Animated mount/unmount via a tiny `useMountAnim` hook (200ms in,
@@ -28,23 +28,9 @@ const PIcPlus     = PIco(<path d="M12 5v14M5 12h14"/>);
 const PIcCheck    = PIco(<path d="M5 12l5 5L20 7"/>);
 const PIcCard     = PIco(<><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></>);
 const PIcBox      = PIco(<><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></>);
-const PIcUsers    = PIco(<><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></>);
 const PIcSearch   = PIco(<><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></>);
 const PIcChev     = PIco(<path d="M9 18l6-6-6-6"/>);
 const PIcArrowR   = PIco(<><path d="M5 12h14"/><path d="M13 5l7 7-7 7"/></>);
-
-// Roster used for the "Add exempt tech" picker. In a real build this comes
-// from the staff store; mocked here so the picker has plausible content.
-const ALL_TECHS = [
-  { id: 'maya',    name: 'Maya Tran',     initials: 'MA', color: '--avatar-rose',   role: 'Owner' },
-  { id: 'linh',    name: 'Linh Pham',     initials: 'LI', color: '--avatar-green',  role: 'Family · senior tech' },
-  { id: 'aria',    name: 'Aria Nguyen',   initials: 'AR', color: '--avatar-blue',   role: 'Tech' },
-  { id: 'justine', name: 'Justine Kim',   initials: 'JU', color: '--avatar-amber',  role: 'Tech' },
-  { id: 'sara',    name: 'Sara Patel',    initials: 'SA', color: '--avatar-purple', role: 'Tech' },
-  { id: 'noor',    name: 'Noor Hassan',   initials: 'NO', color: '--avatar-teal',   role: 'Apprentice' },
-  { id: 'priya',   name: 'Priya Shah',    initials: 'PR', color: '--avatar-orange', role: 'Tech' },
-  { id: 'mei',     name: 'Mei Liu',       initials: 'ME', color: '--avatar-slate',  role: 'Front desk' },
-];
 
 // All known payment methods at this salon.
 const PAYMENT_METHODS = [
@@ -310,225 +296,279 @@ function SummaryStat({ n, label }) {
   );
 }
 
-// ---------- Section: Exempt techs ----------
-function ExemptTechsSection({ draft, patch }) {
-  const [addOpen, setAddOpen] = useState(false);
-  const [q, setQ] = useState('');
+// ---------- Section: Supply types ----------
+// First-class supply-type entity. Each row: rename, see how many services
+// reference it, archive (only when unused). Adding a new type happens
+// inline at the top — the same SupplyTypePicker on the service edit panel
+// can also create types, so this surface stays unobtrusive.
+function SupplyTypesSection({ services, onJumpToService }) {
+  const [types, setTypes] = useSupplyTypes();
+  const [editingId, setEditingId] = useState(null);
+  const [editingName, setEditingName] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState('');
 
-  const exempt = useMemo(() =>
-    draft.exemptTechIds.map(id => ALL_TECHS.find(t => t.id === id)).filter(Boolean),
-    [draft.exemptTechIds]);
+  // Group services that reference each type — for the inline detail rows.
+  const rowsByType = useMemo(() => {
+    const map = {};
+    services.forEach(s => {
+      if (!s.active || !s.supply?.type_id) return;
+      (map[s.supply.type_id] ??= []).push(s);
+    });
+    return map;
+  }, [services]);
 
-  const candidates = useMemo(() =>
-    ALL_TECHS.filter(t =>
-      !draft.exemptTechIds.includes(t.id) &&
-      (!q || t.name.toLowerCase().includes(q.toLowerCase()) || t.role.toLowerCase().includes(q.toLowerCase()))
-    ), [draft.exemptTechIds, q]);
+  const visibleTypes = types.filter(t => !t.archived);
 
-  function addTech(id) {
-    patch({ exemptTechIds: [...draft.exemptTechIds, id] });
-    setQ('');
-    // keep picker open so adding multiple feels fast
+  function startRename(t) {
+    setEditingId(t.id);
+    setEditingName(t.name);
   }
-  function removeTech(id) {
-    patch({ exemptTechIds: draft.exemptTechIds.filter(x => x !== id) });
+  function commitRename() {
+    const trimmed = editingName.trim();
+    if (trimmed) {
+      setTypes(prev => prev.map(t => t.id === editingId ? { ...t, name: trimmed } : t));
+    }
+    setEditingId(null);
+    setEditingName('');
   }
-
-  return (
-    <section style={sectionCard}>
-      <SheetSectionHeader
-        icon={<PIcUsers size={15} />}
-        title="Exempt techs"
-        hint="These techs never have deductions taken — typically owners, family, or senior leads paid on a different model."
-      />
-
-      {/* Chip list */}
-      <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {exempt.map(t => (
-          <span key={t.id} style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8,
-            padding: '4px 6px 4px 4px',
-            background: 'var(--muted)',
-            border: '1px solid var(--border)',
-            borderRadius: 999,
-            fontSize: 12.5, fontWeight: 500,
-          }}>
-            <span style={{
-              width: 24, height: 24, borderRadius: '50%',
-              background: `var(${t.color})`, color: 'white',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 10.5, fontWeight: 600,
-            }}>{t.initials}</span>
-            <span>{t.name}</span>
-            <span style={{ fontSize: 11, color: 'var(--muted-foreground)', fontWeight: 400 }}>· {t.role}</span>
-            <button type="button" onClick={() => removeTech(t.id)} aria-label={`Remove ${t.name}`}
-              style={{
-                marginLeft: 2,
-                width: 18, height: 18, padding: 0,
-                background: 'transparent',
-                border: 'none', borderRadius: 999,
-                color: 'var(--muted-foreground)',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer',
-              }}>
-              <PIcX size={12} />
-            </button>
-          </span>
-        ))}
-        <button type="button" onClick={() => setAddOpen(o => !o)}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: 4,
-            padding: '6px 12px',
-            background: addOpen ? 'var(--accent)' : 'transparent',
-            color: addOpen ? 'var(--foreground)' : 'var(--muted-foreground)',
-            border: '1px dashed var(--border)',
-            borderRadius: 999,
-            fontSize: 12, fontWeight: 500,
-            cursor: 'pointer', fontFamily: 'var(--font-sans)',
-          }}>
-          <PIcPlus size={12} /> Add tech
-        </button>
-      </div>
-
-      {/* Picker */}
-      {addOpen && (
-        <div style={{
-          marginTop: 12,
-          background: 'var(--card)',
-          border: '1px solid var(--border)',
-          borderRadius: 10,
-          boxShadow: 'var(--shadow-xs)',
-          overflow: 'hidden',
-        }}>
-          <label style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            padding: '8px 12px',
-            borderBottom: '1px solid var(--border)',
-          }}>
-            <PIcSearch size={14} style={{ color: 'var(--muted-foreground)' }} />
-            <input
-              type="search" value={q} onChange={e => setQ(e.target.value)}
-              placeholder="Search techs"
-              autoFocus
-              style={{
-                flex: 1, border: 'none', outline: 'none', background: 'transparent',
-                fontSize: 13, fontFamily: 'var(--font-sans)', color: 'var(--foreground)',
-              }} />
-          </label>
-          <div style={{ maxHeight: 168, overflow: 'auto' }}>
-            {candidates.length === 0 ? (
-              <div style={{ padding: '14px 12px', fontSize: 12, color: 'var(--muted-foreground)', textAlign: 'center' }}>
-                No more techs to add.
-              </div>
-            ) : candidates.map(t => (
-              <button key={t.id} type="button" onClick={() => addTech(t.id)}
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '8px 12px',
-                  background: 'transparent', border: 'none',
-                  cursor: 'pointer', textAlign: 'left',
-                  fontFamily: 'var(--font-sans)',
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = 'var(--accent)'}
-                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                <span style={{
-                  width: 24, height: 24, borderRadius: '50%',
-                  background: `var(${t.color})`, color: 'white',
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 10.5, fontWeight: 600,
-                }}>{t.initials}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--foreground)' }}>{t.name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{t.role}</div>
-                </div>
-                <PIcPlus size={14} style={{ color: 'var(--muted-foreground)' }} />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-// ---------- Section: Supply deductions summary ----------
-function SupplySection({ services, onJumpToService }) {
-  const supplyRows = useMemo(() =>
-    services.filter(s => s.active && s.supply)
-      .map(s => ({ id: s.id, name: s.name, category: s.category, amount: s.supply.amount_cents, label: s.supply.label, color: s.color_token }))
-  , [services]);
+  function cancelRename() { setEditingId(null); setEditingName(''); }
+  function archive(id) {
+    setTypes(prev => prev.map(t => t.id === id ? { ...t, archived: true } : t));
+  }
+  function commitAdd() {
+    const created = addSupplyType(newName);
+    setNewName('');
+    setAdding(false);
+    if (!created) return;
+  }
 
   return (
     <section style={sectionCard}>
       <SheetSectionHeader
         icon={<PIcBox size={15} />}
-        title="Supply deductions"
+        title="Supply types"
         hint={
           <>
-            Supply amounts live on the service itself — these apply to every payment method.
-            Edit the amount or label by selecting a service.
+            The catalog of supply costs the salon can deduct. Each service supply
+            references a type by id, so renaming here updates everywhere —
+            including tech-level exemptions in <strong>Settings → Staff</strong>.
           </>
         }
       />
 
-      {supplyRows.length === 0 ? (
-        <div style={{ marginTop: 12, padding: '18px 12px', textAlign: 'center', fontSize: 12.5, color: 'var(--muted-foreground)', border: '1px dashed var(--border)', borderRadius: 8 }}>
-          No supply deductions yet. Add one on a service to deduct cost-of-goods from a tech's payout.
-        </div>
-      ) : (
-        <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--card)' }}>
-          {supplyRows.map((r, idx) => (
-            <button key={r.id} type="button" onClick={() => onJumpToService?.(r.id)}
-              className="ep-supply-row"
-              style={{
-                width: '100%',
+      <div style={{ marginTop: 12, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden', background: 'var(--card)' }}>
+        {visibleTypes.map((t, idx) => {
+          const rows = rowsByType[t.id] || [];
+          const isLast = idx === visibleTypes.length - 1 && !adding;
+          const usageCount = rows.length;
+          const isEditing = editingId === t.id;
+          return (
+            <div key={t.id} style={{
+              borderBottom: isLast ? 'none' : '1px solid var(--border)',
+            }}>
+              <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'auto 1fr auto auto',
+                gridTemplateColumns: '1fr auto auto',
                 alignItems: 'center', gap: 12,
                 padding: '10px 12px',
-                background: 'transparent', border: 'none',
-                borderBottom: idx === supplyRows.length - 1 ? 'none' : '1px solid var(--border)',
-                cursor: 'pointer', textAlign: 'left',
-                fontFamily: 'var(--font-sans)',
               }}>
-              <span aria-hidden="true" style={{
-                width: 10, height: 10, borderRadius: '50%',
-                background: `var(${r.color})`,
-                flexShrink: 0,
-              }} />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--foreground)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>{r.label}</div>
+                {isEditing ? (
+                  <input
+                    value={editingName}
+                    onChange={e => setEditingName(e.target.value)}
+                    onBlur={commitRename}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter')  { e.preventDefault(); commitRename(); }
+                      if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
+                    }}
+                    autoFocus
+                    style={{
+                      width: '100%',
+                      padding: '6px 8px',
+                      fontSize: 13, fontFamily: 'var(--font-sans)',
+                      border: '1px solid var(--ring)',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--background)',
+                      color: 'var(--foreground)',
+                      outline: 'none',
+                    }}
+                  />
+                ) : (
+                  <button type="button" onClick={() => startRename(t)} title="Click to rename"
+                    style={{
+                      display: 'flex', alignItems: 'baseline', gap: 8,
+                      background: 'transparent', border: 'none', cursor: 'text',
+                      textAlign: 'left', padding: 0, fontFamily: 'var(--font-sans)',
+                      minWidth: 0,
+                    }}>
+                    <span style={{
+                      fontSize: 13, fontWeight: 500, color: 'var(--foreground)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>{t.name}</span>
+                    <span style={{ fontSize: 11, color: 'var(--muted-foreground)' }}>
+                      {usageCount === 0 ? 'unused' : `${usageCount} ${usageCount === 1 ? 'service' : 'services'}`}
+                    </span>
+                  </button>
+                )}
+
+                <span style={{
+                  fontSize: 11, color: 'var(--muted-foreground)',
+                  padding: '2px 8px',
+                  background: 'var(--muted)',
+                  borderRadius: 999,
+                  whiteSpace: 'nowrap',
+                  fontFamily: 'var(--font-mono, ui-monospace)',
+                }}>{t.id}</span>
+
+                {!isEditing && (
+                  <button type="button"
+                    onClick={() => archive(t.id)}
+                    disabled={usageCount > 0}
+                    title={usageCount > 0 ? `In use by ${usageCount} ${usageCount === 1 ? 'service' : 'services'}` : 'Archive'}
+                    style={{
+                      padding: '4px 8px',
+                      background: 'transparent',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius-sm)',
+                      fontSize: 11, color: 'var(--muted-foreground)',
+                      cursor: usageCount > 0 ? 'not-allowed' : 'pointer',
+                      opacity: usageCount > 0 ? 0.4 : 1,
+                      fontFamily: 'var(--font-sans)',
+                    }}>
+                    Archive
+                  </button>
+                )}
               </div>
-              <span className="tnum" style={{
-                fontSize: 12.5, color: 'oklch(0.45 0.14 75)', fontWeight: 600,
-                padding: '2px 8px',
-                background: 'color-mix(in oklch, var(--amber-500) 14%, transparent)',
-                borderRadius: 999,
-              }}>−{fmtPrice(r.amount)}</span>
-              <PIcArrowR size={14} style={{ color: 'var(--muted-foreground)' }} />
-            </button>
-          ))}
-        </div>
-      )}
+
+              {/* Service rows referencing this type */}
+              {rows.length > 0 && (
+                <div style={{
+                  background: 'color-mix(in oklch, var(--muted) 50%, var(--background))',
+                  borderTop: '1px solid var(--border)',
+                }}>
+                  {rows.map((r, ri) => (
+                    <button key={r.id} type="button" onClick={() => onJumpToService?.(r.id)}
+                      style={{
+                        width: '100%',
+                        display: 'grid',
+                        gridTemplateColumns: 'auto 1fr auto auto',
+                        alignItems: 'center', gap: 10,
+                        padding: '7px 12px 7px 22px',
+                        background: 'transparent', border: 'none',
+                        borderBottom: ri === rows.length - 1 ? 'none' : '1px solid var(--border)',
+                        cursor: 'pointer', textAlign: 'left',
+                        fontFamily: 'var(--font-sans)',
+                      }}>
+                      <span aria-hidden="true" style={{
+                        width: 8, height: 8, borderRadius: '50%',
+                        background: `var(${r.color_token})`,
+                        flexShrink: 0,
+                      }} />
+                      <span style={{
+                        fontSize: 12, color: 'var(--foreground)',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>{r.name}</span>
+                      <span className="tnum" style={{
+                        fontSize: 11.5, color: 'oklch(0.45 0.14 75)', fontWeight: 600,
+                      }}>−{fmtPrice(r.supply.amount_cents)}</span>
+                      <PIcArrowR size={12} style={{ color: 'var(--muted-foreground)' }} />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Add row */}
+        {adding ? (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '10px 12px',
+            borderTop: visibleTypes.length > 0 ? '1px solid var(--border)' : 'none',
+            background: 'var(--muted)',
+          }}>
+            <input
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter')  { e.preventDefault(); commitAdd(); }
+                if (e.key === 'Escape') { e.preventDefault(); setAdding(false); setNewName(''); }
+              }}
+              autoFocus
+              placeholder="e.g. Builder gel, Polygel"
+              style={{
+                flex: 1, minWidth: 0,
+                padding: '6px 8px',
+                fontSize: 13, fontFamily: 'var(--font-sans)',
+                border: '1px solid var(--input)',
+                borderRadius: 'var(--radius-sm)',
+                background: 'var(--background)',
+                color: 'var(--foreground)',
+                outline: 'none',
+              }}
+            />
+            <button type="button" onClick={commitAdd} disabled={!newName.trim()}
+              style={{
+                padding: '6px 12px',
+                background: 'var(--primary)', color: 'var(--primary-foreground)',
+                border: 'none', borderRadius: 'var(--radius-sm)',
+                fontSize: 12, fontWeight: 600,
+                cursor: newName.trim() ? 'pointer' : 'not-allowed',
+                opacity: newName.trim() ? 1 : 0.4,
+                fontFamily: 'var(--font-sans)',
+              }}>Add</button>
+            <button type="button" onClick={() => { setAdding(false); setNewName(''); }}
+              style={{
+                padding: '6px 10px',
+                background: 'transparent', color: 'var(--muted-foreground)',
+                border: 'none', borderRadius: 'var(--radius-sm)',
+                fontSize: 12, cursor: 'pointer',
+                fontFamily: 'var(--font-sans)',
+              }}>Cancel</button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setAdding(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              width: '100%',
+              padding: '10px 12px',
+              borderTop: visibleTypes.length > 0 ? '1px solid var(--border)' : 'none',
+              background: 'transparent', border: 'none',
+              cursor: 'pointer', textAlign: 'left',
+              fontSize: 13, color: 'var(--rose-700)', fontWeight: 500,
+              fontFamily: 'var(--font-sans)',
+            }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Add supply type
+          </button>
+        )}
+      </div>
+
+      <p style={{ marginTop: 8, fontSize: 11, color: 'var(--muted-foreground)', lineHeight: 1.5 }}>
+        Tip: click a name to rename. Types in use can't be archived until you reassign or remove the services that reference them.
+      </p>
     </section>
   );
 }
 
 // ---------- The sheet ----------
-function EditPolicySheet({ open, onClose, policy, services, exemptTechIds, onSave, onJumpToService }) {
+function EditPolicySheet({ open, onClose, policy, services, onSave, onJumpToService }) {
   const { mounted, entered } = useMountAnim(open, 220);
-  const [draft, setDraft] = useState(() => initPolicyDraft(policy, exemptTechIds));
+  const [draft, setDraft] = useState(() => initPolicyDraft(policy));
   const initialDraftRef = useRef(draft);
 
   // Re-init when the sheet is freshly opened (so cancel actually cancels).
   useEffect(() => {
     if (open) {
-      const fresh = initPolicyDraft(policy, exemptTechIds);
+      const fresh = initPolicyDraft(policy);
       setDraft(fresh);
       initialDraftRef.current = fresh;
     }
-  }, [open, policy, exemptTechIds]);
+  }, [open, policy]);
 
   // Esc to close
   useEffect(() => {
@@ -597,7 +637,7 @@ function EditPolicySheet({ open, onClose, policy, services, exemptTechIds, onSav
             <div style={{ fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--muted-foreground)', fontWeight: 600, marginBottom: 4 }}>Services policy</div>
             <h2 id="ep-title" style={{ fontSize: 20, fontWeight: 600, letterSpacing: '-0.01em', margin: 0, lineHeight: 1.2 }}>Edit policy</h2>
             <p style={{ fontSize: 12.5, color: 'var(--muted-foreground)', marginTop: 6, lineHeight: 1.5 }}>
-              Card-fee defaults and exempt techs that apply across your whole menu. Per-service settings can still override these.
+              Card-fee defaults and the supply-deduction catalog that apply across your whole menu. Per-service settings can still override these. Per-tech exemptions live in Staff Settings.
             </p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close"
@@ -618,8 +658,7 @@ function EditPolicySheet({ open, onClose, policy, services, exemptTechIds, onSav
         {/* Body */}
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '18px 22px 12px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           <CardFeeSection draft={draft} patch={patch} counts={counts} />
-          <ExemptTechsSection draft={draft} patch={patch} />
-          <SupplySection services={services} onJumpToService={(id) => { onJumpToService?.(id); onClose?.(); }} />
+          <SupplyTypesSection services={services} onJumpToService={(id) => { onJumpToService?.(id); onClose?.(); }} />
 
           <p style={{
             fontSize: 11.5, color: 'var(--muted-foreground)',
@@ -655,14 +694,13 @@ function EditPolicySheet({ open, onClose, policy, services, exemptTechIds, onSav
   );
 }
 
-function initPolicyDraft(policy, exemptTechIds) {
+function initPolicyDraft(policy) {
   return {
     cardFeeDefaultCents: policy.cardFeeDefaultCents,
     cardFeeMethods: [...(policy.cardFeeMethods ?? []).map(m => m.toLowerCase().replace(' card', '').replace('card', 'card') === 'card' ? 'card' : m)]
       // The data file stores ['Card', 'Gift card']; normalize to ids.
       .map(m => m === 'Card' ? 'card' : m === 'Gift card' ? 'gift' : m === 'Cash' ? 'cash' : m === 'Venmo / Zelle' ? 'venmo' : m.toLowerCase()),
     cardFeeMainCategories: [...policy.cardFeeMainCategories],
-    exemptTechIds: [...exemptTechIds],
   };
 }
 
@@ -691,4 +729,3 @@ const epGhostBtn = {
 };
 
 window.EditPolicySheet = EditPolicySheet;
-window.__LACQUER_ROSTER = ALL_TECHS;

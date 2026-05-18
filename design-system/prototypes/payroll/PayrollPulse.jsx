@@ -1,9 +1,8 @@
-// PayrollPulse.jsx — Variation 3: Ledger + inline daily activity sparklines
-// Hybrid of Variation 1 (Ledger table + detail panel) and Variation 2 (Daily Activity chart).
-// • Every row in the table carries a 15-day mini bar chart so you can read each
-//   tech's rhythm without leaving the spreadsheet.
-// • The detail panel replaces the day-by-day list with the bigger bar chart from
-//   Drafts, including service + tip bars and the "Best day" callout.
+// PayrollPulse.jsx — Variation 3: Full-width ledger + dedicated tech detail screen
+// • Table is first-class: full width, no side panel competing for space.
+// • Click a row → routes to a dedicated detail screen for that tech, with the
+//   larger Daily Activity chart from Variation 2 given proper room to breathe.
+// • Back button returns to the ledger; selection state is preserved.
 
 const { useState: useppState, useMemo: useppMemo } = React;
 
@@ -18,21 +17,13 @@ function PayrollPulse() {
   const rows = useppMemo(() => periodRows(), []);
   const totals = useppMemo(() => periodTotals(rows), [rows]);
 
-  // Shared scale for the inline sparklines so bars are comparable across rows.
-  const sharedMaxDay = useppMemo(() => {
-    let m = 1;
-    for (const r of rows) for (const d of r.days) if (d[1] > m) m = d[1];
-    return m;
-  }, [rows]);
+  // Route state: null = ledger, otherwise tech id = detail screen for that tech.
+  const [route, setRoute] = useppState(null);
 
-  const [selectedId, setSelectedId] = useppState('ayay');
   const [paidMap, setPaidMap] = useppState({
     karin: { method: 'Zelle', paid_on: 'May 17, 2026', recorded_by: 'Priya R.' },
   });
   const [methodDraft, setMethodDraft] = useppState('Zelle');
-
-  const selected = rows.find(r => r.id === selectedId);
-  const selectedPaid = selected ? paidMap[selected.id] : null;
 
   const paidCount = Object.keys(paidMap).length;
   const eligibleCount = rows.filter(r => r.earnings > 0).length;
@@ -41,13 +32,36 @@ function PayrollPulse() {
     .filter(r => !paidMap[r.id])
     .reduce((s, r) => s + r.cash, 0);
 
-  function markPaid() {
-    if (!selected) return;
-    setPaidMap(p => ({ ...p, [selected.id]: { method: methodDraft, paid_on: 'May 17, 2026', recorded_by: 'Priya R.' } }));
+  function markPaid(techId, method) {
+    setPaidMap(p => ({ ...p, [techId]: { method, paid_on: 'May 17, 2026', recorded_by: 'Priya R.' } }));
   }
-  function undoPaid() {
-    if (!selected) return;
-    setPaidMap(p => { const n = { ...p }; delete n[selected.id]; return n; });
+  function undoPaid(techId) {
+    setPaidMap(p => { const n = { ...p }; delete n[techId]; return n; });
+  }
+
+  if (route) {
+    const row = rows.find(r => r.id === route);
+    if (row) {
+      // For prev/next navigation within the detail screen
+      const idx = rows.findIndex(r => r.id === route);
+      const prev = rows[idx - 1];
+      const next = rows[idx + 1];
+      return (
+        <PulseDetailScreen
+          row={row}
+          paid={paidMap[row.id]}
+          methodDraft={methodDraft}
+          onMethodChange={setMethodDraft}
+          onMarkPaid={(method) => markPaid(row.id, method)}
+          onUndoPaid={() => undoPaid(row.id)}
+          onBack={() => setRoute(null)}
+          onGoToTech={(id) => setRoute(id)}
+          prev={prev}
+          next={next}
+          periodLabel="May 1 – May 15, 2026"
+        />
+      );
+    }
   }
 
   return (
@@ -75,7 +89,7 @@ function PayrollPulse() {
 
       <Kpis totals={totals} paidCount={paidCount} eligibleCount={eligibleCount} />
 
-      <div className="pl-body">
+      <div className="pp-ledger-body">
         <div className="pl-table-card">
           <div className="pl-table-head">
             <div className="pl-tabs">
@@ -83,38 +97,25 @@ function PayrollPulse() {
               <button className="pl-tab">To pay <span className="ct">{eligibleCount - paidCount}</span></button>
               <button className="pl-tab">Paid <span className="ct">{paidCount}</span></button>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <div className="pp-legend">
-                <span><span className="sw service" /> Service</span>
-                <span><span className="sw tip" /> Tips</span>
-              </div>
+            <div style={{ display: 'flex', gap: 6 }}>
               <button className="btn btn-outline btn-sm"><UM.FileBar /> Export CSV</button>
             </div>
           </div>
 
           <div className="pl-table-wrap">
-            <table className="pl-table pp-table">
+            <table className="pl-table pp-full-table">
               <thead>
                 <tr>
                   <th>Employee</th>
-                  <th className="pp-spark-th">
-                    <div className="pp-spark-th-lbl">Daily activity</div>
-                    <div className="pp-spark-th-scale">
-                      {PP_DAYS.map(day => (
-                        <span
-                          key={day.d}
-                          className={`pp-spark-th-tick${day.closed ? ' closed' : ''}${day.wd === 'Sat' || day.wd === 'Sun' ? ' weekend' : ''}`}
-                        >
-                          {day.d}
-                        </span>
-                      ))}
-                    </div>
-                  </th>
+                  <th className="num">Tickets</th>
                   <th className="num">Income</th>
-                  <th className="num">Tips</th>
+                  <th className="num">After split</th>
+                  <th className="num">Card tips</th>
+                  <th className="num">After split</th>
                   <th className="num">Check</th>
                   <th className="num">Cash</th>
                   <th className="center">State</th>
+                  <th className="pp-chev-th" />
                 </tr>
               </thead>
               <tbody>
@@ -122,20 +123,20 @@ function PayrollPulse() {
                   const paid = paidMap[r.id];
                   const isSkip = r.earnings <= 0;
                   return (
-                    <tr key={r.id} className={r.id === selectedId ? 'sel' : ''} onClick={() => setSelectedId(r.id)}>
+                    <tr key={r.id} onClick={() => setRoute(r.id)}>
                       <td>
                         <div className="pl-person">
                           <StaffAv name={r.name} color={r.color} size={30} />
                           <div className="pl-person-text">
                             <div className="pl-person-name">{r.name}</div>
-                            <div className="pl-person-rate">{pct(r.income_split)} svc · {pct(r.tip_split)} tips</div>
+                            <div className="pl-person-rate">{r.role} · {pct(r.income_split)} svc / {pct(r.tip_split)} tips</div>
                           </div>
                         </div>
                       </td>
-                      <td className="pp-spark-td">
-                        <PulseSparkline row={r} maxDay={sharedMaxDay} />
-                      </td>
+                      <td className="num muted tnum">{r.tickets || '—'}</td>
+                      <td className="num muted">{$$(r.income)}</td>
                       <td className="num">{$$(r.incomeAfter)}</td>
+                      <td className="num tip">{$$(r.tipCard)}</td>
                       <td className="num tip">{$$(r.tipAfter)}</td>
                       <td className="num muted">{$$(r.check)}</td>
                       <td className="num cash">{$$(r.cash)}</td>
@@ -148,20 +149,24 @@ function PayrollPulse() {
                           <span className="pl-state pl-state-pending"><span className="dot" /> Pending</span>
                         )}
                       </td>
+                      <td className="pp-chev-td">
+                        <UM.ChevronRight size={14} />
+                      </td>
                     </tr>
                   );
                 })}
               </tbody>
               <tfoot>
                 <tr>
-                  <td className="muted">{rows.length} employees · {totals.tickets} tickets</td>
-                  <td className="pp-spark-td">
-                    <PulseSparkline aggregate={rows} maxDay={sharedMaxDay} stacked />
-                  </td>
+                  <td className="muted">{rows.length} employees</td>
+                  <td className="num">{totals.tickets}</td>
+                  <td className="num">{$$(totals.income)}</td>
                   <td className="num">{$$(totals.incomeAfter)}</td>
+                  <td className="num">{$$(totals.tipCard)}</td>
                   <td className="num">{$$(totals.tipAfter)}</td>
                   <td className="num">{$$(totals.check)}</td>
                   <td className="num" style={{ color: 'var(--rose-700)' }}>{$$(totals.cash)}</td>
+                  <td />
                   <td />
                 </tr>
               </tfoot>
@@ -169,129 +174,160 @@ function PayrollPulse() {
           </div>
         </div>
 
-        <PulseDetailPanel
-          row={selected}
-          paid={selectedPaid}
-          methodDraft={methodDraft}
-          onMethodChange={setMethodDraft}
-          onMarkPaid={markPaid}
-          onUndoPaid={undoPaid}
-        />
-      </div>
-    </div>
-  );
-}
-
-/* ── Inline 15-day sparkline (table row + footer aggregate) ───────────── */
-function PulseSparkline({ row, aggregate, maxDay, stacked }) {
-  // Build per-day series. If aggregate, sum across techs.
-  const series = PP_DAYS.map(day => {
-    if (aggregate) {
-      let inc = 0, tip = 0, tkts = 0;
-      for (const r of aggregate) {
-        const data = r.days.find(d => d[0] === day.d);
-        if (data) { inc += data[1]; tip += data[2]; tkts += data[3] || 0; }
-      }
-      return { day: day.d, wd: day.wd, closed: day.closed, inc, tip, tkts };
-    }
-    const data = row?.days.find(d => d[0] === day.d) || [day.d, 0, 0, 0];
-    return { day: day.d, wd: day.wd, closed: day.closed, inc: data[1], tip: data[2], tkts: data[3] };
-  });
-
-  // Scale: shared (per-tech rows) or self (footer aggregate)
-  const localMax = aggregate
-    ? Math.max(...series.map(s => s.inc), 1)
-    : Math.max(maxDay || 1, 1);
-
-  const hasAny = series.some(s => s.inc > 0 || s.tip > 0);
-
-  return (
-    <div className="pp-spark" data-empty={!hasAny}>
-      {series.map(s => {
-        const incH = s.inc > 0 ? Math.max(2, (s.inc / localMax) * 26) : 0;
-        // Tip is much smaller than income; amplify so it's visible as a stripe on top.
-        const tipH = s.tip > 0 ? Math.max(2, Math.min(8, (s.tip / (localMax * 0.12)) * 8)) : 0;
-        const title = s.closed
-          ? `${s.wd} ${s.day} · closed`
-          : s.inc === 0 && s.tip === 0
-            ? `${s.wd} ${s.day} · no tickets`
-            : `${s.wd} ${s.day} · ${$$(s.inc, { showCents: false })} svc${s.tip ? ` · ${$$(s.tip)} tips` : ''}${s.tkts ? ` · ${s.tkts} tkts` : ''}`;
-        return (
-          <div
-            key={s.day}
-            className={`pp-spark-col${s.closed ? ' closed' : ''}${(s.wd === 'Sat' || s.wd === 'Sun') ? ' weekend' : ''}`}
-            title={title}
-          >
-            {s.tip > 0 && <div className="pp-spark-tip" style={{ height: tipH }} />}
-            {s.inc > 0 && <div className="pp-spark-bar" style={{ height: incH }} />}
-            {(!s.inc && !s.tip && !s.closed) && <div className="pp-spark-zero" />}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ── Detail panel: V1 breakdown + V2 chart ────────────────────────────── */
-function PulseDetailPanel({ row, paid, methodDraft, onMethodChange, onMarkPaid, onUndoPaid }) {
-  if (!row) {
-    return (
-      <div className="pl-detail">
-        <div className="pl-detail-empty">
-          <UM.Users size={36} />
-          <div>Select a tech on the left to review their breakdown.</div>
+        <div className="pp-ledger-hint">
+          Click any row to open that tech's detail screen — daily activity, breakdown, and pay action.
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
+/* ── Dedicated detail screen for a single tech ────────────────────────── */
+function PulseDetailScreen({
+  row, paid, methodDraft, onMethodChange, onMarkPaid, onUndoPaid,
+  onBack, onGoToTech, prev, next, periodLabel,
+}) {
   const isSkip = row.earnings <= 0;
   const maxDay = Math.max(...row.days.map(d => d[1]), 1);
   const bestDay = row.days.reduce((a, b) => (b[1] > a[1] ? b : a), row.days[0]);
+  const workingDays = row.days.filter(d => d[1] > 0).length;
+  const avgDay = workingDays ? row.income / workingDays : 0;
 
   return (
-    <div className="pl-detail">
-      <div className="pl-detail-head">
-        <div className="pl-detail-top">
-          <StaffAv name={row.name} color={row.color} size={42} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="pl-detail-name">{row.name}</div>
-            <div className="pl-detail-role">{row.role} · <span className="tnum">{pct(row.income_split)}</span> service / <span className="tnum">{pct(row.tip_split)}</span> tips</div>
-          </div>
-          <div className="pl-detail-state">
-            {isSkip ? (
-              <span className="pl-state pl-state-skip"><span className="dot" /> No work</span>
-            ) : paid ? (
-              <span className="pl-state pl-state-paid"><span className="dot" /> Paid</span>
-            ) : (
-              <span className="pl-state pl-state-pending"><span className="dot" /> Pending</span>
-            )}
+    <div className="pr-app pp-detail-screen">
+      {/* Breadcrumb / back nav */}
+      <div className="pp-detail-topbar">
+        <button className="pp-back" onClick={onBack}>
+          <UM.ChevronLeft size={14} /> Payroll · {periodLabel}
+        </button>
+        <div className="pp-detail-topbar-nav">
+          <button
+            className="btn btn-ghost btn-sm"
+            disabled={!prev}
+            onClick={() => prev && onGoToTech(prev.id)}>
+            <UM.ChevronLeft size={14} /> {prev ? prev.name.split(' ')[0] : 'Prev'}
+          </button>
+          <button
+            className="btn btn-ghost btn-sm"
+            disabled={!next}
+            onClick={() => next && onGoToTech(next.id)}>
+            {next ? next.name.split(' ')[0] : 'Next'} <UM.ChevronRight size={14} />
+          </button>
+        </div>
+      </div>
+
+      {/* Tech header */}
+      <div className="pp-detail-header">
+        <div className="pp-detail-header-l">
+          <StaffAv name={row.name} color={row.color} size={56} />
+          <div>
+            <div className="pp-detail-eyebrow">Tech payroll</div>
+            <div className="pp-detail-name">{row.name}</div>
+            <div className="pp-detail-meta">
+              {row.role} · <span className="tnum">{pct(row.income_split)}</span> service / <span className="tnum">{pct(row.tip_split)}</span> tips
+              {!isSkip && <> · <span className="tnum">{row.tickets}</span> tickets across the period</>}
+            </div>
           </div>
         </div>
 
-        {!isSkip && (
-          <div className="pl-detail-pay">
-            <div>
-              <div className="pl-detail-pay-l">Cash to hand over</div>
-              <div className="pl-detail-pay-s">After ${row.check.toLocaleString()} check portion</div>
+        <div className="pp-detail-header-r">
+          {isSkip ? (
+            <span className="pl-state pl-state-skip"><span className="dot" /> No work this period</span>
+          ) : paid ? (
+            <span className="pl-state pl-state-paid"><span className="dot" /> Paid · {paid.method} · {paid.paid_on}</span>
+          ) : (
+            <span className="pl-state pl-state-pending"><span className="dot" /> Pending payment</span>
+          )}
+          {!isSkip && (
+            <div className="pp-detail-bignum">
+              <div className="pp-detail-bignum-l">Cash to hand over</div>
+              <div className="pp-detail-bignum-v">{$$(row.cash)}</div>
+              <div className="pp-detail-bignum-s">+ ${row.check.toLocaleString()} reported on check</div>
             </div>
-            <div className="pl-detail-pay-r">
-              <div className="pl-detail-pay-v">{$$(row.cash)}</div>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      <div className="pl-detail-body">
-        {isSkip ? (
-          <div className="pl-detail-empty" style={{ padding: 20 }}>
-            <UM.Clock size={32} />
-            <div>{row.name} didn't book any tickets this period.{row.status === 'leave' ? ' Currently on leave.' : ''}</div>
-          </div>
-        ) : (
-          <>
+      {/* Main content: two columns */}
+      <div className="pp-detail-grid">
+        {/* LEFT — big daily activity chart */}
+        <div className="pp-detail-chart-card">
+          <div className="pp-detail-chart-card-head">
             <div>
-              <div className="pl-section-title">Earnings breakdown</div>
+              <div className="pl-section-title" style={{ marginBottom: 4 }}>Daily activity</div>
+              <div className="pp-detail-chart-sub">{periodLabel}</div>
+            </div>
+            <div className="pp-detail-chart-stats">
+              <div className="pp-stat">
+                <div className="pp-stat-l">Best day</div>
+                <div className="pp-stat-v">May {bestDay?.[0] ?? '—'}</div>
+                <div className="pp-stat-s">{$$(bestDay?.[1] || 0, { showCents: false })}</div>
+              </div>
+              <div className="pp-stat">
+                <div className="pp-stat-l">Avg per working day</div>
+                <div className="pp-stat-v">{$$round(avgDay)}</div>
+                <div className="pp-stat-s">{workingDays} days worked</div>
+              </div>
+              <div className="pp-stat">
+                <div className="pp-stat-l">Cash tips</div>
+                <div className="pp-stat-v" style={{ color: 'var(--muted-foreground)' }}>—</div>
+                <div className="pp-stat-s">Not recorded</div>
+              </div>
+            </div>
+          </div>
+
+          {isSkip ? (
+            <div className="pl-detail-empty" style={{ padding: '60px 20px' }}>
+              <UM.Clock size={36} />
+              <div>{row.name} didn't book any tickets this period.{row.status === 'leave' ? ' Currently on leave.' : ''}</div>
+            </div>
+          ) : (
+            <>
+              <div className="pp-detail-chart-grid pp-detail-chart-grid-big">
+                {PP_DAYS.map(day => {
+                  const data = row.days.find(d => d[0] === day.d) || [day.d, 0, 0, 0];
+                  const inc = data[1];
+                  const tip = data[2];
+                  const tkts = data[3];
+                  const closed = day.closed || (inc === 0 && tip === 0);
+                  const incH = inc > 0 ? (inc / maxDay) * 180 : 0;
+                  const tipH = tip > 0 ? Math.min(40, Math.max(4, (tip / (maxDay * 0.12)) * 36)) : 0;
+                  const isBest = bestDay && day.d === bestDay[0] && inc > 0;
+                  return (
+                    <div key={day.d} className={`pp-detail-col big${closed ? ' closed' : ''}${(day.wd === 'Sat' || day.wd === 'Sun') ? ' weekend' : ''}${isBest ? ' best' : ''}`}>
+                      <div className="pp-detail-col-amt">{inc > 0 ? $$(inc, { showCents: false }) : ''}</div>
+                      <div className="pp-detail-bars" style={{ height: 200 }}>
+                        {tip > 0 && <div className="tip" style={{ height: tipH }} title={`Tips: ${$$(tip)}`} />}
+                        {inc > 0 && <div className="inc" style={{ height: incH }} title={`${day.wd} ${day.d}: ${$$(inc)}`} />}
+                        {closed && !day.closed && <div className="zero" />}
+                      </div>
+                      <div className="pp-detail-d">{day.d}</div>
+                      <div className="pp-detail-wd">{day.wd}</div>
+                      {!closed && tkts > 0 && <div className="pp-detail-tkts">{tkts} tkt{tkts > 1 ? 's' : ''}</div>}
+                      {day.closed && <div className="pp-detail-tkts closed-lbl">closed</div>}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="pp-detail-chart-legend">
+                <span><span className="sw service" /> Service income</span>
+                <span><span className="sw tip" /> Card tips</span>
+                <span><span className="sw best" /> Best day</span>
+                <span style={{ marginLeft: 'auto' }}>Hover any bar for ticket detail · <a href="#">Open day reports</a></span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* RIGHT — breakdown + pay action stacked */}
+        <div className="pp-detail-side">
+          <div className="pp-detail-card">
+            <div className="pl-section-title">Earnings breakdown</div>
+            {isSkip ? (
+              <div className="pl-detail-empty" style={{ padding: 20 }}>
+                <div>Nothing owed this period.</div>
+              </div>
+            ) : (
               <div className="pl-breakdown">
                 <div className="pl-bd-row">
                   <div className="pl-bd-l">Service income <span className="rate">{pct(row.income_split)} of {$$(row.income)}</span></div>
@@ -314,89 +350,54 @@ function PulseDetailPanel({ row, paid, methodDraft, onMethodChange, onMarkPaid, 
                   <div className="pl-bd-r">{$$(row.cash)}</div>
                 </div>
               </div>
-            </div>
-
-            {/* Bigger Daily Activity chart — lifted from Variation 2 */}
-            <div>
-              <div className="pl-section-title">
-                <span>Daily activity · May 1 – 15</span>
-                <a href="#">Open day reports</a>
-              </div>
-              <div className="pp-detail-chart">
-                <div className="pp-detail-chart-grid">
-                  {PP_DAYS.map(day => {
-                    const data = row.days.find(d => d[0] === day.d) || [day.d, 0, 0, 0];
-                    const inc = data[1];
-                    const tip = data[2];
-                    const tkts = data[3];
-                    const closed = day.closed || (inc === 0 && tip === 0);
-                    const incH = inc > 0 ? (inc / maxDay) * 86 : 0;
-                    const tipH = tip > 0 ? Math.min(28, Math.max(3, (tip / (maxDay * 0.12)) * 28)) : 0;
-                    const isBest = bestDay && day.d === bestDay[0] && inc > 0;
-                    return (
-                      <div key={day.d} className={`pp-detail-col${closed ? ' closed' : ''}${(day.wd === 'Sat' || day.wd === 'Sun') ? ' weekend' : ''}${isBest ? ' best' : ''}`}>
-                        <div className="pp-detail-bars">
-                          {tip > 0 && <div className="tip" style={{ height: tipH }} title={`Tips: ${$$(tip)}`} />}
-                          {inc > 0 && <div className="inc" style={{ height: incH }} title={`${day.wd} ${day.d}: ${$$(inc)}`} />}
-                          {closed && !day.closed && <div className="zero" title={`${day.wd} ${day.d}: no tickets`} />}
-                        </div>
-                        <div className="pp-detail-d">{day.d}</div>
-                        <div className="pp-detail-wd">{day.wd[0]}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="pp-detail-chart-legend">
-                  <span><span className="sw service" /> Service</span>
-                  <span><span className="sw tip" /> Tips</span>
-                  <span style={{ marginLeft: 'auto' }}>
-                    Best day: <b>May {bestDay?.[0]}</b> · {$$(bestDay?.[1] || 0, { showCents: false })}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {paid && (
-              <div className="pl-paid-receipt">
-                <div className="ico"><UM.Check size={14} /></div>
-                <div className="pl-paid-receipt-t">
-                  <div className="pl-paid-receipt-title">Paid via {paid.method} on {paid.paid_on}</div>
-                  <div className="pl-paid-receipt-sub">Recorded by {paid.recorded_by} · Receipt #PR-2026-05-{row.id.slice(0,3).toUpperCase()}<br />Pay stub sent automatically.</div>
-                </div>
-              </div>
             )}
-          </>
-        )}
-      </div>
+          </div>
 
-      {!isSkip && (
-        <div className="pl-detail-foot">
-          {paid ? (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-outline" style={{ flex: 1 }} onClick={onUndoPaid}><UM.RefreshCcw /> Undo</button>
-              <button className="btn btn-outline" style={{ flex: 1 }}><UM.Send /> Resend pay stub</button>
+          {!isSkip && (
+            <div className="pp-detail-card pp-detail-pay-card">
+              {paid ? (
+                <>
+                  <div className="pl-paid-receipt" style={{ margin: 0 }}>
+                    <div className="ico"><UM.Check size={14} /></div>
+                    <div className="pl-paid-receipt-t">
+                      <div className="pl-paid-receipt-title">Paid via {paid.method} on {paid.paid_on}</div>
+                      <div className="pl-paid-receipt-sub">Recorded by {paid.recorded_by} · Receipt #PR-2026-05-{row.id.slice(0,3).toUpperCase()}<br />Pay stub sent automatically.</div>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                    <button className="btn btn-outline" style={{ flex: 1 }} onClick={onUndoPaid}><UM.RefreshCcw /> Undo</button>
+                    <button className="btn btn-outline" style={{ flex: 1 }}><UM.Send /> Resend stub</button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="pl-section-title" style={{ marginBottom: 8 }}>Pay {row.name.split(' ')[0]}</div>
+                  <div className="pl-method-tabs">
+                    <button className={`pl-method${methodDraft === 'Cash' ? ' on' : ''}`} onClick={() => onMethodChange('Cash')}>
+                      <UM.Cash size={16} /> Cash
+                    </button>
+                    <button className={`pl-method${methodDraft === 'Zelle' ? ' on' : ''}`} onClick={() => onMethodChange('Zelle')}>
+                      <UM.CreditCard size={16} /> Zelle
+                    </button>
+                    <button className={`pl-method${methodDraft === 'Check' ? ' on' : ''}`} onClick={() => onMethodChange('Check')}>
+                      <UM.FileBar size={16} /> Check
+                    </button>
+                  </div>
+                  <button
+                    className="btn btn-primary"
+                    style={{ width: '100%', marginTop: 10 }}
+                    onClick={() => onMarkPaid(methodDraft)}>
+                    <UM.Check /> Mark {$$(row.cash)} paid by {methodDraft}
+                  </button>
+                  <div className="pp-detail-pay-foot">
+                    Pay date is <b>Sun, May 17</b>. Stub will be emailed automatically.
+                  </div>
+                </>
+              )}
             </div>
-          ) : (
-            <>
-              <div className="pl-section-title" style={{ marginBottom: 0 }}><span>Payment method</span></div>
-              <div className="pl-method-tabs">
-                <button className={`pl-method${methodDraft === 'Cash' ? ' on' : ''}`} onClick={() => onMethodChange('Cash')}>
-                  <UM.Cash size={16} /> Cash
-                </button>
-                <button className={`pl-method${methodDraft === 'Zelle' ? ' on' : ''}`} onClick={() => onMethodChange('Zelle')}>
-                  <UM.CreditCard size={16} /> Zelle
-                </button>
-                <button className={`pl-method${methodDraft === 'Check' ? ' on' : ''}`} onClick={() => onMethodChange('Check')}>
-                  <UM.FileBar size={16} /> Check
-                </button>
-              </div>
-              <button className="btn btn-primary" onClick={onMarkPaid}>
-                <UM.Check /> Mark {$$(row.cash)} paid by {methodDraft}
-              </button>
-            </>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

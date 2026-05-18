@@ -111,7 +111,7 @@ function V2KPIStrip({ services }) {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+      gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
       gap: 12,
     }}>
       <V2KPI
@@ -132,28 +132,6 @@ function V2KPIStrip({ services }) {
         value={kpis.supplyCount}
         sub="Services with a per-use cost"
         icon={<V2IcBox size={14} />}
-      />
-      <V2KPI
-        kicker="Exempt techs"
-        valueNode={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-            {EXEMPT_TECHS.map(t => (
-              <span key={t.id} style={{
-                width: 24, height: 24, borderRadius: '50%',
-                background: `var(${t.color})`, color: 'white',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 10, fontWeight: 600,
-                border: '2px solid var(--card)',
-              }} title={`${t.name} · ${t.role}`}>{t.initials}</span>
-            ))}
-            <span className="tnum" style={{
-              marginLeft: 4, fontSize: 22, fontWeight: 600, letterSpacing: '-0.01em',
-            }}>{EXEMPT_TECHS.length}</span>
-          </div>
-        }
-        sub={`${EXEMPT_TECHS.map(t => t.name).join(' · ')}`}
-        action="Manage"
-        icon={<V2IcUserMinus size={14} />}
       />
     </div>
   );
@@ -356,7 +334,7 @@ function V2Row({ service, selected, onSelect, rowH, compact }) {
             <span style={{
               fontSize: 10.5, color: 'var(--muted-foreground)',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>{service.supply.label}</span>
+            }}>{supplyTypeName(service.supply.type_id)}</span>
           )}
         </div>
       </div>
@@ -421,7 +399,7 @@ function V2EditPanel({ service }) {
   function patch(p) { setDraft(d => ({ ...d, ...p })); }
   function patchCardFee(p) { setDraft(d => ({ ...d, cardFee: { ...d.cardFee, ...p } })); }
   function patchSupply(p) {
-    setDraft(d => ({ ...d, supply: { ...(d.supply ?? { amount_cents: 0, label: '' }), ...p } }));
+    setDraft(d => ({ ...d, supply: { ...(d.supply ?? { amount_cents: 0, type_id: null }), ...p } }));
   }
 
   const priceCents = draft.variable_price
@@ -472,7 +450,7 @@ function V2EditPanel({ service }) {
             cfCents={cfCents}
             cfMode={draft.cardFee.mode}
             supplyCents={supplyCents}
-            supplyLabel={draft.supply?.label}
+            supplyLabel={draft.supply?.type_id ? supplyTypeName(draft.supply.type_id) : ''}
           />
 
           <div style={{
@@ -528,7 +506,7 @@ function V2EditPanel({ service }) {
         <V2Section title="Supply deduction" sub="Tech-borne material cost. Applies on every transaction." icon={<V2IcBox size={13} />}
           right={<V2Switch
             checked={!!draft.supply}
-            onChange={v => setDraft(d => ({ ...d, supply: v ? (d.supply ?? { amount_cents: 500, label: '' }) : null }))}
+            onChange={v => setDraft(d => ({ ...d, supply: v ? (d.supply ?? { amount_cents: 500, type_id: null }) : null }))}
             ariaLabel="Supply deduction"
           />}>
           {draft.supply ? (
@@ -538,10 +516,10 @@ function V2EditPanel({ service }) {
                 onChange={v => patchSupply({ amount_cents: Math.round(Number(v) * 100) || 0 })}
                 prefix="$" numeric
               />
-              <V2TextInput
-                value={draft.supply.label ?? ''}
-                onChange={v => patchSupply({ label: v })}
-                placeholder="What's the supply? (e.g. Chrome powder, OPI bottle)"
+              <SupplyTypePicker
+                value={draft.supply.type_id}
+                onChange={id => patchSupply({ type_id: id })}
+                placeholder="Pick a supply type"
               />
             </div>
           ) : (
