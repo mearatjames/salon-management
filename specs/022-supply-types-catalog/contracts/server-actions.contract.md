@@ -19,34 +19,37 @@ The `revalidateSupplyTypeConsumers()` helper at step 8 calls `revalidatePath('/s
 
 ---
 
-## 1. `createSupplyType(formData: FormData): Promise<void>`
+## 1. Create — two callable shapes (share internals)
+
+The picker on the service edit panel is rendered INSIDE the outer service `<form>`. Nested `<form>` elements are invalid HTML and the redirect-based URL bridge ("come back via `?supply_type_id=<new>`") would clobber any other in-progress form fields the operator typed. The picker's inline-create therefore uses a **programmatic** action that returns a JSON result via React 19's `useActionState`. The EditPolicySheet's "+ Add supply type" row, which is a standalone surface with no surrounding form, keeps the simpler form-based redirect shape.
+
+Both shapes share an internal helper (`_createSupplyTypeImpl(name, viewer)`) that does the validation + INSERT + audit + revalidate. They differ only at the boundary (FormData parse + redirect vs. typed args + JSON return).
+
+### 1a. `createSupplyType(formData: FormData): Promise<void>` — form-based, redirects
 
 **Route**: `app/(studio)/settings/policy/actions.ts`
+
+**Used by**: the EditPolicySheet's "+ Add supply type" row (a standalone form inside the section, NOT inside any other form).
 
 **FormData keys**:
 
 | Key                      | Required | Validation                                                 |
 |--------------------------|----------|------------------------------------------------------------|
 | `name`                   | yes      | `validateSupplyTypeName` (trim, collapse, [2, 64], non-empty) |
-| `return_to`              | optional | one of `'edit_policy'`, `'service_picker'`; default `'edit_policy'` — controls the post-success redirect target |
-| `selected_service_id`    | optional | UUID-loose shape; required when `return_to = 'service_picker'` — preserves the selected service in the URL after redirect |
 
-**Error codes** (redirect: `?error=<code>` on either `/settings/policy` or `/services?selected=<id>` depending on `return_to`):
+No `return_to` param, no `selected_service_id` — this shape is reachable only from the sheet, so success always returns to the sheet.
+
+**Error codes** (redirect: `?error=<code>`):
 
 - `name_too_short` — < 2 chars after trim+collapse.
 - `name_too_long` — > 64 chars after trim+collapse.
 - `name_taken` — case-insensitive collision with an active type. (Mapped from Postgres `23505` on the partial unique index.)
 - `db_failure` — any other PG error.
-- `forbidden` — `assertCanWriteCatalog` threw (the existing `permission_denied` code from 008).
+- `forbidden` — `assertCanWriteCatalog` threw.
 
-**Success redirect**:
+**Success redirect**: `/services?policy=open&toast=supply_type_created&name=<encoded>`.
 
-- When `return_to = 'edit_policy'` (default): `/services?policy=open&toast=supply_type_created&name=<encoded>`.
-- When `return_to = 'service_picker'`: `/services?selected=<selected_service_id>&supply_type_id=<new_id>&toast=supply_type_created&name=<encoded>`.
-
-The `supply_type_id` query param in the picker-return case is read by the EditPanel's URL bridge to pre-select the newly-created type in the picker without a second save (US1 AC2: "the picker closes with that type pre-selected, and the operator can proceed to enter the amount without a second save round-trip").
-
-**Audit**:
+**Audit** (via the shared impl):
 
 ```ts
 await recordAudit(
@@ -57,6 +60,37 @@ await recordAudit(
   viewer.staff.id
 );
 ```
+
+### 1b. `createSupplyTypeForPicker(prevState, formData: FormData): Promise<CreateResult>` — programmatic, returns JSON
+
+**Route**: `app/(studio)/settings/policy/actions.ts`
+
+**Used by**: the `<SupplyTypePicker>` inline-create flow on the service edit panel (both the **add new service** and **edit existing service** code paths). Invoked via `useActionState(createSupplyTypeForPicker, { kind: 'idle' })` so the picker receives the new id without a page navigation.
+
+**Signature**: a Server Action compatible with `useActionState` takes `(prevState, formData)` and returns the next state.
+
+**FormData keys**:
+
+| Key   | Required | Validation                            |
+|-------|----------|----------------------------------------|
+| `name`| yes      | `validateSupplyTypeName`              |
+
+No `selected_service_id` — the picker doesn't need to round-trip the service id because there's no redirect.
+
+**Return shape** (`CreateResult`):
+
+```ts
+type CreateResult =
+  | { kind: "idle" }
+  | { kind: "ok"; id: string; name: string }
+  | { kind: "error"; code: "name_too_short" | "name_too_long" | "name_taken" | "db_failure" | "forbidden" };
+```
+
+The picker reads `state.kind` after each submit: on `'ok'` it selects the new type locally and calls `router.refresh()` to re-render the page's RSC so the catalog list includes the new row. On `'error'` it surfaces the code as inline copy via the same `toasts.ts` error-code map used by the redirect-based actions.
+
+**Audit + revalidate**: same shared impl — `recordAudit('supply_type.created', …, { name })` + `revalidateSupplyTypeConsumers()` (cache-invalidation is independent of redirect, so it fires for both shapes).
+
+**No URL bridge required.** The previously-documented `?supply_type_id=<new>` query param on the services page is removed from the design — the picker handles selection locally via the action's return value.
 
 ---
 

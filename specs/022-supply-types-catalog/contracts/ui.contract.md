@@ -67,7 +67,7 @@ The `catalog` prop is loaded server-side and passed in by `<ServicesPage>` — t
 4. **Add row** — at the bottom of the active group:
    - **Default state**: full-width transparent button with `Plus` icon + "Add supply type" in `--rose-700` (matches prototype line 540). Tabbable.
    - **Editing state**: muted-background row with `<input placeholder="e.g. Builder gel, Polygel">` + primary "Add" button (disabled until trimmed length ≥ 2) + ghost "Cancel" button. Enter commits; Escape cancels.
-   - Submit calls `createSupplyType({ name, return_to: 'edit_policy' })` — the redirect lands on `/services?policy=open&toast=supply_type_created&name=…` so the sheet stays open and the toast fires.
+   - Submit calls `createSupplyType({ name })` (the form-based shape from `server-actions.contract.md § 1a`) — the redirect lands on `/services?policy=open&toast=supply_type_created&name=…` so the sheet stays open and the toast fires.
 
 5. **Archived types group** (rendered only when `archived.length > 0`) — muted-background variant of the same card. Each row shows the name + usage_count (still 0 by definition for archived) + "Reactivate" button (outline). Reactivate calls `reactivateSupplyType` directly; on `name_taken`, the redirect's `?error=name_taken` is surfaced as an inline hint under the row ("This name is taken by an active type. Rename one first.").
 
@@ -109,14 +109,33 @@ type ExpansionState = Set<string>; // type ids currently expanded
 2. `CommandList` rendering each active type as a `CommandItem` with the name + `Check` icon for the selected row.
 3. A pinned `CommandItem` at the bottom: `<PlusCircle> Create new supply type…`. When activated, the dropdown content swaps to a tiny inline form (single `<Input>` + Save / Cancel buttons).
 
-**Inline-create flow** (research § R4):
+**Inline-create flow** (research § R4) — **programmatic, NOT a nested form**:
+
+The picker renders inside the outer service `<form>`. Nested `<form>` elements are invalid HTML, and a redirect-based round-trip would clobber any other in-progress form fields the operator typed (e.g., price, duration, name). The inline-create therefore uses React 19's `useActionState` hook against the JSON-returning shape of the action (`createSupplyTypeForPicker`, documented in `server-actions.contract.md § 1b`) — **no nested `<form>`, no redirect, no URL bridge**.
+
+```ts
+// Inside <SupplyTypePicker> (sketch — actual prop wiring in T028):
+const [state, formAction, pending] = useActionState(
+  createSupplyTypeForPicker,
+  { kind: "idle" } as CreateResult
+);
+
+useEffect(() => {
+  if (state.kind === "ok") {
+    onSelect(state.id);              // commit selection in the outer form's draft buffer
+    router.refresh();                // re-fetch the page's RSC so the catalog list contains the new row
+    setInlineMode("idle");           // collapse the inline-create back to the dropdown
+  }
+}, [state]);
+```
 
 1. Operator activates the "+ Create new supply type…" row.
-2. Dropdown switches to the inline form.
-3. Operator types a name; on submit (Enter or Save click), the picker calls `createSupplyType({ name, return_to: 'service_picker', selected_service_id: <current> })`.
-4. The Server Action returns via redirect: `/services?selected=<service_id>&supply_type_id=<new_id>&toast=supply_type_created&name=…`.
-5. The page re-renders with the catalog containing the new type; the URL bridge on the service edit panel reads `supply_type_id` from the query and sets the picker's selected value to the new type — operator sees the picker closed with the new type already selected.
-6. The operator continues setting the amount and saves the service form as normal.
+2. Dropdown content swaps to the inline create UI (a plain `<div>` — NOT a `<form>`): single `<Input>` + Save / Cancel buttons. Save is a `<button onClick={() => formAction(formDataFromInput)}>` (programmatic dispatch via `useActionState`'s returned `formAction`), NOT `type="submit"` inside a nested form.
+3. Operator types a name; on submit (Enter handler or Save click), the picker calls `formAction(formData)` with `name` only.
+4. `useActionState`'s state transitions through `{ kind: 'idle' }` → (pending) → `{ kind: 'ok', id, name }` or `{ kind: 'error', code }`.
+5. On `'ok'`: the effect calls `onSelect(state.id)` to commit the new id into the outer service form's draft buffer, `router.refresh()` to invalidate the RSC cache (so the catalog list re-renders with the new row included), and collapses the inline-create back to the dropdown. The outer service form's other fields are untouched.
+6. On `'error'`: render the inline copy from `toasts.ts`'s error map next to the input (no redirect, no toast in the URL).
+7. The operator continues setting the amount and saves the service form as normal — all in one page load, no navigation.
 
 **Soft hint on collision (US1 AC3)**: while the operator is typing in the inline-create form, the picker locally canonicalizes the typed name (via `canonicalizeName`) and checks the catalog for a match. If a match is found, the Save button is replaced with a muted "Select existing" button + the hint copy "A supply type with this name already exists — selecting it instead". Activating "Select existing" closes the picker with the existing type selected, no Server Action call. (The Server Action's `name_taken` error is the defense-in-depth path for the race; the soft hint handles the common case without a round-trip.)
 
@@ -137,7 +156,9 @@ type SupplyTypePickerProps = {
   onSelect: (id: string) => void;
   /** Disabled when the operator can't write the catalog. */
   disabled?: boolean;
-  /** Required for the inline-create flow's `return_to=service_picker` redirect. */
+  /** Service id when editing an existing service; null when adding a new service.
+   *  Retained for future deep-link / debugging use; the inline-create flow does NOT
+   *  use it (the flow is fully local via useActionState — no redirect, no URL bridge). */
   serviceId: string | null;
 };
 ```
