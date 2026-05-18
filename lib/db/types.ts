@@ -485,6 +485,8 @@ export type Database = {
       staff: {
         Row: {
           active: boolean;
+          // 023-staff-payout-exemptions
+          card_fee_exempt: boolean;
           color_token: string;
           created_at: string;
           display_name: string;
@@ -502,10 +504,14 @@ export type Database = {
           removed_at: string | null;
           role: string;
           state: string;
+          // 023-staff-payout-exemptions
+          supply_except: string[];
+          supply_mode: string;
           user_id: string | null;
         };
         Insert: {
           active?: boolean;
+          card_fee_exempt?: boolean;
           color_token: string;
           created_at?: string;
           display_name: string;
@@ -523,10 +529,13 @@ export type Database = {
           removed_at?: string | null;
           role: string;
           state?: string;
+          supply_except?: string[];
+          supply_mode?: string;
           user_id?: string | null;
         };
         Update: {
           active?: boolean;
+          card_fee_exempt?: boolean;
           color_token?: string;
           created_at?: string;
           display_name?: string;
@@ -544,6 +553,8 @@ export type Database = {
           removed_at?: string | null;
           role?: string;
           state?: string;
+          supply_except?: string[];
+          supply_mode?: string;
           user_id?: string | null;
         };
         Relationships: [

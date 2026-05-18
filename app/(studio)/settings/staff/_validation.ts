@@ -9,11 +9,16 @@
 
 import type { StudioRole } from "@/lib/auth/session";
 
+import type { StaffSupplyMode } from "./_types";
+
 export type ValidationErrorCode =
   | "name_too_short"
   | "invalid_role"
   | "invalid_color"
-  | "invalid_pin_shape";
+  | "invalid_pin_shape"
+  // 023-staff-payout-exemptions
+  | "invalid_supply_mode"
+  | "invalid_supply_except_shape";
 
 export class ValidationError extends Error {
   readonly code: ValidationErrorCode;
@@ -78,4 +83,57 @@ export function validatePinShape(input: string): string {
     throw new ValidationError("invalid_pin_shape");
   }
   return input;
+}
+
+// ── 023-staff-payout-exemptions ─────────────────────────────────────────
+
+const VALID_SUPPLY_MODES: ReadonlySet<StaffSupplyMode> = new Set(["apply", "partial", "exempt"]);
+
+/**
+ * Return the supply-mode literal if it's one of the three; otherwise throw
+ * `ValidationError("invalid_supply_mode")`. Case-sensitive — the UI submits
+ * the literal value from a ToggleGroup so spelling/casing is fixed by the
+ * source markup.
+ */
+export function validateSupplyMode(input: string): StaffSupplyMode {
+  if (!VALID_SUPPLY_MODES.has(input as StaffSupplyMode)) {
+    throw new ValidationError("invalid_supply_mode");
+  }
+  return input as StaffSupplyMode;
+}
+
+/** Hard cap on the supply_except array — keeps audit payloads bounded and
+ *  matches the 64-entry limit documented in data-model.md § 3.2. */
+const SUPPLY_EXCEPT_MAX = 64;
+
+/**
+ * Clean a raw `supply_except` array from FormData into the persisted shape.
+ *   - Throws `invalid_supply_except_shape` if `raw` is not an array.
+ *   - Drops non-string entries silently.
+ *   - Trims whitespace on each entry.
+ *   - Dedupes via Set (`Array.from(new Set(…))`).
+ *   - Filters against `allowedIds` (FR-012 stale-tab defense — unknown ids
+ *     silently dropped rather than surfaced as an error).
+ *   - Truncates silently at the 64-entry cap.
+ */
+export function validateSupplyExcept(
+  raw: readonly string[],
+  allowedIds: ReadonlySet<string>
+): string[] {
+  if (!Array.isArray(raw)) {
+    throw new ValidationError("invalid_supply_except_shape");
+  }
+  const cleaned: string[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (typeof entry !== "string") continue;
+    const trimmed = entry.trim();
+    if (!trimmed) continue;
+    if (seen.has(trimmed)) continue;
+    if (!allowedIds.has(trimmed)) continue;
+    seen.add(trimmed);
+    cleaned.push(trimmed);
+    if (cleaned.length >= SUPPLY_EXCEPT_MAX) break;
+  }
+  return cleaned;
 }

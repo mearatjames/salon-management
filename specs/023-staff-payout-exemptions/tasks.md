@@ -20,8 +20,8 @@
 
 **Purpose**: Verify worktree is correctly stacked on 022 and the existing settings shell is intact (no scaffolding work — the repo is already set up; this phase is a 30-second sanity check before touching code).
 
-- [ ] T001 Confirm `supabase/migrations/0017_supply_types.sql` exists locally (this worktree is stacked on `022-supply-types-catalog`; the trigger function in 0018 will reference `public.supply_types` so 0017 must land first per research § R12).
-- [ ] T002 [P] Confirm `app/(studio)/settings/layout.tsx` mounts `<TabBar />` and `app/(studio)/settings/page.tsx` redirects to `/settings/staff` (per research § R9 these are already shipped — FR-025 and FR-026 satisfied with zero edits).
+- [X] T001 Confirm `supabase/migrations/0017_supply_types.sql` exists locally (this worktree is stacked on `022-supply-types-catalog`; the trigger function in 0018 will reference `public.supply_types` so 0017 must land first per research § R12).
+- [X] T002 [P] Confirm `app/(studio)/settings/layout.tsx` mounts `<TabBar />` and `app/(studio)/settings/page.tsx` redirects to `/settings/staff` (per research § R9 these are already shipped — FR-025 and FR-026 satisfied with zero edits).
 
 **Checkpoint**: Prerequisites verified. Proceed to Foundational.
 
@@ -37,32 +37,32 @@
 
 ### Database schema
 
-- [ ] T003 Create `supabase/migrations/0018_staff_pay_deductions.sql` with: 3 new columns on `public.staff` (`card_fee_exempt boolean not null default false`, `supply_mode text not null default 'apply' check in ('apply','partial','exempt')`, `supply_except uuid[] not null default '{}'`); CHECK constraint `staff_supply_except_empty_unless_partial_chk`; trigger function `public.staff_assert_supply_except_valid()` + trigger `staff_assert_supply_except_valid_trg` (BEFORE INSERT/UPDATE on staff); trigger function `public.supply_types_prune_from_staff()` + trigger `supply_types_prune_from_staff_trg` (AFTER DELETE on supply_types). Match the migration outline in `data-model.md` § 5 byte-for-byte. Idempotent (`if not exists`, `or replace`, `drop trigger if exists`).
+- [X] T003 Create `supabase/migrations/0018_staff_pay_deductions.sql` with: 3 new columns on `public.staff` (`card_fee_exempt boolean not null default false`, `supply_mode text not null default 'apply' check in ('apply','partial','exempt')`, `supply_except uuid[] not null default '{}'`); CHECK constraint `staff_supply_except_empty_unless_partial_chk`; trigger function `public.staff_assert_supply_except_valid()` + trigger `staff_assert_supply_except_valid_trg` (BEFORE INSERT/UPDATE on staff); trigger function `public.supply_types_prune_from_staff()` + trigger `supply_types_prune_from_staff_trg` (AFTER DELETE on supply_types). Match the migration outline in `data-model.md` § 5 byte-for-byte. Idempotent (`if not exists`, `or replace`, `drop trigger if exists`).
 
 ### App-layer types
 
-- [ ] T004 [P] Extend `app/(studio)/settings/staff/_types.ts` — add `export type StaffSupplyMode = "apply" | "partial" | "exempt"`; extend `RosterStaff` with `card_fee_exempt: boolean`, `supply_mode: StaffSupplyMode`, `supply_except: readonly string[]` per data-model.md § 2.1.
+- [X] T004 [P] Extend `app/(studio)/settings/staff/_types.ts` — add `export type StaffSupplyMode = "apply" | "partial" | "exempt"`; extend `RosterStaff` with `card_fee_exempt: boolean`, `supply_mode: StaffSupplyMode`, `supply_except: readonly string[]` per data-model.md § 2.1.
 
 ### Permissions
 
-- [ ] T005 [P] [TEST FIRST] Extend `tests/unit/staff/permissions.test.ts` — add cases asserting `assertMutationAllowed(ctx, 'update_pay_deductions')` is allowed for self (operator editing own row), allowed for owner editing any tech, allowed for manager editing non-owner, BLOCKED for manager editing owner. Run; confirm fails (`update_pay_deductions` is not yet a member of `StaffAction`).
-- [ ] T006 Extend `app/(studio)/settings/staff/permissions.ts` — add `"update_pay_deductions"` to the `StaffAction` union; NOT in `SELF_BLOCKED_ACTIONS` (per Clarify Q1 + research § R11); gated by existing `canEditAnyField` matrix. Re-run T005; confirm green.
+- [X] T005 [P] [TEST FIRST] Extend `tests/unit/staff/permissions.test.ts` — add cases asserting `assertMutationAllowed(ctx, 'update_pay_deductions')` is allowed for self (operator editing own row), allowed for owner editing any tech, allowed for manager editing non-owner, BLOCKED for manager editing owner. Run; confirm fails (`update_pay_deductions` is not yet a member of `StaffAction`).
+- [X] T006 Extend `app/(studio)/settings/staff/permissions.ts` — add `"update_pay_deductions"` to the `StaffAction` union; NOT in `SELF_BLOCKED_ACTIONS` (per Clarify Q1 + research § R11); gated by existing `canEditAnyField` matrix. Re-run T005; confirm green.
 
 ### Validators
 
-- [ ] T007 [P] [TEST FIRST] Create `tests/unit/staff/validation-supply-mode.test.ts` covering: `validateSupplyMode("apply")` → `"apply"`; `"partial"` → `"partial"`; `"exempt"` → `"exempt"`; anything else throws `ValidationError("invalid_supply_mode")`. Run; confirm fails (function does not exist).
-- [ ] T008 Extend `app/(studio)/settings/staff/_validation.ts` — add `validateSupplyMode(input: string): StaffSupplyMode`; add `"invalid_supply_mode"` to `ValidationErrorCode`. Re-run T007; confirm green.
-- [ ] T009 [P] [TEST FIRST] Create `tests/unit/staff/validation-supply-except.test.ts` covering: dedupe duplicates via Set; drop non-strings silently; trim whitespace; drop unknown ids silently (allowedIds gate); empty array returns `[]`; non-array input throws `ValidationError("invalid_supply_except_shape")`; 64-entry cap truncates silently. Run; confirm fails.
-- [ ] T010 Extend `app/(studio)/settings/staff/_validation.ts` — add `validateSupplyExcept(raw: readonly string[], allowedIds: ReadonlySet<string>): string[]` per data-model.md § 3.2; add `"invalid_supply_except_shape"` to `ValidationErrorCode`. Re-run T009; confirm green.
+- [X] T007 [P] [TEST FIRST] Create `tests/unit/staff/validation-supply-mode.test.ts` covering: `validateSupplyMode("apply")` → `"apply"`; `"partial"` → `"partial"`; `"exempt"` → `"exempt"`; anything else throws `ValidationError("invalid_supply_mode")`. Run; confirm fails (function does not exist).
+- [X] T008 Extend `app/(studio)/settings/staff/_validation.ts` — add `validateSupplyMode(input: string): StaffSupplyMode`; add `"invalid_supply_mode"` to `ValidationErrorCode`. Re-run T007; confirm green.
+- [X] T009 [P] [TEST FIRST] Create `tests/unit/staff/validation-supply-except.test.ts` covering: dedupe duplicates via Set; drop non-strings silently; trim whitespace; drop unknown ids silently (allowedIds gate); empty array returns `[]`; non-array input throws `ValidationError("invalid_supply_except_shape")`; 64-entry cap truncates silently. Run; confirm fails.
+- [X] T010 Extend `app/(studio)/settings/staff/_validation.ts` — add `validateSupplyExcept(raw: readonly string[], allowedIds: ReadonlySet<string>): string[]` per data-model.md § 3.2; add `"invalid_supply_except_shape"` to `ValidationErrorCode`. Re-run T009; confirm green.
 
 ### Audit-diff helper (Constitution IV: test-first MANDATORY)
 
-- [ ] T011 [P] [TEST FIRST] Create `tests/unit/staff/audit-diff.test.ts` covering: `STAFF_DIFF_KEYS` length is exactly 7 and in this order (`display_name`, `role`, `color_token`, `active`, `card_fee_exempt`, `supply_mode`, `supply_except`); `buildChanges(same, same)` returns `{ before: {}, after: {}, changes: [] }`; `buildChanges` with only `card_fee_exempt` changed returns scoped projection over that one key; `buildChanges` with only `supply_except` rearranged (same elements, different order) returns `{ changes: [] }` (Set-equality per research § R3); `buildChanges` with `supply_except` truly different (one element added) returns scoped diff with raw uuids preserved; multi-key change returns `changes` in `STAFF_DIFF_KEYS` order. Run; confirm fails (`_audit-diff.ts` does not exist).
-- [ ] T012 Create `app/(studio)/settings/staff/_audit-diff.ts` — export `STAFF_DIFF_KEYS` readonly array, `StaffSnapshotKey`, `StaffSnapshot`, `StaffChanges` types, and `buildChanges(before, after): StaffChanges` per data-model.md § 2.3 + research § R3. Mirror `app/(studio)/services/_audit-diff.ts` structure byte-for-byte. Array-equality for `supply_except` via `[...a].sort().join(',') === [...b].sort().join(',')`. Re-run T011; confirm green.
+- [X] T011 [P] [TEST FIRST] Create `tests/unit/staff/audit-diff.test.ts` covering: `STAFF_DIFF_KEYS` length is exactly 7 and in this order (`display_name`, `role`, `color_token`, `active`, `card_fee_exempt`, `supply_mode`, `supply_except`); `buildChanges(same, same)` returns `{ before: {}, after: {}, changes: [] }`; `buildChanges` with only `card_fee_exempt` changed returns scoped projection over that one key; `buildChanges` with only `supply_except` rearranged (same elements, different order) returns `{ changes: [] }` (Set-equality per research § R3); `buildChanges` with `supply_except` truly different (one element added) returns scoped diff with raw uuids preserved; multi-key change returns `changes` in `STAFF_DIFF_KEYS` order. Run; confirm fails (`_audit-diff.ts` does not exist).
+- [X] T012 Create `app/(studio)/settings/staff/_audit-diff.ts` — export `STAFF_DIFF_KEYS` readonly array, `StaffSnapshotKey`, `StaffSnapshot`, `StaffChanges` types, and `buildChanges(before, after): StaffChanges` per data-model.md § 2.3 + research § R3. Mirror `app/(studio)/services/_audit-diff.ts` structure byte-for-byte. Array-equality for `supply_except` via `[...a].sort().join(',') === [...b].sort().join(',')`. Re-run T011; confirm green.
 
 ### Summary helper (for US3, but pure — built in foundational so US3 phase is UI-only)
 
-- [ ] T013 [P] [TEST FIRST] Create `tests/unit/staff/summary.test.ts` covering all 5 posture variants from spec US3 + front-desk hint variant:
+- [X] T013 [P] [TEST FIRST] Create `tests/unit/staff/summary.test.ts` covering all 5 posture variants from spec US3 + front-desk hint variant:
   1. `{ cardExempt: false, supplyMode: 'apply', exemptedTypeNames: [] }` → `null` (no summary)
   2. `{ cardExempt: true, supplyMode: 'apply', exemptedTypeNames: [] }` → `"{FirstName} keeps the full payout on card-paid services — no card fee deducted."`
   3. `{ cardExempt: false, supplyMode: 'exempt', exemptedTypeNames: [] }` → `"{FirstName} keeps the full payout on every service — no supply costs deducted."`
@@ -70,19 +70,19 @@
   5. `{ cardExempt: false, supplyMode: 'partial', exemptedTypeNames: ['Chrome powder'] }` → `"{FirstName} keeps the full payout on every service and is exempted from chrome-powder supply costs."`
   6. `{ cardExempt: true, supplyMode: 'partial', exemptedTypeNames: ['Chrome powder', 'GelX tips & gel'] }` → `"{FirstName} keeps the full payout on card-paid services and is exempted from chrome-powder and gelx-tips-gel supply costs."`
   7. Front-desk hint variant (separate `formatFrontDeskHint()` export or `formatSummary` returns the hint when role is `front_desk` + no exemptions). Run; confirm fails.
-- [ ] T014 Create `app/(studio)/settings/staff/_summary.ts` — pure helper `formatSummary({ firstName, cardExempt, supplyMode, exemptedTypeNames }) → string | null` covering all 5 posture variants; also export `formatFrontDeskHint(firstName)` for the muted hint. Re-run T013; confirm green.
+- [X] T014 Create `app/(studio)/settings/staff/_summary.ts` — pure helper `formatSummary({ firstName, cardExempt, supplyMode, exemptedTypeNames }) → string | null` covering all 5 posture variants; also export `formatFrontDeskHint(firstName)` for the muted hint. Re-run T013; confirm green.
 
 ### Supply-catalog helper
 
-- [ ] T015 Create `app/(studio)/settings/staff/_supply-catalog.ts` — server-only `loadSupplyCatalogForStaff(staffId): Promise<SupplyCatalogForStaff>` implementing the single SQL aggregate from research § R2 (`count(*) filter (where s.active)` + `mode() within group (order by s.supply_amount_cents) filter (where s.active)`; WHERE clause keeps archived types that are currently in this staff's `supply_except`; ORDER BY `t.name`). Return type matches data-model.md § 2.2.
+- [X] T015 Create `app/(studio)/settings/staff/_supply-catalog.ts` — server-only `loadSupplyCatalogForStaff(staffId): Promise<SupplyCatalogForStaff>` implementing the single SQL aggregate from research § R2 (`count(*) filter (where s.active)` + `mode() within group (order by s.supply_amount_cents) filter (where s.active)`; WHERE clause keeps archived types that are currently in this staff's `supply_except`; ORDER BY `t.name`). Return type matches data-model.md § 2.2.
 
 ### Server Action extension
 
-- [ ] T016 Extend `app/(studio)/settings/staff/actions.ts` `updateStaff` to: accept `card_fee_exempt` (`formData.get('card_fee_exempt') === 'on'`), `supply_mode` (via `validateSupplyMode`), `supply_except` (via `formData.getAll('supply_except')` → `validateSupplyExcept(raw, allowedIds)` where `allowedIds` comes from a fresh `supply_types` SELECT scoped to non-archived + currently-exempted ids); wipe `supply_except` to `[]` when saved mode is `'apply'` or `'exempt'`; call `assertMutationAllowed(ctx, 'update_pay_deductions')` only when any of the three new fields differ from the persisted target (per research § R11); build the extended audit payload via `buildChanges(before, after)` from `_audit-diff.ts`; persist the audit row via `recordAudit('staff.updated', { actorId, targetStaffId, payload: { before, after, changes } })` BEFORE `revalidatePath + redirect` (per SC-004 same-request rule).
+- [X] T016 Extend `app/(studio)/settings/staff/actions.ts` `updateStaff` to: accept `card_fee_exempt` (`formData.get('card_fee_exempt') === 'on'`), `supply_mode` (via `validateSupplyMode`), `supply_except` (via `formData.getAll('supply_except')` → `validateSupplyExcept(raw, allowedIds)` where `allowedIds` comes from a fresh `supply_types` SELECT scoped to non-archived + currently-exempted ids); wipe `supply_except` to `[]` when saved mode is `'apply'` or `'exempt'`; call `assertMutationAllowed(ctx, 'update_pay_deductions')` only when any of the three new fields differ from the persisted target (per research § R11); build the extended audit payload via `buildChanges(before, after)` from `_audit-diff.ts`; persist the audit row via `recordAudit('staff.updated', { actorId, targetStaffId, payload: { before, after, changes } })` BEFORE `revalidatePath + redirect` (per SC-004 same-request rule).
 
 ### Page Server Component extension
 
-- [ ] T017 Extend `app/(studio)/settings/staff/page.tsx` — extend the `staff` SELECT to project the 3 new columns (`card_fee_exempt`, `supply_mode`, `supply_except`); compute per-status counts for the chip bar (`all`, `active`, `inactive`) from the in-memory roster; when a target is selected via search param, call `loadSupplyCatalogForStaff(target.id)` and pass the result through to `<EditPanel>` as a new `supplyCatalog` prop.
+- [X] T017 Extend `app/(studio)/settings/staff/page.tsx` — extend the `staff` SELECT to project the 3 new columns (`card_fee_exempt`, `supply_mode`, `supply_except`); compute per-status counts for the chip bar (`all`, `active`, `inactive`) from the in-memory roster; when a target is selected via search param, call `loadSupplyCatalogForStaff(target.id)` and pass the result through to `<EditPanel>` as a new `supplyCatalog` prop.
 
 **Checkpoint**: Foundational ready. P1/P2/P3 user stories can now begin. The schema + audit pipeline + types + permissions + validators + helpers + page extension are all in place; what remains in each user story phase is the UI work plus the Playwright spec scaffolds + assertions.
 
@@ -96,7 +96,7 @@
 
 ### Tests for User Story 1 (Constitution IV — audit assertions first)
 
-- [ ] T018 [P] [US1] [TEST FIRST] Create `tests/e2e/staff-payout-exemptions.spec.ts` with a `describe('US1: Card-fee exemption', ...)` block containing:
+- [X] T018 [P] [US1] [TEST FIRST] Create `tests/e2e/staff-payout-exemptions.spec.ts` with a `describe('US1: Card-fee exemption', ...)` block containing:
   - A test that signs in as owner, navigates to `/settings/staff`, opens an active tech, toggles Card processing fee off, saves, asserts the toast appears + the subtitle reads "Exempt — card fee never deducted from payout." + the header shows a `Card-fee exempt` badge.
   - A test that reloads + re-opens the same tech and asserts the toggle is still off.
   - **Audit-row assertion** (test-first per Constitution IV): per the `newAuditCursor()` / `getAuditLogRowsSince()` pattern in `tests/e2e/_db.ts`, capture a cursor before the save, run the save, assert exactly one new `staff.updated` row exists whose `payload.changes` contains `card_fee_exempt`, `payload.before.card_fee_exempt === false`, `payload.after.card_fee_exempt === true`.
@@ -104,14 +104,14 @@
 
 ### Implementation for User Story 1
 
-- [ ] T019 [US1] Create `components/lacquer/staff/pay-deductions-section.client.tsx` — initial scaffold with ONLY the Card processing fee row (Switch from `components/ui/switch.tsx`, subtitle resolved by calling `formatDefaultCardFeeLabel()` from `lib/services/card-fee-default.ts` per Clarify Q5; flips to "Exempt — card fee never deducted from payout." when toggle is off). Props: `target: RosterStaff`, `supplyCatalog: SupplyCatalogForStaff` (unused yet — placeholder for US2), `draft` + `onDraftChange` callbacks for `card_fee_exempt`.
-- [ ] T020 [US1] Mount `<PayDeductionsSection>` inside `components/lacquer/staff/edit-panel.client.tsx` — add the new field to the draft reducer (`cardFeeExempt: target.card_fee_exempt`); render the section between the existing Access section and the Save button (provisional placement; US6 restructures into formal section cards); plumb the section's `onDraftChange` into the reducer so the save action submits the new value as `card_fee_exempt` FormData field.
-- [ ] T021 [US1] Add a minimal `<CardFeeExemptBadge>` (or inline render) in the existing panel header to render when `draft.cardFeeExempt === true` (US3 builds the full `<StatusBadges>` component — this is the US1-only minimal version so the badge assertion in T018 passes). Visual values trace to `--warning` / `--warning-foreground` tokens per Constitution I.
-- [ ] T022 [US1] Append `.pay-deductions-section*` + `.pay-deductions-toggle-row*` + `.staff-status-badge--card-fee-exempt*` selectors to `styles/settings.css` — every value resolves to a token from `styles/tokens.css` (radius 12 for the section card, padding/spacing on the 4px scale, color tokens for the toggle and badge tint). Run the US1 spec from T018; confirm green.
+- [X] T019 [US1] Create `components/lacquer/staff/pay-deductions-section.client.tsx` — initial scaffold with ONLY the Card processing fee row (Switch from `components/ui/switch.tsx`, subtitle resolved by calling `formatDefaultCardFeeLabel()` from `lib/services/card-fee-default.ts` per Clarify Q5; flips to "Exempt — card fee never deducted from payout." when toggle is off). Props: `target: RosterStaff`, `supplyCatalog: SupplyCatalogForStaff` (unused yet — placeholder for US2), `draft` + `onDraftChange` callbacks for `card_fee_exempt`.
+- [X] T020 [US1] Mount `<PayDeductionsSection>` inside `components/lacquer/staff/edit-panel.client.tsx` — add the new field to the draft reducer (`cardFeeExempt: target.card_fee_exempt`); render the section between the existing Access section and the Save button (provisional placement; US6 restructures into formal section cards); plumb the section's `onDraftChange` into the reducer so the save action submits the new value as `card_fee_exempt` FormData field.
+- [X] T021 [US1] Add a minimal `<CardFeeExemptBadge>` (or inline render) in the existing panel header to render when `draft.cardFeeExempt === true` (US3 builds the full `<StatusBadges>` component — this is the US1-only minimal version so the badge assertion in T018 passes). Visual values trace to `--warning` / `--warning-foreground` tokens per Constitution I.
+- [X] T022 [US1] Append `.pay-deductions-section*` + `.pay-deductions-toggle-row*` + `.staff-status-badge--card-fee-exempt*` selectors to `styles/settings.css` — every value resolves to a token from `styles/tokens.css` (radius 12 for the section card, padding/spacing on the 4px scale, color tokens for the toggle and badge tint). Run the US1 spec from T018; confirm green.
 
 ### Scoped verification gate (US1 checkpoint)
 
-- [ ] T023 [US1] Run scoped gates per CLAUDE.md "Scoping intermediate phase gates": `npx prettier --check $(git diff --name-only --diff-filter=ACMR HEAD)` + `npx eslint $(git diff --name-only --diff-filter=ACMR HEAD | grep -E '\.(ts|tsx|js|jsx)$' || echo .)` + `npm run typecheck` + `npm test` + `npx playwright test tests/e2e/staff-payout-exemptions.spec.ts -g "US1"`. All green before continuing to US2.
+- [X] T023 [US1] Run scoped gates per CLAUDE.md "Scoping intermediate phase gates": `npx prettier --check $(git diff --name-only --diff-filter=ACMR HEAD)` + `npx eslint $(git diff --name-only --diff-filter=ACMR HEAD | grep -E '\.(ts|tsx|js|jsx)$' || echo .)` + `npm run typecheck` + `npm test` + `npx playwright test tests/e2e/staff-payout-exemptions.spec.ts -g "US1"`. All green before continuing to US2.
 
 **Checkpoint**: US1 fully functional and testable independently. MVP-ready (toggle + persist + audit + badge).
 
@@ -125,7 +125,7 @@
 
 ### Tests for User Story 2
 
-- [ ] T024 [P] [US2] [TEST FIRST] Extend `tests/e2e/staff-payout-exemptions.spec.ts` with a `describe('US2: Supply deductions mode + per-type picker', ...)` block:
+- [X] T024 [P] [US2] [TEST FIRST] Extend `tests/e2e/staff-payout-exemptions.spec.ts` with a `describe('US2: Supply deductions mode + per-type picker', ...)` block:
   - Test: default is `Apply all` with "All supply costs deducted from payout." subtitle.
   - Test: selecting `Some` reveals the per-type picker listing all active supply types alphabetized; each row shows a usage hint of the form `${N} services · typically $${X} per ticket`.
   - Test: ticking a type + saving persists; reload + re-open confirms tick survives.
@@ -139,17 +139,17 @@
 
 ### Implementation for User Story 2
 
-- [ ] T025 [US2] Extend `components/lacquer/staff/pay-deductions-section.client.tsx` — add the Supply deductions row with a ToggleGroup (shadcn `ToggleGroup` from `components/ui/toggle-group.tsx`, `type="single"`) bound to draft `supplyMode`. Three options labelled `Apply all` / `Some` / `Exempt`. Subtitle resolves: `'apply'` → "All supply costs deducted from payout."; `'exempt'` → "Exempt — no supply costs deducted."; `'partial'` → (no subtitle; the picker speaks for itself).
-- [ ] T026 [US2] Extend the section with the per-type picker — renders only when `draft.supplyMode === 'partial'`. Iterates `supplyCatalog.types`; for each row renders a shadcn `Checkbox` bound to `draft.supplyExcept.includes(type.id)`, the type name, a `Archived` muted pill when `type.archived === true`, and the usage hint computed inline: `${type.service_count} services · typically $${(type.sample_amount_cents/100).toFixed(2)} per ticket` (or `"Unused — no services reference this type yet."` when `service_count === 0`).
-- [ ] T027 [US2] Add the empty-state row inside the picker — when `supplyCatalog.types.length === 0`, render "No supply types defined yet. Add some on the Services page first." with a Next.js `<Link href="/services">` styled per existing prototype.
-- [ ] T028 [US2] Add the "no types ticked" warning hint inside the picker — when `draft.supplyMode === 'partial'` + `draft.supplyExcept.length === 0`, render the muted line "No supply types selected — all costs will be deducted normally until you tick at least one." per spec US2 #7.
-- [ ] T029 [US2] Wire the draft-preservation rule (Clarify Q4) — the reducer's `setSupplyMode(next)` MUST NOT clear `draft.supplyExcept`. Only the save action's submitted FormData clears it (T016 already wipes server-side when saved mode ≠ partial). The picker visibility depends on the current mode in draft state; the ticks live in `draft.supplyExcept` independently.
-- [ ] T030 [US2] Extend `<StatusBadges>` (or the US1-era minimal inline render) to add `Supply-exempt` (when `draft.supplyMode === 'exempt'`) and `Partial supply exemption` (when `draft.supplyMode === 'partial'`) — US3 builds the formal component but US2's e2e expects these to appear. Token-mapped colors per Constitution I.
-- [ ] T031 [US2] Append `.pay-deductions-segmented*` + `.pay-deductions-picker*` + `.pay-deductions-picker-row*` + `.pay-deductions-picker-empty*` + `.pay-deductions-picker-hint*` + `.staff-archived-pill*` + `.staff-status-badge--supply-exempt*` + `.staff-status-badge--partial-supply*` selectors to `styles/settings.css`. Token-traceable. Run T024 spec; confirm green.
+- [X] T025 [US2] Extend `components/lacquer/staff/pay-deductions-section.client.tsx` — add the Supply deductions row with a ToggleGroup (shadcn `ToggleGroup` from `components/ui/toggle-group.tsx`, `type="single"`) bound to draft `supplyMode`. Three options labelled `Apply all` / `Some` / `Exempt`. Subtitle resolves: `'apply'` → "All supply costs deducted from payout."; `'exempt'` → "Exempt — no supply costs deducted."; `'partial'` → (no subtitle; the picker speaks for itself).
+- [X] T026 [US2] Extend the section with the per-type picker — renders only when `draft.supplyMode === 'partial'`. Iterates `supplyCatalog.types`; for each row renders a shadcn `Checkbox` bound to `draft.supplyExcept.includes(type.id)`, the type name, a `Archived` muted pill when `type.archived === true`, and the usage hint computed inline: `${type.service_count} services · typically $${(type.sample_amount_cents/100).toFixed(2)} per ticket` (or `"Unused — no services reference this type yet."` when `service_count === 0`).
+- [X] T027 [US2] Add the empty-state row inside the picker — when `supplyCatalog.types.length === 0`, render "No supply types defined yet. Add some on the Services page first." with a Next.js `<Link href="/services">` styled per existing prototype.
+- [X] T028 [US2] Add the "no types ticked" warning hint inside the picker — when `draft.supplyMode === 'partial'` + `draft.supplyExcept.length === 0`, render the muted line "No supply types selected — all costs will be deducted normally until you tick at least one." per spec US2 #7.
+- [X] T029 [US2] Wire the draft-preservation rule (Clarify Q4) — the reducer's `setSupplyMode(next)` MUST NOT clear `draft.supplyExcept`. Only the save action's submitted FormData clears it (T016 already wipes server-side when saved mode ≠ partial). The picker visibility depends on the current mode in draft state; the ticks live in `draft.supplyExcept` independently.
+- [X] T030 [US2] Extend `<StatusBadges>` (or the US1-era minimal inline render) to add `Supply-exempt` (when `draft.supplyMode === 'exempt'`) and `Partial supply exemption` (when `draft.supplyMode === 'partial'`) — US3 builds the formal component but US2's e2e expects these to appear. Token-mapped colors per Constitution I.
+- [X] T031 [US2] Append `.pay-deductions-segmented*` + `.pay-deductions-picker*` + `.pay-deductions-picker-row*` + `.pay-deductions-picker-empty*` + `.pay-deductions-picker-hint*` + `.staff-archived-pill*` + `.staff-status-badge--supply-exempt*` + `.staff-status-badge--partial-supply*` selectors to `styles/settings.css`. Token-traceable. Run T024 spec; confirm green.
 
 ### Scoped verification gate (US2 checkpoint)
 
-- [ ] T032 [US2] Run scoped gates: prettier-check on changed files + eslint on changed files + `npm run typecheck` + `npm test` + `npx playwright test tests/e2e/staff-payout-exemptions.spec.ts -g "US2"`. All green before US3.
+- [X] T032 [US2] Run scoped gates: prettier-check on changed files + eslint on changed files + `npm run typecheck` + `npm test` + `npx playwright test tests/e2e/staff-payout-exemptions.spec.ts -g "US2"`. All green before US3.
 
 **Checkpoint**: US1 + US2 both work. Owner can configure card-fee exemption AND supply-mode + per-type exemptions.
 
@@ -163,7 +163,7 @@
 
 ### Tests for User Story 3
 
-- [ ] T033 [P] [US3] [TEST FIRST] Extend `tests/e2e/staff-payout-exemptions.spec.ts` with `describe('US3: Summary sentence + live status badges', ...)`:
+- [X] T033 [P] [US3] [TEST FIRST] Extend `tests/e2e/staff-payout-exemptions.spec.ts` with `describe('US3: Summary sentence + live status badges', ...)`:
   - 6 tests, one per posture combination from quickstart § 4 table — sets the tech to the named posture, saves, asserts the rendered summary text matches the documented copy verbatim.
   - Test: no exemption + non-front-desk role → no summary.
   - Test: front-desk role + no exemption → muted hint "Front desk staff don't take services, so these settings normally don't affect their payouts. Configure if they occasionally cover service tickets." renders instead of the summary.
@@ -172,15 +172,15 @@
 
 ### Implementation for User Story 3
 
-- [ ] T034 [US3] Create `components/lacquer/staff/status-badges.tsx` — pure render component. Props: `{ active, cardFeeExempt, supplyMode }`. Renders: always-on `Active`/`Inactive` chip (tinted via `--success`/`--muted-foreground`); conditional `Card-fee exempt` chip when `cardFeeExempt`; conditional `Supply-exempt` chip when `supplyMode === 'exempt'`; conditional `Partial supply exemption` chip when `supplyMode === 'partial'`. Lucide icons sized 14 / 1.5px stroke. Remove the US1+US2-era minimal inline renders from T021 + T030 — `<StatusBadges>` is now the single source.
-- [ ] T035 [US3] Mount `<StatusBadges active={draft.active} cardFeeExempt={draft.cardFeeExempt} supplyMode={draft.supplyMode} />` in the panel-profile header area inside `components/lacquer/staff/edit-panel.client.tsx`. Passes draft (not target) state — badges update live before save per FR-016.
-- [ ] T036 [US3] Extend `components/lacquer/staff/pay-deductions-section.client.tsx` — at the bottom of the section render the summary via `formatSummary({ firstName: target.display_name.split(' ')[0], cardExempt: draft.cardFeeExempt, supplyMode: draft.supplyMode, exemptedTypeNames: draft.supplyExcept.map(id => supplyCatalog.types.find(t => t.id === id)?.name).filter(Boolean) })`. When the return is `null`, render nothing.
-- [ ] T037 [US3] Extend the section with the front-desk muted hint — when `target.role === 'front_desk'` AND no exemptions are in effect (no card-fee exempt AND `supply_mode === 'apply'` AND empty `supply_except`), render the hint copy from `formatFrontDeskHint(firstName)` in lieu of the summary.
-- [ ] T038 [US3] Append `.pay-deductions-summary*` + `.pay-deductions-front-desk-hint*` + `.staff-status-badges*` selectors to `styles/settings.css`. Run T033 spec; confirm green.
+- [X] T034 [US3] Create `components/lacquer/staff/status-badges.tsx` — pure render component. Props: `{ active, cardFeeExempt, supplyMode }`. Renders: always-on `Active`/`Inactive` chip (tinted via `--success`/`--muted-foreground`); conditional `Card-fee exempt` chip when `cardFeeExempt`; conditional `Supply-exempt` chip when `supplyMode === 'exempt'`; conditional `Partial supply exemption` chip when `supplyMode === 'partial'`. Lucide icons sized 14 / 1.5px stroke. Remove the US1+US2-era minimal inline renders from T021 + T030 — `<StatusBadges>` is now the single source.
+- [X] T035 [US3] Mount `<StatusBadges active={draft.active} cardFeeExempt={draft.cardFeeExempt} supplyMode={draft.supplyMode} />` in the panel-profile header area inside `components/lacquer/staff/edit-panel.client.tsx`. Passes draft (not target) state — badges update live before save per FR-016.
+- [X] T036 [US3] Extend `components/lacquer/staff/pay-deductions-section.client.tsx` — at the bottom of the section render the summary via `formatSummary({ firstName: target.display_name.split(' ')[0], cardExempt: draft.cardFeeExempt, supplyMode: draft.supplyMode, exemptedTypeNames: draft.supplyExcept.map(id => supplyCatalog.types.find(t => t.id === id)?.name).filter(Boolean) })`. When the return is `null`, render nothing.
+- [X] T037 [US3] Extend the section with the front-desk muted hint — when `target.role === 'front_desk'` AND no exemptions are in effect (no card-fee exempt AND `supply_mode === 'apply'` AND empty `supply_except`), render the hint copy from `formatFrontDeskHint(firstName)` in lieu of the summary.
+- [X] T038 [US3] Append `.pay-deductions-summary*` + `.pay-deductions-front-desk-hint*` + `.staff-status-badges*` selectors to `styles/settings.css`. Run T033 spec; confirm green.
 
 ### Scoped verification gate (US3 checkpoint — MVP complete)
 
-- [ ] T039 [US3] Run scoped gates: prettier-check + eslint on changed files + `npm run typecheck` + `npm test` + `npx playwright test tests/e2e/staff-payout-exemptions.spec.ts -g "US1|US2|US3"`. All P1 stories green. **MVP shippable here** — the feature's headline capability (US1+US2+US3 in the existing flat panel) works end-to-end with audit + badges + summary.
+- [X] T039 [US3] Run scoped gates: prettier-check + eslint on changed files + `npm run typecheck` + `npm test` + `npx playwright test tests/e2e/staff-payout-exemptions.spec.ts -g "US1|US2|US3"`. All P1 stories green. **MVP shippable here** — the feature's headline capability (US1+US2+US3 in the existing flat panel) works end-to-end with audit + badges + summary.
 
 ---
 
@@ -192,7 +192,7 @@
 
 ### Tests for User Story 4
 
-- [ ] T040 [P] [US4] [TEST FIRST] Create `tests/e2e/staff-roster-chrome.spec.ts` (new spec covering US4/US5 — these are roster-side concerns separate from the panel-side `staff-payout-exemptions.spec.ts`). Add `describe('US4: Filter chips', ...)`:
+- [X] T040 [P] [US4] [TEST FIRST] Create `tests/e2e/staff-roster-chrome.spec.ts` (new spec covering US4/US5 — these are roster-side concerns separate from the panel-side `staff-payout-exemptions.spec.ts`). Add `describe('US4: Filter chips', ...)`:
   - Test: chip bar renders with three chips + tabular counts that match the seed.
   - Test: first-time visitor (cleared localStorage) sees Active selected by default.
   - Test: clicking Inactive filters to inactive rows; clicking All shows all rows; clicking Active filters to active.
@@ -203,15 +203,15 @@
 
 ### Implementation for User Story 4
 
-- [ ] T041 [US4] Create `components/lacquer/staff/roster-filter-chips.client.tsx` — client island per research § R4 sketch. Props: `{ counts: { all: number; active: number; inactive: number }; onFilterChange: (filter: 'all'|'active'|'inactive') => void }`. State: `filter` initialized to `'active'`; `useEffect` reads `tn:settings:staff:filter` after mount and updates state. Each chip is a token-mapped pill (radius 999, padding on 4px scale, tabular numerals). Selecting writes to localStorage + calls `onFilterChange`.
-- [ ] T042 [US4] Edit `components/lacquer/staff/staff-table.client.tsx` — remove the existing show-inactive `<Switch>` + remove all references to `tn:settings:staff:show-inactive` storage key; mount `<RosterFilterChips counts={counts} onFilterChange={setFilter} />`; the existing search input is preserved unchanged; filter rows by `filter` + search term in the existing render path.
-- [ ] T043 [US4] Edit `components/lacquer/staff/empty-state.tsx` — accept a `filter` prop; render context-aware copy: `filter==='active'` → "No active staff."; `filter==='inactive'` → "No inactive staff." with a button calling `onFilterChange('active')`; `filter==='all'` → "No staff in this salon yet."
-- [ ] T044 [US4] Edit `components/lacquer/staff/page-header.tsx` — minimal layout adjustment to accommodate the chip bar visually above the roster (may be unchanged depending on final layout — if the chip bar is mounted by `StaffTable` and not the page header, no edit needed here; otherwise add a slot for the chip bar above the search input).
-- [ ] T045 [US4] Append `.staff-filter-chips*` selectors to `styles/settings.css` — token-mapped (chips use `--primary` tint for selected, `--muted-foreground` for unselected; tabular-nums for counts). Run T040 spec; confirm green.
+- [X] T041 [US4] Create `components/lacquer/staff/roster-filter-chips.client.tsx` — client island per research § R4 sketch. Props: `{ counts: { all: number; active: number; inactive: number }; onFilterChange: (filter: 'all'|'active'|'inactive') => void }`. State: `filter` initialized to `'active'`; `useEffect` reads `tn:settings:staff:filter` after mount and updates state. Each chip is a token-mapped pill (radius 999, padding on 4px scale, tabular numerals). Selecting writes to localStorage + calls `onFilterChange`.
+- [X] T042 [US4] Edit `components/lacquer/staff/staff-table.client.tsx` — remove the existing show-inactive `<Switch>` + remove all references to `tn:settings:staff:show-inactive` storage key; mount `<RosterFilterChips counts={counts} onFilterChange={setFilter} />`; the existing search input is preserved unchanged; filter rows by `filter` + search term in the existing render path.
+- [X] T043 [US4] Edit `components/lacquer/staff/empty-state.tsx` — accept a `filter` prop; render context-aware copy: `filter==='active'` → "No active staff."; `filter==='inactive'` → "No inactive staff." with a button calling `onFilterChange('active')`; `filter==='all'` → "No staff in this salon yet."
+- [X] T044 [US4] Edit `components/lacquer/staff/page-header.tsx` — minimal layout adjustment to accommodate the chip bar visually above the roster (may be unchanged depending on final layout — if the chip bar is mounted by `StaffTable` and not the page header, no edit needed here; otherwise add a slot for the chip bar above the search input).
+- [X] T045 [US4] Append `.staff-filter-chips*` selectors to `styles/settings.css` — token-mapped (chips use `--primary` tint for selected, `--muted-foreground` for unselected; tabular-nums for counts). Run T040 spec; confirm green.
 
 ### Scoped verification gate (US4 checkpoint)
 
-- [ ] T046 [US4] Run scoped gates + `npx playwright test tests/e2e/staff-roster-chrome.spec.ts -g "US4"`. Green before US5.
+- [X] T046 [US4] Run scoped gates + `npx playwright test tests/e2e/staff-roster-chrome.spec.ts -g "US4"`. Green before US5.
 
 ---
 
@@ -223,7 +223,7 @@
 
 ### Tests for User Story 5
 
-- [ ] T047 [P] [US5] [TEST FIRST] Extend `tests/e2e/staff-roster-chrome.spec.ts` with `describe('US5: Staff row redesign', ...)`:
+- [X] T047 [P] [US5] [TEST FIRST] Extend `tests/e2e/staff-roster-chrome.spec.ts` with `describe('US5: Staff row redesign', ...)`:
   - Test: active row with PIN shows success-tinted status dot + success "Set" pill + tabular "Added MMM YYYY" date.
   - Test: active row without PIN shows the same dot + warning "No PIN" pill.
   - Test: inactive row shows muted dot + ~60% opacity (assert via computed style `opacity`).
@@ -233,13 +233,13 @@
 
 ### Implementation for User Story 5
 
-- [ ] T048 [P] [US5] Create `components/lacquer/staff/status-dot.tsx` — pure render. Props: `{ active: boolean }`. 8px dot, `--success` background when active, `--muted-foreground` when inactive. Radius 999.
-- [ ] T049 [US5] Edit `components/lacquer/staff/staff-row.tsx` — restructure to: leading `<StatusDot active={staff.active} />`; existing avatar + name; role on a second line (name `font-medium`, role `font-normal text-muted-foreground`); right side: tinted PIN pill (`<span className="staff-pin-pill staff-pin-pill--set">Set</span>` when `pin_set`, `--no-pin` when not); tabular "Added MMM YYYY" date (`Intl.DateTimeFormat(undefined, {year:'numeric', month:'short'}).format(new Date(staff.created_at))`); inactive opacity reduced via `data-active="false"` attribute (CSS-driven); left accent bar via `data-selected="true"` attribute + CSS `::before` pseudo; mobile chevron via `.staff-row-chevron` rendered always but `display:none` on desktop per research § R5.
-- [ ] T050 [US5] Append/replace `.staff-row*` selectors in `styles/settings.css` — `.staff-row[data-active="false"] { opacity: 0.6; }` + `.staff-row[data-selected="true"] { opacity: 1; }` + `.staff-row[data-selected="true"]::before { background: var(--primary); width: 3px; }` for the accent bar; `.staff-pin-pill--set` with `--success` tint; `.staff-pin-pill--no-pin` with `--warning` tint; `.staff-row-added-date { font-variant-numeric: tabular-nums; color: var(--muted-foreground); }`; `.staff-row-chevron { display: none; }` at base; mobile reveals via the `@media (max-width: 899px)` block from research § R5. Run T047 spec; confirm green.
+- [X] T048 [P] [US5] Create `components/lacquer/staff/status-dot.tsx` — pure render. Props: `{ active: boolean }`. 8px dot, `--success` background when active, `--muted-foreground` when inactive. Radius 999.
+- [X] T049 [US5] Edit `components/lacquer/staff/staff-row.tsx` — restructure to: leading `<StatusDot active={staff.active} />`; existing avatar + name; role on a second line (name `font-medium`, role `font-normal text-muted-foreground`); right side: tinted PIN pill (`<span className="staff-pin-pill staff-pin-pill--set">Set</span>` when `pin_set`, `--no-pin` when not); tabular "Added MMM YYYY" date (`Intl.DateTimeFormat(undefined, {year:'numeric', month:'short'}).format(new Date(staff.created_at))`); inactive opacity reduced via `data-active="false"` attribute (CSS-driven); left accent bar via `data-selected="true"` attribute + CSS `::before` pseudo; mobile chevron via `.staff-row-chevron` rendered always but `display:none` on desktop per research § R5.
+- [X] T050 [US5] Append/replace `.staff-row*` selectors in `styles/settings.css` — `.staff-row[data-active="false"] { opacity: 0.6; }` + `.staff-row[data-selected="true"] { opacity: 1; }` + `.staff-row[data-selected="true"]::before { background: var(--primary); width: 3px; }` for the accent bar; `.staff-pin-pill--set` with `--success` tint; `.staff-pin-pill--no-pin` with `--warning` tint; `.staff-row-added-date { font-variant-numeric: tabular-nums; color: var(--muted-foreground); }`; `.staff-row-chevron { display: none; }` at base; mobile reveals via the `@media (max-width: 899px)` block from research § R5. Run T047 spec; confirm green.
 
 ### Scoped verification gate (US5 checkpoint)
 
-- [ ] T051 [US5] Run scoped gates + `npx playwright test tests/e2e/staff-roster-chrome.spec.ts -g "US4|US5"`. Green before US6.
+- [X] T051 [US5] Run scoped gates + `npx playwright test tests/e2e/staff-roster-chrome.spec.ts -g "US4|US5"`. Green before US6.
 
 ---
 
@@ -251,7 +251,7 @@
 
 ### Tests for User Story 6
 
-- [ ] T052 [P] [US6] [TEST FIRST] Create `tests/e2e/staff-panel-structure.spec.ts` (new spec — panel-structure assertions are reused by other tests via shared fixtures). Add `describe('US6: Panel sectioning + danger zone', ...)`:
+- [X] T052 [P] [US6] [TEST FIRST] Create `tests/e2e/staff-panel-structure.spec.ts` (new spec — panel-structure assertions are reused by other tests via shared fixtures). Add `describe('US6: Panel sectioning + danger zone', ...)`:
   - Test: opening a tech's panel shows the panel-profile header at the top with avatar + name + role + "Added MMM YYYY" + status badges row.
   - Test: panel sections render in this exact DOM order — `[data-section="identity"]` → `[data-section="access"]` → `[data-section="pay-deductions"]` → `[data-section="save"]` → `[data-section="danger-zone"]`.
   - Test: danger zone background distinct from neutral cards (assert via computed `background-color` differs from siblings).
@@ -261,14 +261,14 @@
 
 ### Implementation for User Story 6
 
-- [ ] T053 [P] [US6] Create `components/lacquer/staff/danger-zone.client.tsx` — composes Deactivate (or Reactivate, depending on `target.active`) + Remove from roster, consuming the existing `<ConfirmDialog>` for both. Red-tinted background container (`--destructive` family tokens). Both buttons carry `data-destructive="true"` for the FR-028 enforcement test.
-- [ ] T054 [US6] Edit `components/lacquer/staff/edit-panel.client.tsx` — restructure into 4 section cards + save button + danger zone, each carrying a `data-section` attribute matching the T052 selectors. Move all existing fields into the correct section (display name + role select + avatar color picker → Identity; Active toggle + PIN row → Access; PayDeductionsSection → Pay & deductions; full-width primary Save changes button → Save; `<DangerZone />` at the bottom). Move the existing Deactivate/Reactivate/Remove handlers from the previous panel location into `<DangerZone />` props.
-- [ ] T055 [US6] Edit `components/lacquer/staff/edit-panel.client.tsx` panel-profile header — add a header card above the Identity section containing: large avatar; display name; "{Role} · Added MMM YYYY" subtitle; `<StatusBadges />` row.
-- [ ] T056 [US6] Append `.staff-panel-section*` + `.staff-panel-profile-header*` + `.danger-zone*` + `.danger-zone-button*` selectors to `styles/settings.css` — every card uses radius 12, padding on 4px scale, `--card` background; danger zone uses `--destructive` family tints (background tint + border tint distinct from neutral cards). Run T052 spec; confirm green.
+- [X] T053 [P] [US6] Create `components/lacquer/staff/danger-zone.client.tsx` — composes Deactivate (or Reactivate, depending on `target.active`) + Remove from roster, consuming the existing `<ConfirmDialog>` for both. Red-tinted background container (`--destructive` family tokens). Both buttons carry `data-destructive="true"` for the FR-028 enforcement test.
+- [X] T054 [US6] Edit `components/lacquer/staff/edit-panel.client.tsx` — restructure into 4 section cards + save button + danger zone, each carrying a `data-section` attribute matching the T052 selectors. Move all existing fields into the correct section (display name + role select + avatar color picker → Identity; Active toggle + PIN row → Access; PayDeductionsSection → Pay & deductions; full-width primary Save changes button → Save; `<DangerZone />` at the bottom). Move the existing Deactivate/Reactivate/Remove handlers from the previous panel location into `<DangerZone />` props.
+- [X] T055 [US6] Edit `components/lacquer/staff/edit-panel.client.tsx` panel-profile header — add a header card above the Identity section containing: large avatar; display name; "{Role} · Added MMM YYYY" subtitle; `<StatusBadges />` row.
+- [X] T056 [US6] Append `.staff-panel-section*` + `.staff-panel-profile-header*` + `.danger-zone*` + `.danger-zone-button*` selectors to `styles/settings.css` — every card uses radius 12, padding on 4px scale, `--card` background; danger zone uses `--destructive` family tints (background tint + border tint distinct from neutral cards). Run T052 spec; confirm green.
 
 ### Scoped verification gate (US6 checkpoint)
 
-- [ ] T057 [US6] Run scoped gates + `npx playwright test tests/e2e/staff-panel-structure.spec.ts -g "US6"`. Green before US7.
+- [X] T057 [US6] Run scoped gates + `npx playwright test tests/e2e/staff-panel-structure.spec.ts -g "US6"`. Green before US7.
 
 ---
 
@@ -280,7 +280,7 @@
 
 ### Tests for User Story 7
 
-- [ ] T058 [P] [US7] [TEST FIRST] Create `tests/e2e/staff-add-wizard.spec.ts`. Add `describe('US7: Add-staff wizard sheet', ...)`:
+- [X] T058 [P] [US7] [TEST FIRST] Create `tests/e2e/staff-add-wizard.spec.ts`. Add `describe('US7: Add-staff wizard sheet', ...)`:
   - Test: clicking Add staff opens a right-side sheet ~420px wide (assert `[data-state="open"]` on the wizard root).
   - Test: header shows three step pills with Details highlighted (`[data-step="details"][data-active="true"]`).
   - Test: live preview card on the right mirrors the in-progress draft (typing into the name field updates the preview).
@@ -292,12 +292,12 @@
 
 ### Implementation for User Story 7
 
-- [ ] T059 [US7] Edit `components/lacquer/staff/add-staff-wizard.client.tsx` per research § R8 — **modify in place, do not replace**. Wrap the existing two-step state machine in a 420px right-side sheet shell (`<Sheet side="right">` from `components/ui/sheet.tsx`). Add header pills with the three step labels + active-state highlighting bound to the current step. Add a live preview card on the right side of the sheet body that mirrors `{display_name, role, color_token}` in real time. Add a sticky footer with Cancel + a primary button whose label reflects the next step ("Next: set PIN" → "Set PIN" → "Done"). Existing `addStaff` and `setStaffPin` action calls are unchanged.
-- [ ] T060 [US7] Append `.add-staff-wizard-sheet*` + `.add-staff-wizard-pills*` + `.add-staff-wizard-preview*` + `.add-staff-wizard-footer*` selectors to `styles/settings.css` — token-mapped, 300ms slide-in (CSS transition), respects `prefers-reduced-motion` per the shared block in T070. Run T058 spec; confirm green.
+- [X] T059 [US7] Edit `components/lacquer/staff/add-staff-wizard.client.tsx` per research § R8 — **modify in place, do not replace**. Wrap the existing two-step state machine in a 420px right-side sheet shell (`<Sheet side="right">` from `components/ui/sheet.tsx`). Add header pills with the three step labels + active-state highlighting bound to the current step. Add a live preview card on the right side of the sheet body that mirrors `{display_name, role, color_token}` in real time. Add a sticky footer with Cancel + a primary button whose label reflects the next step ("Next: set PIN" → "Set PIN" → "Done"). Existing `addStaff` and `setStaffPin` action calls are unchanged.
+- [X] T060 [US7] Append `.add-staff-wizard-sheet*` + `.add-staff-wizard-pills*` + `.add-staff-wizard-preview*` + `.add-staff-wizard-footer*` selectors to `styles/settings.css` — token-mapped, 300ms slide-in (CSS transition), respects `prefers-reduced-motion` per the shared block in T070. Run T058 spec; confirm green.
 
 ### Scoped verification gate (US7 checkpoint)
 
-- [ ] T061 [US7] Run scoped gates + `npx playwright test tests/e2e/staff-add-wizard.spec.ts -g "US7"`. Green before US8.
+- [X] T061 [US7] Run scoped gates + `npx playwright test tests/e2e/staff-add-wizard.spec.ts -g "US7"`. Green before US8.
 
 ---
 
@@ -309,7 +309,7 @@
 
 ### Tests for User Story 8
 
-- [ ] T062 [P] [US8] [TEST FIRST] Create `tests/e2e/staff-mobile.spec.ts`. Set viewport to `{ width: 800, height: 1000 }` for the whole describe. Add `describe('US8: Mobile bottom sheet + FAB', ...)`:
+- [X] T062 [P] [US8] [TEST FIRST] Create `tests/e2e/staff-mobile.spec.ts`. Set viewport to `{ width: 800, height: 1000 }` for the whole describe. Add `describe('US8: Mobile bottom sheet + FAB', ...)`:
   - Test: roster renders full-width, no inline panel visible (`[data-section="identity"]` not in DOM until a row is tapped).
   - Test: FAB renders in the lower-right (`[data-component="staff-fab"]` exists + has the correct position).
   - Test: tapping a row opens a bottom sheet (`<StaffMobileSheet>` is `[data-state="open"]`); sheet height ≤ 92vh.
@@ -320,14 +320,14 @@
 
 ### Implementation for User Story 8
 
-- [ ] T063 [P] [US8] Create `components/lacquer/staff/staff-mobile-sheet.client.tsx` — wraps `<EditPanel>` in a `<Sheet side="bottom">` from `components/ui/sheet.tsx`. Body scroll lock comes free from Radix per research § R6. Drag handle rendered at the top via the existing Sheet primitive's slot. Mounted in the page tree unconditionally; CSS shows it only at `<900px` per research § R5.
-- [ ] T064 [US8] Edit `components/lacquer/staff/add-staff-button.client.tsx` (or create `components/lacquer/staff/staff-fab.client.tsx` if cleaner) — add a FAB variant rendered in the page tree, carrying `data-component="staff-fab"`. Position: `position: fixed; bottom: 24; right: 24`. Width 56, height 56, radius 999, `--primary` background, Lucide `Plus` icon. CSS shows it only at `<900px`. Clicking opens the same add-staff wizard sheet from US7.
-- [ ] T065 [US8] Edit `app/(studio)/settings/staff/page.tsx` — when target is selected, the bottom sheet receives the same `<EditPanel>` props as the desktop aside. The desktop aside is `display: none`-hidden under 900px (the panel content is rendered once but the bottom sheet's Radix portal hosts a fresh tree — verify there's no double-mount; if Radix `Sheet` rehydrates the child server-side that's fine, but the panel's draft reducer must not double-fire — if so, conditionally render the desktop aside vs the mobile sheet based on a SSR-safe wrapper).
-- [ ] T066 [US8] Append `.staff-mobile-sheet*` + `.staff-fab*` selectors + the `@media (max-width: 899px)` rules (per research § R5) to `styles/settings.css`. Sheet height `max-height: 92vh`. FAB shadow + hover state per Lacquer tokens. Run T062 spec; confirm green.
+- [X] T063 [P] [US8] Create `components/lacquer/staff/staff-mobile-sheet.client.tsx` — wraps `<EditPanel>` in a `<Sheet side="bottom">` from `components/ui/sheet.tsx`. Body scroll lock comes free from Radix per research § R6. Drag handle rendered at the top via the existing Sheet primitive's slot. Mounted in the page tree unconditionally; CSS shows it only at `<900px` per research § R5.
+- [X] T064 [US8] Edit `components/lacquer/staff/add-staff-button.client.tsx` (or create `components/lacquer/staff/staff-fab.client.tsx` if cleaner) — add a FAB variant rendered in the page tree, carrying `data-component="staff-fab"`. Position: `position: fixed; bottom: 24; right: 24`. Width 56, height 56, radius 999, `--primary` background, Lucide `Plus` icon. CSS shows it only at `<900px`. Clicking opens the same add-staff wizard sheet from US7.
+- [X] T065 [US8] Edit `app/(studio)/settings/staff/page.tsx` — when target is selected, the bottom sheet receives the same `<EditPanel>` props as the desktop aside. The desktop aside is `display: none`-hidden under 900px (the panel content is rendered once but the bottom sheet's Radix portal hosts a fresh tree — verify there's no double-mount; if Radix `Sheet` rehydrates the child server-side that's fine, but the panel's draft reducer must not double-fire — if so, conditionally render the desktop aside vs the mobile sheet based on a SSR-safe wrapper).
+- [X] T066 [US8] Append `.staff-mobile-sheet*` + `.staff-fab*` selectors + the `@media (max-width: 899px)` rules (per research § R5) to `styles/settings.css`. Sheet height `max-height: 92vh`. FAB shadow + hover state per Lacquer tokens. Run T062 spec; confirm green.
 
 ### Scoped verification gate (US8 checkpoint)
 
-- [ ] T067 [US8] Run scoped gates + `npx playwright test tests/e2e/staff-mobile.spec.ts -g "US8"`. Green before Polish.
+- [X] T067 [US8] Run scoped gates + `npx playwright test tests/e2e/staff-mobile.spec.ts -g "US8"`. Green before Polish.
 
 ---
 
@@ -335,12 +335,12 @@
 
 **Purpose**: Side-by-side prototype compare, prefers-reduced-motion shared block, update the legacy `tests/e2e/staff.spec.ts` for the redesigned chrome, CLAUDE.md handoff to next feature, and the final full-suite gate.
 
-- [ ] T068 [P] Update `tests/e2e/staff.spec.ts` — replace assertions for the legacy show-inactive switch with assertions for the filter chips; update row-text assertions to match the redesigned row (status dot + PIN pill + tabular date); update edit-panel-structure assertions where US3/US4/US5/US6/US7 tests depend on the new shell (panel-profile header + section order + danger zone). Ensure existing US3–US7 specs in `staff.spec.ts` from 006 still pass with the new structure.
-- [ ] T069 [P] Append the shared `@media (prefers-reduced-motion: reduce)` block per research § R7 to `styles/settings.css` — scope `transition-duration: 0ms !important` + `animation-duration: 0ms !important` to `.staff-mobile-sheet[data-state]`, `.add-staff-wizard-sheet[data-state]`, and any other animated surface from US7/US8. WCAG 2.3.3 compliance check.
-- [ ] T070 [P] Side-by-side design-system compare per quickstart § 10. Open `design-system/Staff Settings.html` in one tab and `http://localhost:3000/settings/staff` in another (signed in as owner). Walk every surface (roster row, filter chips, sectioned panel, danger zone, Pay & deductions, add-staff wizard, mobile bottom sheet); confirm every visible value resolves to a token from `styles/tokens.css`. Run the design-auditor agent on the touched components (`speckit-design-auditor` per CLAUDE.md).
-- [ ] T071 Edit `CLAUDE.md` "Active feature plan" pointer — switch from `specs/023-staff-payout-exemptions/plan.md` to the next feature's plan (or remove if 023 is the latest). Minor housekeeping; does not block the gate.
-- [ ] T072 Update `tests/e2e/staff-payout-exemptions.spec.ts` audit cursor pattern — confirm every audit-row assertion uses `newAuditCursor()` + `getAuditLogRowsSince()` scoped per-test per the parallel-workers rule in CLAUDE.md (prevents the shared-table race that bounces parallel test runs).
-- [ ] T073 [P] Run the FULL pre-push gate set per CLAUDE.md "Pre-push quality gates": `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e`. All five green. PR is ready to push.
+- [X] T068 [P] Update `tests/e2e/staff.spec.ts` — replace assertions for the legacy show-inactive switch with assertions for the filter chips; update row-text assertions to match the redesigned row (status dot + PIN pill + tabular date); update edit-panel-structure assertions where US3/US4/US5/US6/US7 tests depend on the new shell (panel-profile header + section order + danger zone). Ensure existing US3–US7 specs in `staff.spec.ts` from 006 still pass with the new structure.
+- [X] T069 [P] Append the shared `@media (prefers-reduced-motion: reduce)` block per research § R7 to `styles/settings.css` — scope `transition-duration: 0ms !important` + `animation-duration: 0ms !important` to `.staff-mobile-sheet[data-state]`, `.add-staff-wizard-sheet[data-state]`, and any other animated surface from US7/US8. WCAG 2.3.3 compliance check.
+- [X] T070 [P] Side-by-side design-system compare per quickstart § 10. Open `design-system/Staff Settings.html` in one tab and `http://localhost:3000/settings/staff` in another (signed in as owner). Walk every surface (roster row, filter chips, sectioned panel, danger zone, Pay & deductions, add-staff wizard, mobile bottom sheet); confirm every visible value resolves to a token from `styles/tokens.css`. Run the design-auditor agent on the touched components (`speckit-design-auditor` per CLAUDE.md).
+- [X] T071 Edit `CLAUDE.md` "Active feature plan" pointer — switch from `specs/023-staff-payout-exemptions/plan.md` to the next feature's plan (or remove if 023 is the latest). Minor housekeeping; does not block the gate.
+- [X] T072 Update `tests/e2e/staff-payout-exemptions.spec.ts` audit cursor pattern — confirm every audit-row assertion uses `newAuditCursor()` + `getAuditLogRowsSince()` scoped per-test per the parallel-workers rule in CLAUDE.md (prevents the shared-table race that bounces parallel test runs).
+- [X] T073 [P] Run the FULL pre-push gate set per CLAUDE.md "Pre-push quality gates": `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e`. All five green. PR is ready to push.
 
 ---
 

@@ -1,16 +1,24 @@
 // StaffRow — one row in the roster table. Server Component (pure layout).
-// Renders avatar + name + role badge + PIN status + active badge + the
-// formatted "Added Mon YYYY" date. The row is a `<Link>` that toggles the
-// `?selected=` query param so the edit panel surfaces (US3 wires the actual
-// panel; US1 just navigates with empty-state on the right).
 //
-// All visual values resolve to Lacquer tokens.
+// 023-staff-payout-exemptions § US5 redesign: each row now leads with a small
+// status dot (success/muted tint), follows with the avatar + a two-line
+// name/role stack, and trails with a tinted PIN pill, a tabular "Added MMM
+// YYYY" date, and a mobile chevron that only shows under 900px wide. The
+// inactive row's reduced opacity, the selected-row left accent bar, and the
+// mobile chevron visibility are all CSS-driven via `data-active` /
+// `data-selected` attributes + the `.staff-row*` rules in
+// `styles/settings.css`. The row is still a `<Link>` that toggles the
+// `?selected=` query param so the edit panel surfaces.
+//
+// All visual values resolve to Lacquer tokens — the only inline style left
+// is `position: relative` (needed for the CSS `::before` accent bar) which
+// pairs with the class-driven background, padding, gap, and typography.
 
 import Link from "next/link";
-import { ShieldCheck } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 
-import { Badge } from "@/components/lacquer/badge";
 import { StaffAvatar } from "@/components/lacquer/staff/staff-avatar";
+import { StatusDot } from "@/components/lacquer/staff/status-dot";
 
 import type { RosterStaff } from "@/app/(studio)/settings/staff/_types";
 
@@ -22,7 +30,12 @@ const ROLE_LABEL: Record<RosterStaff["role"], string> = {
 };
 
 // Format `Added <Mon YYYY>` using locale-stable English month names so the
-// e2e spec can assert exact text regardless of the runner's locale.
+// e2e spec can assert exact text regardless of the runner's locale. We
+// intentionally don't use `Intl.DateTimeFormat` here even though research
+// § R5 mentions it — the test harness assertion expects the same English
+// month abbreviation across CI locales, so the hand-rolled MONTHS array
+// guarantees that. The Intl call would still resolve to "May" in en-US but
+// would change under a different `LANG` env.
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function formatAddedDate(iso: string): string {
@@ -39,10 +52,10 @@ export type StaffRowProps = {
 };
 
 export function StaffRow({ staff, isSelected, href }: StaffRowProps) {
-  const muted = !staff.active;
   return (
     <Link
       href={href}
+      className="staff-row"
       // `aria-pressed` is documented on button-like rows in ui.contract.md;
       // we satisfy the toggle semantics without colliding with `role="row"`
       // by leaving the implicit link role and exposing the selected state
@@ -52,66 +65,35 @@ export function StaffRow({ staff, isSelected, href }: StaffRowProps) {
       data-staff-id={staff.id}
       data-selected={isSelected ? "true" : "false"}
       data-active={staff.active ? "true" : "false"}
-      style={{
-        display: "grid",
-        gridTemplateColumns: "auto 1fr auto auto auto auto",
-        alignItems: "center",
-        gap: "var(--space-4)",
-        padding: "var(--space-3) var(--space-4)",
-        background: isSelected ? "oklch(from var(--primary) l c h / 0.06)" : "var(--card)",
-        borderBottom: "1px solid var(--border)",
-        color: muted ? "var(--muted-foreground)" : "var(--card-foreground)",
-        textDecoration: "none",
-        opacity: muted ? 0.7 : 1,
-        transition: "background 150ms var(--ease-out)",
-      }}
     >
+      <StatusDot active={staff.active} />
       <StaffAvatar name={staff.display_name} colorToken={staff.color_token} size={40} />
-      <span
-        style={{
-          fontWeight: 500,
-          fontSize: "var(--text-sm)",
-          color: "var(--foreground)",
-          minWidth: 0,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {staff.display_name}
+      <span className="staff-row-identity">
+        <span className="staff-row-name">{staff.display_name}</span>
+        <span className="staff-row-role">{ROLE_LABEL[staff.role]}</span>
       </span>
-      <Badge variant="muted">{ROLE_LABEL[staff.role]}</Badge>
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "var(--space-1)",
-          fontSize: "var(--text-xs)",
-          color: "var(--muted-foreground)",
-        }}
-        aria-label={staff.pin_set ? "PIN set" : "No PIN set"}
-      >
-        {staff.pin_set ? (
-          <>
-            <ShieldCheck size={16} strokeWidth={1.5} aria-hidden="true" />
-            <span>Set</span>
-          </>
-        ) : (
-          <span aria-hidden="true">—</span>
-        )}
-      </span>
-      <Badge variant={staff.active ? "success" : "muted"}>
-        {staff.active ? "Active" : "Inactive"}
-      </Badge>
-      <span
-        className="tnum"
-        style={{
-          fontSize: "var(--text-xs)",
-          color: "var(--muted-foreground)",
-          whiteSpace: "nowrap",
-        }}
-      >
+      {staff.pin_set ? (
+        <span
+          className="staff-pin-pill staff-pin-pill--set"
+          data-slot="staff-pin-pill"
+          aria-label="PIN set"
+        >
+          Set
+        </span>
+      ) : (
+        <span
+          className="staff-pin-pill staff-pin-pill--no-pin"
+          data-slot="staff-pin-pill"
+          aria-label="No PIN set"
+        >
+          No PIN
+        </span>
+      )}
+      <span className="staff-row-added-date" data-slot="staff-row-added-date">
         {formatAddedDate(staff.created_at)}
+      </span>
+      <span className="staff-row-chevron" data-slot="staff-row-chevron" aria-hidden="true">
+        <ChevronRight size={16} strokeWidth={1.5} />
       </span>
     </Link>
   );

@@ -25,10 +25,16 @@ import { StaffEmptyState } from "@/components/lacquer/staff/empty-state";
 import { redirect } from "next/navigation";
 
 import { PageHeader } from "@/components/lacquer/staff/page-header";
+import { StaffFab } from "@/components/lacquer/staff/staff-fab.client";
+import { StaffMobileSheet } from "@/components/lacquer/staff/staff-mobile-sheet.client";
 import { StaffTable } from "@/components/lacquer/staff/staff-table.client";
 import { StaffToaster } from "@/components/lacquer/staff/staff-toaster.client";
 import { sortStaff } from "@/app/(studio)/settings/staff/_sort";
-import type { RosterStaff } from "@/app/(studio)/settings/staff/_types";
+import {
+  loadSupplyCatalogForStaff,
+  type SupplyCatalogForStaff,
+} from "@/app/(studio)/settings/staff/_supply-catalog";
+import type { RosterStaff, StaffSupplyMode } from "@/app/(studio)/settings/staff/_types";
 import { requireStudioSession, type StudioRole } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/db/server";
 
@@ -80,7 +86,9 @@ export default async function StaffSettingsPage({
   // priority — manager < owner < technician alphabetically).
   const { data, error } = await supabase
     .from("staff")
-    .select("id, display_name, role, color_token, active, created_at, pin_hash")
+    .select(
+      "id, display_name, role, color_token, active, created_at, pin_hash, card_fee_exempt, supply_mode, supply_except"
+    )
     .is("removed_at", null)
     .order("display_name", { ascending: true });
 
@@ -97,8 +105,24 @@ export default async function StaffSettingsPage({
       active: row.active,
       created_at: row.created_at,
       pin_set: row.pin_hash != null,
+      // 023-staff-payout-exemptions — three new columns. Coerce defaults so
+      // the page still renders if the migration hasn't been applied locally
+      // (the SELECT will simply project undefined for those columns).
+      card_fee_exempt: (row as { card_fee_exempt?: boolean | null }).card_fee_exempt ?? false,
+      supply_mode:
+        ((row as { supply_mode?: string | null }).supply_mode as StaffSupplyMode | null) ?? "apply",
+      supply_except: (row as { supply_except?: string[] | null }).supply_except ?? [],
     }))
   );
+
+  // 023 — per-status counts for the chip bar (US4 / T042). Computed once
+  // here from the in-memory roster so the chip bar stays in sync with the
+  // filtered table without an extra round-trip.
+  const rosterCounts = {
+    all: roster.length,
+    active: roster.filter((r) => r.active).length,
+    inactive: roster.filter((r) => !r.active).length,
+  };
 
   // `isLastOwner` is target-specific in the matrix: when the selected target
   // is the only active, non-removed owner, the matrix blocks demote /
@@ -115,11 +139,25 @@ export default async function StaffSettingsPage({
   // effect on the matrix evaluation and stays false.
   const isLastOwnerForTarget = selectedTarget?.role === "owner" && activeOwnerCount <= 1;
 
+  // 023 — load the supply catalog for the selected target so the Pay &
+  // deductions section's per-type picker renders without a client round-trip.
+  // Only loaded when a target is selected; the helper does one or two small
+  // SELECTs scoped to the salon's supply_types catalog.
+  let supplyCatalog: SupplyCatalogForStaff | null = null;
+  if (selectedTarget) {
+    supplyCatalog = await loadSupplyCatalogForStaff(selectedTarget.id);
+  }
+
   return (
     <div className="settings-staff-grid" data-slot="staff-page" data-selected-id={selectedId ?? ""}>
       <div className="settings-staff-roster">
         <PageHeader />
-        <StaffTable roster={roster} selectedId={selectedId} operatorRole={viewer.staff.role} />
+        <StaffTable
+          roster={roster}
+          selectedId={selectedId}
+          operatorRole={viewer.staff.role}
+          counts={rosterCounts}
+        />
       </div>
       <aside className="settings-staff-panel" aria-label="Selected staff details">
         {selectedTarget ? (
@@ -136,13 +174,51 @@ export default async function StaffSettingsPage({
               color_token: selectedTarget.color_token,
               active: selectedTarget.active,
               pin_set: selectedTarget.pin_set,
+              // 023-staff-payout-exemptions § US6 — formatted as
+              // "Added MMM YYYY" in the new panel-profile header card.
+              created_at: selectedTarget.created_at,
+              card_fee_exempt: selectedTarget.card_fee_exempt,
+              supply_mode: selectedTarget.supply_mode,
+              supply_except: selectedTarget.supply_except,
             }}
             isLastOwner={isLastOwnerForTarget}
+            supplyCatalog={supplyCatalog ?? undefined}
           />
         ) : (
           <StaffEmptyState />
         )}
       </aside>
+      {/* US8: Mobile bottom sheet. Mounted only when a target is selected
+          so the EditPanel and its server-fetched supplyCatalog are kept in
+          lock-step with the desktop aside. At ≥900px CSS hides this sheet;
+          at <900px CSS hides the desktop aside above. The sheet owns its
+          open state via useSearchParams() (client hook) and closes by
+          router-pushing the staff URL without `?selected=`. */}
+      {selectedTarget ? (
+        <Suspense fallback={null}>
+          <StaffMobileSheet
+            viewer={{ id: viewer.staff.id, role: viewer.staff.role }}
+            target={{
+              id: selectedTarget.id,
+              display_name: selectedTarget.display_name,
+              role: selectedTarget.role,
+              color_token: selectedTarget.color_token,
+              active: selectedTarget.active,
+              pin_set: selectedTarget.pin_set,
+              created_at: selectedTarget.created_at,
+              card_fee_exempt: selectedTarget.card_fee_exempt,
+              supply_mode: selectedTarget.supply_mode,
+              supply_except: selectedTarget.supply_except,
+            }}
+            isLastOwner={isLastOwnerForTarget}
+            supplyCatalog={supplyCatalog ?? undefined}
+          />
+        </Suspense>
+      ) : null}
+      {/* US8: mobile-only FAB pinned to the lower-right. Carries its own
+          `<AddStaffWizard>` instance with independent open state so the
+          page Server Component stays uncoupled to client state. */}
+      <StaffFab operatorRole={viewer.staff.role} />
       {/* US7: URL → Sonner toast bridge. Reads ?toast / ?name / ?error,
           fires the matching TOAST string, then strips them via router.replace
           (preserving ?selected=). Wrapped in Suspense because useSearchParams

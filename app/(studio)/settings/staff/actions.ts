@@ -34,7 +34,15 @@ import {
   validateDisplayName,
   validatePinShape,
   validateRole,
+  validateSupplyExcept,
+  validateSupplyMode,
 } from "./_validation";
+import {
+  STAFF_DIFF_KEYS,
+  buildChanges,
+  type StaffSnapshot as StaffDiffSnapshot,
+} from "./_audit-diff";
+import type { StaffSupplyMode } from "./_types";
 
 const STAFF_PATH = "/settings/staff";
 
@@ -166,38 +174,32 @@ export async function addStaff(formData: FormData): Promise<void> {
 
 // ── updateStaff ──────────────────────────────────────────────────────────
 //
-// Contract: server-actions.contract.md § 2. Atomic edit of any of
-// `display_name`, `role`, `color_token`, `active`. The Server Action
-// computes the diff against the saved row, evaluates the permission matrix
-// once per changed field, UPDATEs the changed columns in a single statement,
-// and writes one `staff.updated` audit row with a diff-aware payload.
+// Contract: server-actions.contract.md § 2 + 023-staff-payout-exemptions
+// research § R11. Atomic edit of any of the 7 mutable staff columns:
+//   - legacy 4: display_name, role, color_token, active
+//   - 023 trio: card_fee_exempt, supply_mode, supply_except
 //
-// Diff-aware payload (audit.contract.md § staff.updated):
-//   {
-//     changes: { <field>: [before, after], ... },  // only changed keys
-//     before:  { display_name, role, color_token, active },
-//     after:   { display_name, role, color_token, active },
-//   }
+// The Server Action computes the diff against the saved row via the shared
+// `buildChanges` helper (research § R3 — Set-equality for supply_except),
+// evaluates the permission matrix once per changed legacy field PLUS once
+// (`update_pay_deductions`) when any of the 023 trio differ (research § R11),
+// UPDATEs the changed columns in a single statement, and writes one
+// `staff.updated` audit row with the diff-aware payload `{ before, after,
+// changes }` returned by `buildChanges()`.
 //
-// Permission-check ordering matches the StaffAction enum order so test
-// expectations are deterministic when multiple gates would fire:
-// name → role → color → active.
+// SHAPE BREAK from the legacy `{ changes: Record<string,[unknown,unknown]>,
+// before, after }`: the new payload's `changes` is the ordered KEY LIST
+// (matches `STAFF_DIFF_KEYS` order). Downstream audit viewers per research
+// § R3 expect the new shape — this is the intended migration.
 
-type StaffSnapshot = {
-  display_name: string;
-  role: StudioRole;
-  color_token: string;
-  active: boolean;
-};
-
-type StaffRowFromDb = StaffSnapshot & {
+type StaffRowFromDb = StaffDiffSnapshot & {
   id: string;
   removed_at: string | null;
 };
 
-/** Ordered (name → role → color → active) so the first failure is deterministic. */
+/** Ordered legacy actions — first throw wins for these four. */
 const UPDATE_FIELD_TO_ACTION: ReadonlyArray<{
-  key: keyof StaffSnapshot;
+  key: keyof Pick<StaffDiffSnapshot, "display_name" | "role" | "color_token" | "active">;
   action: StaffAction;
 }> = [
   { key: "display_name", action: "update_name" },
@@ -205,6 +207,12 @@ const UPDATE_FIELD_TO_ACTION: ReadonlyArray<{
   { key: "color_token", action: "update_color" },
   { key: "active", action: "update_active" },
 ];
+
+/** The three 023-feature keys that collapse into one `update_pay_deductions`
+ *  matrix call (research § R11 — Clarify Q1 single-permission-label). */
+const PAY_DEDUCTION_KEYS: ReadonlyArray<
+  keyof Pick<StaffDiffSnapshot, "card_fee_exempt" | "supply_mode" | "supply_except">
+> = ["card_fee_exempt", "supply_mode", "supply_except"];
 
 export async function updateStaff(formData: FormData): Promise<void> {
   // 1 + 2: session + role gate.
@@ -218,11 +226,13 @@ export async function updateStaff(formData: FormData): Promise<void> {
     redirect(`${STAFF_PATH}?error=not_found`);
   }
 
-  // 4: load the target row.
+  // 4: load the target row (now projects all 7 diff columns).
   const admin = createSupabaseServiceRoleClient();
   const { data: targetRow, error: loadErr } = await admin
     .from("staff")
-    .select("id, display_name, role, color_token, active, removed_at")
+    .select(
+      "id, display_name, role, color_token, active, card_fee_exempt, supply_mode, supply_except, removed_at"
+    )
     .eq("id", staffId)
     .single();
 
@@ -235,6 +245,11 @@ export async function updateStaff(formData: FormData): Promise<void> {
     role: targetRow!.role as StudioRole,
     color_token: targetRow!.color_token,
     active: targetRow!.active,
+    card_fee_exempt: (targetRow as { card_fee_exempt?: boolean }).card_fee_exempt ?? false,
+    supply_mode:
+      ((targetRow as { supply_mode?: string }).supply_mode as StaffSupplyMode | undefined) ??
+      "apply",
+    supply_except: (targetRow as { supply_except?: string[] }).supply_except ?? [],
     removed_at: targetRow!.removed_at,
   };
 
@@ -256,48 +271,93 @@ export async function updateStaff(formData: FormData): Promise<void> {
     isLastOwner = (count ?? 0) === 0;
   }
 
-  // 5: validate field shapes + diff + permission matrix per changed field.
-  let nextSnapshot: StaffSnapshot;
-  let changedKeys: (keyof StaffSnapshot)[];
+  // 5: validate field shapes + permission matrix.
+  let nextSnapshot: StaffDiffSnapshot;
+  let changedKeyList: readonly (typeof STAFF_DIFF_KEYS)[number][];
 
   try {
-    const proposed: StaffSnapshot = {
+    // 5a: load the allowed supply_type ids (non-archived + currently-exempted)
+    // so the supply_except validator can silently drop unknown ids per
+    // FR-012. The query scope is small — single-salon supply_types catalog
+    // plus the (usually empty) currently-exempted set.
+    const { data: activeTypes, error: activeTypesErr } = await admin
+      .from("supply_types")
+      .select("id")
+      .eq("archived", false);
+    if (activeTypesErr) {
+      console.error("updateStaff supply_types load failed", activeTypesErr);
+      redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
+    }
+    const allowedIds = new Set<string>();
+    for (const row of (activeTypes ?? []) as { id: string }[]) {
+      allowedIds.add(row.id);
+    }
+    // Keep currently-exempted-but-now-archived ids in the allowed set so the
+    // operator can un-tick them via a save without a pre-condition (Clarify Q3).
+    for (const id of target.supply_except) {
+      allowedIds.add(id);
+    }
+
+    // 5b: parse + validate all 7 fields.
+    const rawSupplyExcept = formData.getAll("supply_except").map((v) => String(v));
+    const proposedSupplyMode = validateSupplyMode(String(formData.get("supply_mode") ?? ""));
+    let proposedSupplyExcept = validateSupplyExcept(rawSupplyExcept, allowedIds);
+    // App-layer wipe (matches the DB CHECK constraint): when saved mode is
+    // not 'partial' the persisted set MUST be empty. We wipe here so the
+    // audit-diff reflects what actually gets written.
+    if (proposedSupplyMode !== "partial") {
+      proposedSupplyExcept = [];
+    }
+
+    const proposed: StaffDiffSnapshot = {
       display_name: validateDisplayName(String(formData.get("display_name") ?? "")),
       role: validateRole(String(formData.get("role") ?? "")),
       color_token: validateColor(String(formData.get("color_token") ?? "")),
       // FormData encodes unchecked switches by omission; "on" means checked.
       active: formData.get("active") === "on",
+      card_fee_exempt: formData.get("card_fee_exempt") === "on",
+      supply_mode: proposedSupplyMode,
+      supply_except: proposedSupplyExcept,
     };
 
-    // Compute diff.
-    changedKeys = UPDATE_FIELD_TO_ACTION.filter(({ key }) => proposed[key] !== target[key]).map(
-      ({ key }) => key
-    );
+    // 5c: compute diff via the shared helper (Set-equality for supply_except).
+    const diff = buildChanges(target, proposed);
+    changedKeyList = diff.changes;
 
-    if (changedKeys.length === 0) {
+    if (changedKeyList.length === 0) {
       // Defense-in-depth: the UI's Save button is disabled when there's no
       // diff, so this is unreachable in practice. Surface it as a soft error
       // anyway so a direct POST fails cleanly.
       redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=no_changes`);
     }
 
-    // Evaluate the matrix once per changed field. First throw wins
-    // (deterministic order: name → role → color → active).
+    // 5d: evaluate the matrix. Per research § R11 the legacy 4 keys each
+    // have their own action label (name → role → color → active — first throw
+    // wins); the 023 trio collapses into a single `update_pay_deductions`
+    // call fired ONCE if any of the trio changed.
+    const changedSet = new Set(changedKeyList);
     for (const { key, action } of UPDATE_FIELD_TO_ACTION) {
-      if (!changedKeys.includes(key)) continue;
+      if (!changedSet.has(key)) continue;
       const newRole = action === "update_role" ? proposed.role : undefined;
       assertMutationAllowed(
         {
           operator: viewer.staff,
-          target: {
-            id: target.id,
-            role: target.role,
-            active: target.active,
-          },
+          target: { id: target.id, role: target.role, active: target.active },
           isLastOwner,
         },
         action,
         newRole
+      );
+    }
+    const payDeductionsChanged = PAY_DEDUCTION_KEYS.some((k) => changedSet.has(k));
+    if (payDeductionsChanged) {
+      assertMutationAllowed(
+        {
+          operator: viewer.staff,
+          target: { id: target.id, role: target.role, active: target.active },
+          isLastOwner,
+        },
+        "update_pay_deductions"
       );
     }
 
@@ -307,13 +367,23 @@ export async function updateStaff(formData: FormData): Promise<void> {
   }
 
   // 6: UPDATE only the changed columns. Single statement, atomic.
-  const updatePatch: Partial<StaffSnapshot> = {};
-  for (const key of changedKeys!) {
-    // TypeScript: narrowed via the constant array above.
-    (updatePatch as Record<string, unknown>)[key] = nextSnapshot![key];
+  // The patch's typed shape uses `readonly string[]` (matches StaffSnapshot)
+  // but Supabase's generated Update type expects mutable `string[]`. Build
+  // through Record<string, unknown> and cast at the call site to bridge.
+  const updatePatch: Record<string, unknown> = {};
+  for (const key of changedKeyList!) {
+    updatePatch[key] =
+      key === "supply_except"
+        ? // Spread the readonly array into a mutable one for PostgREST.
+          [...(nextSnapshot![key] as readonly string[])]
+        : nextSnapshot![key];
   }
 
-  const { error: updateErr } = await admin.from("staff").update(updatePatch).eq("id", target.id);
+  const { error: updateErr } = await admin
+    .from("staff")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .update(updatePatch as any)
+    .eq("id", target.id);
 
   if (updateErr) {
     // The last-owner trigger raises check_violation. We treat any
@@ -328,23 +398,15 @@ export async function updateStaff(formData: FormData): Promise<void> {
     redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
   }
 
-  // 7: audit row — diff-aware payload. Only changed keys appear in
-  // `changes`; `before` and `after` are always the full 4-field snapshot.
-  const changes: Record<string, [unknown, unknown]> = {};
-  for (const key of changedKeys!) {
-    changes[key] = [target[key], nextSnapshot![key]];
-  }
-  const beforeSnap: StaffSnapshot = {
-    display_name: target.display_name,
-    role: target.role,
-    color_token: target.color_token,
-    active: target.active,
-  };
+  // 7: audit row — diff-aware payload via buildChanges. The new payload shape
+  // is `{ before, after, changes }` where `changes` is the ordered key list
+  // (per research § R3) — replaces the legacy `Record<key,[before,after]>`.
+  const auditPayload = buildChanges(target, nextSnapshot!);
 
   await recordAudit("staff.updated", viewer.deviceUserId, target.id, {
-    changes,
-    before: beforeSnap,
-    after: nextSnapshot!,
+    before: auditPayload.before,
+    after: auditPayload.after,
+    changes: auditPayload.changes,
   });
 
   // 8: revalidate + redirect. If `active` flipped true → false, the redirect
@@ -352,7 +414,7 @@ export async function updateStaff(formData: FormData): Promise<void> {
   revalidatePath(STAFF_PATH);
 
   const deactivated =
-    changedKeys!.includes("active") && target.active === true && nextSnapshot!.active === false;
+    changedKeyList!.includes("active") && target.active === true && nextSnapshot!.active === false;
   if (deactivated) {
     redirect(
       `${STAFF_PATH}?selected=${encodeURIComponent(target.id)}&toast=staff_deactivated&name=${encodeURIComponent(nextSnapshot!.display_name)}`

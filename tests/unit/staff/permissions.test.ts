@@ -27,6 +27,7 @@ const ALL_ACTIONS: StaffAction[] = [
   "deactivate",
   "reactivate",
   "remove",
+  "update_pay_deductions",
 ];
 
 function ctx(opts: {
@@ -274,6 +275,55 @@ describe("permissions matrix — gate ordering: self-edit wins over last-owner",
       expect(err).toBeInstanceOf(PermissionError);
       // Per permissions.contract.md § Examples — self gate fires first.
       expect((err as PermissionError).code).toBe("self_edit_blocked");
+    }
+  });
+});
+
+// 023-staff-payout-exemptions T005 — `update_pay_deductions` is allowed for
+// self (no SELF_BLOCKED_ACTIONS entry per Clarify Q1), allowed for owner ×
+// any target, allowed for manager × non-owner, BLOCKED for manager × owner
+// (existing role-asymmetry gate fires before reaching the action's per-action
+// matrix — see research § R11).
+describe("permissions matrix — update_pay_deductions (023 feature)", () => {
+  it("allows update_pay_deductions on self (operator editing own row)", () => {
+    const c = ctx({
+      operatorRole: "owner",
+      operatorId: "same",
+      target: { role: "owner", id: "same" },
+    });
+    expect(() => assertMutationAllowed(c, "update_pay_deductions")).not.toThrow();
+  });
+
+  it("allows owner editing any tech", () => {
+    const c = ctx({
+      operatorRole: "owner",
+      operatorId: "op-A",
+      target: { role: "technician", id: "tgt-B" },
+    });
+    expect(() => assertMutationAllowed(c, "update_pay_deductions")).not.toThrow();
+  });
+
+  it("allows manager editing non-owner target", () => {
+    const c = ctx({
+      operatorRole: "manager",
+      operatorId: "op-A",
+      target: { role: "technician", id: "tgt-B" },
+    });
+    expect(() => assertMutationAllowed(c, "update_pay_deductions")).not.toThrow();
+  });
+
+  it("BLOCKS manager editing an owner (forbidden_target via role-asymmetry gate)", () => {
+    const c = ctx({
+      operatorRole: "manager",
+      operatorId: "op-A",
+      target: { role: "owner", id: "tgt-B" },
+    });
+    try {
+      assertMutationAllowed(c, "update_pay_deductions");
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(PermissionError);
+      expect((err as PermissionError).code).toBe("forbidden_target");
     }
   });
 });

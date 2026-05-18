@@ -150,6 +150,12 @@ export async function resetStaffToSeed(): Promise<void> {
     offboard_reason: null,
     last_sign_in_at: null,
     pin_reset_admin_at: null,
+    // 023-staff-payout-exemptions — reset payout-exemption columns to their
+    // defaults so a previous test that flipped a tech to exempt/partial
+    // doesn't leak into the next test's baseline.
+    card_fee_exempt: false,
+    supply_mode: "apply" as const,
+    supply_except: [] as string[],
   }));
   const { error: upErr } = await c.from("staff").upsert(SEEDED_STAFF_FULL, { onConflict: "id" });
   if (upErr) throw new Error(`staff seed upsert failed: ${upErr.message}`);

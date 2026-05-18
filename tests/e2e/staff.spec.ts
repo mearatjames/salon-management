@@ -119,8 +119,14 @@ test.describe("US1: see the roster at a glance", () => {
     expect(jordanIdx).toBeGreaterThan(mayaIdx);
     expect(samIdx).toBeGreaterThan(jordanIdx);
 
-    // Summary shows the seeded counts.
-    await expect(page.locator("[data-slot='staff-summary']")).toHaveText("3 active · 3 total");
+    // 023 § US4 replaced the standalone staff-summary block with the
+    // tabular counts on the filter chips. Assert the chip counts instead.
+    const activeChip = page.locator("[data-slot='staff-filter-chip'][data-filter='active']");
+    const allChip = page.locator("[data-slot='staff-filter-chip'][data-filter='all']");
+    const inactiveChip = page.locator("[data-slot='staff-filter-chip'][data-filter='inactive']");
+    await expect(activeChip.locator("[data-slot='staff-filter-chip-count']")).toHaveText("3");
+    await expect(allChip.locator("[data-slot='staff-filter-chip-count']")).toHaveText("3");
+    await expect(inactiveChip.locator("[data-slot='staff-filter-chip-count']")).toHaveText("0");
 
     // Right panel renders the empty-state heading.
     await expect(page.locator("[data-slot='staff-empty-state']")).toContainText(
@@ -147,30 +153,33 @@ test.describe("US1: see the roster at a glance", () => {
     );
   });
 
-  test("(d) Show-inactive toggle reveals an inactive seeded row when present", async ({ page }) => {
+  test("(d) Filter chips reveal an inactive seeded row when present", async ({ page }) => {
     // Add a fourth, inactive row directly via the service-role client so the
-    // toggle has something visible to flip. Cleaned up by the next
+    // chips have something visible to flip to. Cleaned up by the next
     // beforeEach via resetStaffToSeed() (which deletes any non-seed rows).
     await insertInactiveSeed();
 
     await signInAsMaya(page);
 
-    // By default: 3 active rows; summary reads "3 active · 4 total".
+    // Default filter is "Active": 3 active rows; chips show 4 / 3 / 1.
     const rows = page.locator("[data-slot='staff-table'] [data-staff-id]");
     await expect(rows).toHaveCount(3);
-    await expect(page.locator("[data-slot='staff-summary']")).toHaveText("3 active · 4 total");
+    const allChip = page.locator("[data-slot='staff-filter-chip'][data-filter='all']");
+    const activeChip = page.locator("[data-slot='staff-filter-chip'][data-filter='active']");
+    const inactiveChip = page.locator("[data-slot='staff-filter-chip'][data-filter='inactive']");
+    await expect(allChip.locator("[data-slot='staff-filter-chip-count']")).toHaveText("4");
+    await expect(activeChip.locator("[data-slot='staff-filter-chip-count']")).toHaveText("3");
+    await expect(inactiveChip.locator("[data-slot='staff-filter-chip-count']")).toHaveText("1");
 
-    // Toggle Show inactive on.
-    const toggle = page.locator("[data-slot='show-inactive-toggle'] [data-slot='switch']");
-    await toggle.click();
-
+    // Click All — Iris becomes visible.
+    await allChip.click();
     await expect(rows).toHaveCount(4);
     await expect(
       page.locator("[data-staff-id='10000000-0000-0000-0000-000000000099']")
     ).toBeVisible();
 
-    // Toggle off — Iris disappears again.
-    await toggle.click();
+    // Back to Active — Iris disappears again.
+    await activeChip.click();
     await expect(rows).toHaveCount(3);
   });
 });
@@ -202,14 +211,14 @@ test.describe("US2: add a new staff member with a PIN", () => {
     await signInAsMaya(page);
 
     // Wizard not yet visible.
-    await expect(page.locator("[data-slot='add-staff-wizard']")).toHaveCount(0);
+    await expect(page.locator("[data-slot='add-staff-wizard-sheet']")).toHaveCount(0);
 
     // Open wizard.
     await page.locator("[data-slot='add-staff-button']").click();
-    await expect(page.locator("[data-slot='add-staff-wizard']")).toBeVisible();
+    await expect(page.locator("[data-slot='add-staff-wizard-sheet']")).toBeVisible();
 
     // Step 1 — Next disabled until name length ≥ 2.
-    const nextBtn = page.locator("[data-slot='wizard-next']");
+    const nextBtn = page.locator("[data-slot='add-staff-wizard-footer-primary']");
     await expect(nextBtn).toBeDisabled();
 
     await page.locator("[data-slot='wizard-name-input']").fill("M");
@@ -278,7 +287,7 @@ test.describe("US2: add a new staff member with a PIN", () => {
     await signInAsMaya(page);
     await page.locator("[data-slot='add-staff-button']").click();
     await page.locator("[data-slot='wizard-name-input']").fill("Test Staff");
-    await page.locator("[data-slot='wizard-next']").click();
+    await page.locator("[data-slot='add-staff-wizard-footer-primary']").click();
     await expect(page.locator("[data-slot='wizard-pin-step']")).toBeVisible();
 
     // Enter 1 1 1 1.
@@ -371,7 +380,7 @@ test.describe("US3: edit a staff member", () => {
     await page.goto("/settings/staff?selected=10000000-0000-0000-0000-000000000003");
 
     const nameInput = page.locator("[data-slot='edit-panel-name-input']");
-    const preview = page.locator("[data-slot='edit-panel-preview-name']");
+    const preview = page.locator("[data-slot='staff-panel-profile-name']");
 
     // Live preview matches the saved name on first render.
     await expect(preview).toHaveText("Sam Chen");
@@ -434,12 +443,16 @@ test.describe("US3: edit a staff member", () => {
     ).toContainText("Sam C.");
 
     // Audit: exactly one `staff.updated` row with diff-aware payload.
+    // 023-staff-payout-exemptions reshaped `payload.changes` from
+    // `{ key: [before, after] }` to an ordered `string[]` of changed keys
+    // (see `app/(studio)/settings/staff/_audit-diff.ts` § STAFF_DIFF_KEYS),
+    // with `payload.before` / `payload.after` holding the scoped projections.
     const rows = await getAuditLogRowsSince(auditCursor, "staff.updated");
     expect(rows).toHaveLength(1);
     const audit = rows[0];
     const payload = (audit.payload ?? {}) as Record<string, unknown>;
-    const changes = payload.changes as Record<string, [unknown, unknown]>;
-    expect(changes).toEqual({ display_name: ["Sam Chen", "Sam C."] });
+    const changes = payload.changes as readonly string[];
+    expect(changes).toEqual(["display_name"]);
     expect(payload.before).toMatchObject({ display_name: "Sam Chen" });
     expect(payload.after).toMatchObject({ display_name: "Sam C." });
     // No authorizing_staff_id key (override removed per Clarifications Q1).
@@ -454,13 +467,13 @@ test.describe("US3: edit a staff member", () => {
 
     const nameInput = page.locator("[data-slot='edit-panel-name-input']");
     await nameInput.fill("Discard Me");
-    await expect(page.locator("[data-slot='edit-panel-preview-name']")).toHaveText("Discard Me");
+    await expect(page.locator("[data-slot='staff-panel-profile-name']")).toHaveText("Discard Me");
 
     // Switch to Jordan — same as clicking Jordan's row in the table; the
     // panel re-keys on target.id and discards the draft silently.
     await page.goto("/settings/staff?selected=10000000-0000-0000-0000-000000000002");
 
-    await expect(page.locator("[data-slot='edit-panel-preview-name']")).toHaveText("Jordan Lee");
+    await expect(page.locator("[data-slot='staff-panel-profile-name']")).toHaveText("Jordan Lee");
     await expect(nameInput).toHaveValue("Jordan Lee");
 
     // No staff.updated audit row was written (we never saved).
@@ -709,16 +722,15 @@ test.describe("US5: deactivate, reactivate, remove", () => {
   }) => {
     await signInAsMaya(page);
 
-    // Flip Show inactive on so the deactivated row stays visible. Same
-    // toggle-selector idiom as US1 (d).
-    const toggle = page.locator("[data-slot='show-inactive-toggle'] [data-slot='switch']");
-    await toggle.click();
+    // 023 § US4 — the show-inactive Switch is gone. Click the "All" filter
+    // chip so Sam's row stays visible after the deactivation.
+    await page.locator("[data-slot='staff-filter-chip'][data-filter='all']").click();
 
     // Select Sam.
     await page.goto(`/settings/staff?selected=${SAM_ID}`);
 
     // Click Deactivate — confirm dialog appears with the correct copy.
-    const deactivateBtn = page.locator("[data-slot='edit-panel-deactivate']");
+    const deactivateBtn = page.locator("[data-slot='danger-zone-deactivate']");
     await expect(deactivateBtn).toBeEnabled();
     await deactivateBtn.click();
 
@@ -759,25 +771,26 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     expect(auditRows[0].payload).toEqual({});
     expect(auditRows[0].entity_id).toBe(SAM_ID);
 
-    // Toggle Show inactive again so Sam's now-inactive row is visible
-    // (sessionStorage persists across the redirect but a fresh page render
-    // may re-read it — double-tap is harmless if already on).
-    const toggleAfter = page.locator("[data-slot='show-inactive-toggle'] [data-slot='switch']");
-    const ariaChecked = await toggleAfter.getAttribute("aria-checked");
-    if (ariaChecked !== "true") {
-      await toggleAfter.click();
+    // 023 § US4 — click the All filter chip again so Sam's now-inactive
+    // row is visible (localStorage persists across the redirect but a fresh
+    // render may re-read the chip selection — re-clicking is idempotent).
+    const allChip = page.locator("[data-slot='staff-filter-chip'][data-filter='all']");
+    if ((await allChip.getAttribute("data-selected")) !== "true") {
+      await allChip.click();
     }
 
-    // Sam's row still visible with Inactive badge; panel Active switch off;
-    // footer button is now Reactivate (not Deactivate).
+    // Sam's row still visible; the status dot conveys inactive (US5 row
+    // redesign — no literal "Active"/"Inactive" text in the row). Assert via
+    // the row's `data-active="false"` attribute instead of text. Panel Active
+    // switch is off; footer button is now Reactivate (not Deactivate).
     const samRow = page.locator(`[data-slot='staff-table'] [data-staff-id='${SAM_ID}']`);
     await expect(samRow).toBeVisible();
-    await expect(samRow).toContainText("Inactive");
-    await expect(page.locator("[data-slot='edit-panel-reactivate']")).toBeVisible();
-    await expect(page.locator("[data-slot='edit-panel-deactivate']")).toHaveCount(0);
+    await expect(samRow).toHaveAttribute("data-active", "false");
+    await expect(page.locator("[data-slot='danger-zone-reactivate']")).toBeVisible();
+    await expect(page.locator("[data-slot='danger-zone-deactivate']")).toHaveCount(0);
 
     // Click Reactivate (single-click; no confirm dialog).
-    await page.locator("[data-slot='edit-panel-reactivate']").click();
+    await page.locator("[data-slot='danger-zone-reactivate']").click();
     await page.waitForURL(/\/settings\/staff\?selected=.+&toast=changes_saved/, {
       timeout: 10_000,
     });
@@ -788,9 +801,10 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     expect(auditRows[0].payload).toEqual({});
     expect(auditRows[0].entity_id).toBe(SAM_ID);
 
-    // Row is Active again; the panel re-shows the Deactivate button.
-    await expect(samRow).toContainText("Active");
-    await expect(page.locator("[data-slot='edit-panel-deactivate']")).toBeVisible();
+    // Row is Active again (`data-active="true"`); the panel re-shows
+    // the Deactivate button.
+    await expect(samRow).toHaveAttribute("data-active", "true");
+    await expect(page.locator("[data-slot='danger-zone-deactivate']")).toBeVisible();
   });
 
   test("(b) remove Sam: confirm dialog copy, row gone, panel returns to empty state, audit snapshots name + role", async ({
@@ -800,7 +814,7 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     await page.goto(`/settings/staff?selected=${SAM_ID}`);
 
     // Click Remove — dialog appears with the correct copy.
-    const removeBtn = page.locator("[data-slot='edit-panel-remove']");
+    const removeBtn = page.locator("[data-slot='danger-zone-remove']");
     await expect(removeBtn).toBeEnabled();
     await removeBtn.click();
 
@@ -854,7 +868,7 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     await page.goto(`/settings/staff?selected=${SAM_ID}`);
 
     // Open the dialog.
-    await page.locator("[data-slot='edit-panel-deactivate']").click();
+    await page.locator("[data-slot='danger-zone-deactivate']").click();
     const dialog = page.locator("[data-slot='confirm-dialog']");
     await expect(dialog).toBeVisible();
 
@@ -869,9 +883,10 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     expect(auditRows).toHaveLength(0);
 
     // Sam's row is still active in the table; footer still shows Deactivate.
+    // US5 row redesign — no literal "Active" text; assert via `data-active`.
     const samRow = page.locator(`[data-slot='staff-table'] [data-staff-id='${SAM_ID}']`);
-    await expect(samRow).toContainText("Active");
-    await expect(page.locator("[data-slot='edit-panel-deactivate']")).toBeVisible();
+    await expect(samRow).toHaveAttribute("data-active", "true");
+    await expect(page.locator("[data-slot='danger-zone-deactivate']")).toBeVisible();
   });
 });
 
@@ -986,8 +1001,8 @@ test.describe("US6: restrict who can manage staff", () => {
     await expect(page.locator("[data-slot='edit-panel-pin-button']")).toBeDisabled();
     await expect(page.locator("[data-slot='edit-panel-save']")).toBeDisabled();
     // Maya is active, so the lifecycle button is the Deactivate variant.
-    await expect(page.locator("[data-slot='edit-panel-deactivate']")).toBeDisabled();
-    await expect(page.locator("[data-slot='edit-panel-remove']")).toBeDisabled();
+    await expect(page.locator("[data-slot='danger-zone-deactivate']")).toBeDisabled();
+    await expect(page.locator("[data-slot='danger-zone-remove']")).toBeDisabled();
   });
 
   test("(c) manager bypass POST against Maya → forbidden_target + zero audit rows", async ({
