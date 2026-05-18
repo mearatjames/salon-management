@@ -8,6 +8,14 @@
 
 **Input**: User description: "Supply types catalog + Services refactor from supply_label to supply_type_id. 021-services-deductions (PR #22) shipped services.supply_label as free-text. The newer design prototype models supply types as a first-class entity so renames flow through every consumer (services, EditPolicySheet, future Staff Settings exemptions) and identical types are guaranteed identical via stable ids. This feature ships the catalog + refactors 021's per-service supply column to reference it. NO checkout-time wiring yet (still Phase 3); NO per-staff exemptions yet (023 picks that up)."
 
+## Clarifications
+
+### Session 2026-05-17
+
+- Q: After the migration backfills `services.supply_type_id` from the old `services.supply_label`, what happens to the `supply_label` column itself? → A: Drop it in the same migration after backfill verification. Catalog is the single source of truth; one writer, no dual-write surface for renames to keep in sync.
+- Q: How should the one-time backfill migration interact with the audit log, given SC-007 says "no catalog mutation can succeed without an audit row" and the migration has no operator? → A: Migration writes one `supply_type.created` audit row per seeded type with a system actor (`actor = 'system:migration'`, `actor_user_id = null`). SC-007 invariant holds uniformly; audit log explains seeded types.
+- Q: What are the validation rules for a supply-type display name (length, character set, whitespace)? → A: Match the existing adjacent surfaces — trim leading/trailing whitespace, min 2 chars (matching `services.name`), max 64 chars (matching the prior `supply_label` cap from 021), free Unicode allowed. Case-insensitive uniqueness across active types (already specified). The migration normalizes each legacy label the same way before deduping.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Pick a supply type from a managed list when editing a service (Priority: P1)
@@ -109,7 +117,7 @@ Operators should never see "broken" supply data after the migration. Every servi
 
 ### Functional Requirements
 
-- **FR-001**: System MUST provide a catalog of named supply types with stable identifiers, where each type has at minimum a display name and an archive status.
+- **FR-001**: System MUST provide a catalog of named supply types with stable identifiers, where each type has at minimum a display name and an archive status. The display name MUST be trimmed of leading/trailing whitespace, between 2 and 64 characters long, and may contain any Unicode (matching the existing `services.name` minimum and the prior `supply_label` cap from 021).
 - **FR-002**: System MUST replace the free-text supply label on services with a reference to a supply type from the catalog. Services that have a supply configured MUST reference exactly one type; services without supply MUST reference no type.
 - **FR-003**: Owners and managers MUST be able to create a new supply type inline from the service edit panel's supply-type picker, in a single interaction that both creates the type and selects it on the current service draft.
 - **FR-004**: System MUST reject creating a new supply type whose name case-insensitively matches an existing active type, falling back to selecting the existing type so duplicates can't be introduced from the picker.
@@ -119,16 +127,16 @@ Operators should never see "broken" supply data after the migration. Every servi
 - **FR-008**: Owners and managers MUST be able to reactivate an archived supply type subject to active-name uniqueness.
 - **FR-009**: The supply-type picker MUST list only active types for new selections; archived types MUST NOT appear in the picker (but services that historically referenced them MUST still display their name).
 - **FR-010**: The Edit Policy "Supply types" section MUST display each type's usage count (number of active services referencing it) and, on expansion, an indented list of referencing services that the operator can click to jump to that service's edit panel.
-- **FR-011**: System MUST migrate every distinct case-insensitive supply-label value currently present on services into a seeded set of supply types, set each affected service's `supply_type_id` to point at its matching type, and [NEEDS CLARIFICATION: drop the `supply_label` column after backfill (recommended — catalog is source of truth) or keep it as a denormalized read cache (faster reads, dual-write surface to maintain)?].
+- **FR-011**: System MUST migrate every distinct case-insensitive supply-label value currently present on services into a seeded set of supply types, set each affected service's `supply_type_id` to point at its matching type, and drop the `services.supply_label` column in the same migration after backfill verification. Post-migration, the catalog is the only source of supply names; no denormalized label cache is maintained on services.
 - **FR-012**: System MUST enforce at the database layer that a service's supply pair `(supply_amount_cents, supply_type_id)` is both-or-neither: both null when Supply is off, or both non-null with `supply_amount_cents` in `[1, 5000]` when Supply is on.
 - **FR-013**: System MUST authorize all supply-type catalog mutations (create / rename / archive / reactivate) to owners and managers only; technicians and front-desk operators MUST be able to read the catalog but the controls MUST be disabled with a tooltip mirroring the existing services-edit gate.
-- **FR-014**: Every successful catalog mutation (create / rename / archive / reactivate) MUST write an audit log row that names the operator, the supply type, and the before/after values where applicable.
+- **FR-014**: Every successful catalog mutation (create / rename / archive / reactivate) MUST write an audit log row that names the operator (or `'system:migration'` when written by the one-time backfill), the supply type, and the before/after values where applicable. The backfill migration MUST write one `supply_type.created` row per seeded type.
 - **FR-015**: Every catalog mutation that changes the visible name or active status of a type MUST cause both `/services` and `/settings/staff` to revalidate so dependent pages see the change on next render.
 - **FR-016**: When a service edit panel saves with a supply-type id that no longer exists in the catalog (defensive — created by a race), the save MUST be rejected with a hint asking the operator to re-pick.
 
 ### Key Entities
 
-- **Supply Type**: A named, archivable category of consumable cost that services can charge against (e.g., "GelX tips & gel", "Chrome powder"). Each type has a stable identifier that survives renames, a display name (unique across active types, case-insensitively), an archived flag, and timestamp metadata. The display name is the only user-visible field; the identifier is what services and future per-staff exemptions reference.
+- **Supply Type**: A named, archivable category of consumable cost that services can charge against (e.g., "GelX tips & gel", "Chrome powder"). Each type has a stable identifier that survives renames, a display name (trimmed, 2–64 chars, free Unicode, unique across active types case-insensitively), an archived flag, and timestamp metadata. The display name is the only user-visible field; the identifier is what services and future per-staff exemptions reference.
 - **Service-to-SupplyType Reference**: A nullable link from a service to one supply type. Pairs with the existing per-service supply amount: both must be present (supply is on for the service) or both must be null (supply is off). The reference is by identifier, not by name, so renames don't cascade through the services table.
 
 ## Success Criteria *(mandatory)*
@@ -152,3 +160,4 @@ Operators should never see "broken" supply data after the migration. Every servi
 - Per-staff exemption against supply types (the consumer noted in the prompt) lands in feature 023 and is explicitly out of scope here. This feature delivers a catalog that 023 can reference by stable id.
 - Checkout-time application of supply deductions stays Phase 3 of the deductions roadmap and is out of scope. Capture-and-display only, consistent with 021's posture.
 - The audit log schema and contract from 021 (`audit_log.action = 'settings.updated'`, `entity = 'service'`) can be extended to a new entity value `'supply_type'` without a schema migration, since `audit_log.entity` is already free-text.
+- The audit log row written by the backfill migration uses `actor = 'system:migration'` (and `actor_user_id = null`). If the existing `audit_log` schema lacks a non-FK actor channel, the migration adds the minimum surface needed (e.g., a nullable `actor_label` text column) as part of the same migration — surfaced in the plan, not assumed away.
