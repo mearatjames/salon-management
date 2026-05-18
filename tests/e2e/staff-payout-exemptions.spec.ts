@@ -579,7 +579,7 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
     // Picker hides immediately in draft state.
     await expect(page.locator("[data-slot='pay-deductions-picker']")).toHaveCount(0);
     await expect(page.locator("[data-slot='pay-deductions-supply-row']")).toContainText(
-      "Exempt — no supply costs deducted."
+      "Exempt — no supply costs ever deducted, on any service."
     );
 
     await page.locator("[data-slot='edit-panel-save']").click();

@@ -1062,17 +1062,18 @@ const US3_TICKET_IDS: readonly string[] = Array.from(
 );
 
 // Slot i (1…15) → minutes-ago: slot 1 is the oldest (75 min), slot 15 the
-// newest (5 min). All instants strictly in the past, well inside today's
-// LA window even at very-early-morning runs (75 min before "now" can wrap
-// into yesterday only when local time is between 00:00 and 01:15 LA).
-// That edge is tolerated: the dashboard window is "today in LA", and the
-// suite seeding window matches — if the test runs between 00:00 and 01:15
-// LA, some slots may technically be yesterday and the assertion (a) would
-// fall short. In practice Playwright runs against `Pacific/Los_Angeles`
-// servers or in CI containers where this corner is rare; we accept the
-// trade-off to stay inside one calendar day with a simple stagger.
-function minutesAgoUs3(minutes: number): string {
-  return new Date(Date.now() - minutes * 60 * 1000).toISOString();
+// newest (5 min). All instants are clamped to today's LA window so the
+// dashboard's "today in LA" filter sees every row, even when the suite
+// runs within ~75 minutes of LA midnight (CI on UTC hosts crosses LA
+// midnight ~07:00–08:00 UTC). When the wall clock is close to midnight
+// the spread compresses, but the row count and ordering still hold.
+function us3SlotTimestamp(slotIndex0Based: number): string {
+  const laMidnight = laTodayMidnightUtcMs();
+  const now = Date.now();
+  const lo = Math.max(laMidnight + 60_000, now - 75 * 60_000);
+  const hi = now - 30_000;
+  const step = (hi - lo) / Math.max(1, US3_TICKET_COUNT - 1);
+  return new Date(lo + slotIndex0Based * step).toISOString();
 }
 
 async function insertUs3Fixture(): Promise<void> {
@@ -1081,9 +1082,9 @@ async function insertUs3Fixture(): Promise<void> {
   const svcClassicMani = "20000000-0000-0000-0000-000000000001";
 
   const tickets = US3_TICKET_IDS.map((id, i) => {
-    // slot 1 → 75 min ago; slot 15 → 5 min ago. 5-minute stagger.
-    const minutes = 75 - i * 5;
-    const iso = minutesAgoUs3(minutes);
+    // slot 0 = oldest, slot US3_TICKET_COUNT-1 = newest. All inside
+    // today's LA window (see us3SlotTimestamp).
+    const iso = us3SlotTimestamp(i);
     return {
       id,
       status: "paid",
@@ -1106,7 +1107,6 @@ async function insertUs3Fixture(): Promise<void> {
     price_unconfirmed: false,
   }));
   const payments = US3_TICKET_IDS.map((id, i) => {
-    const minutes = 75 - i * 5;
     return {
       ticket_id: id,
       method: "card",
@@ -1115,7 +1115,7 @@ async function insertUs3Fixture(): Promise<void> {
       tip_cents: 0,
       status: "succeeded",
       taken_by_staff_id: owner,
-      processed_at: minutesAgoUs3(minutes),
+      processed_at: us3SlotTimestamp(i),
     };
   });
 
