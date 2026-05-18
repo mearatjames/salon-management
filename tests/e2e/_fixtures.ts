@@ -230,10 +230,7 @@ function workerDisplayNamePattern(workerIndex: number): string {
   return `% [w${workerIndex}]%`;
 }
 
-async function deleteExtras(
-  workerIndex: number,
-  trioIds: ReadonlyArray<string>
-): Promise<void> {
+async function deleteExtras(workerIndex: number, trioIds: ReadonlyArray<string>): Promise<void> {
   const c = client();
   const inList = trioIds.map((id) => `"${id}"`).join(",");
   const { error } = await c
@@ -246,10 +243,7 @@ async function deleteExtras(
   }
 }
 
-async function teardownWorker(
-  workerIndex: number,
-  trioIds: ReadonlyArray<string>
-): Promise<void> {
+async function teardownWorker(workerIndex: number, trioIds: ReadonlyArray<string>): Promise<void> {
   const c = client();
   // Delete the trio by id (small, deterministic) plus any extras still
   // matching the worker's display_name suffix.
@@ -264,9 +258,7 @@ async function teardownWorker(
   }
   const { error: trioErr } = await c.from("staff").delete().in("id", trioIds);
   if (trioErr) {
-    throw new Error(
-      `fixture staff teardown (trio) failed (w${workerIndex}): ${trioErr.message}`
-    );
+    throw new Error(`fixture staff teardown (trio) failed (w${workerIndex}): ${trioErr.message}`);
   }
   // Tear down auth.users by id. The admin API doesn't take a filter, so
   // we delete the two known role ids — "not found" is fine (already gone).

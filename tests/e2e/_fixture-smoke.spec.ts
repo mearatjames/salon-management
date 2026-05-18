@@ -49,10 +49,7 @@ test.describe("Worker-scoped staff fixture (smoke)", () => {
   test.beforeAll(async () => {
     supabaseUp = await supabaseIsReachable();
     if (!supabaseUp) {
-      test.skip(
-        true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping fixture smoke specs."
-      );
+      test.skip(true, "Supabase not reachable at 127.0.0.1:54321 — skipping fixture smoke specs.");
     }
   });
 
