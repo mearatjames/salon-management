@@ -89,7 +89,14 @@ export type AuditAction =
   | "supply_type.created"
   | "supply_type.renamed"
   | "supply_type.archived"
-  | "supply_type.reactivated";
+  | "supply_type.reactivated"
+  // Added by issue #27 (entity_type "payment") — emitted by
+  // pos_record_card_payment when a late capture lands on a discarded
+  // ticket (auto-recovers it to paid) or on a ticket in some other
+  // unexpected state (orphan capture — payment row succeeds, ticket
+  // untouched).
+  | "payment.captured_after_discard"
+  | "payment.capture_orphaned";
 
 export function deriveEntityType(
   action: AuditAction
