@@ -3,13 +3,20 @@
 # Runs on every PR and on direct pushes to main. PR pushes auto-cancel any
 # in-flight run for the same ref so iterative pushes don't burn CI minutes.
 #
-# The job boots a real Supabase stack (Postgres + GoTrue + PostgREST +
-# Realtime + Storage + Mailpit) via the official supabase/setup-cli action,
-# applies migrations + seed, then runs Playwright against it.
+# Structure (see issue #32):
+#   static  ┐
+#   unit    ├─►  quality-gates (umbrella, required check)
+#   build ──┴── e2e (matrix: shard 1..4)
 #
-# Note: Docker image caching was tried but blew past the runner's 14 GB disk
-# limit (images are ~4 GB on disk + ~4 GB tarball). Cold pull each run is
-# ~3 min, which is acceptable.
+# `static`, `unit`, and `build` run in parallel. `e2e` waits on `build` so
+# it can download the prebuilt `.next/` artifact and skip recompiling.
+# Each e2e shard boots its own Supabase stack (parallel boots don't
+# compound — they all start at the same time on separate runners).
+#
+# Note: Supabase Docker image caching was tried but blew past the runner's
+# 14 GB disk limit (images are ~4 GB on disk + ~4 GB tarball). Cold pull
+# each run is ~3 min, which is acceptable. Revisit after issue #34 trims
+# unused Supabase services.
 name: CI
 
 on:
@@ -22,7 +29,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality-gates:
+  static:
+    name: Static checks (lint + format + types)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -46,11 +54,83 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Unit tests
         run: npm test
 
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Build
         run: npm run build
+
+      # Hand off the prebuilt Next.js output to the e2e shards so each
+      # one doesn't re-run `npm run build`. .next/cache is excluded —
+      # it's only useful for incremental rebuilds, not `npm run start`.
+      - name: Upload .next build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-build
+          path: |
+            .next
+            !.next/cache
+          retention-days: 1
+          if-no-files-found: error
+
+  e2e:
+    name: E2E (shard ${{ matrix.shard }}/${{ strategy.job-total }})
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download .next build output
+        uses: actions/download-artifact@v4
+        with:
+          name: next-build
+          path: .next
 
       # --- Supabase boot for e2e ----------------------------------------------
       - name: Install Supabase CLI
@@ -92,16 +172,69 @@ jobs:
             echo "CRON_SECRET=ci-placeholder-cron-secret"
           } >> $GITHUB_ENV
 
-      - name: Install Playwright browsers
+      # Cache the Playwright browser install keyed on the resolved
+      # @playwright/test version pinned in package-lock.json. On a hit,
+      # we skip `--with-deps` (system libs are already provisioned on
+      # ubuntu-latest images) and just run `playwright install` to ensure
+      # the binary symlinks are in place — fast no-op when files exist.
+      - name: Resolve Playwright version
+        id: pw-version
+        run: |
+          version=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
+
+      - name: Install Playwright browsers (with system deps)
+        if: steps.pw-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
-      - name: End-to-end tests
-        run: npm run test:e2e
+      - name: Install Playwright browsers (cached — verify install)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install chromium
+
+      - name: End-to-end tests (shard ${{ matrix.shard }}/${{ strategy.job-total }})
+        run: npx playwright test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
       - name: Upload Playwright report on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-shard-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 7
+
+  quality-gates:
+    name: Quality gates
+    runs-on: ubuntu-latest
+    needs: [static, unit, build, e2e]
+    if: always()
+    steps:
+      # Umbrella check: succeeds only when every required job succeeded.
+      # Point branch-protection's required-check rule at this job name so
+      # the matrix shard fan-out doesn't have to be enumerated there.
+      - name: Verify all required jobs succeeded
+        run: |
+          results=(
+            "static:${{ needs.static.result }}"
+            "unit:${{ needs.unit.result }}"
+            "build:${{ needs.build.result }}"
+            "e2e:${{ needs.e2e.result }}"
+          )
+          fail=0
+          for entry in "${results[@]}"; do
+            name="${entry%%:*}"
+            result="${entry##*:}"
+            if [[ "$result" != "success" ]]; then
+              echo "::error::Required job '$name' did not succeed (result: $result)"
+              fail=1
+            else
+              echo "Required job '$name' succeeded"
+            fi
+          done
+          exit $fail
