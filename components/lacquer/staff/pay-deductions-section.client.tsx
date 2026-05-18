@@ -24,6 +24,7 @@
 // (handled in `updateStaff` per T016).
 
 import Link from "next/link";
+import { CreditCard, Info, Package } from "lucide-react";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
@@ -60,11 +61,16 @@ export type PayDeductionsSectionProps = {
   disabled?: boolean;
 };
 
-const SUPPLY_MODE_SUBTITLE: Record<StaffSupplyMode, string | null> = {
-  apply: "All supply costs deducted from payout.",
-  exempt: "Exempt — no supply costs deducted.",
-  partial: null,
-};
+function supplyModeSubtitle(mode: StaffSupplyMode, firstName: string): string {
+  switch (mode) {
+    case "apply":
+      return "Per-service supply cost deducted from payout when configured.";
+    case "partial":
+      return `Apply most supply costs, but exempt ${firstName} from specific types.`;
+    case "exempt":
+      return "Exempt — no supply costs ever deducted, on any service.";
+  }
+}
 
 export function PayDeductionsSection({
   target,
@@ -73,24 +79,28 @@ export function PayDeductionsSection({
   onDraftChange,
   disabled,
 }: PayDeductionsSectionProps) {
+  const firstName = target.display_name.split(" ")[0] ?? target.display_name;
   const cardFeeSubtitle = draft.cardFeeExempt
     ? "Exempt — card fee never deducted from payout."
-    : `${formatDefaultCardFeeLabel()} per card-paid service is deducted from this tech's payout.`;
-
-  const supplyModeSubtitle = SUPPLY_MODE_SUBTITLE[draft.supplyMode];
+    : `Standard ${formatDefaultCardFeeLabel()} deducted on card-paid services.`;
+  const supplyRowSubtitle = supplyModeSubtitle(draft.supplyMode, firstName);
 
   return (
     <section className="pay-deductions-section" data-slot="pay-deductions-section">
-      <header className="pay-deductions-section-header">
+      <div className="pay-deductions-section-header">
         <h3 className="pay-deductions-section-title">Pay &amp; deductions</h3>
-      </header>
+      </div>
 
-      <div className="pay-deductions-toggle-row" data-slot="pay-deductions-card-fee-row">
-        <div className="pay-deductions-toggle-row-text">
-          <label htmlFor="pay-deductions-card-fee" className="pay-deductions-toggle-row-label">
+      {/* Card processing fee row — flush, leading icon, switch on the right. */}
+      <div className="staff-panel-row" data-slot="pay-deductions-card-fee-row">
+        <span className="staff-panel-row-icon" aria-hidden="true">
+          <CreditCard size={16} strokeWidth={1.5} />
+        </span>
+        <div className="staff-panel-row-text">
+          <label htmlFor="pay-deductions-card-fee" className="staff-panel-row-label">
             Card processing fee
           </label>
-          <p className="pay-deductions-toggle-row-subtitle">{cardFeeSubtitle}</p>
+          <p className="staff-panel-row-subtitle">{cardFeeSubtitle}</p>
         </div>
         <Switch
           id="pay-deductions-card-fee"
@@ -104,28 +114,36 @@ export function PayDeductionsSection({
         />
       </div>
 
-      {/* Hidden input mirrors the `name="active"` pattern in edit-panel.client
-        — the updateStaff action reads `formData.get('card_fee_exempt') === 'on'`. */}
+      {/* Hidden input — the updateStaff action reads
+        `formData.get('card_fee_exempt') === 'on'`. */}
       <input type="hidden" name="card_fee_exempt" value={draft.cardFeeExempt ? "on" : ""} />
 
-      {/* ── Supply deductions row (US2) ──────────────────────────────────── */}
-      <div className="pay-deductions-supply-row" data-slot="pay-deductions-supply-row">
-        <div className="pay-deductions-toggle-row-text">
-          <span className="pay-deductions-toggle-row-label">Supply deductions</span>
-          {supplyModeSubtitle ? (
-            <p className="pay-deductions-toggle-row-subtitle">{supplyModeSubtitle}</p>
-          ) : null}
+      {/* Supply deductions row — flush, leading icon, segmented control inline
+        on the right (wraps below on narrow widths per canonical prototype).
+        Border-bottom: present in apply/exempt (where supply row IS the last
+        row); absent in partial (the picker zone below has its own border-top
+        and supplies the visual break — canonical line 563). */}
+      <div
+        className={`staff-panel-row staff-panel-row--wrap ${
+          draft.supplyMode === "partial" ? "staff-panel-row--last" : ""
+        }`}
+        data-slot="pay-deductions-supply-row"
+      >
+        <span className="staff-panel-row-icon" aria-hidden="true">
+          <Package size={16} strokeWidth={1.5} />
+        </span>
+        <div className="staff-panel-row-text">
+          <span className="staff-panel-row-label">Supply deductions</span>
+          <p className="staff-panel-row-subtitle">{supplyRowSubtitle}</p>
         </div>
         <ToggleGroup
           type="single"
           value={draft.supplyMode}
           onValueChange={(next: string) => {
             // shadcn's ToggleGroup with `type="single"` fires with empty
-            // string on deselect (the user clicks the already-active option).
-            // Guard against that — keep the previous mode in draft state.
-            // Per Clarify Q4 this MUST NOT clear `draft.supplyExcept`; the
-            // ticks live independently and only the save action's submitted
-            // FormData wipes them server-side when saved mode ≠ partial.
+            // string on deselect; guard against that. Per Clarify Q4 this
+            // MUST NOT clear `draft.supplyExcept` — only the save action's
+            // submitted FormData wipes them server-side when saved mode ≠ partial.
             if (next === "apply" || next === "partial" || next === "exempt") {
               onDraftChange({ supplyMode: next });
             }
@@ -170,68 +188,83 @@ export function PayDeductionsSection({
         mode ≠ partial so leftover ticks from a draft round-trip never
         persist. */}
       {draft.supplyMode === "partial" ? (
-        <div className="pay-deductions-picker" data-slot="pay-deductions-picker">
-          {supplyCatalog.types.length === 0 ? (
-            <div className="pay-deductions-picker-empty" data-slot="pay-deductions-picker-empty">
-              No supply types defined yet. Add some on the{" "}
-              <Link href="/services">Services page</Link> first.
-            </div>
-          ) : (
-            <>
-              {supplyCatalog.types.map((type) => {
-                const isTicked = draft.supplyExcept.includes(type.id);
-                const usageHint =
-                  type.service_count === 0
-                    ? "Unused — no services reference this type yet."
-                    : `${type.service_count} services · typically $${(
-                        (type.sample_amount_cents ?? 0) / 100
-                      ).toFixed(2)} per ticket`;
-                return (
-                  <label
-                    key={type.id}
-                    htmlFor={`pay-deductions-picker-${type.id}`}
-                    className="pay-deductions-picker-row"
-                    data-slot="pay-deductions-picker-row"
-                    data-name={type.name}
-                  >
-                    <Checkbox
-                      id={`pay-deductions-picker-${type.id}`}
-                      data-slot="pay-deductions-picker-checkbox"
-                      checked={isTicked}
-                      onCheckedChange={(checked) => {
-                        // Radix Checkbox can emit `"indeterminate"` — we
-                        // only care about boolean transitions here.
-                        const isCheckedBool = checked === true;
-                        const next = isCheckedBool
-                          ? [...draft.supplyExcept, type.id]
-                          : draft.supplyExcept.filter((id) => id !== type.id);
-                        onDraftChange({ supplyExcept: next });
-                      }}
-                      disabled={disabled}
-                      aria-label={type.name}
-                    />
-                    <div className="pay-deductions-picker-row-text">
-                      <span className="pay-deductions-picker-row-name">
-                        {type.name}
-                        {type.archived ? (
-                          <span className="staff-archived-pill" data-slot="staff-archived-pill">
-                            Archived
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="pay-deductions-picker-row-hint">{usageHint}</span>
-                    </div>
-                  </label>
-                );
-              })}
-              {draft.supplyExcept.length === 0 ? (
-                <p className="pay-deductions-picker-hint" data-slot="pay-deductions-picker-hint">
-                  No supply types selected — all costs will be deducted normally until you tick at
-                  least one.
-                </p>
-              ) : null}
-            </>
-          )}
+        <div className="pay-deductions-picker-zone" data-slot="pay-deductions-picker-zone">
+          <div className="pay-deductions-picker-eyebrow">
+            Exempt {firstName} from these supply types
+          </div>
+          <div className="pay-deductions-picker" data-slot="pay-deductions-picker">
+            {supplyCatalog.types.length === 0 ? (
+              <div className="pay-deductions-picker-empty" data-slot="pay-deductions-picker-empty">
+                No supply types defined yet. Add some on the{" "}
+                <Link href="/services">Services page</Link> first.
+              </div>
+            ) : (
+              <>
+                {supplyCatalog.types.map((type) => {
+                  const isTicked = draft.supplyExcept.includes(type.id);
+                  const serviceWord = type.service_count === 1 ? "service" : "services";
+                  const usageHint =
+                    type.service_count === 0
+                      ? "Unused — no services reference this type yet."
+                      : `${type.service_count} ${serviceWord} · typically $${(
+                          (type.sample_amount_cents ?? 0) / 100
+                        ).toFixed(2)} per ticket`;
+                  return (
+                    <label
+                      key={type.id}
+                      htmlFor={`pay-deductions-picker-${type.id}`}
+                      className="pay-deductions-picker-row"
+                      data-slot="pay-deductions-picker-row"
+                      data-name={type.name}
+                      data-checked={isTicked ? "true" : "false"}
+                    >
+                      <Checkbox
+                        id={`pay-deductions-picker-${type.id}`}
+                        data-slot="pay-deductions-picker-checkbox"
+                        checked={isTicked}
+                        onCheckedChange={(checked) => {
+                          // Radix Checkbox can emit `"indeterminate"` — we
+                          // only care about boolean transitions here.
+                          const isCheckedBool = checked === true;
+                          const next = isCheckedBool
+                            ? [...draft.supplyExcept, type.id]
+                            : draft.supplyExcept.filter((id) => id !== type.id);
+                          onDraftChange({ supplyExcept: next });
+                        }}
+                        disabled={disabled}
+                        aria-label={type.name}
+                      />
+                      <div className="pay-deductions-picker-row-text">
+                        <span className="pay-deductions-picker-row-name">
+                          {type.name}
+                          {type.archived ? (
+                            <span className="staff-archived-pill" data-slot="staff-archived-pill">
+                              Archived
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="pay-deductions-picker-row-hint">{usageHint}</span>
+                      </div>
+                      {isTicked ? (
+                        <span
+                          className="pay-deductions-picker-row-exempt-pill"
+                          data-slot="pay-deductions-picker-row-exempt-pill"
+                        >
+                          Exempt
+                        </span>
+                      ) : null}
+                    </label>
+                  );
+                })}
+              </>
+            )}
+          </div>
+          {draft.supplyExcept.length === 0 && supplyCatalog.types.length > 0 ? (
+            <p className="pay-deductions-picker-hint" data-slot="pay-deductions-picker-hint">
+              No supply types selected — all costs will be deducted normally until you tick at least
+              one.
+            </p>
+          ) : null}
         </div>
       ) : null}
 
@@ -244,26 +277,28 @@ export function PayDeductionsSection({
       ))}
 
       {/* ── US3 summary sentence + front-desk hint ───────────────────────
-        Front-desk hint takes precedence when the role is front_desk AND
-        no exemptions are configured (no card-fee exempt, supply_mode is
-        'apply', no ticks). Otherwise render the summary line; if the
-        helper returns null (no exemptions, non-front-desk), render nothing. */}
+        Rendered as `.section-note` per canonical staff-components.jsx:
+        muted bg + top border + leading Info icon + body text. Front-desk
+        hint takes precedence when role is front_desk AND no exemptions are
+        configured. */}
       {(() => {
         const noExemptions =
           !draft.cardFeeExempt && draft.supplyMode === "apply" && draft.supplyExcept.length === 0;
 
         if (target.role === "front_desk" && noExemptions) {
           return (
-            <p
-              className="pay-deductions-front-desk-hint"
-              data-slot="pay-deductions-front-desk-hint"
-            >
-              {formatFrontDeskHint()}
-            </p>
+            <div className="pay-deductions-section-note" data-slot="pay-deductions-front-desk-hint">
+              <Info
+                size={13}
+                strokeWidth={1.5}
+                aria-hidden="true"
+                className="pay-deductions-section-note-icon"
+              />
+              <span>{formatFrontDeskHint()}</span>
+            </div>
           );
         }
 
-        const firstName = target.display_name.split(" ")[0] ?? target.display_name;
         const exemptedTypeNames = draft.supplyExcept
           .map((id) => supplyCatalog.types.find((t) => t.id === id)?.name)
           .filter((n): n is string => Boolean(n));
@@ -277,9 +312,15 @@ export function PayDeductionsSection({
 
         if (!summary) return null;
         return (
-          <p className="pay-deductions-summary" data-slot="pay-deductions-summary">
-            {summary}
-          </p>
+          <div className="pay-deductions-section-note" data-slot="pay-deductions-summary">
+            <Info
+              size={13}
+              strokeWidth={1.5}
+              aria-hidden="true"
+              className="pay-deductions-section-note-icon"
+            />
+            <span>{summary}</span>
+          </div>
         );
       })()}
     </section>

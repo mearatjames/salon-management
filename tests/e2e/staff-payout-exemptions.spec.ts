@@ -340,9 +340,7 @@ test.describe("US1: Card-fee exemption", () => {
     await expect(cardFeeRow).toContainText("Card processing fee");
     // Default (non-exempt) subtitle uses the formatDefaultCardFeeLabel() output
     // ($3) per Clarify Q5.
-    await expect(cardFeeRow).toContainText(
-      "$3 per card-paid service is deducted from this tech's payout."
-    );
+    await expect(cardFeeRow).toContainText("Standard $3 deducted on card-paid services.");
 
     const cardFeeSwitch = page.locator("[data-slot='pay-deductions-card-fee-switch']");
     await expect(cardFeeSwitch).toHaveAttribute("data-state", "checked");
@@ -478,7 +476,9 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
     const supplyRow = page.locator("[data-slot='pay-deductions-supply-row']");
     await expect(supplyRow).toBeVisible();
     await expect(supplyRow).toContainText("Supply deductions");
-    await expect(supplyRow).toContainText("All supply costs deducted from payout.");
+    await expect(supplyRow).toContainText(
+      "Per-service supply cost deducted from payout when configured."
+    );
 
     const applyAllToggle = page.locator(
       "[data-slot='pay-deductions-supply-mode-toggle'] [data-value='apply']"

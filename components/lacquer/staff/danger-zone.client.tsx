@@ -63,52 +63,50 @@ export function DangerZone({
 
   return (
     <section className="danger-zone" data-section="danger-zone" data-slot="staff-danger-zone">
-      <header className="danger-zone-header">
-        <h3 className="danger-zone-title">Danger zone</h3>
-      </header>
-      <div className="danger-zone-actions">
-        {targetActive ? (
-          <button
-            type="button"
-            data-destructive="true"
-            data-slot="danger-zone-deactivate"
-            onClick={() => setConfirmOpen("deactivate")}
-            disabled={!canDeactivate}
-            title={tooltips.deactivate}
-            className="danger-zone-button"
-          >
-            <PowerOff size={16} strokeWidth={1.5} aria-hidden="true" />
-            <span>Deactivate</span>
-          </button>
-        ) : (
-          // Reactivate has no confirm dialog — single click per
-          // ui.contract.md § Dialog strings. Sibling <form> below.
-          <button
-            type="submit"
-            form="staff-reactivate-form"
-            data-destructive="true"
-            data-slot="danger-zone-reactivate"
-            disabled={!canReactivate}
-            title={tooltips.reactivate}
-            className="danger-zone-button"
-          >
-            <Power size={16} strokeWidth={1.5} aria-hidden="true" />
-            <span>Reactivate</span>
-          </button>
-        )}
+      <div className="danger-zone-eyebrow">Danger zone</div>
+
+      {targetActive ? (
         <button
           type="button"
           data-destructive="true"
-          data-slot="danger-zone-remove"
-          onClick={() => setConfirmOpen("remove")}
-          disabled={!canRemove}
-          title={tooltips.remove}
-          className="danger-zone-button danger-zone-button--remove"
+          data-slot="danger-zone-deactivate"
+          onClick={() => setConfirmOpen("deactivate")}
+          disabled={!canDeactivate}
+          title={tooltips.deactivate}
+          className="danger-zone-button"
         >
-          <Trash2 size={16} strokeWidth={1.5} aria-hidden="true" />
-          <span>Remove from roster</span>
+          <PowerOff size={14} strokeWidth={1.5} aria-hidden="true" />
+          <span>Deactivate</span>
         </button>
-      </div>
+      ) : (
+        // Reactivate has no confirm dialog — single click per
+        // ui.contract.md § Dialog strings. Sibling <form> below. The --safe
+        // variant tints neutrally since reactivate isn't destructive.
+        <button
+          type="submit"
+          form="staff-reactivate-form"
+          data-destructive="true"
+          data-slot="danger-zone-reactivate"
+          disabled={!canReactivate}
+          title={tooltips.reactivate}
+          className="danger-zone-button danger-zone-button--safe"
+        >
+          <Power size={14} strokeWidth={1.5} aria-hidden="true" />
+          <span>Reactivate</span>
+        </button>
+      )}
+      <button
+        type="button"
+        data-destructive="true"
+        data-slot="danger-zone-remove"
+        onClick={() => setConfirmOpen("remove")}
+        disabled={!canRemove}
+        title={tooltips.remove}
+        className="danger-zone-button danger-zone-button--last"
+      >
+        <Trash2 size={14} strokeWidth={1.5} aria-hidden="true" />
+        <span>Remove from roster</span>
+      </button>
 
       {/* Sibling <form> for the single-click Reactivate path. Rendered outside
         the parent's updateStaff form so we don't nest forms (invalid HTML).

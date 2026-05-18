@@ -268,80 +268,81 @@ export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPa
           data-section="identity"
           data-slot="staff-panel-section-identity"
         >
-          <h3 className="staff-panel-section-title">Identity</h3>
+          <div className="staff-panel-section-eyebrow">Identity</div>
+          <div className="staff-panel-section-body">
+            {/* Display name */}
+            <div style={fieldStyle}>
+              <label htmlFor="edit-staff-name" style={labelStyle}>
+                Display name
+              </label>
+              <input
+                id="edit-staff-name"
+                name="display_name"
+                type="text"
+                data-slot="edit-panel-name-input"
+                value={draft.display_name}
+                onChange={(e) => setDraft((d) => ({ ...d, display_name: e.target.value }))}
+                disabled={!perms.canEditDisplayName}
+                title={fieldTooltip(perms.canEditDisplayName, undefined)}
+                style={{
+                  ...inputStyle,
+                  cursor: perms.canEditDisplayName ? "text" : "not-allowed",
+                  opacity: perms.canEditDisplayName ? 1 : 0.6,
+                }}
+              />
+              {!hasValidName ? (
+                <span
+                  data-slot="edit-panel-name-hint"
+                  style={{ ...hintStyle, color: "var(--destructive)" }}
+                >
+                  Name must be at least 2 characters.
+                </span>
+              ) : null}
+            </div>
 
-          {/* Display name */}
-          <div style={fieldStyle}>
-            <label htmlFor="edit-staff-name" style={labelStyle}>
-              Display name
-            </label>
-            <input
-              id="edit-staff-name"
-              name="display_name"
-              type="text"
-              data-slot="edit-panel-name-input"
-              value={draft.display_name}
-              onChange={(e) => setDraft((d) => ({ ...d, display_name: e.target.value }))}
-              disabled={!perms.canEditDisplayName}
-              title={fieldTooltip(perms.canEditDisplayName, undefined)}
-              style={{
-                ...inputStyle,
-                cursor: perms.canEditDisplayName ? "text" : "not-allowed",
-                opacity: perms.canEditDisplayName ? 1 : 0.6,
-              }}
-            />
-            {!hasValidName ? (
-              <span
-                data-slot="edit-panel-name-hint"
-                style={{ ...hintStyle, color: "var(--destructive)" }}
+            {/* Role */}
+            <div style={fieldStyle}>
+              <label htmlFor="edit-staff-role" style={labelStyle}>
+                Role
+              </label>
+              <select
+                id="edit-staff-role"
+                name="role"
+                data-slot="edit-panel-role-select"
+                value={draft.role}
+                onChange={(e) => setDraft((d) => ({ ...d, role: e.target.value as StudioRole }))}
+                disabled={!perms.canEditRole}
+                title={fieldTooltip(perms.canEditRole, undefined)}
+                style={{
+                  ...inputStyle,
+                  cursor: perms.canEditRole ? "pointer" : "not-allowed",
+                  opacity: perms.canEditRole ? 1 : 0.6,
+                }}
               >
-                Name must be at least 2 characters.
-              </span>
-            ) : null}
-          </div>
-
-          {/* Role */}
-          <div style={fieldStyle}>
-            <label htmlFor="edit-staff-role" style={labelStyle}>
-              Role
-            </label>
-            <select
-              id="edit-staff-role"
-              name="role"
-              data-slot="edit-panel-role-select"
-              value={draft.role}
-              onChange={(e) => setDraft((d) => ({ ...d, role: e.target.value as StudioRole }))}
-              disabled={!perms.canEditRole}
-              title={fieldTooltip(perms.canEditRole, undefined)}
-              style={{
-                ...inputStyle,
-                cursor: perms.canEditRole ? "pointer" : "not-allowed",
-                opacity: perms.canEditRole ? 1 : 0.6,
-              }}
-            >
-              {/* Always include the target's current role so the select renders
+                {/* Always include the target's current role so the select renders
                 its current value even if the operator's roleOptionsFor doesn't
                 include it (e.g., a manager viewing an owner). */}
-              {roleOptions.includes(target.role) ? null : (
-                <option value={target.role}>{ROLE_LABEL[target.role]}</option>
-              )}
-              {roleOptions.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_LABEL[r]}
-                </option>
-              ))}
-            </select>
-          </div>
+                {roleOptions.includes(target.role) ? null : (
+                  <option value={target.role}>{ROLE_LABEL[target.role]}</option>
+                )}
+                {roleOptions.map((r) => (
+                  <option key={r} value={r}>
+                    {ROLE_LABEL[r]}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          {/* Avatar color */}
-          <div style={fieldStyle}>
-            <label style={labelStyle}>Avatar color</label>
-            <ColorPicker
-              name="color_token"
-              value={draft.color_token}
-              onChange={(token) => setDraft((d) => ({ ...d, color_token: token }))}
-              disabled={!perms.canEditColor}
-            />
+            {/* Avatar color */}
+            <div style={fieldStyle}>
+              <label style={labelStyle}>Avatar color</label>
+              <ColorPicker
+                name="color_token"
+                value={draft.color_token}
+                onChange={(token) => setDraft((d) => ({ ...d, color_token: token }))}
+                disabled={!perms.canEditColor}
+              />
+            </div>
           </div>
         </section>
 
@@ -351,90 +352,60 @@ export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPa
           data-section="access"
           data-slot="staff-panel-section-access"
         >
-          <h3 className="staff-panel-section-title">Access</h3>
+          <div className="staff-panel-section-eyebrow">Access</div>
 
-          {/* Active toggle. Switch is uncontrolled-ish; we wire it manually to
-            our draft state and emit a hidden input so FormData picks up the
-            checked state regardless of which Switch implementation is used. */}
-          <div style={fieldStyle}>
-            <label
-              htmlFor="edit-staff-active"
-              style={{
-                ...labelStyle,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: "var(--space-3)",
-              }}
-            >
-              <span>Active</span>
-              <span
-                style={{
-                  fontSize: "var(--text-xs)",
-                  fontWeight: 400,
-                  color: "var(--muted-foreground)",
-                }}
-                title={fieldTooltip(perms.canToggleActive, undefined)}
+          {/* Active row — flush, no leading icon, switch on the right. */}
+          <div className="staff-panel-row" data-slot="edit-panel-active-row">
+            <div className="staff-panel-row-text">
+              <label
+                htmlFor="edit-staff-active"
+                className="staff-panel-row-label"
+                style={{ cursor: perms.canToggleActive ? "pointer" : "not-allowed" }}
               >
-                <Switch
-                  id="edit-staff-active"
-                  data-slot="edit-panel-active-switch"
-                  checked={draft.active}
-                  onCheckedChange={(next: boolean) => setDraft((d) => ({ ...d, active: next }))}
-                  disabled={!perms.canToggleActive}
-                  aria-label="Active"
-                />
-              </span>
-            </label>
+                Active
+              </label>
+              <p className="staff-panel-row-subtitle">
+                {draft.active ? "Can log in to the studio" : "Locked out of the studio"}
+              </p>
+            </div>
+            <span title={fieldTooltip(perms.canToggleActive, undefined)}>
+              <Switch
+                id="edit-staff-active"
+                data-slot="edit-panel-active-switch"
+                checked={draft.active}
+                onCheckedChange={(next: boolean) => setDraft((d) => ({ ...d, active: next }))}
+                disabled={!perms.canToggleActive}
+                aria-label="Active"
+              />
+            </span>
             <input
               type="hidden"
               name="active"
               // Standard form-coercion: "on" when checked, omitted when off.
-              // We use a hidden input gated on draft.active so the FormData
-              // matches what a real <input type="checkbox" name="active"> would
-              // produce.
               value={draft.active ? "on" : ""}
             />
           </div>
 
-          {/* PIN row. Set PIN / Change button opens the modal (US4). */}
-          <div
-            data-slot="edit-panel-pin-row"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: "var(--space-3)",
-              padding: "var(--space-3)",
-              background: "var(--muted)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-md, 8px)",
-            }}
-          >
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                color: "var(--muted-foreground)",
-                fontSize: "var(--text-sm)",
-              }}
-            >
+          {/* PIN row — flush, leading shield/key icon, Change/Set PIN button. */}
+          <div className="staff-panel-row staff-panel-row--last" data-slot="edit-panel-pin-row">
+            <span className="staff-panel-row-icon" aria-hidden="true">
               {target.pin_set ? (
-                <>
-                  <ShieldCheck size={16} strokeWidth={1.5} aria-hidden="true" />
-                  <span>4-digit PIN set</span>
-                </>
+                <ShieldCheck size={16} strokeWidth={1.5} style={{ color: "var(--success)" }} />
               ) : (
-                <>
-                  <KeyRound size={16} strokeWidth={1.5} aria-hidden="true" />
-                  <span>
-                    No PIN set ·{" "}
-                    <span style={{ color: "var(--destructive)" }}>Required to log in</span>
-                  </span>
-                </>
+                <KeyRound size={16} strokeWidth={1.5} style={{ color: "var(--warning)" }} />
               )}
             </span>
+            <div className="staff-panel-row-text">
+              <span className="staff-panel-row-label">
+                {target.pin_set ? (
+                  "4-digit PIN set"
+                ) : (
+                  <>
+                    No PIN · <span style={{ color: "var(--destructive)" }}>Required to log in</span>
+                  </>
+                )}
+              </span>
+            </div>
             <button
               type="button"
               data-slot="edit-panel-pin-button"
