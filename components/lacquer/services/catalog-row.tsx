@@ -84,7 +84,7 @@ export function CatalogRow({ service, isSelected }: CatalogRowProps) {
           card_fee_mode={service.card_fee_mode}
           card_fee_custom_cents={service.card_fee_custom_cents}
           supply_amount_cents={service.supply_amount_cents}
-          supply_label={service.supply_label}
+          supply_type_name={service.supply_type_name}
           default_card_fee_cents={DEFAULT_CARD_FEE_CENTS}
         />
         <span

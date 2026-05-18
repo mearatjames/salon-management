@@ -23,7 +23,8 @@ function svc(partial: Partial<CatalogService>): CatalogService {
     card_fee_mode: "default",
     card_fee_custom_cents: null,
     supply_amount_cents: null,
-    supply_label: null,
+    supply_type_id: null,
+    supply_type_name: null,
     assignment_count: 0,
     ...partial,
   };

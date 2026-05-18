@@ -112,13 +112,57 @@ export const TOASTS = {
     variant: "destructive",
     text: () => "Couldn't save service — supply can't exceed $50.",
   },
-  invalid_supply_label: {
-    variant: "destructive",
-    text: () => "Couldn't save service — supply label is required.",
+
+  // 022-supply-types-catalog ---------------------------------------------
+  // Success keys
+  supply_type_created: {
+    variant: "success",
+    text: (name) => `Supply type "${name ?? ""}" created.`,
   },
-  supply_label_too_long: {
+  supply_type_renamed: {
+    variant: "success",
+    text: () => "Supply type renamed.",
+  },
+  supply_type_archived: {
+    variant: "success",
+    text: (name) => `Supply type "${name ?? ""}" archived.`,
+  },
+  supply_type_reactivated: {
+    variant: "success",
+    text: (name) => `Supply type "${name ?? ""}" reactivated.`,
+  },
+  // Error-code mappings (surface on the existing ?error=<code> channel)
+  name_too_long: {
     variant: "destructive",
-    text: () => "Couldn't save service — supply label is too long (max 64).",
+    text: () => "Supply type name must be 64 characters or fewer.",
+  },
+  name_taken: {
+    variant: "destructive",
+    text: () => "A supply type with this name already exists.",
+  },
+  type_not_found: {
+    variant: "destructive",
+    text: () => "That supply type doesn't exist anymore. Re-pick from the dropdown.",
+  },
+  type_in_use: {
+    variant: "destructive",
+    text: () => "Remove this type from the services that use it first.",
+  },
+  type_already_archived: {
+    variant: "destructive",
+    text: () => "That supply type is already archived.",
+  },
+  type_already_active: {
+    variant: "destructive",
+    text: () => "That supply type is already active.",
+  },
+  type_archived: {
+    variant: "destructive",
+    text: () => "That supply type is archived. Reactivate it first to rename.",
+  },
+  invalid_supply_type: {
+    variant: "destructive",
+    text: () => "Pick a supply type from the dropdown.",
   },
 } as const satisfies Record<string, ToastEntry>;
 

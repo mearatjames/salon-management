@@ -27,6 +27,7 @@ import { EditPanel } from "@/components/lacquer/services/edit-panel.client";
 import { PageHeader } from "@/components/lacquer/services/page-header";
 import { ServicesToaster } from "@/components/lacquer/services/services-toaster.client";
 import { loadServiceWithAssignments } from "@/app/(studio)/services/_load";
+import { loadSupplyTypesCatalog } from "@/app/(studio)/settings/policy/_load";
 import type {
   AvatarColorToken,
   CardFeeMode,
@@ -47,6 +48,11 @@ type SearchParamsShape = {
   secondary?: string | string[];
   name?: string | string[];
   error?: string | string[];
+  // 022-supply-types-catalog (US2): Edit Policy sheet URL bridge — when
+  // `?policy=open` is set, the `<EditPolicyButton>` client island opens
+  // the sheet on render. Strip-on-close happens client-side via
+  // `router.replace`.
+  policy?: string | string[];
 };
 
 function resolveSingleParam(value: string | string[] | undefined): string | null {
@@ -106,10 +112,15 @@ export default async function ServicesPage({
   // `staff_services` join rows and the active staff list and compute the
   // per-service assignment count in JS (cheap — the catalog is bounded by
   // the salon's actual menu size, typically dozens of rows).
+  // 022-supply-types-catalog: replace `supply_label` with `supply_type_id`
+  // + the LEFT-joined `supply_types(name)` so the catalog row carries the
+  // resolved display name without a second roundtrip. The Supabase JS
+  // nested-select syntax (`supply_types(name)`) becomes a SQL LEFT JOIN
+  // automatically.
   const catalogPromise = supabase
     .from("services")
     .select(
-      "id, name, category, duration_min, price_cents, color_token, taxable, active, variable_price, price_from_cents, price_to_cents, variable_price_note, card_fee_mode, card_fee_custom_cents, supply_amount_cents, supply_label"
+      "id, name, category, duration_min, price_cents, color_token, taxable, active, variable_price, price_from_cents, price_to_cents, variable_price_note, card_fee_mode, card_fee_custom_cents, supply_amount_cents, supply_type_id, supply_types(name)"
     )
     .order("category", { ascending: true })
     .order("name", { ascending: true });
@@ -137,12 +148,21 @@ export default async function ServicesPage({
         .eq("service_id", selectedId)
     : Promise.resolve({ data: null, error: null });
 
-  const [catalogRes, assignmentsRes, staffRes, selectedAssignmentsRes] = await Promise.all([
-    catalogPromise,
-    assignmentsPromise,
-    assignableStaffPromise,
-    selectedAssignmentsPromise,
-  ]);
+  // 022-supply-types-catalog: load the supply types catalog so the picker
+  // inside <EditPanel> → <ServiceForm> → <DeductionsSection> →
+  // <SupplyTypePicker> has its dropdown source. Active types only — the
+  // loader splits the result; we pass `active` (archived types are hidden
+  // from new selections per US3 spec).
+  const supplyTypesPromise = loadSupplyTypesCatalog();
+
+  const [catalogRes, assignmentsRes, staffRes, selectedAssignmentsRes, supplyTypesCatalog] =
+    await Promise.all([
+      catalogPromise,
+      assignmentsPromise,
+      assignableStaffPromise,
+      selectedAssignmentsPromise,
+      supplyTypesPromise,
+    ]);
 
   if (catalogRes.error) {
     throw new Error(`Failed to load services catalog: ${catalogRes.error.message}`);
@@ -191,7 +211,16 @@ export default async function ServicesPage({
     card_fee_mode: narrowCardFeeMode(row.card_fee_mode),
     card_fee_custom_cents: row.card_fee_custom_cents,
     supply_amount_cents: row.supply_amount_cents,
-    supply_label: row.supply_label,
+    // 022-supply-types-catalog: resolve the FK + LEFT-JOIN-resolved name.
+    supply_type_id: row.supply_type_id,
+    // The nested `supply_types` projection comes back as an object (or
+    // null on no match). Pick the `name` field; null when the LEFT JOIN
+    // didn't match (no FK set on this row).
+    supply_type_name: (row.supply_types as { name: string } | { name: string }[] | null)
+      ? Array.isArray(row.supply_types)
+        ? (row.supply_types[0]?.name ?? null)
+        : ((row.supply_types as { name: string } | null)?.name ?? null)
+      : null,
     assignment_count: assignmentCountByService.get(row.id) ?? 0,
   }));
 
@@ -247,7 +276,12 @@ export default async function ServicesPage({
       data-slot="services-page"
       data-selected-id={selectedId ?? ""}
     >
-      <PageHeader activeCount={activeCount} totalCount={totalCount} />
+      <PageHeader
+        activeCount={activeCount}
+        totalCount={totalCount}
+        operatorRole={viewer.staff.role}
+        supplyTypesCatalog={supplyTypesCatalog}
+      />
       {/* Two-pane shell — catalog list on the left, always-mounted edit
           inspector on the right. CSS in `styles/settings.css` under the
           `=== 021-services-deductions ===` block. */}
@@ -258,6 +292,7 @@ export default async function ServicesPage({
           baseline={panelBaseline}
           categories={categories}
           operatorRole={viewer.staff.role}
+          supplyTypes={supplyTypesCatalog.active}
         />
       </div>
       {/* US7: URL → Sonner toast bridge. Reads ?toast / ?secondary / ?name /

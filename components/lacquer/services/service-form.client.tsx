@@ -33,13 +33,13 @@ import {
   validateFixedPriceDollars,
   validateName,
   validateSupplyAmountDollars,
-  validateSupplyLabel,
 } from "@/app/(studio)/services/_validation";
 import type {
   AvatarColorToken,
   CardFeeMode,
   ServiceAssignment,
   ServiceDraftBaseline,
+  SupplyTypeLite,
 } from "@/app/(studio)/services/_types";
 
 // Working-state shape for the panel's draft. Strings on every numeric
@@ -56,6 +56,11 @@ import type {
 // strings survive off→on→off cycles. The Server Action ignores
 // `card_fee_custom` when mode != custom (T016) and the supply fields when
 // `supply_on=""`; the dirty-detector mirrors the same rule client-side.
+//
+// 022-supply-types-catalog (data-model.md § 2): `supply_label` (free text)
+// is replaced by `supply_type_id` (UUID FK). The picker (T028) is the only
+// surface that mutates this field on the draft; the form's hidden FormData
+// input carries the UUID string into the Server Action.
 export type ServiceDraft = {
   name: string;
   category: string;
@@ -76,8 +81,12 @@ export type ServiceDraft = {
   supply_on: boolean;
   /** Empty string = unset; "5", "5.00", "5.50". Preserved across toggle off. */
   supply_amount_dollars: string;
-  /** Free-text label. Preserved across toggle off (FR-021). */
-  supply_label: string;
+  /**
+   * 022-supply-types-catalog: UUID of the picked supply type. Empty
+   * string = no selection (the picker's placeholder state). Preserved
+   * across toggle off (FR-021).
+   */
+  supply_type_id: string;
 };
 
 export const SERVICE_COLOR_OPTIONS: ReadonlyArray<{ token: AvatarColorToken; label: string }> = [
@@ -109,7 +118,7 @@ export function makeDefaultDraft(): ServiceDraft {
     card_fee_custom_dollars: "",
     supply_on: false,
     supply_amount_dollars: "",
-    supply_label: "",
+    supply_type_id: "",
   };
 }
 
@@ -154,7 +163,9 @@ export function makeDraftFromBaseline(baseline: ServiceDraftBaseline): ServiceDr
     supply_on: baseline.supply_amount_cents !== null,
     supply_amount_dollars:
       baseline.supply_amount_cents !== null ? dollarsFromCents(baseline.supply_amount_cents) : "",
-    supply_label: baseline.supply_amount_cents !== null ? (baseline.supply_label ?? "") : "",
+    // 022-supply-types-catalog: hydrate the FK; empty string when unset so
+    // the picker shows its placeholder.
+    supply_type_id: baseline.supply_type_id ?? "",
   };
 }
 
@@ -174,6 +185,12 @@ export type ServiceFormProps = {
    * call site (none after T022) still receives the same layout.
    */
   inspectorChrome?: boolean;
+  /**
+   * 022-supply-types-catalog: active supply types passed down to
+   * `<DeductionsSection>` → `<SupplyTypePicker>`. Loaded by the page server
+   * component via `loadSupplyTypesCatalog()`.
+   */
+  supplyTypes: SupplyTypeLite[];
 };
 
 /**
@@ -241,16 +258,17 @@ export function hasFormErrors(draft: ServiceDraft): boolean {
   }
   // 021-services-deductions: when supply is on, both inputs are required +
   // bounded. The validators throw for empty / zero / negative / > $50 on
-  // the amount and empty-after-trim / > 64 chars on the label.
+  // the amount and 022 added a UUID-shape check on the picked supply type.
   if (draft.supply_on) {
     try {
       validateSupplyAmountDollars(draft.supply_amount_dollars);
     } catch {
       return true;
     }
-    try {
-      validateSupplyLabel(draft.supply_label);
-    } catch {
+    // 022-supply-types-catalog: the picker is required when Supply is on.
+    // An empty `supply_type_id` means the operator opened the picker but
+    // didn't pick anything yet — disable Save until they do.
+    if (draft.supply_type_id.trim().length === 0) {
       return true;
     }
   }
@@ -288,6 +306,7 @@ export function ServiceForm({
   categories,
   disabled = false,
   inspectorChrome = false,
+  supplyTypes,
 }: ServiceFormProps) {
   void baseline; // currently unused — panel derives dirty-state from baseline
   void inspectorChrome; // currently no per-mode chrome differences; reserved for Phase 4+
@@ -663,7 +682,7 @@ export function ServiceForm({
         card_fee_custom_dollars={draft.card_fee_custom_dollars}
         supply_on={draft.supply_on}
         supply_amount_dollars={draft.supply_amount_dollars}
-        supply_label={draft.supply_label}
+        supply_type_id={draft.supply_type_id}
         // 021-US4 (T036): live preview inputs. The deductions section needs
         // read-only access to the price draft to compute net-to-tech; the
         // section itself never edits these.
@@ -672,6 +691,10 @@ export function ServiceForm({
         price_from_dollars={draft.price_from}
         onChange={onChange}
         disabled={disabled}
+        // 022-supply-types-catalog: picker data + service id forwarded
+        // through to <SupplyTypePicker>.
+        supplyTypes={supplyTypes}
+        serviceId={baseline?.id ?? null}
       />
 
       {/* Taxable toggle */}

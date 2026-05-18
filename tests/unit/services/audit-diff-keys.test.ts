@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 import { SERVICE_DIFF_KEYS, buildChanges } from "@/app/(studio)/services/_audit-diff";
 
 describe("SERVICE_DIFF_KEYS", () => {
-  it("contains exactly the 14 expected keys (10 from 008 + 4 from 021)", () => {
+  it("contains exactly the 14 expected keys (10 from 008 + 3 from 021 + 1 from 022)", () => {
     const expected = new Set<string>([
       // 10 existing 008 keys (read straight from the constant's prior shape).
       "name",
@@ -25,14 +25,23 @@ describe("SERVICE_DIFF_KEYS", () => {
       "price_from_cents",
       "price_to_cents",
       "variable_price_note",
-      // 4 new from 021.
+      // 3 from 021 still on the snapshot (supply_label was swapped in 022).
       "card_fee_mode",
       "card_fee_custom_cents",
       "supply_amount_cents",
-      "supply_label",
+      // 022-supply-types-catalog — swapped from supply_label.
+      "supply_type_id",
     ]);
     expect(new Set(SERVICE_DIFF_KEYS)).toEqual(expected);
     expect(SERVICE_DIFF_KEYS.length).toBe(expected.size);
+  });
+
+  it("no longer contains the legacy supply_label key (022 migration)", () => {
+    expect((SERVICE_DIFF_KEYS as readonly string[]).includes("supply_label")).toBe(false);
+  });
+
+  it("contains the supply_type_id key (022 migration)", () => {
+    expect((SERVICE_DIFF_KEYS as readonly string[]).includes("supply_type_id")).toBe(true);
   });
 });
 
@@ -55,7 +64,7 @@ describe("buildChanges (deduction key coverage)", () => {
     card_fee_mode: "default" as const,
     card_fee_custom_cents: null,
     supply_amount_cents: null,
-    supply_label: null,
+    supply_type_id: null,
   };
 
   it("emits deduction keys only when they differ", () => {
@@ -70,26 +79,26 @@ describe("buildChanges (deduction key coverage)", () => {
     expect(changes.card_fee_mode).toEqual(["default", "custom"]);
     expect(changes.card_fee_custom_cents).toEqual([null, 450]);
     expect(changes.supply_amount_cents).toBeUndefined();
-    expect(changes.supply_label).toBeUndefined();
+    expect(changes.supply_type_id).toBeUndefined();
   });
 
   it("does not emit unchanged keys (FR-030)", () => {
     const before = {
       ...baseSnapshot,
       supply_amount_cents: 500,
-      supply_label: "Chrome",
+      supply_type_id: "10000000-0000-0000-0000-000000000001",
     };
     const after = {
       ...baseSnapshot,
       supply_amount_cents: 500,
-      supply_label: "Chrome",
+      supply_type_id: "10000000-0000-0000-0000-000000000001",
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const changes = buildChanges(before as any, after as any);
     expect(changes.card_fee_mode).toBeUndefined();
     expect(changes.card_fee_custom_cents).toBeUndefined();
     expect(changes.supply_amount_cents).toBeUndefined();
-    expect(changes.supply_label).toBeUndefined();
+    expect(changes.supply_type_id).toBeUndefined();
   });
 
   it("emits supply keys when toggling on", () => {
@@ -97,12 +106,31 @@ describe("buildChanges (deduction key coverage)", () => {
     const after = {
       ...baseSnapshot,
       supply_amount_cents: 500,
-      supply_label: "Chrome",
+      supply_type_id: "10000000-0000-0000-0000-000000000001",
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const changes = buildChanges(before as any, after as any);
     expect(changes.supply_amount_cents).toEqual([null, 500]);
-    expect(changes.supply_label).toEqual([null, "Chrome"]);
+    expect(changes.supply_type_id).toEqual([null, "10000000-0000-0000-0000-000000000001"]);
+  });
+
+  it("emits supply_type_id when swapping the catalog reference", () => {
+    const before = {
+      ...baseSnapshot,
+      supply_amount_cents: 500,
+      supply_type_id: "10000000-0000-0000-0000-000000000001",
+    };
+    const after = {
+      ...baseSnapshot,
+      supply_amount_cents: 500,
+      supply_type_id: "10000000-0000-0000-0000-000000000002",
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const changes = buildChanges(before as any, after as any);
+    expect(changes.supply_type_id).toEqual([
+      "10000000-0000-0000-0000-000000000001",
+      "10000000-0000-0000-0000-000000000002",
+    ]);
   });
 
   it("emits card_fee_mode when flipping to exempt", () => {
