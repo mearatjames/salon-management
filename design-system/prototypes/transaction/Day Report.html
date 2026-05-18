@@ -64,7 +64,7 @@ body { background: #f0eee9; }
 
 /* Summary strip */
 .dr-summary {
-  display: grid; grid-template-columns: repeat(4, 1fr);
+  display: grid; grid-template-columns: repeat(3, 1fr);
   border-bottom: 1px solid var(--border); background: var(--card); flex-shrink: 0;
 }
 .dr-stat { padding: 9px 16px; border-right: 1px solid var(--border); }
@@ -84,6 +84,53 @@ body { background: #f0eee9; }
 
 /* Body */
 .dr-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+
+/* ── Variant B: contextual summary strip ─────────────────────── */
+.dr-summary-b {
+  display: flex; align-items: stretch;
+  background: var(--card); border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.dr-scope {
+  padding: 11px 16px; flex-shrink: 0; min-width: 180px;
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.dr-scope-ttl {
+  font-size: 14px; font-weight: 700; letter-spacing: -0.02em;
+  display: flex; align-items: center; flex-wrap: wrap;
+}
+.dr-scope-sub {
+  font-size: 11px; color: var(--muted-foreground); margin-top: 2px;
+}
+.dr-scope-stats {
+  flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr;
+}
+.dr-scope-stat {
+  padding: 10px 16px;
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; justify-content: center;
+}
+.dr-scope-stat:last-child { border-right: none; }
+.dr-scope-stat-l {
+  font-size: 10px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted-foreground);
+}
+.dr-scope-stat-v {
+  font-size: 19px; font-weight: 700; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums; line-height: 1.15; margin-top: 2px;
+}
+.dr-scope-stat-v.neg { color: var(--destructive); }
+.dr-scope-stat-v.pos { color: var(--success); }
+.dr-scope-stat-v.tip { color: oklch(0.42 0.12 150); }
+
+/* Variant A: narrower left nav (no per-tech KPIs except inline Net) */
+.dr-left.nav { width: 232px; }
+.dr-tech-card.nav { padding: 8px 10px; }
+
+/* Variant B: slimmer right detail header (totals are in top strip) */
+.dr-detail-head.slim { padding: 8px 16px; }
+
 
 /* Left panel */
 .dr-left {
@@ -335,21 +382,31 @@ function App() {
         title="Lacquer · Day Report"
         subtitle="Manager view — daily earnings per nail tech with automatic deduction breakdown">
         <DCSection id="day-report" title="Day Report" subtitle="Tablet (1024×720) — tap a tech on the left to drill into their transaction detail; click any row to expand deductions">
-          <DCArtboard id="day-report-tablet" label="Tablet — 1024 × 720" width={1056} height={752}>
+          <DCArtboard id="day-report-tablet" label="Original — 3 KPI tiles + full left cards" width={1056} height={752}>
             <TabletArtboard>
-              <DayReport exemptTechs={exemptSet} />
+              <DayReport exemptTechs={exemptSet} variant="original" />
+            </TabletArtboard>
+          </DCArtboard>
+
+          <DCArtboard id="day-report-a" label="A — Detail-first (drop top tiles, slim left to nav)" width={1056} height={752}>
+            <TabletArtboard>
+              <DayReport exemptTechs={exemptSet} variant="a" />
+            </TabletArtboard>
+          </DCArtboard>
+
+          <DCArtboard id="day-report-b" label="B — Summary-first (contextual top strip; slim right header)" width={1056} height={752}>
+            <TabletArtboard>
+              <DayReport exemptTechs={exemptSet} variant="b" />
             </TabletArtboard>
           </DCArtboard>
         </DCSection>
 
-        <DCPostIt left={40} top={40} width={296}>
-          <strong>Day Report — deduction rules</strong><br /><br />
-          <strong>Card fee −$3</strong> per main service when paid by Card or Gift card<br /><br />
-          <strong>Supply −$5</strong> for Chrome, Cat-eye, OPI, or GelX — any payment method<br /><br />
-          <strong>Pedi tier</strong> — Deluxe / Vitamin Recharge / Energy Boost: <strong>−$3</strong><br />
-          Lavender Steam / Hemp Steam: <strong>−$5</strong><br /><br />
-          <strong>Maya &amp; Linh are exempt</strong> — toggle in Tweaks to test with deductions enabled.<br /><br />
-          Click any transaction row in the detail view to expand the deduction breakdown.
+        <DCPostIt left={40} top={40} width={320}>
+          <strong>Resolving the redundancy</strong><br /><br />
+          The <strong>original</strong> shows the same 3 numbers in 3 places (top tiles, right header, table footer) and shows each tech's KPIs in both the left cards and the All-Staff table.<br /><br />
+          <strong>Option A — Detail-first.</strong> Drop the top KPI tiles. Left becomes pure navigation (avatar + name + one inline Net figure). The <em>right panel</em> is the single source of truth — header totals + table.<br /><br />
+          <strong>Option B — Summary-first.</strong> Keep the top strip but make it <em>contextual</em> (updates as you pick a tech, adds Commissionable). Remove the right-side header totals entirely. Left becomes pure nav. The <em>top strip</em> is the single source of truth.<br /><br />
+          Both options keep the table footer for at-a-glance totals while scrolling.
         </DCPostIt>
       </DesignCanvas>
 

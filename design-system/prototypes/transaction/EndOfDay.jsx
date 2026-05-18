@@ -111,10 +111,11 @@ function EndOfDayCash({ preset }) {
   const cashTxs   = TX_HISTORY.filter(tx => tx.method === "cash");
   const expected  = eodMemo(() => cashTxs.reduce((s, tx) => s + txTotals(tx).total, 0), []);
 
-  const [counted,   setCounted]   = eodSt("");
-  const [note,      setNote]      = eodSt("");
-  const [submitted, setSubmitted] = eodSt(false);
-  const [fresh,     setFresh]     = eodSt(true);
+  const [counted,    setCounted]    = eodSt("");
+  const [note,       setNote]       = eodSt("");
+  const [submitted,  setSubmitted]  = eodSt(false);
+  const [fresh,      setFresh]      = eodSt(true);
+  const [showHist,   setShowHist]   = eodSt(false);
 
   // Sync preset tweak → fill numpad display
   eodFx(() => {
@@ -147,12 +148,17 @@ function EndOfDayCash({ preset }) {
   };
   const clear = () => { setCounted(""); setFresh(true); setNote(""); };
 
+  if (showHist) {
+    return <EODCashHistory onExit={() => setShowHist(false)} />;
+  }
+
   if (submitted) {
     return (
       <EODDoneScreen
         expected={expected} counted={countedNum} diff={diff}
         isExact={isExact} isOver={isOver} isShort={isShort}
         note={note} onReset={clear}
+        onOpenHistory={() => setShowHist(true)}
       />
     );
   }
@@ -165,7 +171,17 @@ function EndOfDayCash({ preset }) {
           <div className="ttl">End of Day · Cash Count</div>
           <div className="sub">Sunday, May 11 · Lacquer Salon</div>
         </div>
-        <span className="eod-status-pill eod-open">Open · Closing at 8 PM</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            className="eod-history-btn"
+            onClick={() => setShowHist(true)}
+            title="View cash count history"
+          >
+            <TI.History size={14} />
+            Past counts
+          </button>
+          <span className="eod-status-pill eod-open">Open · Closing at 8 PM</span>
+        </div>
       </header>
 
       {/* Two-column body */}
@@ -250,7 +266,7 @@ function EndOfDayCash({ preset }) {
 }
 
 // ─── Logged / done screen ─────────────────────────────────────────────────
-function EODDoneScreen({ expected, counted, diff, isExact, isOver, isShort, note, onReset }) {
+function EODDoneScreen({ expected, counted, diff, isExact, isOver, isShort, note, onReset, onOpenHistory }) {
   const timeStr = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   const iconCls = isExact ? "match" : isShort ? "short" : "over";
   return (
@@ -290,6 +306,10 @@ function EODDoneScreen({ expected, counted, diff, isExact, isOver, isShort, note
         </div>
         <button className="tx-btn secondary" onClick={onReset} style={{ height: 40, marginTop: 4 }}>
           Start new count
+        </button>
+        <button className="eod-done-link" onClick={onOpenHistory}>
+          View cash count history
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>
     </div>

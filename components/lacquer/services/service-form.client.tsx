@@ -22,25 +22,40 @@ import { useMemo, useState } from "react";
 
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { DeductionsSection } from "@/components/lacquer/services/deductions-section.client";
 import {
   ValidationError,
   validateBoundDollars,
   validateBoundsConsistency,
+  validateCardFeeCustomDollars,
   validateCategory,
   validateDurationMin,
   validateFixedPriceDollars,
   validateName,
+  validateSupplyAmountDollars,
+  validateSupplyLabel,
 } from "@/app/(studio)/services/_validation";
 import type {
   AvatarColorToken,
+  CardFeeMode,
   ServiceAssignment,
   ServiceDraftBaseline,
 } from "@/app/(studio)/services/_types";
 
-// Working-state shape for the drawer's draft. Strings on every numeric
+// Working-state shape for the panel's draft. Strings on every numeric
 // field so the input value can mirror what the user typed without losing
 // trailing zeroes or partial decimals; the Server Action re-validates on
 // submit.
+//
+// 021-services-deductions (data-model.md § 2.2): the draft buffer extends
+// with `card_fee_mode` + `card_fee_custom_dollars` (US2) and
+// `supply_on` + `supply_amount_dollars` + `supply_label` (US3). The custom
+// buffer is preserved across mode flips per FR-014 — the typed value
+// survives a flip to default/exempt and re-appears if the operator flips
+// back to custom. Same buffer rule for supply (FR-021): the dollars + label
+// strings survive off→on→off cycles. The Server Action ignores
+// `card_fee_custom` when mode != custom (T016) and the supply fields when
+// `supply_on=""`; the dirty-detector mirrors the same rule client-side.
 export type ServiceDraft = {
   name: string;
   category: string;
@@ -53,6 +68,16 @@ export type ServiceDraft = {
   price_to: string;
   variable_price_note: string;
   assignments: ServiceAssignment[];
+  // 021-services-deductions card-fee fields.
+  card_fee_mode: CardFeeMode;
+  /** Empty string = unset; "0", "4", "4.50". Preserved across mode flips. */
+  card_fee_custom_dollars: string;
+  // 021-services-deductions supply fields.
+  supply_on: boolean;
+  /** Empty string = unset; "5", "5.00", "5.50". Preserved across toggle off. */
+  supply_amount_dollars: string;
+  /** Free-text label. Preserved across toggle off (FR-021). */
+  supply_label: string;
 };
 
 export const SERVICE_COLOR_OPTIONS: ReadonlyArray<{ token: AvatarColorToken; label: string }> = [
@@ -80,6 +105,11 @@ export function makeDefaultDraft(): ServiceDraft {
     price_to: "",
     variable_price_note: "",
     assignments: [],
+    card_fee_mode: "default",
+    card_fee_custom_dollars: "",
+    supply_on: false,
+    supply_amount_dollars: "",
+    supply_label: "",
   };
 }
 
@@ -108,6 +138,23 @@ export function makeDraftFromBaseline(baseline: ServiceDraftBaseline): ServiceDr
     price_to: dollarsFromCents(baseline.price_to_cents),
     variable_price_note: baseline.variable_price_note ?? "",
     assignments: baseline.assignments,
+    card_fee_mode: baseline.card_fee_mode,
+    // When mode = custom, stringify the cents back to dollars so the
+    // operator sees their saved value. When mode != custom, leave the
+    // buffer empty — the row's `card_fee_custom_cents` is `null` per the
+    // DB CHECK constraint anyway.
+    card_fee_custom_dollars:
+      baseline.card_fee_mode === "custom"
+        ? dollarsFromCents(baseline.card_fee_custom_cents ?? 0)
+        : "",
+    // 021-services-deductions: supply state. `supply_on` is derived from
+    // whether the row has a stored amount. When on, hydrate dollars +
+    // label; when off, leave the buffer empty so the toggle-on default
+    // fires the `'5.00'` pre-fill (FR-021).
+    supply_on: baseline.supply_amount_cents !== null,
+    supply_amount_dollars:
+      baseline.supply_amount_cents !== null ? dollarsFromCents(baseline.supply_amount_cents) : "",
+    supply_label: baseline.supply_amount_cents !== null ? (baseline.supply_label ?? "") : "",
   };
 }
 
@@ -119,6 +166,14 @@ export type ServiceFormProps = {
   categories: string[];
   /** Read-only mode (US6). */
   disabled?: boolean;
+  /**
+   * 021-services-deductions § Phase 3 (US1): when the form is mounted inside
+   * `<EditPanel>` (two-pane layout), the panel owns the outer padding and
+   * card surface. The form itself drops its outer chrome and only renders
+   * the vertical field stack. Defaults to `false` so any remaining drawer
+   * call site (none after T022) still receives the same layout.
+   */
+  inspectorChrome?: boolean;
 };
 
 /**
@@ -173,6 +228,32 @@ export function hasFormErrors(draft: ServiceDraft): boolean {
       return true;
     }
   }
+  // 021-services-deductions: when mode = custom, the amount input is
+  // required + bounded — empty / non-numeric / > $50 all disable Save.
+  // Modes default + exempt have no companion input to validate.
+  if (draft.card_fee_mode === "custom") {
+    if (draft.card_fee_custom_dollars.trim().length === 0) return true;
+    try {
+      validateCardFeeCustomDollars(draft.card_fee_custom_dollars);
+    } catch {
+      return true;
+    }
+  }
+  // 021-services-deductions: when supply is on, both inputs are required +
+  // bounded. The validators throw for empty / zero / negative / > $50 on
+  // the amount and empty-after-trim / > 64 chars on the label.
+  if (draft.supply_on) {
+    try {
+      validateSupplyAmountDollars(draft.supply_amount_dollars);
+    } catch {
+      return true;
+    }
+    try {
+      validateSupplyLabel(draft.supply_label);
+    } catch {
+      return true;
+    }
+  }
   return false;
 }
 
@@ -206,8 +287,10 @@ export function ServiceForm({
   onChange,
   categories,
   disabled = false,
+  inspectorChrome = false,
 }: ServiceFormProps) {
-  void baseline; // currently unused — drawer derives dirty-state from baseline
+  void baseline; // currently unused — panel derives dirty-state from baseline
+  void inspectorChrome; // currently no per-mode chrome differences; reserved for Phase 4+
   const [categoryPopoverOpen, setCategoryPopoverOpen] = useState(false);
 
   // Inline validation hints — recomputed cheaply on every render.
@@ -571,6 +654,25 @@ export function ServiceForm({
           })}
         </div>
       </fieldset>
+
+      {/* 021-services-deductions: Deductions section (card-fee row in US2;
+          supply + preview in US3 / US4). Mounted immediately after Color
+          per `data-model.md § 2.2`. */}
+      <DeductionsSection
+        card_fee_mode={draft.card_fee_mode}
+        card_fee_custom_dollars={draft.card_fee_custom_dollars}
+        supply_on={draft.supply_on}
+        supply_amount_dollars={draft.supply_amount_dollars}
+        supply_label={draft.supply_label}
+        // 021-US4 (T036): live preview inputs. The deductions section needs
+        // read-only access to the price draft to compute net-to-tech; the
+        // section itself never edits these.
+        variable_price={draft.variable_price}
+        price_dollars={draft.price}
+        price_from_dollars={draft.price_from}
+        onChange={onChange}
+        disabled={disabled}
+      />
 
       {/* Taxable toggle */}
       <div

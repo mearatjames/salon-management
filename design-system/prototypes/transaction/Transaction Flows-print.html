@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Lacquer — Transaction Flow Prototypes (Print)</title>
+<link rel="stylesheet" href="transaction.css" />
+<style>
+/* ── Print page setup ───────────────────────────────────────────── */
+@page { size: landscape; margin: 0; }
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { background: #f0eee9; font-family: var(--font-sans); }
+
+/* Each artboard lives in a .print-page that fills the paper */
+.print-page {
+  width: 1122px;          /* A4 landscape px at 96dpi */
+  height: 793px;
+  position: relative;
+  background: #f0eee9;
+  overflow: hidden;
+  break-after: page;
+  page-break-after: always;
+  display: flex;
+  flex-direction: column;
+}
+.print-page:last-child { break-after: auto; page-break-after: auto; }
+
+/* Page label */
+.pg-label {
+  flex-shrink: 0;
+  padding: 6px 18px 4px;
+  display: flex; align-items: baseline; gap: 10px;
+  background: #f0eee9;
+}
+.pg-label-title { font-size: 11px; font-weight: 700; letter-spacing: -0.01em; color: #2a2520; }
+.pg-label-sub   { font-size: 10px; color: #8a8278; }
+
+/* Artboard stage — centers the scaled artboard */
+.pg-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 20px 10px;
+  overflow: hidden;
+}
+
+/* Tablet bezel (same as main file) */
+.tablet-bezel {
+  background: #1a1a1a;
+  border-radius: 22px;
+  padding: 14px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.18);
+  transform-origin: center center;
+}
+.tablet-screen {
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--background);
+  width: 1024px;
+  height: 720px;
+}
+
+/* Phone wrapper — scaled to fit */
+.phone-wrap {
+  transform-origin: center center;
+}
+.phone-shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--background);
+  border-radius: 0 0 44px 44px;
+  overflow: hidden;
+}
+
+/* Scale tablet artboards to fit 1122×793 page with label (~35px) */
+/* Bezel outer: 1024+28=1052 wide × 720+28=748 tall */
+/* Available: ~1082 × ~744 → scale = min(1082/1052, 744/748) ≈ 0.994 */
+.scale-tablet .tablet-bezel { transform: scale(0.980); }
+
+/* Scale phone artboards — IOSDevice is 402×874-ish rendered size */
+/* Available stage: ~1082×744; two phones side by side? No, one per page. */
+/* Scale phone to fit height 744: 874*s ≤ 744 → s ≈ 0.851 */
+.scale-phone .phone-wrap { transform: scale(0.82); }
+
+/* Two phones side by side */
+.dual-phones {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+}
+
+/* -webkit-print-color-adjust keeps backgrounds */
+* { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+@media print {
+  body { background: #f0eee9; }
+  .print-page { background: #f0eee9; }
+}
+</style>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="components.jsx"></script>
+<script type="text/babel" src="TechPicker.jsx"></script>
+<script type="text/babel" src="Landing.jsx"></script>
+<script type="text/babel" src="FlowSingle.jsx"></script>
+<script type="text/babel" src="FlowWizard.jsx"></script>
+<script type="text/babel" src="FlowPOS.jsx"></script>
+<script type="text/babel" src="FlowSingleExtras.jsx"></script>
+<script type="text/babel" src="PhoneFlows.jsx"></script>
+
+<script type="text/babel">
+const { useEffect } = React;
+const noop = () => {};
+
+function TabletPage({ label, sub, children }) {
+  return (
+    <div className="print-page">
+      <div className="pg-label">
+        <span className="pg-label-title">{label}</span>
+        {sub && <span className="pg-label-sub">{sub}</span>}
+      </div>
+      <div className="pg-stage scale-tablet">
+        <div className="tablet-bezel">
+          <div className="tablet-screen">{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PhonePage({ label, sub, left, leftLabel, right, rightLabel }) {
+  return (
+    <div className="print-page">
+      <div className="pg-label">
+        <span className="pg-label-title">{label}</span>
+        {sub && <span className="pg-label-sub">{sub}</span>}
+      </div>
+      <div className="pg-stage scale-phone">
+        <div className="dual-phones">
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+            <div className="phone-wrap">
+              <IOSDevice width={402} height={874} dark={false}>
+                <div className="phone-shell">{left}</div>
+              </IOSDevice>
+            </div>
+            {leftLabel && <div style={{ fontSize: 10, color: '#8a8278', fontWeight: 600, textAlign: 'center' }}>{leftLabel}</div>}
+          </div>
+          {right && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+              <div className="phone-wrap">
+                <IOSDevice width={402} height={874} dark={false}>
+                  <div className="phone-shell">{right}</div>
+                </IOSDevice>
+              </div>
+              {rightLabel && <div style={{ fontSize: 10, color: '#8a8278', fontWeight: 600, textAlign: 'center' }}>{rightLabel}</div>}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PrintApp() {
+  useEffect(() => {
+    document.fonts.ready.then(() => {
+      setTimeout(() => window.print(), 500);
+    });
+  }, []);
+
+  return (
+    <div>
+      {/* ── Page 1: Landing A — Minimal ────────────────────────── */}
+      <TabletPage label="Landing page · A — Minimal (CTA-first)" sub="Tablet 1024×720">
+        <LandingMinimal density="compact" showRecents={true} period="today" onPeriod={noop} onNew={noop} />
+      </TabletPage>
+
+      {/* ── Page 2: Landing B — Stats-rich ─────────────────────── */}
+      <TabletPage label="Landing page · B — Stats-rich (dashboard-led)" sub="Tablet 1024×720">
+        <LandingStats density="compact" showRecents={true} period="today" onPeriod={noop} onNew={noop} />
+      </TabletPage>
+
+      {/* ── Page 3: Landing C — Calendar-led ───────────────────── */}
+      <TabletPage label="Landing page · C — Calendar-led" sub="Tablet 1024×720">
+        <LandingCalendar density="compact" showRecents={true} period="today" onPeriod={noop} onNew={noop} />
+      </TabletPage>
+
+      {/* ── Page 4: Phone Landing + Phone Single ───────────────── */}
+      <PhonePage
+        label="Phone — Landing page & Single-screen cart"
+        sub="iPhone (402×874) · two screens per page"
+        left={<PhoneLanding density="compact" showRecents={true} period="today" onPeriod={noop} onNew={noop} />}
+        leftLabel="Landing (stats + recents)"
+        right={<PhoneSingle density="compact" onDone={noop} />}
+        rightLabel="A · Single-screen cart"
+      />
+
+      {/* ── Page 5: Tablet Single-screen cart ──────────────────── */}
+      <TabletPage label="New transaction · A — Single-screen cart" sub="Tablet 1024×720 · tech assignment + per-line override">
+        <FlowSingle density="compact" onDone={noop} />
+      </TabletPage>
+
+      {/* ── Page 6: Bill preview ────────────────────────────────── */}
+      <TabletPage label="Single-screen cart · Bill preview" sub="Tablet 1024×720 · drop-the-bill sheet over the cart">
+        <BillPreviewArtboard density="compact" />
+      </TabletPage>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<PrintApp />);
+</script>
+</body>
+</html>

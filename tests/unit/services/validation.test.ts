@@ -7,12 +7,16 @@ import { describe, expect, it } from "vitest";
 import {
   validateBoundDollars,
   validateBoundsConsistency,
+  validateCardFeeCustomDollars,
+  validateCardFeeMode,
   validateCategory,
   validateColor,
   validateDurationMin,
   validateFixedPriceDollars,
   validateName,
   validateOverrideMin,
+  validateSupplyAmountDollars,
+  validateSupplyLabel,
   validateUuid,
   ValidationError,
 } from "@/app/(studio)/services/_validation";
@@ -193,6 +197,125 @@ describe("validateOverrideMin", () => {
         throw new Error(`expected throw for ${JSON.stringify(bad)}`);
       } catch (err) {
         expect((err as ValidationError).code).toBe("invalid_override");
+      }
+    }
+  });
+});
+
+// ── 021-services-deductions validators ──────────────────────────────────
+
+describe("validateCardFeeMode", () => {
+  it.each(["default", "custom", "exempt"] as const)("accepts %s", (mode) => {
+    expect(validateCardFeeMode(mode)).toBe(mode);
+  });
+
+  it("rejects empty / unknown / wrong-case / padded values", () => {
+    for (const bad of ["", "DEFAULT", "other", "  custom  ", "Default", "exemPt"]) {
+      try {
+        validateCardFeeMode(bad);
+        throw new Error(`expected throw for ${JSON.stringify(bad)}`);
+      } catch (err) {
+        expect(err).toBeInstanceOf(ValidationError);
+        expect((err as ValidationError).code).toBe("invalid_card_fee_mode");
+      }
+    }
+  });
+});
+
+describe("validateCardFeeCustomDollars", () => {
+  it("accepts zero (allowed for waived cards) and converts to 0 cents", () => {
+    expect(validateCardFeeCustomDollars("0")).toBe(0);
+    expect(validateCardFeeCustomDollars("0.00")).toBe(0);
+  });
+
+  it("converts non-negative decimals (≤ 2 fractional) up to $50 to cents", () => {
+    expect(validateCardFeeCustomDollars("4")).toBe(400);
+    expect(validateCardFeeCustomDollars("4.5")).toBe(450);
+    expect(validateCardFeeCustomDollars("4.50")).toBe(450);
+    expect(validateCardFeeCustomDollars("50")).toBe(5000);
+    expect(validateCardFeeCustomDollars("50.00")).toBe(5000);
+  });
+
+  it("throws invalid_card_fee_custom for empty / negative / NaN / > 2 fractional", () => {
+    for (const bad of ["", "-1", "abc", "4.501", "  ", "1.234"]) {
+      try {
+        validateCardFeeCustomDollars(bad);
+        throw new Error(`expected throw for ${JSON.stringify(bad)}`);
+      } catch (err) {
+        expect((err as ValidationError).code).toBe("invalid_card_fee_custom");
+      }
+    }
+  });
+
+  it("throws card_fee_custom_too_large for > $50", () => {
+    for (const bad of ["50.01", "60", "500"]) {
+      try {
+        validateCardFeeCustomDollars(bad);
+        throw new Error(`expected throw for ${JSON.stringify(bad)}`);
+      } catch (err) {
+        expect((err as ValidationError).code).toBe("card_fee_custom_too_large");
+      }
+    }
+  });
+});
+
+describe("validateSupplyAmountDollars", () => {
+  it("accepts strictly positive amounts (0, $50] and converts to cents", () => {
+    expect(validateSupplyAmountDollars("0.01")).toBe(1);
+    expect(validateSupplyAmountDollars("5")).toBe(500);
+    expect(validateSupplyAmountDollars("5.00")).toBe(500);
+    expect(validateSupplyAmountDollars("50")).toBe(5000);
+  });
+
+  it("throws invalid_supply_amount for empty / zero / negative / NaN", () => {
+    for (const bad of ["", "0", "0.0", "0.00", "-1", "abc", "  "]) {
+      try {
+        validateSupplyAmountDollars(bad);
+        throw new Error(`expected throw for ${JSON.stringify(bad)}`);
+      } catch (err) {
+        expect((err as ValidationError).code).toBe("invalid_supply_amount");
+      }
+    }
+  });
+
+  it("throws supply_amount_too_large for > $50", () => {
+    for (const bad of ["50.01", "60", "500"]) {
+      try {
+        validateSupplyAmountDollars(bad);
+        throw new Error(`expected throw for ${JSON.stringify(bad)}`);
+      } catch (err) {
+        expect((err as ValidationError).code).toBe("supply_amount_too_large");
+      }
+    }
+  });
+});
+
+describe("validateSupplyLabel", () => {
+  it("trims and returns when 1–64 chars", () => {
+    expect(validateSupplyLabel("A")).toBe("A");
+    expect(validateSupplyLabel("GelX tips & gel")).toBe("GelX tips & gel");
+    expect(validateSupplyLabel("  Chrome powder  ")).toBe("Chrome powder");
+    expect(validateSupplyLabel("a".repeat(64))).toBe("a".repeat(64));
+  });
+
+  it("throws invalid_supply_label for empty / whitespace-only", () => {
+    for (const bad of ["", "   ", "\t \n"]) {
+      try {
+        validateSupplyLabel(bad);
+        throw new Error(`expected throw for ${JSON.stringify(bad)}`);
+      } catch (err) {
+        expect((err as ValidationError).code).toBe("invalid_supply_label");
+      }
+    }
+  });
+
+  it("throws supply_label_too_long for > 64 trimmed chars", () => {
+    for (const bad of ["a".repeat(65), "a".repeat(100)]) {
+      try {
+        validateSupplyLabel(bad);
+        throw new Error(`expected throw for trimmed length ${bad.length}`);
+      } catch (err) {
+        expect((err as ValidationError).code).toBe("supply_label_too_long");
       }
     }
   });

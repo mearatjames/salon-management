@@ -23,6 +23,17 @@ export type DiscardChangesDialogProps = {
   onCancel: () => void;
   /** Discard — drops the draft and closes the drawer. */
   onDiscard: () => void;
+  /**
+   * Optional service name. When provided AND `addMode` is false, the body
+   * copy reads "Discard your changes to '{name}'?" so the operator knows
+   * exactly which draft they're losing on a row-switch (021-services-
+   * deductions § Phase 3 / US1). When `addMode` is true, the body reads
+   * "Discard your new service draft?". When omitted, the generic 008 copy
+   * is used (backwards compat for any leftover callers).
+   */
+  currentName?: string | null;
+  /** True for add-mode draft → use the "new service draft" copy. */
+  addMode?: boolean;
 };
 
 // Confirm-shell style overrides the shadcn DialogContent defaults
@@ -46,7 +57,21 @@ const BUTTON_BASE: React.CSSProperties = {
   transition: "all var(--duration-fast) var(--ease-out)",
 };
 
-export function DiscardChangesDialog({ open, onCancel, onDiscard }: DiscardChangesDialogProps) {
+export function DiscardChangesDialog({
+  open,
+  onCancel,
+  onDiscard,
+  currentName,
+  addMode,
+}: DiscardChangesDialogProps) {
+  // Body copy resolution. Falls back to the generic 008 string when no
+  // context is supplied, so legacy callers (none expected after 021 Phase 3)
+  // don't break.
+  const bodyText = addMode
+    ? "Discard your new service draft?"
+    : currentName
+      ? `Discard your changes to "${currentName}"?`
+      : "You have unsaved changes. Discard them?";
   return (
     <Dialog
       open={open}
@@ -103,7 +128,7 @@ export function DiscardChangesDialog({ open, onCancel, onDiscard }: DiscardChang
             textWrap: "pretty",
           }}
         >
-          You have unsaved changes. Discard them?
+          {bodyText}
         </DialogDescription>
 
         <div

@@ -2,6 +2,7 @@
 // pure rendering. Composes (left → right per `contracts/ui.contract.md § 3`):
 //   - color swatch (rendered from the service's `color_token`)
 //   - service name
+//   - deduction chips (021-services-deductions US2/US3)
 //   - duration pill (e.g. "45 min")
 //   - price pill (via `formatPriceLabel`)
 //   - Archived badge (when `active === false`)
@@ -19,8 +20,10 @@
 // `.service-list-row[data-selected="true"]` can apply the active-row visual.
 // All visual values resolve to Lacquer tokens (see `styles/settings.css`).
 
+import { DeductionChips } from "@/components/lacquer/services/deduction-chips";
 import { formatPriceLabel } from "@/app/(studio)/services/_format";
 import type { CatalogService } from "@/app/(studio)/services/_types";
+import { DEFAULT_CARD_FEE_CENTS } from "@/lib/services/card-fee-default";
 
 export type CatalogRowProps = {
   service: CatalogService;
@@ -65,8 +68,10 @@ export function CatalogRow({ service, isSelected }: CatalogRowProps) {
         {service.name}
       </span>
 
-      {/* Trailing group: duration + price + (optional) archived badge. Each
-          pill renders with its own token-bound class. */}
+      {/* Trailing group: deduction chips + duration + price + (optional)
+          archived badge. The chips appear immediately before the duration
+          token with a 4px gap (the prototype's 6px snaps to `--space-1`)
+          per `contracts/ui.contract.md § 3 / § 4`. */}
       <span
         style={{
           display: "inline-flex",
@@ -75,6 +80,13 @@ export function CatalogRow({ service, isSelected }: CatalogRowProps) {
           flex: "0 0 auto",
         }}
       >
+        <DeductionChips
+          card_fee_mode={service.card_fee_mode}
+          card_fee_custom_cents={service.card_fee_custom_cents}
+          supply_amount_cents={service.supply_amount_cents}
+          supply_label={service.supply_label}
+          default_card_fee_cents={DEFAULT_CARD_FEE_CENTS}
+        />
         <span
           data-slot="service-duration-pill"
           className="service-price-pill tnum"

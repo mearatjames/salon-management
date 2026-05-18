@@ -23,12 +23,13 @@
 import { Suspense } from "react";
 
 import { CatalogList } from "@/components/lacquer/services/catalog-list.client";
-import { Drawer } from "@/components/lacquer/services/drawer.client";
+import { EditPanel } from "@/components/lacquer/services/edit-panel.client";
 import { PageHeader } from "@/components/lacquer/services/page-header";
 import { ServicesToaster } from "@/components/lacquer/services/services-toaster.client";
 import { loadServiceWithAssignments } from "@/app/(studio)/services/_load";
 import type {
   AvatarColorToken,
+  CardFeeMode,
   CatalogService,
   ServiceDraftBaseline,
 } from "@/app/(studio)/services/_types";
@@ -75,6 +76,16 @@ function narrowColorToken(raw: string): AvatarColorToken {
     : "--avatar-slate";
 }
 
+// 021-services-deductions: mirror the `narrowColorToken` pattern for the
+// raw `text` `card_fee_mode` column — unknown values fall back to `default`
+// so a malformed row never crashes the render (the validator + DB check
+// constraint gate writes upstream, so this is purely defensive).
+const VALID_CARD_FEE_MODES: ReadonlySet<CardFeeMode> = new Set(["default", "custom", "exempt"]);
+
+function narrowCardFeeMode(raw: string): CardFeeMode {
+  return VALID_CARD_FEE_MODES.has(raw as CardFeeMode) ? (raw as CardFeeMode) : "default";
+}
+
 export default async function ServicesPage({
   searchParams,
 }: {
@@ -98,7 +109,7 @@ export default async function ServicesPage({
   const catalogPromise = supabase
     .from("services")
     .select(
-      "id, name, category, duration_min, price_cents, color_token, taxable, active, variable_price, price_from_cents, price_to_cents, variable_price_note"
+      "id, name, category, duration_min, price_cents, color_token, taxable, active, variable_price, price_from_cents, price_to_cents, variable_price_note, card_fee_mode, card_fee_custom_cents, supply_amount_cents, supply_label"
     )
     .order("category", { ascending: true })
     .order("name", { ascending: true });
@@ -174,6 +185,13 @@ export default async function ServicesPage({
     price_from_cents: row.price_from_cents,
     price_to_cents: row.price_to_cents,
     variable_price_note: row.variable_price_note,
+    // 021-services-deductions: defensive narrowing for the raw `text` mode
+    // column (DB check constraint + validator both gate writes; this is the
+    // last-line render guard).
+    card_fee_mode: narrowCardFeeMode(row.card_fee_mode),
+    card_fee_custom_cents: row.card_fee_custom_cents,
+    supply_amount_cents: row.supply_amount_cents,
+    supply_label: row.supply_label,
     assignment_count: assignmentCountByService.get(row.id) ?? 0,
   }));
 
@@ -202,21 +220,25 @@ export default async function ServicesPage({
   // inconsistency).
   const categories = Array.from(new Set(roster.map((r) => r.category))).sort();
 
-  // Resolve the drawer mode + baseline. `selected` wins over `adding` when
+  // Resolve the panel mode + baseline. `selected` wins over `adding` when
   // both are present (per `contracts/ui.contract.md § 1`). Baseline hydration
   // goes through the typed projection `loadServiceWithAssignments` (Phase 5)
   // which returns `null` when the id isn't in the visible catalog (stale URL
   // or archived service hidden from the current view) — in that case the
-  // drawer renders its closed state.
-  let drawerMode: "closed" | "add" | "edit" = "closed";
-  let drawerBaseline: ServiceDraftBaseline | null = null;
+  // panel renders its closed / empty-state inspector.
+  //
+  // 021-services-deductions § Phase 3 (US1): the off-canvas drawer was
+  // replaced with the always-mounted two-pane <EditPanel>. URL params,
+  // baseline loading, and the page's data-flow are otherwise unchanged.
+  let panelMode: "closed" | "add" | "edit" = "closed";
+  let panelBaseline: ServiceDraftBaseline | null = null;
   if (selectedId) {
-    drawerBaseline = loadServiceWithAssignments(roster, selectedAssignments ?? [], selectedId);
-    if (drawerBaseline) {
-      drawerMode = "edit";
+    panelBaseline = loadServiceWithAssignments(roster, selectedAssignments ?? [], selectedId);
+    if (panelBaseline) {
+      panelMode = "edit";
     }
   } else if (isAdding) {
-    drawerMode = "add";
+    panelMode = "add";
   }
 
   return (
@@ -224,16 +246,20 @@ export default async function ServicesPage({
       className="settings-services-grid"
       data-slot="services-page"
       data-selected-id={selectedId ?? ""}
-      data-drawer-mode={drawerMode}
     >
       <PageHeader activeCount={activeCount} totalCount={totalCount} />
-      <CatalogList roster={roster} selectedId={selectedId} operatorRole={viewer.staff.role} />
-      <Drawer
-        mode={drawerMode}
-        baseline={drawerBaseline}
-        categories={categories}
-        operatorRole={viewer.staff.role}
-      />
+      {/* Two-pane shell — catalog list on the left, always-mounted edit
+          inspector on the right. CSS in `styles/settings.css` under the
+          `=== 021-services-deductions ===` block. */}
+      <div className="services-two-pane" data-slot="services-two-pane" data-panel-mode={panelMode}>
+        <CatalogList roster={roster} selectedId={selectedId} operatorRole={viewer.staff.role} />
+        <EditPanel
+          mode={panelMode}
+          baseline={panelBaseline}
+          categories={categories}
+          operatorRole={viewer.staff.role}
+        />
+      </div>
       {/* US7: URL → Sonner toast bridge. Reads ?toast / ?secondary / ?name /
           ?error, fires the matching TOASTS entry, then strips them via a
           history rewrite (preserving ?selected= and ?adding=). Wrapped in

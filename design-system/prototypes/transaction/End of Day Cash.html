@@ -255,6 +255,545 @@ body { background: #f0eee9; }
   font-style: italic;
   line-height: 1.5;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* History — list + detail + amend                                          */
+/* ═══════════════════════════════════════════════════════════════════════ */
+.eh-app {
+  background: var(--background);
+  display: flex; flex-direction: column;
+  height: 100%;
+  position: relative; /* anchor for the amend-sheet scrim */
+}
+
+/* Back button */
+.eh-back {
+  width: 30px; height: 30px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--card);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer; color: var(--foreground);
+  flex-shrink: 0;
+  transition: background 120ms var(--ease-out);
+}
+.eh-back:hover { background: var(--accent); }
+
+/* Ghost button (Export, etc.) */
+.eh-btn-ghost {
+  height: 30px; padding: 0 11px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 12px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 6px;
+  cursor: pointer;
+  transition: background 120ms var(--ease-out);
+}
+.eh-btn-ghost:hover { background: var(--accent); }
+
+/* Amend CTA (header) */
+.eh-btn-amend {
+  height: 32px; padding: 0 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 12px; font-weight: 600;
+  display: inline-flex; align-items: center; gap: 6px;
+  cursor: pointer;
+  transition: background 120ms var(--ease-out), border-color 120ms var(--ease-out);
+}
+.eh-btn-amend:hover { background: var(--accent); border-color: var(--ring); }
+
+/* ── List: toolbar ─────────────────────────────────────────────────────── */
+.eh-list-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+  padding: 11px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  flex-shrink: 0;
+}
+.eh-filters { display: flex; gap: 6px; }
+.eh-filter {
+  height: 30px; padding: 0 12px; border-radius: 9999px;
+  border: 1px solid var(--border); background: var(--card);
+  font-size: 12px; font-weight: 500; font-family: var(--font-sans);
+  color: var(--foreground); cursor: pointer;
+  transition: background 120ms var(--ease-out);
+}
+.eh-filter.active { background: var(--foreground); color: var(--background); border-color: var(--foreground); }
+.eh-filter:hover:not(.active) { background: var(--accent); }
+
+.eh-search-wrap { position: relative; }
+.eh-search-wrap svg {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  color: var(--muted-foreground); pointer-events: none;
+}
+.eh-search {
+  height: 30px; padding: 0 10px 0 30px;
+  border: 1px solid var(--input); border-radius: 8px;
+  background: var(--card); width: 220px;
+  font-size: 12px; font-family: var(--font-sans);
+  color: var(--foreground); outline: none;
+}
+.eh-search:focus { border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 20%, transparent); }
+
+/* ── List: summary strip ───────────────────────────────────────────────── */
+.eh-summary {
+  display: flex; align-items: center;
+  padding: 14px 20px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.eh-sum-item {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 0 24px;
+}
+.eh-sum-item:first-child { padding-left: 0; }
+.eh-sum-num {
+  font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1;
+}
+.eh-sum-num.eh-sum-exact { color: var(--foreground); }
+.eh-sum-num.eh-sum-over  { color: var(--warning); }
+.eh-sum-num.eh-sum-short { color: var(--destructive); }
+.eh-sum-lbl {
+  font-size: 10px; color: var(--muted-foreground);
+  text-transform: uppercase; letter-spacing: 0.06em; font-weight: 500;
+}
+.eh-sum-divider { width: 1px; height: 28px; background: var(--border); align-self: center; }
+
+/* ── List: column rules (shared by header + rows) ──────────────────────── */
+.eh-c-date   { flex: 0 0 110px; }
+.eh-c-tech   { flex: 0 0 140px; }
+.eh-c-amt    { flex: 0 0 100px; text-align: right; font-variant-numeric: tabular-nums; }
+.eh-c-var    { flex: 0 0 110px; text-align: right; }
+.eh-c-status { flex: 1 1 auto; display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+
+.eh-list-headrow {
+  display: flex;
+  padding: 9px 20px;
+  background: color-mix(in oklch, var(--muted) 50%, var(--card));
+  border-bottom: 1px solid var(--border);
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+.eh-list-headrow .eh-c-var { padding-right: 0; }
+
+.eh-list-scroll { flex: 1; min-height: 0; overflow-y: auto; background: var(--background); }
+
+.eh-row {
+  display: flex; align-items: center;
+  width: 100%;
+  padding: 11px 20px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  text-align: left;
+  color: var(--foreground);
+  transition: background 100ms var(--ease-out);
+}
+.eh-row:hover { background: var(--accent); }
+.eh-row-date { display: flex; flex-direction: column; line-height: 1.2; gap: 2px; }
+.eh-row-dow  { font-size: 10px; color: var(--muted-foreground); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500; }
+.eh-row-dnum { font-size: 13px; font-weight: 600; }
+.eh-row-tech { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+.eh-row-amt  { font-size: 13px; font-weight: 500; }
+.eh-row-status { color: var(--muted-foreground); }
+
+/* Variance chip */
+.eh-var-chip {
+  display: inline-flex; align-items: center;
+  padding: 3px 9px; border-radius: 9999px;
+  font-size: 11px; font-weight: 600; font-feature-settings: "tnum";
+  letter-spacing: -0.005em;
+}
+.eh-var-chip.exact { background: var(--muted); color: var(--muted-foreground); }
+.eh-var-chip.over  { background: color-mix(in oklch, var(--warning)     16%, transparent); color: oklch(0.46 0.14 65); }
+.eh-var-chip.short { background: color-mix(in oklch, var(--destructive) 12%, transparent); color: var(--destructive); }
+
+/* Status pill */
+.eh-status {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: 9999px;
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  flex-shrink: 0;
+}
+.eh-status.closed  { background: var(--muted); color: var(--muted-foreground); }
+.eh-status.amended { background: color-mix(in oklch, var(--primary) 14%, transparent); color: var(--rose-700); }
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* Detail view                                                              */
+/* ═══════════════════════════════════════════════════════════════════════ */
+.eh-detail-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 16px 20px 20px;
+  display: flex; flex-direction: column;
+  gap: 12px;
+}
+.eh-detail-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 18px;
+}
+
+/* Variance hero card */
+.eh-detail-variance {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 18px;
+}
+.eh-detail-variance.exact { border-color: color-mix(in oklch, var(--success)     30%, var(--border)); background: color-mix(in oklch, var(--success)     5%, var(--card)); }
+.eh-detail-variance.over  { border-color: color-mix(in oklch, var(--warning)     30%, var(--border)); background: color-mix(in oklch, var(--warning)     5%, var(--card)); }
+.eh-detail-variance.short { border-color: color-mix(in oklch, var(--destructive) 30%, var(--border)); background: color-mix(in oklch, var(--destructive) 4%, var(--card)); }
+
+.eh-detail-variance-icon {
+  width: 44px; height: 44px; border-radius: 9999px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.eh-detail-variance.exact .eh-detail-variance-icon { background: color-mix(in oklch, var(--success)     16%, transparent); color: var(--success); }
+.eh-detail-variance.over  .eh-detail-variance-icon { background: color-mix(in oklch, var(--warning)     16%, transparent); color: var(--warning); }
+.eh-detail-variance.short .eh-detail-variance-icon { background: color-mix(in oklch, var(--destructive) 14%, transparent); color: var(--destructive); }
+
+.eh-detail-variance-text { flex: 1; min-width: 0; }
+.eh-detail-variance-label {
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.eh-detail-variance.exact .eh-detail-variance-label { color: var(--success); }
+.eh-detail-variance.over  .eh-detail-variance-label { color: var(--warning); }
+.eh-detail-variance.short .eh-detail-variance-label { color: var(--destructive); }
+.eh-detail-variance-amt {
+  font-size: 28px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.1;
+  margin-top: 4px;
+}
+.eh-detail-variance-meta {
+  text-align: right;
+  display: flex; flex-direction: column; gap: 3px;
+  flex-shrink: 0;
+}
+.eh-detail-meta-row {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 500;
+  justify-content: flex-end;
+}
+.eh-detail-meta-sub {
+  font-size: 11px; color: var(--muted-foreground);
+}
+
+/* Numbers card */
+.eh-detail-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 13px; color: var(--foreground); padding: 5px 0;
+}
+.eh-detail-row > span:first-child { color: var(--muted-foreground); }
+.eh-detail-divider { height: 1px; background: var(--border); margin: 6px 0; }
+.eh-detail-row-diff > span:first-child { color: var(--foreground); font-weight: 600; }
+.eh-detail-row-diff.exact > span:last-child { color: var(--success);     font-weight: 600; }
+.eh-detail-row-diff.over  > span:last-child { color: var(--warning);     font-weight: 600; }
+.eh-detail-row-diff.short > span:last-child { color: var(--destructive); font-weight: 600; }
+
+.eh-strike {
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+  margin-right: 8px;
+  font-weight: 400;
+}
+
+.eh-detail-note {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--muted);
+  border-radius: 8px;
+}
+.eh-detail-note-label {
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+  margin-bottom: 3px;
+}
+.eh-detail-note-text {
+  font-size: 12px; color: var(--foreground);
+  font-style: italic; line-height: 1.5;
+}
+
+/* Activity log */
+.eh-activity { display: flex; flex-direction: column; gap: 0; }
+.eh-activity-title {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+  margin-bottom: 12px;
+}
+.eh-activity-item {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding-bottom: 14px;
+}
+.eh-activity-item:last-child { padding-bottom: 0; }
+
+.eh-activity-rail {
+  display: flex; flex-direction: column; align-items: center;
+  width: 12px;
+  flex-shrink: 0;
+  padding-top: 5px;
+}
+.eh-activity-dot {
+  width: 8px; height: 8px; border-radius: 9999px;
+  flex-shrink: 0;
+}
+.eh-activity-dot.closed  { background: var(--muted-foreground); box-shadow: 0 0 0 3px color-mix(in oklch, var(--muted-foreground) 18%, transparent); }
+.eh-activity-dot.amended { background: var(--primary); box-shadow: 0 0 0 3px color-mix(in oklch, var(--primary) 18%, transparent); }
+.eh-activity-line-vert {
+  width: 1px; flex: 1;
+  background: var(--border);
+  margin: 4px 0 -10px;
+}
+
+.eh-activity-text { flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; }
+.eh-activity-line {
+  font-weight: 400; color: var(--foreground);
+  display: flex; align-items: center; gap: 6px;
+  flex-wrap: wrap;
+}
+.eh-activity-line b { font-weight: 600; }
+.eh-activity-divider-dot { color: var(--neutral-300); }
+.eh-activity-amt {
+  font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.eh-activity-amt.over  { color: var(--warning); }
+.eh-activity-amt.short { color: var(--destructive); }
+.eh-activity-amt-pair {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-weight: 600;
+}
+.eh-activity-amt-pair .eh-strike { margin: 0; }
+.eh-activity-meta {
+  font-size: 11px; color: var(--muted-foreground); margin-top: 2px;
+}
+.eh-activity-reason {
+  font-size: 12px; color: var(--foreground); margin-top: 6px;
+  padding: 8px 10px;
+  background: color-mix(in oklch, var(--primary) 5%, var(--background));
+  border-left: 2px solid var(--primary);
+  border-radius: 4px;
+  line-height: 1.5;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.eh-activity-reason-lbl {
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--rose-700);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════ */
+/* Amend sheet                                                              */
+/* ═══════════════════════════════════════════════════════════════════════ */
+.eh-modal-scrim {
+  position: absolute; inset: 0;
+  background: rgb(0 0 0 / 0.45);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 20;
+  padding: 20px;
+}
+.eh-amend-sheet {
+  background: var(--card);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+  width: 560px;
+  max-height: 100%;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.eh-amend-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.eh-amend-title {
+  font-size: 15px; font-weight: 600; letter-spacing: -0.005em;
+}
+.eh-amend-sub {
+  font-size: 12px; color: var(--muted-foreground); margin-top: 2px;
+}
+.eh-amend-x {
+  width: 28px; height: 28px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--card);
+  cursor: pointer; color: var(--muted-foreground);
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 120ms var(--ease-out);
+}
+.eh-amend-x:hover { background: var(--accent); color: var(--foreground); }
+
+.eh-amend-banner {
+  padding: 8px 18px;
+  background: color-mix(in oklch, var(--primary) 6%, var(--card));
+  border-bottom: 1px solid var(--border);
+  font-size: 11px; color: var(--rose-700);
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+
+.eh-amend-body {
+  padding: 14px 18px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 12px;
+  flex: 1; min-height: 0;
+}
+
+.eh-amend-counts {
+  display: flex; align-items: stretch; gap: 12px;
+  padding: 12px 14px;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.eh-amend-count-col { flex: 1; min-width: 0; }
+.eh-amend-col-lbl {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted-foreground); margin-bottom: 6px;
+  height: 18px; line-height: 18px;
+}
+.eh-amend-clear {
+  font-size: 11px; text-transform: none; letter-spacing: 0;
+  line-height: 18px;
+}
+.eh-amend-col-val {
+  font-size: 22px; font-weight: 700; letter-spacing: -0.02em;
+  color: var(--muted-foreground); line-height: 1;
+}
+.eh-amend-col-val .eh-amend-col-sym {
+  font-size: 14px; font-weight: 600;
+  color: var(--muted-foreground); margin-right: 2px;
+}
+.eh-amend-col-val.new { color: var(--foreground); }
+.eh-amend-col-val.new.over  { color: var(--warning); }
+.eh-amend-col-val.new.short { color: var(--destructive); }
+.eh-amend-arrow {
+  font-size: 18px; color: var(--muted-foreground);
+  display: flex; align-items: center;
+  flex-shrink: 0;
+}
+
+.eh-amend-numpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+.eh-amend-nk {
+  height: 36px;
+  border-radius: 8px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  font-size: 15px; font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer; font-family: var(--font-sans);
+  color: var(--foreground);
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 100ms var(--ease-out);
+}
+.eh-amend-nk:hover  { background: var(--accent); }
+.eh-amend-nk:active { transform: scale(0.97); }
+.eh-amend-nk.fn { background: var(--muted); font-size: 13px; }
+
+.eh-amend-section-lbl {
+  font-size: 12px; font-weight: 600;
+  color: var(--foreground);
+  margin-top: 4px;
+  display: flex; align-items: center; gap: 6px;
+}
+.eh-amend-req { color: var(--destructive); font-weight: 500; }
+.eh-amend-opt { color: var(--muted-foreground); font-weight: 400; }
+
+.eh-amend-reasons {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.eh-amend-reason {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12.5px;
+  transition: background 100ms var(--ease-out);
+  position: relative;
+}
+.eh-amend-reason input {
+  position: absolute; opacity: 0; pointer-events: none;
+}
+.eh-amend-radio {
+  width: 16px; height: 16px;
+  border: 1.5px solid var(--neutral-300);
+  border-radius: 9999px;
+  flex-shrink: 0;
+  position: relative;
+  transition: border-color 120ms var(--ease-out);
+}
+.eh-amend-reason.sel .eh-amend-radio { border-color: var(--primary); }
+.eh-amend-reason.sel .eh-amend-radio::after {
+  content: "";
+  position: absolute; inset: 3px;
+  background: var(--primary);
+  border-radius: 9999px;
+}
+.eh-amend-reason:hover { background: var(--accent); }
+.eh-amend-reason.sel  { background: color-mix(in oklch, var(--primary) 7%, transparent); }
+.eh-amend-reason-lbl { color: var(--foreground); }
+
+.eh-amend-note {
+  width: 100%; min-height: 56px;
+}
+
+.eh-amend-foot {
+  display: flex; gap: 10px; justify-content: flex-end;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--card);
+}
+.eh-amend-foot .tx-btn { padding: 0 20px; }
+
+/* Header "Past counts" entry-point button (count screen) */
+.eod-history-btn {
+  height: 30px; padding: 0 11px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 12px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 6px;
+  cursor: pointer;
+  transition: background 120ms var(--ease-out), border-color 120ms var(--ease-out);
+}
+.eod-history-btn:hover { background: var(--accent); border-color: var(--ring); }
+.eod-history-btn svg { color: var(--muted-foreground); }
+
+/* "View past counts" link on the Done screen */
+.eod-done-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: transparent; border: 0;
+  font-family: var(--font-sans);
+  font-size: 12px; font-weight: 500;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-top: 2px;
+  transition: color 120ms var(--ease-out), background 120ms var(--ease-out);
+}
+.eod-done-link:hover { color: var(--foreground); background: var(--accent); }
 </style>
 
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
@@ -269,6 +808,7 @@ body { background: #f0eee9; }
 <script type="text/babel" src="data.jsx"></script>
 <script type="text/babel" src="components.jsx"></script>
 <script type="text/babel" src="EndOfDay.jsx"></script>
+<script type="text/babel" src="EODHistory.jsx"></script>
 
 <script type="text/babel">
 const { useState } = React;
@@ -292,8 +832,12 @@ function App() {
     <>
       <DesignCanvas
         title="Lacquer · End of Day Cash Count"
-        subtitle="Tablet (1024×720) — count the drawer, compare to expected, flag any discrepancy">
-        <DCSection id="eod" title="End of Day · Cash Count" subtitle="Staff count the cash drawer at close; the screen shows today's cash transactions and flags any over/short">
+        subtitle="Count → Close → Review · history list and amend flow keep the audit trail intact">
+
+        <DCSection
+          id="eod"
+          title="End of Day · Cash Count"
+          subtitle="Staff count the cash drawer at close; the screen shows today's cash transactions and flags any over/short">
           <DCArtboard id="eod-tablet" label="Tablet — cash count" width={1056} height={752}>
             <TabletArtboard>
               <EndOfDayCash preset={t.preset === "none" ? null : t.preset} />
@@ -301,17 +845,72 @@ function App() {
           </DCArtboard>
         </DCSection>
 
+        <DCSection
+          id="eod-history"
+          title="Cash count history"
+          subtitle="Every past close-out, with a clean audit trail and an amend flow so a mis-count can be corrected without erasing the original">
+
+          <DCArtboard id="eod-hist-list" label="1 · History — list view" width={1056} height={752}>
+            <TabletArtboard>
+              <EODCashHistory initialView="list" />
+            </TabletArtboard>
+          </DCArtboard>
+
+          <DCArtboard id="eod-hist-detail" label="2 · Drill into a closed count" width={1056} height={752}>
+            <TabletArtboard>
+              <EODCashHistory initialView="detail" initialDetailId="eod-0510" />
+            </TabletArtboard>
+          </DCArtboard>
+
+          <DCArtboard id="eod-hist-amend" label="3 · Amend sheet (correction in progress)" width={1056} height={752}>
+            <TabletArtboard>
+              <EODCashHistory initialView="detail" initialDetailId="eod-0510" initialAmendOpen={true} />
+            </TabletArtboard>
+          </DCArtboard>
+
+          <DCArtboard id="eod-hist-amended" label="4 · After amend — audit trail" width={1056} height={752}>
+            <TabletArtboard>
+              <EODCashHistory initialView="detail" initialDetailId="eod-0510" initialAmended={true} />
+            </TabletArtboard>
+          </DCArtboard>
+
+          <DCArtboard id="eod-hist-amended-pre" label="5 · Previously amended count (in list)" width={1056} height={752}>
+            <TabletArtboard>
+              <EODCashHistory initialView="detail" initialDetailId="eod-0508" />
+            </TabletArtboard>
+          </DCArtboard>
+        </DCSection>
+
         <DCPostIt left={40} top={40} width={300}>
           <b>End of Day · Cash Count</b><br /><br />
-          Left panel shows every <b>cash transaction</b> from today with the expected total at the bottom.<br /><br />
-          Right panel: enter the counted amount via the numpad. The comparison block updates live — <b>green</b> for exact, <b>amber</b> for over, <b>red</b> for short.<br /><br />
-          A discrepancy requires a note before "Close Out Day" is enabled.<br /><br />
+          Left panel: every <b>cash transaction</b> from today, with the expected total at the bottom.<br /><br />
+          Right panel: enter the counted amount via the numpad. The comparison updates live — <b>green</b> for exact, <b>amber</b> for over, <b>red</b> for short.<br /><br />
+          A discrepancy requires a note before <b>Close Out Day</b> is enabled. The header now has a discreet <b>Past counts</b> button so staff can pop into history mid-count, and the Done screen offers the same link.<br /><br />
           Use Tweaks to try the <b>short</b> and <b>over</b> presets.
+        </DCPostIt>
+
+        <DCPostIt left={40} top={840} width={320}>
+          <b>Cash count history</b> — the new screen<br /><br />
+          A persistent list of every close-out. Each row shows date, who counted, expected vs counted, the variance, and whether the count has been amended.<br /><br />
+          Drill into any row to see the full record, a close-out note, and an activity log.<br /><br />
+          The five artboards below walk through:<br />
+          <b>1.</b> Default list view (the May 8 row shows as <i>Amended</i>)<br />
+          <b>2.</b> Drilling into Sat May 10 (a $4 short)<br />
+          <b>3.</b> Tapping <b>Amend count</b> opens a sheet for a correction<br />
+          <b>4.</b> After saving, the record now shows the original count, the new count, and an audit entry with who/when/why<br />
+          <b>5.</b> A different record (May 8) that was previously amended — same audit pattern
+        </DCPostIt>
+
+        <DCPostIt left={1180} top={840} width={320}>
+          <b>Why "amend" not "edit"?</b><br /><br />
+          A closed-out day is a financial record. We never overwrite or delete it — instead, an <b>amendment</b> is added with the corrected count, who made it, when, and why.<br /><br />
+          The original count is always visible in the activity log and (struck through) in the detail card. This protects the salon owner if a tech later disputes a number, and matches how a bookkeeper expects to see corrections.<br /><br />
+          <b>Required:</b> a reason. Free-text detail is required only for "Other" — for the canned reasons it's optional but encouraged.
         </DCPostIt>
       </DesignCanvas>
 
       <TweaksPanel>
-        <TweakSection label="Preset state" />
+        <TweakSection label="Count screen" />
         <TweakRadio
           label="Prefill counted amount"
           value={t.preset}
