@@ -13,10 +13,11 @@
 # Each e2e shard boots its own Supabase stack (parallel boots don't
 # compound — they all start at the same time on separate runners).
 #
-# Note: Supabase Docker image caching was tried but blew past the runner's
-# 14 GB disk limit (images are ~4 GB on disk + ~4 GB tarball). Cold pull
-# each run is ~3 min, which is acceptable. Revisit after issue #34 trims
-# unused Supabase services.
+# Note: Supabase Docker image caching was tried previously but blew past the
+# runner's 14 GB disk limit with the full Supabase service set. Issue #34
+# now trims the image set via `--exclude` so the cold pull is leaner; image
+# caching is still skipped because trimming alone hits the boot-time budget
+# and tarballing GBs of images has its own per-run overhead.
 name: CI
 
 on:
@@ -142,8 +143,19 @@ jobs:
           version: latest
 
       - name: Start Supabase + apply migration + seed
+        # Issue #34: skip Supabase services Tang Nails doesn't use to shrink
+        # the cold-pull bill. Local dev keeps the full stack — this is CI-only.
+        #
+        #   studio + postgres-meta — dashboard UI; never opened by tests
+        #   edge-runtime           — no supabase/functions/ directory
+        #   imgproxy + storage-api — no Supabase Storage usage in app or tests
+        #   realtime               — no supabase.channel / realtime subscriptions
+        #   vector + logflare      — log shipping; tests don't read them
+        #
+        # mailpit/inbucket STAYS — auth.spec.ts and onboarding.spec.ts read
+        # magic-link emails from it at 127.0.0.1:54324.
         run: |
-          supabase start
+          supabase start --exclude studio,postgres-meta,edge-runtime,imgproxy,storage-api,realtime,vector,logflare
           supabase db reset
 
       - name: Export Supabase env for tests
