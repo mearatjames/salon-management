@@ -84,7 +84,12 @@ export type AuditAction =
   // Added by feature 019 (entity_type "cash_drawer")
   | "cash_drawer.closed"
   // Added by feature 020 (entity_type "cash_drawer")
-  | "cash_drawer.edited";
+  | "cash_drawer.edited"
+  // Added by feature 022 (entity_type "supply_type")
+  | "supply_type.created"
+  | "supply_type.renamed"
+  | "supply_type.archived"
+  | "supply_type.reactivated";
 
 export function deriveEntityType(
   action: AuditAction
@@ -97,7 +102,8 @@ export function deriveEntityType(
   | "user"
   | "integration"
   | "gift_card"
-  | "cash_drawer" {
+  | "cash_drawer"
+  | "supply_type" {
   if (action.startsWith("user.")) return "user";
   if (action.startsWith("ticket.")) return "ticket";
   // Feature 018 — gift_card.* verbs (placed before payment.* so the
@@ -105,6 +111,9 @@ export function deriveEntityType(
   // emitted alongside the gift-card leg's settlement).
   if (action.startsWith("gift_card.")) return "gift_card";
   if (action.startsWith("payment.")) return "payment";
+  // Feature 022 — supply_type.* verbs (placed before service.* so the
+  // prefix dispatch resolves correctly).
+  if (action.startsWith("supply_type.")) return "supply_type";
   if (action.startsWith("service.")) return "service";
   // Feature 013 — line/discount/bill verbs all entity_type="ticket".
   // Placed before staff.* / auth fall-throughs so the prefix dispatch

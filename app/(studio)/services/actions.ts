@@ -54,7 +54,7 @@ import {
   validateName,
   validateOverrideMin,
   validateSupplyAmountDollars,
-  validateSupplyLabel,
+  validateSupplyTypeId,
 } from "./_validation";
 
 // Accepts any 36-char `8-4-4-4-12` hyphenated hex group. Looser than
@@ -162,7 +162,7 @@ export async function addService(formData: FormData): Promise<void> {
   let cardFeeMode: CardFeeMode;
   let cardFeeCustomCents: number | null;
   let supplyAmountCents: number | null;
-  let supplyLabel: string | null;
+  let supplyTypeId: string | null;
   let assignments: Array<{ staff_id: string; duration_min_override: number | null }>;
 
   try {
@@ -212,10 +212,13 @@ export async function addService(formData: FormData): Promise<void> {
     const supplyOn = formData.get("supply_on") === "on";
     if (supplyOn) {
       supplyAmountCents = validateSupplyAmountDollars(String(formData.get("supply_amount") ?? ""));
-      supplyLabel = validateSupplyLabel(String(formData.get("supply_label") ?? ""));
+      // 022-supply-types-catalog: replaces validateSupplyLabel. Loose-UUID
+      // shape filter only; the DB FK + defensive existence check below are
+      // the real identity checks.
+      supplyTypeId = validateSupplyTypeId(String(formData.get("supply_type_id") ?? ""));
     } else {
       supplyAmountCents = null;
-      supplyLabel = null;
+      supplyTypeId = null;
     }
 
     assignments = parseStaffAssignments(formData);
@@ -223,10 +226,28 @@ export async function addService(formData: FormData): Promise<void> {
     handleKnownError(err);
   }
 
+  const admin = createSupabaseServiceRoleClient();
+
+  // 022-supply-types-catalog: defensive existence check (FR-016). The picker
+  // already filters archived rows; this guards against a race where the
+  // selected type was archived between picker render and form submit.
+  if (supplyTypeId!) {
+    const { data: typeRow, error: typeErr } = await admin
+      .from("supply_types")
+      .select("id")
+      .eq("id", supplyTypeId!)
+      .maybeSingle();
+    if (typeErr) {
+      mapDbError(typeErr, "supply_types.select");
+    }
+    if (!typeRow) {
+      redirect(`${SERVICES_PATH}?error=invalid_supply_type`);
+    }
+  }
+
   // 6a: INSERT the service row via the service-role client (the `services`
   // table grants read to `authenticated` but no INSERT policy — service-role
   // bypasses RLS).
-  const admin = createSupabaseServiceRoleClient();
   const { data: inserted, error: insertErr } = await admin
     .from("services")
     .insert({
@@ -245,7 +266,8 @@ export async function addService(formData: FormData): Promise<void> {
       card_fee_mode: cardFeeMode!,
       card_fee_custom_cents: cardFeeCustomCents!,
       supply_amount_cents: supplyAmountCents!,
-      supply_label: supplyLabel!,
+      // 022-supply-types-catalog
+      supply_type_id: supplyTypeId!,
     })
     .select("id")
     .single();
@@ -299,7 +321,8 @@ export async function addService(formData: FormData): Promise<void> {
       card_fee_mode: cardFeeMode!,
       card_fee_custom_cents: cardFeeCustomCents!,
       supply_amount_cents: supplyAmountCents!,
-      supply_label: supplyLabel!,
+      // 022-supply-types-catalog
+      supply_type_id: supplyTypeId!,
       assigned_staff_ids: assignments!.map((a) => a.staff_id),
     },
     viewer.staff.id
@@ -360,7 +383,7 @@ export async function updateService(formData: FormData): Promise<void> {
   const baselineRowPromise = admin
     .from("services")
     .select(
-      "id, name, category, duration_min, price_cents, color_token, taxable, active, variable_price, price_from_cents, price_to_cents, variable_price_note, card_fee_mode, card_fee_custom_cents, supply_amount_cents, supply_label"
+      "id, name, category, duration_min, price_cents, color_token, taxable, active, variable_price, price_from_cents, price_to_cents, variable_price_note, card_fee_mode, card_fee_custom_cents, supply_amount_cents, supply_type_id"
     )
     .eq("id", serviceId!)
     .maybeSingle();
@@ -405,7 +428,7 @@ export async function updateService(formData: FormData): Promise<void> {
   let cardFeeMode: CardFeeMode;
   let cardFeeCustomCents: number | null;
   let supplyAmountCents: number | null;
-  let supplyLabel: string | null;
+  let supplyTypeId: string | null;
   let draftAssignments: ServiceAssignment[];
 
   try {
@@ -443,15 +466,35 @@ export async function updateService(formData: FormData): Promise<void> {
     const supplyOn = formData.get("supply_on") === "on";
     if (supplyOn) {
       supplyAmountCents = validateSupplyAmountDollars(String(formData.get("supply_amount") ?? ""));
-      supplyLabel = validateSupplyLabel(String(formData.get("supply_label") ?? ""));
+      // 022-supply-types-catalog: replaces validateSupplyLabel.
+      supplyTypeId = validateSupplyTypeId(String(formData.get("supply_type_id") ?? ""));
     } else {
       supplyAmountCents = null;
-      supplyLabel = null;
+      supplyTypeId = null;
     }
 
     draftAssignments = parseStaffAssignments(formData);
   } catch (err) {
     handleKnownError(err, serviceId!);
+  }
+
+  // 022-supply-types-catalog: defensive existence check (FR-016). Same
+  // race window as addService — picker render → form submit → type was
+  // archived/deleted in between.
+  if (supplyTypeId!) {
+    const { data: typeRow, error: typeErr } = await admin
+      .from("supply_types")
+      .select("id")
+      .eq("id", supplyTypeId!)
+      .maybeSingle();
+    if (typeErr) {
+      mapDbError(typeErr, "supply_types.select", serviceId!);
+    }
+    if (!typeRow) {
+      redirect(
+        `${SERVICES_PATH}?error=invalid_supply_type&selected=${encodeURIComponent(serviceId!)}`
+      );
+    }
   }
 
   // 5: compute the services patch + the assignment diff. The baseline's raw
@@ -477,7 +520,7 @@ export async function updateService(formData: FormData): Promise<void> {
     card_fee_mode: baselineCardFeeMode,
     card_fee_custom_cents: baselineRow.card_fee_custom_cents,
     supply_amount_cents: baselineRow.supply_amount_cents,
-    supply_label: baselineRow.supply_label,
+    supply_type_id: baselineRow.supply_type_id,
   };
   const after: ServiceDiffSnapshot = {
     name: name!,
@@ -493,7 +536,7 @@ export async function updateService(formData: FormData): Promise<void> {
     card_fee_mode: cardFeeMode!,
     card_fee_custom_cents: cardFeeCustomCents!,
     supply_amount_cents: supplyAmountCents!,
-    supply_label: supplyLabel!,
+    supply_type_id: supplyTypeId!,
   };
 
   const changes = buildChanges(before, after);
@@ -659,7 +702,8 @@ export async function updateService(formData: FormData): Promise<void> {
         card_fee_mode: baselineCardFeeMode,
         card_fee_custom_cents: baselineRow.card_fee_custom_cents,
         supply_amount_cents: baselineRow.supply_amount_cents,
-        supply_label: baselineRow.supply_label,
+        // 022-supply-types-catalog
+        supply_type_id: baselineRow.supply_type_id,
         assignment_ids: baselineAssignmentIds,
       },
       after: {
@@ -678,7 +722,8 @@ export async function updateService(formData: FormData): Promise<void> {
         card_fee_mode: cardFeeMode!,
         card_fee_custom_cents: cardFeeCustomCents!,
         supply_amount_cents: supplyAmountCents!,
-        supply_label: supplyLabel!,
+        // 022-supply-types-catalog
+        supply_type_id: supplyTypeId!,
         assignment_ids: afterAssignmentIds,
       },
     },

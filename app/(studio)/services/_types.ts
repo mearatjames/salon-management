@@ -42,12 +42,16 @@ export type CatalogService = {
   variable_price_note: string | null;
   // 021-services-deductions: per-service deduction metadata. The pair
   // `(card_fee_mode, card_fee_custom_cents)` is constrained at the DB
-  // layer to either `('custom', int)` or `(<other>, null)`; the pair
-  // `(supply_amount_cents, supply_label)` is both-or-neither.
+  // layer to either `('custom', int)` or `(<other>, null)`. 022 replaced
+  // the original free-text `supply_label` with a `supply_type_id` FK
+  // into `supply_types`; the pair `(supply_amount_cents, supply_type_id)`
+  // is both-or-neither at the DB layer.
   card_fee_mode: CardFeeMode;
   card_fee_custom_cents: number | null;
   supply_amount_cents: number | null;
-  supply_label: string | null;
+  supply_type_id: string | null;
+  /** Resolved on read via LEFT JOIN supply_types — read-only; never serialized back to the server. */
+  supply_type_name: string | null;
   // Aggregated server-side; assignment_count counts active, non-removed staff only.
   assignment_count: number;
 };
@@ -61,6 +65,16 @@ export type ServiceAssignment = {
 // Full drawer baseline for an existing service (Edit mode).
 export type ServiceDraftBaseline = CatalogService & {
   assignments: ServiceAssignment[];
+};
+
+// 022-supply-types-catalog: light projection of a single supply-type row
+// passed as the picker's `types` prop. Excludes timestamps and the
+// generated `name_canonical` column — the picker only needs the display
+// name + id + archived flag.
+export type SupplyTypeLite = {
+  id: string;
+  name: string;
+  archived: boolean;
 };
 
 // Active staff row used by the staff-assignment list. Mirrors the

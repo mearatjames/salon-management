@@ -42,7 +42,11 @@ import {
 } from "./service-form.client";
 import { addService, restoreService, updateService } from "@/app/(studio)/services/actions";
 import { formatPriceLabel } from "@/app/(studio)/services/_format";
-import type { ServiceAssignment, ServiceDraftBaseline } from "@/app/(studio)/services/_types";
+import type {
+  ServiceAssignment,
+  ServiceDraftBaseline,
+  SupplyTypeLite,
+} from "@/app/(studio)/services/_types";
 import { canWriteCatalog, type StudioRole } from "@/app/(studio)/services/permissions";
 
 export type EditPanelMode = "closed" | "add" | "edit";
@@ -52,6 +56,13 @@ export type EditPanelProps = {
   baseline: ServiceDraftBaseline | null;
   categories: string[];
   operatorRole: StudioRole;
+  /**
+   * 022-supply-types-catalog: active supply types passed in from the
+   * services page. Forwarded to `<ServiceForm>` → `<DeductionsSection>` →
+   * `<SupplyTypePicker>` so the operator can pick (or inline-create) a
+   * supply type without a separate roundtrip.
+   */
+  supplyTypes: SupplyTypeLite[];
 };
 
 /** Deep equality between two assignment lists, order-insensitive. */
@@ -124,15 +135,19 @@ function isDraftDirty(draft: ServiceDraft, baseline: ServiceDraftBaseline | null
   }
   // 021-services-deductions supply dirty rule: a toggle flip is always
   // dirty. When the toggle is on in both baseline and draft, compare
-  // parsed cents + trimmed label. When the toggle is off in both, typed-
-  // but-unused buffer values are NOT dirty (FR-021).
+  // parsed cents + the picked supply_type_id. When the toggle is off in
+  // both, typed-but-unused buffer values are NOT dirty (FR-021).
+  //
+  // 022-supply-types-catalog: `supply_label` (free text) is replaced by
+  // `supply_type_id` (UUID FK). The dirty check is a plain string equality
+  // — the picker's selection is authoritative.
   let supplyDirty = draft.supply_on !== baselineDraft.supply_on;
   if (!supplyDirty && draft.supply_on) {
     const draftCents = parseDollarsToCentsOrNull(draft.supply_amount_dollars);
     const baselineCents = baseline.supply_amount_cents;
     if (draftCents !== baselineCents) {
       supplyDirty = true;
-    } else if (draft.supply_label.trim() !== (baseline.supply_label ?? "").trim()) {
+    } else if (draft.supply_type_id !== (baseline.supply_type_id ?? "")) {
       supplyDirty = true;
     }
   }
@@ -155,7 +170,13 @@ function isDraftDirty(draft: ServiceDraft, baseline: ServiceDraftBaseline | null
 
 type PendingNav = { kind: "row"; targetId: string } | { kind: "add" } | { kind: "close" };
 
-export function EditPanel({ mode, baseline, categories, operatorRole }: EditPanelProps) {
+export function EditPanel({
+  mode,
+  baseline,
+  categories,
+  operatorRole,
+  supplyTypes,
+}: EditPanelProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const canWrite = canWriteCatalog(operatorRole);
@@ -418,6 +439,7 @@ export function EditPanel({ mode, baseline, categories, operatorRole }: EditPane
               categories={categories}
               disabled={readOnly}
               inspectorChrome
+              supplyTypes={supplyTypes}
             />
           </div>
 

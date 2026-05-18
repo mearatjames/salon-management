@@ -36,7 +36,8 @@ export const SERVICE_DIFF_KEYS = [
   "card_fee_mode",
   "card_fee_custom_cents",
   "supply_amount_cents",
-  "supply_label",
+  // 022-supply-types-catalog — swapped from "supply_label" to the FK.
+  "supply_type_id",
 ] as const;
 
 export type ServiceDiffSnapshot = {
@@ -54,7 +55,8 @@ export type ServiceDiffSnapshot = {
   card_fee_mode: CardFeeMode;
   card_fee_custom_cents: number | null;
   supply_amount_cents: number | null;
-  supply_label: string | null;
+  // 022-supply-types-catalog
+  supply_type_id: string | null;
 };
 
 /** Build the `changes` map for the audit payload — only fields whose value

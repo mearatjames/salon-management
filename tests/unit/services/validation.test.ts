@@ -16,7 +16,6 @@ import {
   validateName,
   validateOverrideMin,
   validateSupplyAmountDollars,
-  validateSupplyLabel,
   validateUuid,
   ValidationError,
 } from "@/app/(studio)/services/_validation";
@@ -285,37 +284,6 @@ describe("validateSupplyAmountDollars", () => {
         throw new Error(`expected throw for ${JSON.stringify(bad)}`);
       } catch (err) {
         expect((err as ValidationError).code).toBe("supply_amount_too_large");
-      }
-    }
-  });
-});
-
-describe("validateSupplyLabel", () => {
-  it("trims and returns when 1–64 chars", () => {
-    expect(validateSupplyLabel("A")).toBe("A");
-    expect(validateSupplyLabel("GelX tips & gel")).toBe("GelX tips & gel");
-    expect(validateSupplyLabel("  Chrome powder  ")).toBe("Chrome powder");
-    expect(validateSupplyLabel("a".repeat(64))).toBe("a".repeat(64));
-  });
-
-  it("throws invalid_supply_label for empty / whitespace-only", () => {
-    for (const bad of ["", "   ", "\t \n"]) {
-      try {
-        validateSupplyLabel(bad);
-        throw new Error(`expected throw for ${JSON.stringify(bad)}`);
-      } catch (err) {
-        expect((err as ValidationError).code).toBe("invalid_supply_label");
-      }
-    }
-  });
-
-  it("throws supply_label_too_long for > 64 trimmed chars", () => {
-    for (const bad of ["a".repeat(65), "a".repeat(100)]) {
-      try {
-        validateSupplyLabel(bad);
-        throw new Error(`expected throw for trimmed length ${bad.length}`);
-      } catch (err) {
-        expect((err as ValidationError).code).toBe("supply_label_too_long");
       }
     }
   });

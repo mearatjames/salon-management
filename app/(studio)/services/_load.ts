@@ -22,8 +22,11 @@
 // 021-services-deductions: the four new deduction columns (`card_fee_mode`,
 // `card_fee_custom_cents`, `supply_amount_cents`, `supply_label`) live on
 // `CatalogService` after T010, so the `...row` spread below carries them
-// through to `ServiceDraftBaseline` automatically. No per-field projection
-// needed — keep them coupled to the typed source of truth.
+// through to `ServiceDraftBaseline` automatically.
+//
+// 022-supply-types-catalog: `supply_label` is replaced by `supply_type_id`
+// + the LEFT-JOIN-resolved `supply_type_name`. Both fields are part of
+// `CatalogService` and carry through via the `...row` spread.
 
 import type { CatalogService, ServiceDraftBaseline } from "./_types";
 

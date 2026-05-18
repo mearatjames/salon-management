@@ -43,11 +43,11 @@ import {
   OWNER_ONLY_TOOLTIP_COPY,
   OwnerOnlyTooltip,
 } from "@/components/lacquer/services/owner-only-tooltip";
+import { SupplyTypePicker } from "@/components/lacquer/services/supply-type-picker.client";
 import {
   ValidationError,
   validateCardFeeCustomDollars,
   validateSupplyAmountDollars,
-  validateSupplyLabel,
 } from "@/app/(studio)/services/_validation";
 import {
   computeNetToTechCents,
@@ -55,7 +55,7 @@ import {
   type NetToTechInput,
 } from "@/app/(studio)/services/_deductions";
 import { formatDollarsFromCents } from "@/app/(studio)/services/_format";
-import type { CardFeeMode } from "@/app/(studio)/services/_types";
+import type { CardFeeMode, SupplyTypeLite } from "@/app/(studio)/services/_types";
 import { formatDefaultCardFeeLabel } from "@/lib/services/card-fee-default";
 
 export type DeductionsSectionProps = {
@@ -67,8 +67,12 @@ export type DeductionsSectionProps = {
   supply_on: boolean;
   /** String buffer for the supply amount input. */
   supply_amount_dollars: string;
-  /** String buffer for the supply label input. */
-  supply_label: string;
+  /**
+   * 022-supply-types-catalog: picked supply type UUID. Empty string when
+   * no selection (the picker's placeholder state). The picker (T028)
+   * replaces the free-text input that lived here in 021.
+   */
+  supply_type_id: string;
   /**
    * 021-US4 (T036): live preview inputs. The preview reads these
    * read-only — the section never edits the price fields. When
@@ -85,11 +89,23 @@ export type DeductionsSectionProps = {
       card_fee_custom_dollars: string;
       supply_on: boolean;
       supply_amount_dollars: string;
-      supply_label: string;
+      supply_type_id: string;
     }>
   ) => void;
   /** US5 role gate. Default false. */
   disabled?: boolean;
+  /**
+   * 022-supply-types-catalog: active supply types passed in from the page's
+   * catalog load. Drives the picker's dropdown. Sorted by name ASC by the
+   * loader; archived types are filtered out upstream.
+   */
+  supplyTypes: SupplyTypeLite[];
+  /**
+   * 022-supply-types-catalog: id of the service currently being edited (or
+   * null in Add mode). Forwarded to the picker for future deep-link /
+   * debugging use — the inline-create flow does NOT use it.
+   */
+  serviceId: string | null;
 };
 
 const SEGMENT_OPTIONS: ReadonlyArray<{ value: CardFeeMode; label: string }> = [
@@ -104,15 +120,10 @@ const HINT_TOO_LARGE = "Card fee can't exceed $50.";
 // 021-services-deductions § 3.2 (Supply row inline-hint copy).
 const SUPPLY_AMOUNT_HINT_INVALID = "Enter a positive amount up to $50, or turn Supply off.";
 const SUPPLY_AMOUNT_HINT_TOO_LARGE = "Supply can't exceed $50.";
-const SUPPLY_LABEL_HINT_EMPTY =
-  "Add a short label so staff know what this covers, or turn Supply off.";
-const SUPPLY_LABEL_HINT_TOO_LONG = "Label must be 64 characters or fewer.";
-
-const SUPPLY_LABEL_MAX_LEN = 64;
-const SUPPLY_LABEL_COUNTER_THRESHOLD = SUPPLY_LABEL_MAX_LEN - 8; // 56
+// 022-supply-types-catalog: replaces the per-character supply label hint.
+const SUPPLY_TYPE_HINT_EMPTY = "Pick a supply type from the dropdown, or turn Supply off.";
 
 const SUPPLY_AMOUNT_DEFAULT_DOLLARS = "5.00";
-const SUPPLY_LABEL_PLACEHOLDER = "e.g. GelX tips & gel, Chrome powder, OPI bottle wear";
 
 /**
  * Resolve the inline-hint message for the custom-amount input. Returns
@@ -161,20 +172,13 @@ function resolveSupplyAmountHint(raw: string): string | null {
 }
 
 /**
- * Resolve the inline-hint message for the supply-label input. Returns
- * `null` when the input is valid (and the hint stays hidden).
+ * 022-supply-types-catalog: replaces `resolveSupplyLabelHint`. The picker
+ * (T028) owns the selection UX; this hint surfaces when the toggle is on
+ * but no type has been picked yet.
  */
-function resolveSupplyLabelHint(raw: string): string | null {
-  try {
-    validateSupplyLabel(raw);
-    return null;
-  } catch (err) {
-    if (err instanceof ValidationError) {
-      if (err.code === "supply_label_too_long") return SUPPLY_LABEL_HINT_TOO_LONG;
-      return SUPPLY_LABEL_HINT_EMPTY;
-    }
-    return SUPPLY_LABEL_HINT_EMPTY;
-  }
+function resolveSupplyTypeHint(supplyTypeId: string): string | null {
+  if (supplyTypeId.trim().length === 0) return SUPPLY_TYPE_HINT_EMPTY;
+  return null;
 }
 
 /**
@@ -199,21 +203,21 @@ export function DeductionsSection({
   card_fee_custom_dollars,
   supply_on,
   supply_amount_dollars,
-  supply_label,
+  supply_type_id,
   variable_price,
   price_dollars,
   price_from_dollars,
   onChange,
   disabled = false,
+  supplyTypes,
+  serviceId,
 }: DeductionsSectionProps) {
   const hintId = useId();
   const customInputId = useId();
   const supplyToggleId = useId();
   const supplyAmountId = useId();
-  const supplyLabelId = useId();
   const supplyAmountHintId = useId();
-  const supplyLabelHintId = useId();
-  const supplyLabelCounterId = useId();
+  const supplyTypeHintId = useId();
 
   const customHint = useMemo(() => {
     if (card_fee_mode !== "custom") return null;
@@ -225,17 +229,15 @@ export function DeductionsSection({
     return resolveSupplyAmountHint(supply_amount_dollars);
   }, [supply_on, supply_amount_dollars]);
 
-  const supplyLabelHint = useMemo(() => {
+  const supplyTypeHint = useMemo(() => {
     if (!supply_on) return null;
-    return resolveSupplyLabelHint(supply_label);
-  }, [supply_on, supply_label]);
+    return resolveSupplyTypeHint(supply_type_id);
+  }, [supply_on, supply_type_id]);
 
   // 021 / FR-018 / FR-021: on toggle off → on, pre-fill the amount input
   // with `'5.00'` ONLY when the buffer is currently empty (so re-toggling
-  // on after a typed value preserves it), and move focus to the label
-  // input. We watch the toggle transition via a ref + effect so the
-  // pre-fill + focus only fires once per off→on flip.
-  const supplyLabelRef = useRef<HTMLInputElement | null>(null);
+  // on after a typed value preserves it). Per 022, the picker owns its
+  // own focus management — no DOM focus jump from this effect.
   const prevSupplyOnRef = useRef(supply_on);
   useEffect(() => {
     const prev = prevSupplyOnRef.current;
@@ -247,26 +249,8 @@ export function DeductionsSection({
     if (supply_amount_dollars.trim().length === 0) {
       onChange({ supply_amount_dollars: SUPPLY_AMOUNT_DEFAULT_DOLLARS });
     }
-    // Move focus to the label input on the next paint so the just-mounted
-    // input exists in the DOM.
-    requestAnimationFrame(() => {
-      supplyLabelRef.current?.focus();
-    });
-    // We intentionally only react to `supply_on` flips — including
-    // `supply_amount_dollars` here would re-fire the focus jump whenever
-    // the user edits the amount after toggling on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supply_on]);
-
-  // Live character counter visibility — only show when within 8 chars of
-  // the 64-char limit (FR-018, ui.contract § 3.2).
-  const supplyLabelLength = supply_label.length;
-  const showCounter = supplyLabelLength >= SUPPLY_LABEL_COUNTER_THRESHOLD;
-  const counterRemaining = SUPPLY_LABEL_MAX_LEN - supplyLabelLength;
-  // Render "N left" when in-limit, "N over" when over (Save is already
-  // disabled by then so the over case is mostly a courtesy).
-  const counterText =
-    counterRemaining >= 0 ? `${counterRemaining} left` : `${Math.abs(counterRemaining)} over`;
 
   // 021-US4 (T036): Net-to-tech preview. The input memo collapses every
   // draft field the preview cares about into the typed `NetToTechInput`
@@ -298,9 +282,14 @@ export function DeductionsSection({
 
   // Raw service-line uses the parsed price (so the breakdown matches what
   // the math used, not whatever string is mid-typing). Supply label falls
-  // back to "supply" when typed-but-empty (mirrors the prototype, FR-027).
+  // back to "supply" when no type has been picked yet; once selected, the
+  // resolved name comes from the picker's `types` prop.
   const previewServiceCents = previewInput.service_price_cents;
-  const supplyLabelDisplay = supply_label.trim() || "supply";
+  const supplyLabelDisplay = useMemo(() => {
+    if (!supply_type_id) return "supply";
+    const match = supplyTypes.find((t) => t.id === supply_type_id);
+    return match?.name ?? "supply";
+  }, [supply_type_id, supplyTypes]);
 
   return (
     <section
@@ -523,51 +512,36 @@ export function DeductionsSection({
                 </OwnerOnlyTooltip>
               </div>
               <div className="deductions-supply-row__label-wrap">
-                <OwnerOnlyTooltip disabled={disabled}>
-                  <input
-                    ref={supplyLabelRef}
-                    id={supplyLabelId}
-                    type="text"
-                    data-slot="deductions-supply-label-input"
-                    className="deductions-supply-row__label-input"
-                    value={supply_label}
-                    onChange={(e) => {
-                      if (disabled) return;
-                      onChange({ supply_label: e.target.value });
-                    }}
-                    disabled={disabled}
-                    aria-label={
-                      disabled ? `Supply label — ${OWNER_ONLY_TOOLTIP_COPY}` : "Supply label"
-                    }
-                    aria-describedby={
-                      [
-                        supplyLabelHint ? supplyLabelHintId : null,
-                        showCounter ? supplyLabelCounterId : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" ") || undefined
-                    }
-                    aria-invalid={supplyLabelHint !== null}
-                    placeholder={SUPPLY_LABEL_PLACEHOLDER}
-                  />
-                </OwnerOnlyTooltip>
-                {showCounter ? (
-                  <span
-                    id={supplyLabelCounterId}
-                    className="deductions-supply-row__char-count"
-                    data-slot="deductions-supply-label-counter"
-                  >
-                    {counterText}
-                  </span>
-                ) : null}
+                {/* 022-supply-types-catalog (T029): <SupplyTypePicker>
+                    replaces the Phase 2 placeholder text input. The picker
+                    emits its own hidden `supply_type_id` input so the
+                    outer service form's submit carries the FK selection
+                    (no nested form — the picker is a div inside this
+                    parent form). */}
+                <SupplyTypePicker
+                  types={supplyTypes}
+                  selectedId={supply_type_id ? supply_type_id : null}
+                  onSelect={(id) => {
+                    if (disabled) return;
+                    onChange({ supply_type_id: id });
+                  }}
+                  disabled={disabled}
+                  serviceId={serviceId}
+                />
+                {/* Surface the supplyTypeHint label association through
+                    a sr-only span so existing aria wiring stays intact
+                    even though the picker owns the visible control. */}
+                <span id={supplyTypeHintId} className="sr-only">
+                  {supplyTypeHint ?? ""}
+                </span>
               </div>
             </div>
 
-            {/* Hidden FormData inputs for the supply amount + label —
-                only rendered when toggle is on so the Server Action clears
-                the columns on toggle off. */}
+            {/* Hidden FormData input for the supply amount — only rendered
+                when toggle is on so the Server Action clears the column on
+                toggle off. The `supply_type_id` hidden input is emitted
+                by the picker itself. */}
             <input type="hidden" name="supply_amount" value={supply_amount_dollars} />
-            <input type="hidden" name="supply_label" value={supply_label} />
 
             {supplyAmountHint ? (
               <span
@@ -579,14 +553,14 @@ export function DeductionsSection({
                 {supplyAmountHint}
               </span>
             ) : null}
-            {supplyLabelHint ? (
+            {supplyTypeHint ? (
               <span
-                id={supplyLabelHintId}
+                id={supplyTypeHintId}
                 className="deductions-card-fee-row__hint--error"
-                data-slot="deductions-supply-label-hint"
+                data-slot="deductions-supply-type-hint"
                 role="alert"
               >
-                {supplyLabelHint}
+                {supplyTypeHint}
               </span>
             ) : null}
           </>

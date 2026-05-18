@@ -25,8 +25,16 @@ export type ValidationErrorCode =
   | "card_fee_custom_too_large"
   | "invalid_supply_amount"
   | "supply_amount_too_large"
-  | "invalid_supply_label"
-  | "supply_label_too_long";
+  // 022-supply-types-catalog (services-side: picker submits supply_type_id)
+  | "invalid_supply_type"
+  // 022-supply-types-catalog (policy-side: catalog actions share this class)
+  | "name_too_long"
+  | "name_taken"
+  | "type_not_found"
+  | "type_in_use"
+  | "type_already_active"
+  | "type_already_archived"
+  | "type_archived";
 
 export class ValidationError extends Error {
   readonly code: ValidationErrorCode;
@@ -243,16 +251,22 @@ export function validateSupplyAmountDollars(input: string): number {
   return cents;
 }
 
-const SUPPLY_LABEL_MAX_LEN = 64;
+// ── 022-supply-types-catalog ────────────────────────────────────────────
 
-/** Supply label: trimmed, 1–64 chars. Returns the trimmed value. */
-export function validateSupplyLabel(input: string): string {
+/**
+ * Supply type id (UUID-loose shape). The DB FK on
+ * `services.supply_type_id` is the real identity check; this validator
+ * just filters bogus form payloads early. Mirrors the loose 8-4-4-4-12
+ * hex pattern used by `parseStaffAssignments` in `actions.ts`.
+ */
+export function validateSupplyTypeId(input: string): string {
   const trimmed = readString(input).trim();
-  if (trimmed.length === 0) {
-    throw new ValidationError("invalid_supply_label");
-  }
-  if (trimmed.length > SUPPLY_LABEL_MAX_LEN) {
-    throw new ValidationError("supply_label_too_long");
+  if (!UUID_SHAPE_LOOSE.test(trimmed)) {
+    throw new ValidationError("invalid_supply_type");
   }
   return trimmed;
 }
+
+// Mirrors `UUID_SHAPE_LOOSE` in `actions.ts` (kept local here so the
+// validator doesn't reach across the boundary into the action file).
+const UUID_SHAPE_LOOSE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

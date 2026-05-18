@@ -28,7 +28,9 @@ export type DeductionChipsProps = {
   card_fee_mode: CardFeeMode;
   card_fee_custom_cents: number | null;
   supply_amount_cents: number | null;
-  supply_label: string | null;
+  // 022-supply-types-catalog: replaces the old `supply_label` (free text).
+  // Resolved by the page-level LEFT JOIN onto `supply_types.name`.
+  supply_type_name: string | null;
   default_card_fee_cents: number;
 };
 
@@ -39,7 +41,7 @@ export function DeductionChips(props: DeductionChipsProps) {
     card_fee_mode,
     card_fee_custom_cents,
     supply_amount_cents,
-    supply_label,
+    supply_type_name,
     default_card_fee_cents,
   } = props;
 
@@ -61,7 +63,7 @@ export function DeductionChips(props: DeductionChipsProps) {
   if (supply_amount_cents !== null) {
     chips.push({
       kind: "supply",
-      text: formatSupplyChipText(supply_amount_cents, supply_label ?? ""),
+      text: formatSupplyChipText(supply_amount_cents, supply_type_name ?? ""),
     });
   }
 

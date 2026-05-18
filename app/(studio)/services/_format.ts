@@ -76,7 +76,13 @@ export function formatCardFeeChipText(
 /**
  * Render the supply chip text — e.g. `"$5 GelX tips & gel"`. The caller
  * is responsible for skipping the chip entirely when supply is off.
+ *
+ * 022-supply-types-catalog: signature changed from `(amount, label)` to
+ * `(amount, name)`. The `name` parameter is the catalog-resolved
+ * `supply_types.name` value (formerly the row's free-text `supply_label`).
+ * String in, string out, same render — callers now pass
+ * `service.supply_type_name` instead of `service.supply_label`.
  */
-export function formatSupplyChipText(amountCents: number, label: string): string {
-  return `${formatDollars(amountCents)} ${label}`;
+export function formatSupplyChipText(amountCents: number, name: string): string {
+  return `${formatDollars(amountCents)} ${name}`;
 }

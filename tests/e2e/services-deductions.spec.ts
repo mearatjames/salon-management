@@ -560,6 +560,76 @@ test.describe("021-US2: card-fee mode", () => {
 // ============================================================================
 // US3 — Per-service supply deduction
 // ============================================================================
+//
+// 022-supply-types-catalog (T052): the legacy free-text `services.supply_label`
+// column was dropped by migration `0017_supply_types_catalog.sql` in favor of
+// `services.supply_type_id` (FK → `public.supply_types`). The picker UI
+// (`<SupplyTypePicker>`) replaced the per-service label input. This spec's
+// supply helpers + UI assertions were rewritten accordingly:
+//   - Direct DB writes go to `supply_type_id` (with on-demand `ensureSupplyType()`
+//     to seed types lazily by name).
+//   - Reads project `supply_types(name)` via the LEFT JOIN syntax so the
+//     resolved `supply_type_name` is available without a second roundtrip.
+//   - UI flows that "type a label" now drive the picker: open trigger →
+//     either click an existing row OR click the "+ Create new supply type…"
+//     affordance → fill the inline-create input → click Save.
+//   - Audit payload assertions switched from `supply_label` (string) to
+//     `supply_type_id` (uuid), matching `_audit-diff.ts § SERVICE_DIFF_KEYS`.
+// The 5 user stories (US1–US5) stay green; only the supply mechanism changed.
+
+// Tracks every supply type this suite seeded so afterAll can detach + delete
+// them in one pass (idempotent — re-runs see an empty set on the second pass).
+const seededSupplyTypeIds = new Set<string>();
+
+// Find-or-create a supply type by display name. Returns its uuid. Idempotent:
+// a second call with the same canonical name returns the same id. Used by the
+// US3/US4/US5 helpers below to swap legacy `supply_label: 'chrome'` patterns
+// to a `supply_type_id` FK without forcing each test to manage its own seed.
+async function ensureSupplyType(name: string): Promise<string> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const c = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  // Match on the canonical column the DB enforces via UNIQUE (lower(trim(name))
+  // collapsed whitespace). Cheaper than running canonicalizeName client-side.
+  const trimmedLower = name.trim().toLowerCase().replace(/\s+/g, " ");
+  const { data: existing, error: selErr } = await c
+    .from("supply_types")
+    .select("id")
+    .eq("name_canonical", trimmedLower)
+    .maybeSingle();
+  if (selErr) throw new Error(`ensureSupplyType select failed: ${selErr.message}`);
+  if (existing) {
+    seededSupplyTypeIds.add(existing.id as string);
+    return existing.id as string;
+  }
+  const { data, error } = await c.from("supply_types").insert({ name }).select("id").single();
+  if (error) throw new Error(`ensureSupplyType insert failed: ${error.message}`);
+  const id = data.id as string;
+  seededSupplyTypeIds.add(id);
+  return id;
+}
+
+// Detach any services pointing at the suite's seeded supply types, then
+// delete the types + their audit rows. Idempotent. Called from afterAll of
+// each describe that uses `ensureSupplyType`.
+async function cleanupSeededSupplyTypes(): Promise<void> {
+  if (seededSupplyTypeIds.size === 0) return;
+  const ids = Array.from(seededSupplyTypeIds);
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const c = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  await c
+    .from("services")
+    .update({ supply_type_id: null, supply_amount_cents: null })
+    .in("supply_type_id", ids);
+  await c.from("audit_log").delete().in("entity_id", ids);
+  await c.from("supply_types").delete().in("id", ids);
+  seededSupplyTypeIds.clear();
+}
 
 // Reset Classic manicure's supply + card-fee fields back to the seeded
 // defaults (mode = 'default', custom = null, supply = null). Run from
@@ -577,7 +647,7 @@ async function restoreClassicManicureDeductions(): Promise<void> {
       card_fee_mode: "default",
       card_fee_custom_cents: null,
       supply_amount_cents: null,
-      supply_label: null,
+      supply_type_id: null,
     })
     .eq("id", CLASSIC_MANICURE_ID);
 }
@@ -598,7 +668,7 @@ async function resetServicesDeductions(ids: string[]): Promise<void> {
       card_fee_mode: "default",
       card_fee_custom_cents: null,
       supply_amount_cents: null,
-      supply_label: null,
+      supply_type_id: null,
     })
     .in("id", ids);
 }
@@ -607,13 +677,17 @@ async function resetServicesDeductions(ids: string[]): Promise<void> {
 // seed combined/exempt-only scenarios that the US3 chip tests assert
 // against. Bypasses RLS + the Server Action so the test setup stays
 // deterministic.
+//
+// 022-supply-types-catalog: callers pass a `supply_type_name` (string); this
+// helper resolves it to a `supply_type_id` via `ensureSupplyType`. Passing
+// `null` clears the FK.
 async function setServiceDeductions(
   id: string,
   patch: {
     card_fee_mode: "default" | "custom" | "exempt";
     card_fee_custom_cents: number | null;
     supply_amount_cents: number | null;
-    supply_label: string | null;
+    supply_type_name: string | null;
   }
 ): Promise<void> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -621,13 +695,29 @@ async function setServiceDeductions(
   const c = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { error } = await c.from("services").update(patch).eq("id", id);
+  const supply_type_id = patch.supply_type_name
+    ? await ensureSupplyType(patch.supply_type_name)
+    : null;
+  const { error } = await c
+    .from("services")
+    .update({
+      card_fee_mode: patch.card_fee_mode,
+      card_fee_custom_cents: patch.card_fee_custom_cents,
+      supply_amount_cents: patch.supply_amount_cents,
+      supply_type_id,
+    })
+    .eq("id", id);
   if (error) throw new Error(`setServiceDeductions failed: ${error.message}`);
 }
 
+// Reads the supply state of a service, projecting `supply_types.name` through
+// the same LEFT JOIN the page loader uses. The returned `supply_type_name` is
+// `null` when no type is attached (mirroring `supply_label: null` from the
+// pre-022 schema).
 async function readSupplyRow(id: string): Promise<{
   supply_amount_cents: number | null;
-  supply_label: string | null;
+  supply_type_id: string | null;
+  supply_type_name: string | null;
 }> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -636,11 +726,75 @@ async function readSupplyRow(id: string): Promise<{
   });
   const { data, error } = await c
     .from("services")
-    .select("supply_amount_cents, supply_label")
+    .select("supply_amount_cents, supply_type_id, supply_types(name)")
     .eq("id", id)
     .single();
   if (error) throw new Error(`readSupplyRow failed: ${error.message}`);
-  return data as { supply_amount_cents: number | null; supply_label: string | null };
+  const row = data as {
+    supply_amount_cents: number | null;
+    supply_type_id: string | null;
+    supply_types: { name: string } | { name: string }[] | null;
+  };
+  const nested = row.supply_types;
+  const supply_type_name = nested
+    ? Array.isArray(nested)
+      ? (nested[0]?.name ?? null)
+      : nested.name
+    : null;
+  return {
+    supply_amount_cents: row.supply_amount_cents,
+    supply_type_id: row.supply_type_id,
+    supply_type_name,
+  };
+}
+
+// 022 picker-driven supply selection: open the trigger, then either click an
+// existing row (if `mode === 'existing'`) or click "+ Create new supply
+// type…", fill the inline-create input, and save. Returns when the picker has
+// closed and the trigger reflects the chosen name.
+//
+// Mirrors `tests/e2e/supply-types-catalog.spec.ts § US1 (b)` / (c) so the two
+// suites stay in lockstep on picker conventions.
+async function pickSupplyType(
+  page: import("@playwright/test").Page,
+  name: string,
+  mode: "create" | "existing"
+): Promise<void> {
+  const trigger = page.locator("[data-slot='supply-type-picker-trigger']");
+  await trigger.click();
+  if (mode === "create") {
+    await page.locator("[data-slot='supply-type-picker-create-row']").click();
+    const inlineInput = page.locator("[data-slot='supply-type-picker-create-input']");
+    await expect(inlineInput).toBeVisible();
+    await inlineInput.fill(name);
+    await page.locator("[data-slot='supply-type-picker-create-save']").click();
+    // The test that called us is expected to invoke
+    // `captureSupplyTypeIdByName(name)` post-save so afterAll's
+    // `cleanupSeededSupplyTypes()` knows to detach + delete the new row.
+  } else {
+    // Existing — the row's `value` is the type's name (case-sensitive),
+    // and `data-supply-type-id` is the FK.
+    await page.locator(`[data-slot='supply-type-picker-item']:has-text("${name}")`).first().click();
+  }
+  await expect(trigger).toContainText(name, { timeout: 5000 });
+}
+
+// After-effect for `pickSupplyType('create', ...)` — captures the newly-
+// created type's id so cleanupSeededSupplyTypes can detach + delete it.
+// Called from afterEach where the UI test actually exercised inline-create.
+async function captureSupplyTypeIdByName(name: string): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const c = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const trimmedLower = name.trim().toLowerCase().replace(/\s+/g, " ");
+  const { data } = await c
+    .from("supply_types")
+    .select("id")
+    .eq("name_canonical", trimmedLower)
+    .maybeSingle();
+  if (data) seededSupplyTypeIds.add(data.id as string);
 }
 
 // Seeded service ids the US3 combined/exempt chip tests reuse.
@@ -676,6 +830,10 @@ test.describe("021-US3: supply deduction", () => {
       SPA_PEDI_ID,
       NAIL_ART_ID,
     ]);
+    // 022 (T052): tear down the supply types this describe seeded (via
+    // `ensureSupplyType` from `setServiceDeductions` + any picker inline-
+    // creates the UI tests added).
+    await cleanupSeededSupplyTypes();
   });
 
   test("(a) default state: pre-existing service shows no supply chip + toggle off, inputs hidden", async ({
@@ -699,7 +857,9 @@ test.describe("021-US3: supply deduction", () => {
     await expect(page.locator("[data-slot='deductions-supply-inputs']")).toHaveCount(0);
   });
 
-  test("(b) toggle on → amount pre-fills 5.00, label is empty + focused", async ({ page }) => {
+  test("(b) toggle on → amount pre-fills 5.00, picker renders empty (no type selected)", async ({
+    page,
+  }) => {
     await signInAsMaya(page);
 
     const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
@@ -710,12 +870,21 @@ test.describe("021-US3: supply deduction", () => {
 
     await page.locator("[data-slot='deductions-supply-toggle']").click();
 
+    // 022 (T052): the free-text label input is gone — the picker owns the
+    // selection UX. Per `deductions-section.client.tsx` § 240, the picker
+    // owns its own focus management so the old `toBeFocused` assertion no
+    // longer applies. We instead verify the amount pre-fill (FR-021) plus
+    // the picker rendering in its empty state.
     const amount = page.locator("[data-slot='deductions-supply-amount-input']");
-    const labelInput = page.locator("[data-slot='deductions-supply-label-input']");
     await expect(amount).toHaveValue("5.00");
-    await expect(labelInput).toHaveValue("");
-    // Focus moved to the label input.
-    await expect(labelInput).toBeFocused();
+
+    const picker = page.locator("[data-slot='supply-type-picker']");
+    await expect(picker).toBeVisible();
+    const trigger = page.locator("[data-slot='supply-type-picker-trigger']");
+    await expect(trigger).toHaveAttribute("data-empty", "true");
+    // Hidden FK input is present but blank when no type is picked.
+    const hidden = page.locator("input[type='hidden'][name='supply_type_id']");
+    await expect(hidden).toHaveValue("");
   });
 
   test("(c) save with valid values: amber chip on row, DB persists", async ({ page }) => {
@@ -728,7 +897,10 @@ test.describe("021-US3: supply deduction", () => {
     await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
 
     await page.locator("[data-slot='deductions-supply-toggle']").click();
-    await page.locator("[data-slot='deductions-supply-label-input']").fill("GelX tips & gel");
+    // 022 (T052): drive the picker's inline-create flow instead of the
+    // legacy free-text label input.
+    const typeName = "GelX tips & gel";
+    await pickSupplyType(page, typeName, "create");
 
     const save = page.locator("[data-slot='services-edit-panel-save']");
     await expect(save).toBeEnabled();
@@ -737,22 +909,26 @@ test.describe("021-US3: supply deduction", () => {
 
     const chip = row.locator("[data-slot='deduction-chip'][data-kind='supply']");
     await expect(chip).toBeVisible();
-    await expect(chip).toHaveText("$5 GelX tips & gel");
+    await expect(chip).toHaveText(`$5 ${typeName}`);
 
     const db = await readSupplyRow(CLASSIC_MANICURE_ID);
     expect(db.supply_amount_cents).toBe(500);
-    expect(db.supply_label).toBe("GelX tips & gel");
+    expect(db.supply_type_id).not.toBeNull();
+    expect(db.supply_type_name).toBe(typeName);
+    // Register the picker-created type so afterAll detaches + deletes it.
+    await captureSupplyTypeIdByName(typeName);
   });
 
   test("(d) toggle off clears columns + chip disappears", async ({ page }) => {
     await signInAsMaya(page);
 
-    // First, seed supply on Classic manicure directly.
+    // First, seed supply on Classic manicure directly. 022 (T052): pass
+    // `supply_type_name` (resolved to a `supply_type_id` FK).
     await setServiceDeductions(CLASSIC_MANICURE_ID, {
       card_fee_mode: "default",
       card_fee_custom_cents: null,
       supply_amount_cents: 500,
-      supply_label: "Chrome powder",
+      supply_type_name: "Chrome powder",
     });
 
     const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
@@ -772,13 +948,20 @@ test.describe("021-US3: supply deduction", () => {
 
     const db = await readSupplyRow(CLASSIC_MANICURE_ID);
     expect(db.supply_amount_cents).toBeNull();
-    expect(db.supply_label).toBeNull();
+    expect(db.supply_type_id).toBeNull();
 
     await expect(row.locator("[data-slot='deduction-chip'][data-kind='supply']")).toHaveCount(0);
   });
 
   test("(e) buffer preservation on toggle off → on (FR-021)", async ({ page }) => {
     await signInAsMaya(page);
+
+    // 022 (T052): seed an existing supply type so the picker has a row to
+    // select; the buffered state we're verifying is the picker's selectedId
+    // (the supply_type_id) — same FR-021 rule, just expressed via the FK
+    // instead of a free-text label.
+    const typeName = "Buffer test gel";
+    await ensureSupplyType(typeName);
 
     const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
     const link = row.locator("xpath=ancestor::a");
@@ -788,14 +971,15 @@ test.describe("021-US3: supply deduction", () => {
 
     const toggle = page.locator("[data-slot='deductions-supply-toggle']");
     await toggle.click();
-    const labelInput = page.locator("[data-slot='deductions-supply-label-input']");
-    await labelInput.fill("Test");
+    // Pick the seeded existing type.
+    await pickSupplyType(page, typeName, "existing");
     // Toggle off → on without saving.
     await toggle.click();
     await expect(page.locator("[data-slot='deductions-supply-inputs']")).toHaveCount(0);
     await toggle.click();
-    // Buffer preserved.
-    await expect(page.locator("[data-slot='deductions-supply-label-input']")).toHaveValue("Test");
+    // Buffer preserved: the picker still shows the previously-selected type.
+    const trigger = page.locator("[data-slot='supply-type-picker-trigger']");
+    await expect(trigger).toContainText(typeName);
   });
 
   test("(f) amount empty rejection: inline hint + Save disabled", async ({ page }) => {
@@ -849,7 +1033,7 @@ test.describe("021-US3: supply deduction", () => {
     await expect(page.locator("[data-slot='services-edit-panel-save']")).toBeDisabled();
   });
 
-  test("(i) label empty rejection: inline hint + Save disabled", async ({ page }) => {
+  test("(i) supply type unpicked rejection: inline hint + Save disabled", async ({ page }) => {
     await signInAsMaya(page);
 
     const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
@@ -859,50 +1043,25 @@ test.describe("021-US3: supply deduction", () => {
     await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
 
     await page.locator("[data-slot='deductions-supply-toggle']").click();
-    // Default label is empty on first toggle on → hint visible immediately.
-    const hint = page.locator("[data-slot='deductions-supply-label-hint']");
-    await expect(hint).toHaveText(
-      "Add a short label so staff know what this covers, or turn Supply off."
-    );
+    // 022 (T052): the legacy `deductions-supply-label-hint` (which tied to a
+    // free-text label input) is replaced by `deductions-supply-type-hint`,
+    // surfaced when the toggle is on but no supply type has been picked yet.
+    // Copy: see `resolveSupplyTypeHint` in deductions-section.client.tsx.
+    const hint = page.locator("[data-slot='deductions-supply-type-hint']");
+    await expect(hint).toHaveText("Pick a supply type from the dropdown, or turn Supply off.");
     await expect(page.locator("[data-slot='services-edit-panel-save']")).toBeDisabled();
   });
 
-  test("(j) label over 64 chars: inline hint + Save disabled", async ({ page }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    await page.locator("[data-slot='deductions-supply-toggle']").click();
-    const labelInput = page.locator("[data-slot='deductions-supply-label-input']");
-    await labelInput.fill("a".repeat(70));
-
-    const hint = page.locator("[data-slot='deductions-supply-label-hint']");
-    await expect(hint).toHaveText("Label must be 64 characters or fewer.");
-    await expect(page.locator("[data-slot='services-edit-panel-save']")).toBeDisabled();
-  });
-
-  test("(k) char counter appears within 8 of limit", async ({ page }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    await page.locator("[data-slot='deductions-supply-toggle']").click();
-    const labelInput = page.locator("[data-slot='deductions-supply-label-input']");
-    // 57 chars → 7 left.
-    await labelInput.fill("a".repeat(57));
-
-    const counter = page.locator("[data-slot='deductions-supply-label-counter']");
-    await expect(counter).toBeVisible();
-    await expect(counter).toHaveText("7 left");
-  });
+  // 022 (T052): legacy tests (j) `label over 64 chars` + (k) `char counter
+  // appears within 8 of limit` were tied to the free-text supply-label input
+  // (`deductions-supply-label-input` / `deductions-supply-label-counter`),
+  // which the picker (T028) eliminated. The 64-char rule still applies inside
+  // the picker's inline-create flow (validated server-side; surfaced via
+  // `supply-type-picker-create-error` with copy
+  // `"Name must be 64 characters or fewer."`) but that path is exercised by
+  // the 022 spec (`tests/e2e/supply-types-catalog.spec.ts`) rather than here.
+  // The 021 supply-deduction user story is fully covered by (a)–(i) above
+  // plus the chip cases (l)–(n) below.
 
   test("(l) combined chips: card-custom first, supply second", async ({ page }) => {
     // Seed Gel polish with custom card fee + supply BEFORE the page load so
@@ -914,7 +1073,7 @@ test.describe("021-US3: supply deduction", () => {
       card_fee_mode: "custom",
       card_fee_custom_cents: 450,
       supply_amount_cents: 700,
-      supply_label: "chrome",
+      supply_type_name: "chrome",
     });
     await signInAsMaya(page);
 
@@ -934,7 +1093,7 @@ test.describe("021-US3: supply deduction", () => {
       card_fee_mode: "exempt",
       card_fee_custom_cents: null,
       supply_amount_cents: 800,
-      supply_label: "premium soak",
+      supply_type_name: "premium soak",
     });
     await signInAsMaya(page);
 
@@ -961,7 +1120,7 @@ test.describe("021-US3: supply deduction", () => {
       card_fee_mode: "exempt",
       card_fee_custom_cents: null,
       supply_amount_cents: null,
-      supply_label: null,
+      supply_type_name: null,
     });
     await signInAsMaya(page);
 
@@ -997,7 +1156,7 @@ async function restoreNailArt(): Promise<void> {
       card_fee_mode: "default",
       card_fee_custom_cents: null,
       supply_amount_cents: null,
-      supply_label: null,
+      supply_type_id: null,
     })
     .eq("id", NAIL_ART_ID);
 }
@@ -1030,6 +1189,11 @@ test.describe("021-US4: net-to-tech preview", () => {
       );
       return;
     }
+    // 022 (T052): seed the "chrome" supply type once so the UI tests below
+    // can pick it via the existing-row path (no inline-create round-trip per
+    // test — keeps US4's preview-math focus from getting tangled up in the
+    // picker's create flow).
+    await ensureSupplyType("chrome");
   });
 
   test.beforeEach(async () => {
@@ -1043,6 +1207,8 @@ test.describe("021-US4: net-to-tech preview", () => {
     if (!supabaseUp) return;
     await restoreClassicManicureDeductions();
     await restoreNailArt();
+    // 022 (T052): tear down the "chrome" supply type the beforeAll seeded.
+    await cleanupSeededSupplyTypes();
   });
 
   test("(a) classic case: $50 + default + $5 supply → $42 with three breakdown lines", async ({
@@ -1060,7 +1226,9 @@ test.describe("021-US4: net-to-tech preview", () => {
     // the default $5 + label "chrome".
     await page.locator("[data-slot='service-form-price-input']").fill("50");
     await page.locator("[data-slot='deductions-supply-toggle']").click();
-    await page.locator("[data-slot='deductions-supply-label-input']").fill("chrome");
+    // 022 (T052): drive the picker (existing-row path) instead of typing
+    // into the legacy free-text label input.
+    await pickSupplyType(page, "chrome", "existing");
 
     const amount = page.locator("[data-slot='deductions-net-to-tech-amount']");
     await expect(amount).toHaveText("$42");
@@ -1091,7 +1259,9 @@ test.describe("021-US4: net-to-tech preview", () => {
     // Set price = 50, default + supply $5 chrome.
     await page.locator("[data-slot='service-form-price-input']").fill("50");
     await page.locator("[data-slot='deductions-supply-toggle']").click();
-    await page.locator("[data-slot='deductions-supply-label-input']").fill("chrome");
+    // 022 (T052): drive the picker (existing-row path) instead of typing
+    // into the legacy free-text label input.
+    await pickSupplyType(page, "chrome", "existing");
     const amount = page.locator("[data-slot='deductions-net-to-tech-amount']");
     await expect(amount).toHaveText("$42");
 
@@ -1113,7 +1283,9 @@ test.describe("021-US4: net-to-tech preview", () => {
 
     await page.locator("[data-slot='service-form-price-input']").fill("60");
     await page.locator("[data-slot='deductions-supply-toggle']").click();
-    await page.locator("[data-slot='deductions-supply-label-input']").fill("chrome");
+    // 022 (T052): drive the picker (existing-row path) instead of typing
+    // into the legacy free-text label input.
+    await pickSupplyType(page, "chrome", "existing");
     // Sanity: $60 - $3 - $5 = $52 with default mode.
     const amount = page.locator("[data-slot='deductions-net-to-tech-amount']");
     await expect(amount).toHaveText("$52");
@@ -1149,7 +1321,9 @@ test.describe("021-US4: net-to-tech preview", () => {
 
     await page.locator("[data-slot='service-form-price-input']").fill("63");
     await page.locator("[data-slot='deductions-supply-toggle']").click();
-    await page.locator("[data-slot='deductions-supply-label-input']").fill("chrome");
+    // 022 (T052): drive the picker (existing-row path) instead of typing
+    // into the legacy free-text label input.
+    await pickSupplyType(page, "chrome", "existing");
     const amount = page.locator("[data-slot='deductions-net-to-tech-amount']");
     // Sanity: $63 - $3 - $5 = $55.
     await expect(amount).toHaveText("$55");
@@ -1197,7 +1371,9 @@ test.describe("021-US4: net-to-tech preview", () => {
     // Price = 0, default ($3) + supply $5 = -$8 → clamps to $0.
     await page.locator("[data-slot='service-form-price-input']").fill("0");
     await page.locator("[data-slot='deductions-supply-toggle']").click();
-    await page.locator("[data-slot='deductions-supply-label-input']").fill("chrome");
+    // 022 (T052): drive the picker (existing-row path) instead of typing
+    // into the legacy free-text label input.
+    await pickSupplyType(page, "chrome", "existing");
 
     const amount = page.locator("[data-slot='deductions-net-to-tech-amount']");
     await expect(amount).toHaveText("$0");
@@ -1297,6 +1473,11 @@ test.describe("021-US5: role gating + audit", () => {
       );
       return;
     }
+    // 022 (T052): seed the "chrome" supply type once so test (e) can pick it
+    // via the existing-row path. Tests (f) + (g) also seed it via
+    // `setServiceDeductions` (ensureSupplyType is idempotent — second call
+    // returns the same id).
+    await ensureSupplyType("chrome");
   });
 
   test.beforeEach(async () => {
@@ -1316,6 +1497,8 @@ test.describe("021-US5: role gating + audit", () => {
     // Also reset name in case the manager-write test renamed it
     // accidentally; defensive.
     await restoreClassicManicureName();
+    // 022 (T052): tear down the supply types this describe seeded.
+    await cleanupSeededSupplyTypes();
   });
 
   test("(a) technician sees deduction chips on every row (read works)", async ({ page }) => {
@@ -1368,10 +1551,12 @@ test.describe("021-US5: role gating + audit", () => {
     // shadcn Switch also passes through the native `disabled` attribute.
     await expect(supplyToggle).toBeDisabled();
 
-    // Supply amount + label inputs are not rendered (toggle is off). We
+    // Supply amount input + picker are not rendered (toggle is off). We
     // assert this is the contracted state.
+    // 022 (T052): the free-text label input is gone — the picker is what
+    // would mount when supply is on.
     await expect(page.locator("[data-slot='deductions-supply-amount-input']")).toHaveCount(0);
-    await expect(page.locator("[data-slot='deductions-supply-label-input']")).toHaveCount(0);
+    await expect(page.locator("[data-slot='supply-type-picker']")).toHaveCount(0);
 
     // Save button is replaced by the "View only" chip per existing 008
     // pattern (services.spec.ts § US6 (b)). The 021 contract is the same:
@@ -1493,8 +1678,13 @@ test.describe("021-US5: role gating + audit", () => {
     await page.locator("[data-slot='deductions-supply-toggle']").click();
     // The amount input pre-fills with $5.00 per FR-021 toggle-on default.
     await expect(page.locator("[data-slot='deductions-supply-amount-input']")).toHaveValue("5.00");
-    // Type a label.
-    await page.locator("[data-slot='deductions-supply-label-input']").fill("chrome");
+    // 022 (T052): pick "chrome" via the picker's existing-row path. The
+    // `ensureSupplyType("chrome")` in this describe's beforeAll guarantees
+    // it's selectable.
+    await pickSupplyType(page, "chrome", "existing");
+    // Resolve the seeded type's id so the audit payload assertion below
+    // knows what `supply_type_id` value to expect in the after-snapshot.
+    const chromeTypeId = await ensureSupplyType("chrome");
 
     // Save.
     await page.locator("[data-slot='services-edit-panel-save']").click();
@@ -1513,36 +1703,39 @@ test.describe("021-US5: role gating + audit", () => {
       after: Record<string, unknown>;
     };
 
-    // Two deduction keys flipped: supply_amount_cents (null → 500) and
-    // supply_label (null → 'chrome'). The card-fee mode stayed default;
-    // card_fee_custom_cents stayed null. So `changes` carries those two
-    // keys exactly (plus zero other keys for an otherwise-unchanged row).
+    // 022 (T052): two deduction keys flipped — supply_amount_cents
+    // (null → 500) and supply_type_id (null → chromeTypeId). The
+    // diff-keys constant in `_audit-diff.ts` swapped `supply_label` for
+    // `supply_type_id` to match the schema change.
     expect(payload.changes).toEqual({
       supply_amount_cents: [null, 500],
-      supply_label: [null, "chrome"],
+      supply_type_id: [null, chromeTypeId],
     });
 
     // before/after snapshots include the four deduction fields.
     expect(payload.before.card_fee_mode).toBe("default");
     expect(payload.before.card_fee_custom_cents).toBeNull();
     expect(payload.before.supply_amount_cents).toBeNull();
-    expect(payload.before.supply_label).toBeNull();
+    expect(payload.before.supply_type_id).toBeNull();
     expect(payload.after.card_fee_mode).toBe("default");
     expect(payload.after.card_fee_custom_cents).toBeNull();
     expect(payload.after.supply_amount_cents).toBe(500);
-    expect(payload.after.supply_label).toBe("chrome");
+    expect(payload.after.supply_type_id).toBe(chromeTypeId);
   });
 
   test("(f) deduction-only edit produces a minimal diff (only the changed key)", async ({
     page,
   }) => {
-    // Pre-seed supply $5 + 'chrome' so the manager can change just the
-    // amount and we can assert the diff covers ONLY supply_amount_cents.
+    // 022 (T052): pre-seed supply $5 + the 'chrome' supply type so the
+    // manager can change just the amount and we can assert the diff covers
+    // ONLY supply_amount_cents. `setServiceDeductions` now takes
+    // `supply_type_name`; it resolves to a `supply_type_id` via
+    // `ensureSupplyType` (idempotent — beforeAll already seeded "chrome").
     await setServiceDeductions(CLASSIC_MANICURE_ID, {
       card_fee_mode: "default",
       card_fee_custom_cents: null,
       supply_amount_cents: 500,
-      supply_label: "chrome",
+      supply_type_name: "chrome",
     });
 
     const cursor = newAuditCursor();
@@ -1558,12 +1751,15 @@ test.describe("021-US5: role gating + audit", () => {
     // whole-dollar amounts without a decimal (i.e. "5" not "5.00") — see
     // `dollarsFromCents` in service-form.client.tsx.
     await expect(page.locator("[data-slot='deductions-supply-amount-input']")).toHaveValue("5");
-    await expect(page.locator("[data-slot='deductions-supply-label-input']")).toHaveValue("chrome");
+    // 022 (T052): assert the picker reflects the pre-seeded type instead of
+    // the legacy free-text label input value.
+    await expect(page.locator("[data-slot='supply-type-picker-trigger']")).toContainText("chrome");
 
     // Change ONLY the supply amount from $5 → $7.50.
     await page.locator("[data-slot='deductions-supply-amount-input']").fill("7.50");
     // Blur off the input so the on-blur reformat fires (no-op for 7.50).
-    await page.locator("[data-slot='deductions-supply-label-input']").focus();
+    // Blur target was the legacy label input; use the picker's trigger now.
+    await page.locator("[data-slot='supply-type-picker-trigger']").focus();
 
     await page.locator("[data-slot='services-edit-panel-save']").click();
     await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}.*toast=changes_saved`));
@@ -1583,11 +1779,13 @@ test.describe("021-US5: role gating + audit", () => {
     // Pre-seed supply on so the row has all four deduction fields populated;
     // the test then changes ONLY the price and asserts the diff doesn't
     // gratuitously include the deduction keys.
+    // 022 (T052): `supply_type_name` (not `supply_label`) — helper resolves
+    // to a `supply_type_id` FK.
     await setServiceDeductions(CLASSIC_MANICURE_ID, {
       card_fee_mode: "default",
       card_fee_custom_cents: null,
       supply_amount_cents: 500,
-      supply_label: "chrome",
+      supply_type_name: "chrome",
     });
 
     const cursor = newAuditCursor();

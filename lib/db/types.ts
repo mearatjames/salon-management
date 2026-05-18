@@ -320,7 +320,7 @@ export type Database = {
           price_from_cents: number | null;
           price_to_cents: number | null;
           supply_amount_cents: number | null;
-          supply_label: string | null;
+          supply_type_id: string | null;
           taxable: boolean;
           updated_at: string;
           variable_price: boolean;
@@ -341,7 +341,7 @@ export type Database = {
           price_from_cents?: number | null;
           price_to_cents?: number | null;
           supply_amount_cents?: number | null;
-          supply_label?: string | null;
+          supply_type_id?: string | null;
           taxable?: boolean;
           updated_at?: string;
           variable_price?: boolean;
@@ -362,13 +362,21 @@ export type Database = {
           price_from_cents?: number | null;
           price_to_cents?: number | null;
           supply_amount_cents?: number | null;
-          supply_label?: string | null;
+          supply_type_id?: string | null;
           taxable?: boolean;
           updated_at?: string;
           variable_price?: boolean;
           variable_price_note?: string | null;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "services_supply_type_id_fkey";
+            columns: ["supply_type_id"];
+            isOneToOne: false;
+            referencedRelation: "supply_types";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       settings: {
         Row: {
@@ -593,6 +601,33 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      supply_types: {
+        Row: {
+          archived: boolean;
+          created_at: string;
+          id: string;
+          name: string;
+          name_canonical: string;
+          updated_at: string;
+        };
+        Insert: {
+          archived?: boolean;
+          created_at?: string;
+          id?: string;
+          name: string;
+          name_canonical?: string;
+          updated_at?: string;
+        };
+        Update: {
+          archived?: boolean;
+          created_at?: string;
+          id?: string;
+          name?: string;
+          name_canonical?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
       };
       ticket_items: {
         Row: {
