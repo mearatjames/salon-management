@@ -597,6 +597,43 @@ export function CheckoutScreen({
     setInflight(true);
     setErrorBanner(null);
     try {
+      // Issue #25: when the Square Terminal is waiting for a card tap,
+      // discarding the ticket without first cancelling the checkout lets
+      // a late tap capture money against an already-discarded ticket
+      // (succeeded payment on a discarded ticket with no UI recovery).
+      // Cancel the terminal session first; only proceed to discard when
+      // Square confirms the cancel landed.
+      const cardPaymentId = activeCardPaymentRef.current;
+      if (cardStage === "waiting" && cardPaymentId) {
+        try {
+          const cancel = await cancelTerminalPayment(cardPaymentId);
+          if (cancel.resolvedStatus === "race_succeeded") {
+            toast.success(
+              "Card was charged before cancel reached the terminal. Showing the successful payment."
+            );
+            router.refresh();
+            return;
+          }
+          if (cancel.resolvedStatus === "still_pending") {
+            setErrorBanner("Couldn’t reach Square to cancel. Waiting for the terminal to settle.");
+            return;
+          }
+          // resolvedStatus === "cancelled" — fall through to discard.
+        } catch (cancelErr) {
+          if (cancelErr instanceof PaymentNotCancellableError) {
+            // Row already settled (succeeded or failed) — let the page
+            // re-render the canonical state instead of discarding.
+            router.refresh();
+            return;
+          }
+          if (cancelErr instanceof PaymentNotFoundError) {
+            // No live terminal session to cancel — safe to proceed.
+          } else {
+            setErrorBanner("Couldn’t cancel the card payment. Try again.");
+            return;
+          }
+        }
+      }
       await discardTicket({ ticketId });
       router.push("/dashboard");
     } catch (err) {
