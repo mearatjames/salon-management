@@ -104,6 +104,9 @@ jobs:
             !.next/cache
           retention-days: 1
           if-no-files-found: error
+          # .next is a dotfile dir — actions/upload-artifact@v4 excludes
+          # hidden paths by default, which silently drops everything.
+          include-hidden-files: true
 
   e2e:
     name: E2E (shard ${{ matrix.shard }}/${{ strategy.job-total }})
