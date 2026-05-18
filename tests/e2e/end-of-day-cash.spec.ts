@@ -123,9 +123,28 @@ async function clearAllTodayPaidTickets(): Promise<void> {
   await admin.from("tickets").delete().in("id", ticketIds);
 }
 
+// LA-today-midnight as a UTC instant. Mirrors the helper in
+// dashboard.spec.ts — kept inline here to avoid cross-spec coupling.
+function laTodayMidnightUtcMs(): number {
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const parts = fmt.formatToParts(now);
+  const partVal = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  const elapsed =
+    partVal("hour") * 3_600_000 + partVal("minute") * 60_000 + partVal("second") * 1000;
+  return now.getTime() - elapsed;
+}
+
 // Restore just the cash ticket fixtures we care about for this spec —
-// reuses the same shape as the seeded rows but rewrites timestamps to
-// "now minus N minutes" so they always fall inside today's window.
+// reuses the same shape as the seeded rows but rewrites timestamps so
+// they always fall inside today's LA window, even when the wall clock
+// is within an hour of LA midnight (e.g. CI on UTC hosts).
 async function restoreSeededCashTickets(): Promise<void> {
   const admin = adminClient();
   const owner = "10000000-0000-0000-0000-000000000001";
@@ -136,8 +155,16 @@ async function restoreSeededCashTickets(): Promise<void> {
   const svcMani = "20000000-0000-0000-0000-000000000001";
   const svcSpa = "20000000-0000-0000-0000-000000000004";
 
+  const laMidnightUtcMs = laTodayMidnightUtcMs();
   const now = Date.now();
-  const minutesAgo = (m: number): string => new Date(now - m * 60 * 1000).toISOString();
+  // Clamp "X minutes ago" forward so it never lands before LA-today-midnight.
+  // The actual ordering only matters within today's window; both seeded
+  // payments still resolve in ascending processed_at order.
+  const minutesAgo = (m: number): string => {
+    const desired = now - m * 60 * 1000;
+    const floor = laMidnightUtcMs + 60_000; // 1 min past LA midnight
+    return new Date(Math.max(desired, floor)).toISOString();
+  };
 
   // Ticket 2: pure cash $75 (Jordan/Jordan)
   await admin.from("tickets").upsert(

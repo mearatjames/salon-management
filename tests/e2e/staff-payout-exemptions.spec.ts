@@ -513,9 +513,10 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
 
     // Usage hints per the spec's format. Cat-eye has 1 service @ $7;
     // Chrome powder has 2 services @ $5 (mode); GelX has 1 service @ $15.
-    await expect(rows.nth(0)).toContainText("1 services · typically $7.00 per ticket");
+    // The component pluralizes correctly: "1 service" (singular) vs "2 services".
+    await expect(rows.nth(0)).toContainText("1 service · typically $7.00 per ticket");
     await expect(rows.nth(1)).toContainText("2 services · typically $5.00 per ticket");
-    await expect(rows.nth(2)).toContainText("1 services · typically $15.00 per ticket");
+    await expect(rows.nth(2)).toContainText("1 service · typically $15.00 per ticket");
   });
 
   test("(c) ticking a type + saving persists; reload confirms the tick survives", async ({
@@ -578,7 +579,7 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
     // Picker hides immediately in draft state.
     await expect(page.locator("[data-slot='pay-deductions-picker']")).toHaveCount(0);
     await expect(page.locator("[data-slot='pay-deductions-supply-row']")).toContainText(
-      "Exempt — no supply costs deducted."
+      "Exempt — no supply costs ever deducted, on any service."
     );
 
     await page.locator("[data-slot='edit-panel-save']").click();

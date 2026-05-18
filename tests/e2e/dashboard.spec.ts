@@ -26,6 +26,26 @@ import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 const SALON_TZ = "America/Los_Angeles";
 
+// LA-today-midnight as a UTC instant. Used by the seed helpers below to
+// keep generated `closed_at`/`processed_at` timestamps inside today's LA
+// window even when the test runs within an hour of midnight LA (CI on
+// us-east hosts crosses LA midnight at ~07:00–08:00 UTC).
+function laTodayMidnightUtcMs(): number {
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: SALON_TZ,
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const parts = fmt.formatToParts(now);
+  const partVal = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  const elapsed =
+    partVal("hour") * 3_600_000 + partVal("minute") * 60_000 + partVal("second") * 1000;
+  return now.getTime() - elapsed;
+}
+
 // Stable seed UUIDs (from supabase/seed.sql § paid-tickets-today block).
 const SEED_TICKET_IDS = [
   "30000000-0000-0000-0000-000000000001",
@@ -163,21 +183,23 @@ function fmtCurrency(amount: number): string {
 async function restoreSeededPaidTickets(): Promise<void> {
   const admin = adminClient();
 
-  // Place the five tickets at staggered minutes in the past — guarantees
-  // every ticket is "today in LA" AND `closed_at <= now()`. Spread is
-  // 60 / 50 / 40 / 30 / 20 minutes ago in ascending closed_at order.
-  const now = Date.now();
-  const minutesAgo = (m: number, extraSec = 0): string =>
-    new Date(now - m * 60 * 1000 + extraSec * 1000).toISOString();
+  // Place the five tickets at staggered times that are guaranteed to fall
+  // inside today's LA window AND in the past. The earlier `now - 60min`
+  // form silently broke when CI ran within 60 min of LA midnight: the
+  // oldest slots crossed the date line and the dashboard's "today in LA"
+  // filter dropped them. We now compute the LA-today-midnight UTC anchor
+  // and pin the spread to `[laMidnight + 1min, now - 30s]`, compressing
+  // the span when the wall clock is close to midnight.
+  const laMidnightUtcMs = laTodayMidnightUtcMs();
+  const nowMs = Date.now();
+  const earliest = Math.max(laMidnightUtcMs + 60_000, nowMs - 60 * 60_000);
+  const latest = nowMs - 30_000;
+  const step = Math.max(0, (latest - earliest) / 4);
 
-  // Slot 1 — 60 min ago (oldest)
-  // Slot 2 — 50 min ago
-  // Slot 3 — 40 min ago
-  // Slot 4 — 30 min ago (split tender — two payments 1s apart)
-  // Slot 5 — 20 min ago (newest)
+  // Slot 1 — earliest (today)
+  // Slot 2 / 3 / 4 / 5 — evenly spread up to slot 5 (most recent, ≤ now)
   const at = (slot: 1 | 2 | 3 | 4 | 5, extraSec = 0): string => {
-    const slots: Record<number, number> = { 1: 60, 2: 50, 3: 40, 4: 30, 5: 20 };
-    return minutesAgo(slots[slot], extraSec);
+    return new Date(earliest + step * (slot - 1) + extraSec * 1000).toISOString();
   };
 
   // Owner / Jordan / Sam from staff seed
@@ -1040,17 +1062,18 @@ const US3_TICKET_IDS: readonly string[] = Array.from(
 );
 
 // Slot i (1…15) → minutes-ago: slot 1 is the oldest (75 min), slot 15 the
-// newest (5 min). All instants strictly in the past, well inside today's
-// LA window even at very-early-morning runs (75 min before "now" can wrap
-// into yesterday only when local time is between 00:00 and 01:15 LA).
-// That edge is tolerated: the dashboard window is "today in LA", and the
-// suite seeding window matches — if the test runs between 00:00 and 01:15
-// LA, some slots may technically be yesterday and the assertion (a) would
-// fall short. In practice Playwright runs against `Pacific/Los_Angeles`
-// servers or in CI containers where this corner is rare; we accept the
-// trade-off to stay inside one calendar day with a simple stagger.
-function minutesAgoUs3(minutes: number): string {
-  return new Date(Date.now() - minutes * 60 * 1000).toISOString();
+// newest (5 min). All instants are clamped to today's LA window so the
+// dashboard's "today in LA" filter sees every row, even when the suite
+// runs within ~75 minutes of LA midnight (CI on UTC hosts crosses LA
+// midnight ~07:00–08:00 UTC). When the wall clock is close to midnight
+// the spread compresses, but the row count and ordering still hold.
+function us3SlotTimestamp(slotIndex0Based: number): string {
+  const laMidnight = laTodayMidnightUtcMs();
+  const now = Date.now();
+  const lo = Math.max(laMidnight + 60_000, now - 75 * 60_000);
+  const hi = now - 30_000;
+  const step = (hi - lo) / Math.max(1, US3_TICKET_COUNT - 1);
+  return new Date(lo + slotIndex0Based * step).toISOString();
 }
 
 async function insertUs3Fixture(): Promise<void> {
@@ -1059,9 +1082,9 @@ async function insertUs3Fixture(): Promise<void> {
   const svcClassicMani = "20000000-0000-0000-0000-000000000001";
 
   const tickets = US3_TICKET_IDS.map((id, i) => {
-    // slot 1 → 75 min ago; slot 15 → 5 min ago. 5-minute stagger.
-    const minutes = 75 - i * 5;
-    const iso = minutesAgoUs3(minutes);
+    // slot 0 = oldest, slot US3_TICKET_COUNT-1 = newest. All inside
+    // today's LA window (see us3SlotTimestamp).
+    const iso = us3SlotTimestamp(i);
     return {
       id,
       status: "paid",
@@ -1084,7 +1107,6 @@ async function insertUs3Fixture(): Promise<void> {
     price_unconfirmed: false,
   }));
   const payments = US3_TICKET_IDS.map((id, i) => {
-    const minutes = 75 - i * 5;
     return {
       ticket_id: id,
       method: "card",
@@ -1093,7 +1115,7 @@ async function insertUs3Fixture(): Promise<void> {
       tip_cents: 0,
       status: "succeeded",
       taken_by_staff_id: owner,
-      processed_at: minutesAgoUs3(minutes),
+      processed_at: us3SlotTimestamp(i),
     };
   });
 
