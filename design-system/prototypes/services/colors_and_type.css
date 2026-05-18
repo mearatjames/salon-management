@@ -1,0 +1,239 @@
+/* ==========================================================================
+   Lacquer — Colors & Type
+   Built on shadcn/ui conventions: Tailwind CSS variables in OKLCH.
+   Light mode is default; .dark on <html> or any ancestor flips tokens.
+   ========================================================================== */
+
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
+:root {
+  /* ---------- Base palette (raw, not for direct use in components) ---------- */
+  --neutral-0:   oklch(1 0 0);              /* pure white */
+  --neutral-50:  oklch(0.99 0.003 90);      /* page background, warm */
+  --neutral-100: oklch(0.97 0.004 90);
+  --neutral-200: oklch(0.93 0.005 90);      /* borders */
+  --neutral-300: oklch(0.87 0.006 90);
+  --neutral-400: oklch(0.71 0.008 90);      /* muted foreground */
+  --neutral-500: oklch(0.55 0.01 90);
+  --neutral-600: oklch(0.44 0.01 90);
+  --neutral-700: oklch(0.34 0.012 90);
+  --neutral-800: oklch(0.24 0.012 90);
+  --neutral-900: oklch(0.16 0.012 90);
+  --neutral-950: oklch(0.10 0.012 90);
+
+  /* Lacquer Rose — desaturated mauve accent */
+  --rose-50:  oklch(0.97 0.012 12);
+  --rose-100: oklch(0.93 0.025 12);
+  --rose-200: oklch(0.86 0.045 12);
+  --rose-300: oklch(0.76 0.07 12);
+  --rose-400: oklch(0.64 0.10 12);
+  --rose-500: oklch(0.55 0.12 12);   /* primary */
+  --rose-600: oklch(0.48 0.12 12);
+  --rose-700: oklch(0.40 0.10 12);
+  --rose-800: oklch(0.32 0.08 12);
+  --rose-900: oklch(0.24 0.06 12);
+
+  /* Semantic accents (muted) */
+  --green-500:  oklch(0.62 0.13 150);
+  --amber-500:  oklch(0.76 0.14 75);
+  --red-500:    oklch(0.58 0.18 25);
+  --blue-500:   oklch(0.60 0.13 240);
+
+  /* ---------- Semantic tokens (USE THESE in components) ---------- */
+  --background:        var(--neutral-50);
+  --foreground:        var(--neutral-900);
+
+  --card:              var(--neutral-0);
+  --card-foreground:   var(--neutral-900);
+
+  --popover:           var(--neutral-0);
+  --popover-foreground:var(--neutral-900);
+
+  --primary:           var(--rose-500);
+  --primary-foreground:var(--neutral-0);
+
+  --secondary:         var(--neutral-100);
+  --secondary-foreground: var(--neutral-900);
+
+  --muted:             var(--neutral-100);
+  --muted-foreground:  var(--neutral-400);
+
+  --accent:            var(--neutral-100);
+  --accent-foreground: var(--neutral-900);
+
+  --destructive:       var(--red-500);
+  --destructive-foreground: var(--neutral-0);
+
+  --success:           var(--green-500);
+  --warning:           var(--amber-500);
+  --info:              var(--blue-500);
+
+  --border:            var(--neutral-200);
+  --input:             var(--neutral-200);
+  --ring:              var(--rose-400);
+
+  /* ---------- Radii ---------- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+  --radius: var(--radius-md);
+
+  /* ---------- Shadows ---------- */
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --shadow-sm: 0 2px 4px -1px rgb(0 0 0 / 0.06), 0 1px 2px 0 rgb(0 0 0 / 0.04);
+  --shadow-md: 0 8px 24px -4px rgb(0 0 0 / 0.10), 0 2px 6px -2px rgb(0 0 0 / 0.06);
+  --shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 0.18);
+
+  /* ---------- Spacing scale (4px base) ---------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---------- Type ---------- */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Fluid-ish scale, tight tracking on display sizes */
+  --text-xs:   12px;
+  --text-sm:   13px;
+  --text-base: 14px;
+  --text-md:   15px;
+  --text-lg:   16px;
+  --text-xl:   18px;
+  --text-2xl:  20px;
+  --text-3xl:  24px;
+  --text-4xl:  30px;
+  --text-5xl:  36px;
+  --text-6xl:  48px;
+
+  --leading-tight: 1.1;
+  --leading-snug:  1.25;
+  --leading-normal:1.5;
+  --leading-relaxed:1.65;
+
+  --tracking-tight: -0.02em;
+  --tracking-snug:  -0.01em;
+  --tracking-normal: 0;
+  --tracking-wide:  0.04em;
+
+  /* ---------- Motion ---------- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in:  cubic-bezier(0.4, 0, 1, 1);
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+  --duration-slow: 300ms;
+}
+
+/* ==========================================================================
+   Dark mode
+   ========================================================================== */
+.dark {
+  --background:        var(--neutral-950);
+  --foreground:        var(--neutral-50);
+
+  --card:              var(--neutral-900);
+  --card-foreground:   var(--neutral-50);
+
+  --popover:           var(--neutral-900);
+  --popover-foreground:var(--neutral-50);
+
+  --primary:           var(--rose-400);
+  --primary-foreground:var(--neutral-950);
+
+  --secondary:         var(--neutral-800);
+  --secondary-foreground: var(--neutral-50);
+
+  --muted:             var(--neutral-800);
+  --muted-foreground:  var(--neutral-400);
+
+  --accent:            var(--neutral-800);
+  --accent-foreground: var(--neutral-50);
+
+  --destructive:       oklch(0.62 0.20 25);
+  --destructive-foreground: var(--neutral-50);
+
+  --border:            oklch(0.28 0.012 90);
+  --input:             oklch(0.28 0.012 90);
+  --ring:              var(--rose-500);
+
+  --shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-sm: 0 2px 4px -1px rgb(0 0 0 / 0.5), 0 1px 2px 0 rgb(0 0 0 / 0.4);
+  --shadow-md: 0 8px 24px -4px rgb(0 0 0 / 0.5), 0 2px 6px -2px rgb(0 0 0 / 0.4);
+}
+
+/* ==========================================================================
+   Element defaults — semantic, drop-in
+   ========================================================================== */
+html, body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--foreground);
+  background: var(--background);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, .h1 {
+  font-size: var(--text-5xl);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  font-weight: 600;
+}
+h2, .h2 {
+  font-size: var(--text-3xl);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-snug);
+  font-weight: 600;
+}
+h3, .h3 {
+  font-size: var(--text-xl);
+  line-height: var(--leading-snug);
+  font-weight: 600;
+}
+h4, .h4 {
+  font-size: var(--text-lg);
+  line-height: var(--leading-snug);
+  font-weight: 600;
+}
+p, .p {
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  text-wrap: pretty;
+}
+small, .small {
+  font-size: var(--text-xs);
+  line-height: var(--leading-snug);
+  color: var(--muted-foreground);
+}
+.lead {
+  font-size: var(--text-lg);
+  line-height: var(--leading-relaxed);
+  color: var(--muted-foreground);
+}
+.eyebrow {
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.tnum, .num, td.num, .currency, .time {
+  font-feature-settings: "tnum", "cv02", "cv03";
+  font-variant-numeric: tabular-nums;
+}
+code, pre, kbd {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
