@@ -864,7 +864,15 @@ export async function takeCash(
 
 export type DiscardTicketInput = { ticketId: string };
 
-export async function discardTicket(input: DiscardTicketInput): Promise<{ ok: true }> {
+export type DiscardTicketResult =
+  | { ok: true }
+  | {
+      ok: false;
+      refusedReason: "ticket_has_inflight_payment";
+      counts: { draft: number; pending: number; succeeded: number };
+    };
+
+export async function discardTicket(input: DiscardTicketInput): Promise<DiscardTicketResult> {
   assertUuid(input.ticketId, "discardTicket.ticketId");
 
   const viewer = await requireStudioSession();
@@ -881,6 +889,34 @@ export async function discardTicket(input: DiscardTicketInput): Promise<{ ok: tr
   }
   if (ticket.status === "paid" || ticket.status === "discarded") {
     throw new TicketAlreadyTerminalError();
+  }
+
+  // Issue #26 — money-loss defense. The ticket's own status is not enough:
+  // a split-tender leg can sit in `succeeded` (captured) while the ticket
+  // is still `open`, and a Square Terminal checkout can sit in `pending`
+  // (the terminal is waiting for a tap). Flipping the ticket to `discarded`
+  // in either state strands captured money or a live charge with no
+  // recovery path. We surface the refusal as an in-band return value
+  // (not a thrown error) so the `refusedReason` + `counts` payload
+  // survives Next.js' production Server Action error stripping (which
+  // replaces `message` with a generic "An error occurred…" string and
+  // erases `code` / class identity — see the prior-art at `addServiceLine`
+  // for the same pattern). `TicketHasInflightPaymentError` lives in
+  // `_errors.ts` as the typed equivalent for same-process callers.
+  const { data: inflightRows, error: inflightErr } = await supabase
+    .from("payments")
+    .select("status")
+    .eq("ticket_id", input.ticketId)
+    .in("status", ["draft", "pending", "succeeded"]);
+  if (inflightErr) {
+    throw new Error(`discardTicket inflight read failed: ${inflightErr.message}`);
+  }
+  if (inflightRows && inflightRows.length > 0) {
+    const counts = { draft: 0, pending: 0, succeeded: 0 };
+    for (const row of inflightRows as Array<{ status: "draft" | "pending" | "succeeded" }>) {
+      counts[row.status] += 1;
+    }
+    return { ok: false, refusedReason: "ticket_has_inflight_payment", counts };
   }
 
   // Line count for the audit payload (cheap headcount).
