@@ -32,5 +32,5 @@
 ## Notes
 
 - Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`
-- The spec carries an explicit Assumptions section documenting draft positions for six points the brief flagged as open for `/speckit-clarify` (self-edit permission, mode-transition draft preservation, filter-chip persistence, mobile reduced-motion, card-fee subtitle source, archived-type-exempted UX). `/speckit-clarify` should revisit these with stakeholder review.
-- Implementation-leaning identifiers (table names, helper paths, route names) appear only in the Assumptions section as continuity references to prior phases (021/022), not in the user-facing requirements. The functional requirements describe behaviour and invariants, not file paths.
+- `/speckit-clarify` ran 2026-05-17 and resolved five of the brief's six open questions: self-edit permission, reduced-motion behavior, archived-type picker UX, mode-toggle draft preservation, and card-fee subtitle source. The sixth (filter chip persistence — sessionStorage vs localStorage) was deferred as low impact and remains documented in the Assumptions section with its draft position.
+- Implementation-leaning identifiers (table names, helper paths, route names) appear only in the Clarifications / Assumptions sections as continuity references to prior phases (021/022), not in the user-facing requirements. The functional requirements describe behaviour and invariants, not file paths.

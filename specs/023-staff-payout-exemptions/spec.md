@@ -12,6 +12,16 @@ This feature ships **per-staff payout exemptions** — a tech's card-fee deducti
 
 The redesign reshapes the Settings shell with a shared tab bar, replaces the show-inactive switch with status filter chips, restructures the staff row (status dot, selection bar, tinted PIN pill, tabular date), reorganizes the edit panel into Identity / Access / Pay & deductions / Danger-zone sections, and turns the add-staff flow into a right-side wizard sheet. On mobile the panel becomes a bottom sheet. The new functionality and the redesign ship together because the new **Pay & deductions** section is the panel's primary new affordance and the prototype is the only complete reference for how it integrates.
 
+## Clarifications
+
+### Session 2026-05-17
+
+- Q: Can an operator self-edit their own `card_fee_exempt` / `supply_mode` / `supply_except` fields under the existing role gate? → A: Yes — allow self-edit. The three fields are payout-economics, not access/identity; they already require the same role gate as any staff edit, and blocking self-edit would create an awkward "you can edit everyone but yourself" gap with no security upside. Self-edit of role and active state remains restricted per 006.
+- Q: How should the mobile bottom sheet and desktop wizard sheet behave for operators with `prefers-reduced-motion: reduce`? → A: Honor the OS signal with an instant transition (no slide animation). Full 300ms slide remains the default for everyone else. WCAG 2.3.3 / 2.2.2 expect user-triggered motion at this duration to be disablable; the OS-level signal is the standard switch.
+- Q: How should the per-type picker render a supply type that is in the tech's exempted set but has been archived in the catalog? → A: Row stays visible, ticked, with an "Archived" muted pill, and the checkbox remains tickable so the operator can untick to clean up inline. Save persists the change normally and produces an audit row. The picker does not auto-prune archived ids on save.
+- Q: When the operator switches the Supply deductions segmented control between modes without saving, what happens to the per-type ticks in the panel's draft state? → A: Preserve ticks. Switching the segmented control hides/shows the picker but never wipes ticks until save. Save with mode Apply all or Exempt wipes the persisted set regardless of the draft. The DB CHECK and save-time wipe are the safety backstops, so the panel can stay permissive.
+- Q: Where does the "Standard $X deducted on card-paid services." subtitle resolve the amount from? → A: Resolve at render time from `formatDefaultCardFeeLabel()` in `lib/services/card-fee-default.ts` — the single source of truth for what the salon actually deducts at checkout. When Phase 2 ships the studio-level editor, the panel copy picks up the new value automatically with zero code churn here.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 — Exempt a tech from the card-processing fee (Priority: P1)
@@ -268,14 +278,11 @@ On narrow viewports (<900px), the two-pane layout collapses: the roster takes th
 
 ## Assumptions
 
+> Confirmed decisions from `/speckit-clarify` (self-edit permission, reduced-motion behavior, archived-type picker UX, mode-toggle draft preservation, card-fee subtitle source) live in the **Clarifications** section above and are no longer carried here as assumptions.
+
 - **Phase 3 not in scope**: The exemption values persisted here are captured and displayed only. Checkout, receipt, and payout calculations continue to apply the per-service deductions universally regardless of these settings until Phase 3 ships. The audit row still flows from save, so a future Phase 3 backfill has clean provenance.
 - **022 is the prerequisite for supply-type identity**: This phase assumes 022 has shipped — `supply_types` exists, `services.supply_type_id` (uuid, nullable) is in place, and the Edit Policy sheet exposes the catalog CRUD. If 022 ships after this work, the per-type picker degrades to an empty state until then.
-- **Standard card fee remains a single hardcoded helper**: The Pay & deductions subtitle resolves the standard fee from the existing `lib/services/card-fee-default.ts` helper. The Phase 2 studio-level editor is still out of scope; when it ships, this surface picks up the dynamic value with no copy change.
-- **Self-edit of own exemption fields is permitted**: An operator can edit their own card_fee_exempt, supply_mode, and supply_except (non-destructive). Self-edit of role or active state remains restricted per 006's existing model.
-- **Filter chip selection persists across sessions**: Default chip on first visit is Active; on subsequent visits the last-selected chip is preselected from `localStorage` under `tn:settings:staff:filter`. (sessionStorage would lose the preference on tab close, which is more friction than help.)
-- **Mobile motion honors prefers-reduced-motion**: The bottom-sheet slide-up and wizard sheet entry animations are skipped (instant transition) when the operator's OS reports reduced-motion preference.
-- **Archived-type-still-exempted UX**: An archived supply type that is currently in a tech's exempted set stays visible in the picker (ticked, with an "Archived" muted pill). The operator can untick it to clean up; the save action does not auto-prune it. This is the friction-low path for "I archived this type but I still want a record of who was exempt from it."
-- **Partial → Apply all / Exempt preserves draft ticks**: Switching the segmented control between modes within a single panel-edit session keeps the per-type ticks in the panel's draft state; the save action wipes the persisted set only when the saved mode is Apply all or Exempt. (Fat-finger protection — flipping between modes to compare doesn't destroy a thoughtful selection.)
+- **Filter chip selection persists across sessions**: Default chip on first visit is Active; on subsequent visits the last-selected chip is preselected from `localStorage` under `tn:settings:staff:filter`. (sessionStorage would lose the preference on tab close, which is more friction than help.) Not raised in clarify — low impact, easy to revisit if operators push back.
 - **No other Settings sub-pages are restyled**: The tab bar links to General / Notifications / Billing, but those sub-pages' content stays as-is. Their styling will follow in a later phase.
 - **Existing add-staff server actions unchanged**: The wizard sheet is visual chrome over the existing two-step create-staff and set-PIN actions. No backend behavior changes for the add flow.
 - **Other prototype redesigns deferred**: The latest Lacquer design handoff includes redesigned payroll and end-of-day surfaces. Those are explicitly out of scope here — this feature only resyncs Settings → Staff.
