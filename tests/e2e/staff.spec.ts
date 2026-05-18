@@ -621,9 +621,11 @@ test.describe("US4: set or change PIN", () => {
     await signInAsMaya(page);
     await page.goto(`/settings/staff?selected=${LANA_ID}`);
 
-    // PIN row shows "No PIN set"; button label is "Set PIN".
+    // PIN row label is "No PIN · Required to log in"; the "Set PIN" copy
+    // lives on the button (asserted below). The row text concatenates label
+    // + button (no separator), so we assert each piece separately.
     const pinRow = page.locator("[data-slot='edit-panel-pin-row']");
-    await expect(pinRow).toContainText("No PIN set");
+    await expect(pinRow).toContainText("No PIN");
     await expect(pinRow).toContainText("Required to log in");
     const pinBtn = page.locator("[data-slot='edit-panel-pin-button']");
     await expect(pinBtn).toHaveText("Set PIN");
