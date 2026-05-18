@@ -831,6 +831,7 @@ export type Database = {
         Returns: {
           ticket_flipped_to_paid: boolean;
           ticket_id: string;
+          ticket_recovered_from_discard: boolean;
         }[];
       };
       pos_record_gift_payment: {

@@ -253,12 +253,24 @@ export async function handleTerminalCheckoutUpdated(
       p_raw: raw,
       p_failure_reason: null,
     };
-    const { error: rpcErr } = await supabase.rpc(
+    const { data: rpcData, error: rpcErr } = await supabase.rpc(
       "pos_record_card_payment",
       args as unknown as Parameters<typeof supabase.rpc<"pos_record_card_payment">>[1]
     );
     if (rpcErr) {
       throw new Error(`pos_record_card_payment(succeeded) failed: ${rpcErr.message}`);
+    }
+    // Issue #27 — late capture landed on a ticket the operator already
+    // discarded. The RPC auto-flipped the ticket back to `paid` and wrote
+    // a `payment.captured_after_discard` audit row; surface the recovery
+    // at WARN level so it shows up in observability output.
+    const row = Array.isArray(rpcData) ? rpcData[0] : null;
+    if (row?.ticket_recovered_from_discard) {
+      console.warn("square.webhook: late capture recovered discarded ticket", {
+        ticket_id: row.ticket_id,
+        payment_id: paymentRow.id,
+        checkout_id: checkoutId,
+      });
     }
     return { ok: true };
   }
