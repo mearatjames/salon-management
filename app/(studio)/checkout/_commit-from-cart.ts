@@ -31,6 +31,14 @@ const cartItemSchema = z.object({
   serviceId: uuid(),
   techId: uuid(),
   note: z.string().max(500).nullable(),
+  /** Operator-set price in cents. REQUIRED for variable-priced services
+   *  (the catalog has no canonical price). OPTIONAL for fixed-price
+   *  services — null/absent means "use the catalog price"; non-null is
+   *  a US2 row-level override and wins. The server still enforces
+   *  bounds and active-service checks; this field doesn't grant the
+   *  client money authority, only the affordance of variable-price
+   *  entry. */
+  unitPriceCents: z.number().int().min(0).nullable().optional().default(null),
 });
 
 const cartDiscountSchema = z.discriminatedUnion("kind", [
@@ -46,7 +54,11 @@ export const commitCartSchema = z.object({
   notes: z.string().max(1000).nullable(),
 });
 
-export type EphemeralCartInput = z.infer<typeof commitCartSchema>;
+// Use `z.input` (not `z.infer`) so optional fields with `.default(null)`
+// stay optional in the wire type. Callers — including the migrated
+// unit-test fixtures that predate the variable-price wireup — can
+// omit `unitPriceCents` per item and the parser fills in null.
+export type EphemeralCartInput = z.input<typeof commitCartSchema>;
 
 // ─── Resolved row shapes ────────────────────────────────────────────
 
@@ -98,6 +110,8 @@ export type ResolveErr =
   | { ok: false; code: "STALE_SERVICE"; serviceId: string }
   | { ok: false; code: "INACTIVE_TECH"; techId: string }
   | { ok: false; code: "STALE_CUSTOMER"; customerId: string }
+  | { ok: false; code: "PRICE_REQUIRED"; serviceId: string }
+  | { ok: false; code: "PRICE_OUT_OF_BOUNDS"; serviceId: string }
   | { ok: false; code: "LOOKUP_FAILED"; message: string };
 
 export type ResolveResult = ResolveOk | ResolveErr;
@@ -136,23 +150,24 @@ export async function resolveCartForCommit(
 
   const servicesRes = await supabase
     .from("services")
-    .select("id, name, price_cents, duration_min")
+    .select("id, name, price_cents, duration_min, variable_price, price_from_cents, price_to_cents")
     .in("id", serviceIds)
     .eq("active", true);
 
   if (servicesRes.error) {
     return { ok: false, code: "LOOKUP_FAILED", message: servicesRes.error.message };
   }
-  const servicesById = new Map<
-    string,
-    { id: string; name: string; price_cents: number; duration_min: number }
-  >();
-  for (const s of (servicesRes.data ?? []) as Array<{
+  type ResolvedService = {
     id: string;
     name: string;
     price_cents: number;
     duration_min: number;
-  }>) {
+    variable_price: boolean;
+    price_from_cents: number | null;
+    price_to_cents: number | null;
+  };
+  const servicesById = new Map<string, ResolvedService>();
+  for (const s of (servicesRes.data ?? []) as ResolvedService[]) {
     servicesById.set(s.id, s);
   }
   for (const id of serviceIds) {
@@ -197,20 +212,50 @@ export async function resolveCartForCommit(
   }
 
   // ── 4. Snapshot lines from the canonical service rows. ───────────
-  const itemRows: ResolvedItemRow[] = cart.items.map((it) => {
+  //
+  // Price resolution rules (Principle II — server-authoritative):
+  //   - Variable-priced service: operator MUST supply unitPriceCents.
+  //     If missing, reject with PRICE_REQUIRED. If outside the
+  //     [price_from_cents, price_to_cents] bounds (when set), reject
+  //     with PRICE_OUT_OF_BOUNDS.
+  //   - Fixed-priced service: unitPriceCents == null → use catalog price.
+  //     Non-null is a US2 row-level override (e.g. operator comp / spot
+  //     discount) and wins. Server keeps audit authority over the
+  //     deviation via the ticket_items snapshot.
+  const itemRows: ResolvedItemRow[] = [];
+  for (const it of cart.items) {
     const svc = servicesById.get(it.serviceId)!;
-    return {
+    const operatorPrice = it.unitPriceCents;
+
+    let unit_price_cents: number;
+    if (svc.variable_price) {
+      if (operatorPrice == null || operatorPrice <= 0) {
+        return { ok: false, code: "PRICE_REQUIRED", serviceId: it.serviceId };
+      }
+      if (svc.price_from_cents != null && operatorPrice < svc.price_from_cents) {
+        return { ok: false, code: "PRICE_OUT_OF_BOUNDS", serviceId: it.serviceId };
+      }
+      if (svc.price_to_cents != null && operatorPrice > svc.price_to_cents) {
+        return { ok: false, code: "PRICE_OUT_OF_BOUNDS", serviceId: it.serviceId };
+      }
+      unit_price_cents = operatorPrice;
+    } else {
+      unit_price_cents =
+        operatorPrice != null && operatorPrice > 0 ? operatorPrice : svc.price_cents;
+    }
+
+    itemRows.push({
       kind: "service",
       ref_id: it.serviceId,
       name_snapshot: svc.name,
-      unit_price_cents: svc.price_cents,
+      unit_price_cents,
       qty: 1,
       assigned_staff_id: it.techId,
       price_unconfirmed: false,
       discount_pct: null,
       note: it.note,
-    };
-  });
+    });
+  }
 
   const subtotal_cents = itemRows.reduce((acc, r) => acc + r.unit_price_cents * r.qty, 0);
 

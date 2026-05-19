@@ -2369,6 +2369,8 @@ export type CommitErrorCode =
   | "STALE_SERVICE"
   | "INACTIVE_TECH"
   | "STALE_CUSTOMER"
+  | "PRICE_REQUIRED"
+  | "PRICE_OUT_OF_BOUNDS"
   | "INSUFFICIENT_CASH"
   | "GIFT_NOT_FOUND"
   | "GIFT_INSUFFICIENT_BALANCE"
@@ -2512,6 +2514,22 @@ function mapResolveErrToCommitResult(
       code: "STALE_CUSTOMER",
       message: "The customer attached to the cart no longer exists.",
       customerId: err.customerId,
+    };
+  }
+  if (err.code === "PRICE_REQUIRED") {
+    return {
+      ok: false,
+      code: "PRICE_REQUIRED",
+      message: "A variable-priced line is missing its price.",
+      serviceId: err.serviceId,
+    };
+  }
+  if (err.code === "PRICE_OUT_OF_BOUNDS") {
+    return {
+      ok: false,
+      code: "PRICE_OUT_OF_BOUNDS",
+      message: "A line price is outside the service's allowed range.",
+      serviceId: err.serviceId,
     };
   }
   return {

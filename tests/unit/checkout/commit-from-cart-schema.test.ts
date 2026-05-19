@@ -36,6 +36,22 @@ describe("commitCartSchema — happy paths", () => {
     expect(result.success).toBe(true);
   });
 
+  it("accepts items with an operator-set unitPriceCents (variable-price entry)", () => {
+    const input = validInput({
+      items: [{ serviceId: SERVICE_ID, techId: TECH_ID, note: null, unitPriceCents: 4500 }],
+    });
+    const result = commitCartSchema.safeParse(input);
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects negative unitPriceCents", () => {
+    const input = validInput({
+      items: [{ serviceId: SERVICE_ID, techId: TECH_ID, note: null, unitPriceCents: -1 }],
+    });
+    const result = commitCartSchema.safeParse(input);
+    expect(result.success).toBe(false);
+  });
+
   it("accepts customerId: null explicitly", () => {
     const result = commitCartSchema.safeParse(validInput({ customerId: null }));
     expect(result.success).toBe(true);

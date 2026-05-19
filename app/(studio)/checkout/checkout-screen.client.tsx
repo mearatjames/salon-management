@@ -31,6 +31,7 @@ import { CartRowWithTech } from "@/components/lacquer/checkout/cart-row-with-tec
 import { DiscountSheet } from "@/components/lacquer/checkout/discount-sheet";
 import { GanNumpadSheet } from "@/components/lacquer/checkout/gan-numpad-sheet";
 import { PaymentTiles, type PaymentMethod } from "@/components/lacquer/checkout/payment-tiles";
+import { PriceSheet } from "@/components/lacquer/checkout/price-sheet";
 import { ServiceTiles, type ServiceTileService } from "@/components/lacquer/checkout/service-tiles";
 import { TechAvatarRow } from "@/components/lacquer/checkout/tech-avatar-row";
 import { Totals } from "@/components/lacquer/checkout/totals";
@@ -106,6 +107,17 @@ export function CartBuildingScreen({
   // sheet; submitting the GAN calls `submitGiftFromCart`.
   const [giftSheetOpen, setGiftSheetOpen] = useState(false);
 
+  // PriceSheet state. `isOverride=false` is the auto-open path for a
+  // freshly-tapped variable-price tile (FR-001 from feature 013); the
+  // operator MUST enter a price before charging. `isOverride=true` is
+  // US2: the operator clicked an already-confirmed row to change its
+  // price. Mirrors the `[ticketId]/checkout-screen.client.tsx` model
+  // exactly (lines 1816-1838).
+  const [priceSheet, setPriceSheet] = useState<{
+    localId: string;
+    isOverride: boolean;
+  } | null>(null);
+
   const staffById = useMemo(() => {
     const m = new Map<string, Staff>();
     for (const s of staff) m.set(s.id, s);
@@ -127,17 +139,55 @@ export function CartBuildingScreen({
       serviceId: svc.id,
       techId: selectedStaffId,
       displayName: svc.name,
-      // Variable-priced services keep $0 in the display cache. v1
-      // ephemeral cart doesn't yet expose a price-override sheet;
-      // a follow-up phase can re-introduce it by writing through
-      // `actions.setItemNote`/etc. For now the operator picks
-      // fixed-price tiles. Variable tiles still snap to $0.
+      // Variable-priced tiles snap to $0 in the display cache and the
+      // PriceSheet auto-opens below so the operator MUST set a price
+      // before Take cash enables. Fixed tiles seed at the catalog price.
       displayPriceCents: svc.variable_price ? 0 : svc.price_cents,
       displayDurationMinutes: svc.duration_min,
       note: null,
+      priceUnconfirmed: svc.variable_price,
+      serviceMeta: svc.variable_price
+        ? {
+            variable: true,
+            priceFromCents: svc.price_from_cents ?? null,
+            priceToCents: svc.price_to_cents ?? null,
+            variableNote: svc.variable_price_note ?? null,
+            presets: svc.presets ?? null,
+          }
+        : null,
     });
     actions.addItem(item);
+    // FR-001 mirror: auto-open the price sheet for variable services so
+    // the operator can't accidentally proceed without setting a price.
+    if (svc.variable_price) {
+      setPriceSheet({ localId: item.localId, isOverride: false });
+    }
   }
+
+  function handleEditPrice(localId: string) {
+    const item = cart.items.find((i) => i.localId === localId);
+    if (!item) return;
+    // !priceUnconfirmed → US2 override path; priceUnconfirmed → US1
+    // resume (the operator dismissed the auto-open sheet and is now
+    // re-opening it via the row's Set-price affordance).
+    setPriceSheet({ localId, isOverride: !item.priceUnconfirmed });
+  }
+
+  function handlePriceSheetSave(unitPriceCents: number) {
+    if (!priceSheet) return;
+    actions.setItemPrice(priceSheet.localId, unitPriceCents);
+    setPriceSheet(null);
+  }
+
+  function handlePriceSheetRemove() {
+    if (!priceSheet) return;
+    actions.removeItem(priceSheet.localId);
+    setPriceSheet(null);
+  }
+
+  const priceSheetItem = priceSheet
+    ? (cart.items.find((i) => i.localId === priceSheet.localId) ?? null)
+    : null;
 
   // ── Cash / gift commit handlers ──────────────────────────────────
   //
@@ -159,6 +209,11 @@ export function CartBuildingScreen({
         serviceId: it.serviceId,
         techId: it.techId,
         note: it.note,
+        // Operator-set price. Required for variable-priced services
+        // (resolver enforces) and acts as a US2 override for fixed
+        // services if non-zero. null means "use catalog price".
+        unitPriceCents:
+          it.priceUnconfirmed || it.displayPriceCents > 0 ? it.displayPriceCents : null,
       })),
       discount: cart.discount,
       notes: cart.notes,
@@ -178,6 +233,12 @@ export function CartBuildingScreen({
         break;
       case "STALE_CUSTOMER":
         toast.error("The selected customer no longer exists.");
+        break;
+      case "PRICE_REQUIRED":
+        toast.error("Set a price on every variable-priced line before charging.");
+        break;
+      case "PRICE_OUT_OF_BOUNDS":
+        toast.error("A line price is outside the service's allowed range.");
         break;
       case "INSUFFICIENT_CASH":
         toast.error("Cash tendered is less than the total.");
@@ -271,11 +332,13 @@ export function CartBuildingScreen({
     });
   }
 
-  // Cash CTA enables when there's something to charge AND no in-flight
-  // submit. Mirrors `[ticketId]/checkout-screen.client.tsx`'s
-  // (chargeEligible && !inflight) shape but simplified since the
-  // ephemeral cart doesn't have unconfirmed lines.
-  const takeCashEnabled = cart.items.length > 0 && !isPending && totals.totalCents > 0;
+  // Cash CTA enables when there's something to charge, no submit is
+  // pending, and every variable line has a confirmed price. Mirrors
+  // `[ticketId]/checkout-screen.client.tsx`'s
+  // (chargeEligible && !inflight && no priceUnconfirmed) gate.
+  const anyPriceUnconfirmed = cart.items.some((i) => i.priceUnconfirmed);
+  const takeCashEnabled =
+    cart.items.length > 0 && !isPending && totals.totalCents > 0 && !anyPriceUnconfirmed;
 
   // Map ephemeral-cart items into the existing CartRowWithTech view.
   // `id` is the client-local id (the row never needs a server id while
@@ -287,9 +350,9 @@ export function CartBuildingScreen({
     name: it.displayName,
     unitPriceCents: it.displayPriceCents,
     qty: 1,
-    priceUnconfirmed: false,
+    priceUnconfirmed: it.priceUnconfirmed,
     assignedStaffId: it.techId,
-    serviceMeta: null,
+    serviceMeta: it.serviceMeta,
     kind: "service" as const,
     note: it.note,
     discountPct: null,
@@ -371,13 +434,7 @@ export function CartBuildingScreen({
                     line={line}
                     staffById={staffById}
                     onRemove={() => actions.removeItem(line.id)}
-                    onEditPrice={() => {
-                      /* placeholder: variable-price override sheet
-                         is not yet wired into the ephemeral cart; a
-                         later phase can re-introduce the PriceSheet
-                         flow via actions.setItemNote / a future
-                         setItemPrice action. */
-                    }}
+                    onEditPrice={() => handleEditPrice(line.id)}
                     onSetTech={(staffId) => actions.setItemTech(line.id, staffId)}
                   />
                 ))}
@@ -474,7 +531,11 @@ export function CartBuildingScreen({
               fontVariantNumeric: "tabular-nums",
             }}
           >
-            {isPending ? "Submitting…" : `Take cash · ${fmtCents(totals.totalCents)}`}
+            {isPending
+              ? "Submitting…"
+              : anyPriceUnconfirmed
+                ? "Set price on highlighted items"
+                : `Take cash · ${fmtCents(totals.totalCents)}`}
           </button>
         </section>
 
@@ -507,6 +568,25 @@ export function CartBuildingScreen({
           busy={isPending}
           onSubmit={handleGiftSubmit}
           onCancel={() => setGiftSheetOpen(false)}
+        />
+      ) : null}
+
+      {priceSheet && priceSheetItem ? (
+        <PriceSheet
+          name={priceSheetItem.displayName}
+          unitPriceCents={priceSheetItem.displayPriceCents}
+          priceUnconfirmed={priceSheetItem.priceUnconfirmed}
+          isOverride={priceSheet.isOverride}
+          serviceMeta={priceSheetItem.serviceMeta}
+          onSave={handlePriceSheetSave}
+          onCancel={() => setPriceSheet(null)}
+          // US1 path only: tapping Remove on an unconfirmed auto-opened
+          // sheet discards the just-added row. US2 overrides hide Remove.
+          onRemove={
+            !priceSheet.isOverride && priceSheetItem.priceUnconfirmed
+              ? handlePriceSheetRemove
+              : undefined
+          }
         />
       ) : null}
     </div>

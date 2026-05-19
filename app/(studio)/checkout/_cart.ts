@@ -11,6 +11,19 @@
 // here. `previewTotals` exists purely so the operator sees an instant
 // $ value while building the cart.
 
+/** Variable-price metadata snapshotted from the source service tile at insert
+ *  time. Carries the bounds, the operator note, and any preset chips —
+ *  everything `<PriceSheet/>` needs to render the context note and the
+ *  quick-pick row without a second round trip. `null` for fixed-price
+ *  services. */
+export type CartItemServiceMeta = {
+  variable: boolean;
+  priceFromCents: number | null;
+  priceToCents: number | null;
+  variableNote: string | null;
+  presets: Array<{ label: string; price_cents: number }> | null;
+};
+
 export type CartItem = {
   /** Stable client-local ID for React reconciliation; never sent to server. */
   localId: string;
@@ -20,6 +33,12 @@ export type CartItem = {
   displayPriceCents: number;
   displayDurationMinutes: number;
   displayName: string;
+  /** True for a variable-priced service that the operator has NOT yet set
+   *  a price on. Blocks Take cash + drives the row's "Set price" affordance. */
+  priceUnconfirmed: boolean;
+  /** Snapshot of the service's variable-pricing metadata at tile-pick time.
+   *  Null for fixed-price services. */
+  serviceMeta: CartItemServiceMeta | null;
 };
 
 export type CartDiscount =
@@ -47,6 +66,13 @@ export type BuildCartItemInput = {
   displayPriceCents: number;
   displayDurationMinutes: number;
   note: string | null;
+  /** Optional — defaults to false. Set true when the source service is
+   *  variable-priced and the operator hasn't picked a price yet. */
+  priceUnconfirmed?: boolean;
+  /** Optional — defaults to null. Snapshot the variable-pricing metadata
+   *  from the source service tile so the PriceSheet can render bounds +
+   *  presets without a server round trip. */
+  serviceMeta?: CartItemServiceMeta | null;
 };
 
 /** The canonical initial cart shape; reducer's reset target. */
@@ -93,6 +119,8 @@ export function buildCartItem(input: BuildCartItemInput): CartItem {
     displayPriceCents: input.displayPriceCents,
     displayDurationMinutes: input.displayDurationMinutes,
     note: input.note,
+    priceUnconfirmed: input.priceUnconfirmed ?? false,
+    serviceMeta: input.serviceMeta ?? null,
   };
 }
 
@@ -182,6 +210,7 @@ export function cartHash(cart: EphemeralCart): string {
         item.techId,
         item.displayPriceCents,
         item.displayDurationMinutes,
+        item.priceUnconfirmed ? "u" : "c",
         item.note ?? "",
       ].join(":")
     );

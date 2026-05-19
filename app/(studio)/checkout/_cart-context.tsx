@@ -31,6 +31,7 @@ type Action =
   | { type: "remove_item"; localId: string }
   | { type: "set_item_tech"; localId: string; techId: string }
   | { type: "set_item_note"; localId: string; note: string | null }
+  | { type: "set_item_price"; localId: string; unitPriceCents: number }
   | { type: "set_customer"; customerId: string | null }
   | { type: "set_tech"; techId: string | null }
   | { type: "set_discount"; discount: CartDiscount | null }
@@ -57,6 +58,15 @@ function reducer(state: EphemeralCart, action: Action): EphemeralCart {
           i.localId === action.localId ? { ...i, note: action.note } : i
         ),
       };
+    case "set_item_price":
+      return {
+        ...state,
+        items: state.items.map((i) =>
+          i.localId === action.localId
+            ? { ...i, displayPriceCents: action.unitPriceCents, priceUnconfirmed: false }
+            : i
+        ),
+      };
     case "set_customer":
       return { ...state, customerId: action.customerId };
     case "set_tech":
@@ -79,6 +89,7 @@ export type CartActions = {
   removeItem: (localId: string) => void;
   setItemTech: (localId: string, techId: string) => void;
   setItemNote: (localId: string, note: string | null) => void;
+  setItemPrice: (localId: string, unitPriceCents: number) => void;
   setCustomer: (customerId: string | null) => void;
   setTech: (techId: string | null) => void;
   setDiscount: (discount: CartDiscount | null) => void;
@@ -111,6 +122,11 @@ export function CartProvider({ children }: { children: ReactNode }) {
     (localId: string, note: string | null) => dispatch({ type: "set_item_note", localId, note }),
     []
   );
+  const setItemPrice = useCallback(
+    (localId: string, unitPriceCents: number) =>
+      dispatch({ type: "set_item_price", localId, unitPriceCents }),
+    []
+  );
   const setCustomer = useCallback(
     (customerId: string | null) => dispatch({ type: "set_customer", customerId }),
     []
@@ -137,6 +153,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         removeItem,
         setItemTech,
         setItemNote,
+        setItemPrice,
         setCustomer,
         setTech,
         setDiscount,
@@ -150,6 +167,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       removeItem,
       setItemTech,
       setItemNote,
+      setItemPrice,
       setCustomer,
       setTech,
       setDiscount,
