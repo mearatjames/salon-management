@@ -46,12 +46,25 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  // Single-worker mode: a parallel-worker race between onboarding.spec.ts and
-  // staff.spec.ts on the shared seeded staff (Maya/Jordan/Sam) caused flaky
-  // failures. Option 3 (per-spec staff namespace) introduced its own pollution
-  // problems. Until either a proper namespace refactor (runtime fixtures) or a
-  // Playwright project-dependency setup lands, workers=1 keeps the suite
-  // deterministic. See specs/012-user-onboarding for context.
+  // Single-worker mode (still). The Category A staff-mutation race that
+  // forced workers=1 was the original blocker; issue #39 ships the
+  // worker-scoped staff fixture (`tests/e2e/_fixtures.ts`) that resolves
+  // it, so flipping the workers cap is now safe for Category A specs.
+  //
+  // Two Category B subsystems still rely on shared resources that
+  // collide under `workers > 1`, so the flip is deferred until they get
+  // fixture-equivalent isolation:
+  //
+  //  - **Square stub server** (`tests/e2e/_square-server-stub.ts`) listens
+  //    on a fixed `127.0.0.1:4567` matching the Next.js
+  //    `SQUARE_API_BASE_URL` env. Two workers running Square-stub specs
+  //    in parallel hit `EADDRINUSE`. Needs a per-shard singleton stub
+  //    (globalSetup) plus cross-worker state coordination.
+  //  - Other pre-existing Category B races (gift-card sandbox state,
+  //    Square OAuth state) need parallel-safe seeding before workers>1
+  //    is reliable.
+  //
+  // Follow-up issue: #41 (do not unpin without resolving the stubs first).
   workers: 1,
   reporter: "html",
   // Per-test budget. Local timeout is generous (60s) because parallel

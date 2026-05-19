@@ -12,8 +12,6 @@
 // `truncateAuditLog()` pattern, which forced `--workers=1` because parallel
 // specs racing on a single global table would wipe each other's rows.
 
-import { expect, test } from "@playwright/test";
-
 import { mintExpiredCookie } from "../unit/auth/_fixtures";
 
 import {
@@ -21,8 +19,8 @@ import {
   getAuthUserByEmail,
   getStaffByDisplayName,
   newAuditCursor,
-  resetStaffToSeed,
 } from "./_db";
+import { test, expect, signInAs, type StaffFixture } from "./_fixtures";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -64,6 +62,7 @@ test.describe("US1: owner signs in with password", () => {
 
   test("(a) signed-out visit to /dashboard redirects to /login?next=%2Fdashboard", async ({
     page,
+    staffFixture,
   }) => {
     await page.goto("/dashboard");
     await page.waitForURL(/\/login\?next=%2Fdashboard/);
@@ -73,6 +72,7 @@ test.describe("US1: owner signs in with password", () => {
 
   test("(b) valid credentials redirect to /select-staff?next=%2Fdashboard and write one audit row", async ({
     page,
+    staffFixture,
   }) => {
     await page.goto("/login?next=%2Fdashboard");
     await page.locator("#signin-email").fill("owner@tangnails.dev");
@@ -86,6 +86,7 @@ test.describe("US1: owner signs in with password", () => {
 
   test("(c) wrong password shows the identical invalid alert and re-renders the form", async ({
     page,
+    staffFixture,
   }) => {
     await page.goto("/login?next=%2Fdashboard");
     await page.locator("#signin-email").fill("owner@tangnails.dev");
@@ -101,7 +102,10 @@ test.describe("US1: owner signs in with password", () => {
     await expect(page.locator("#signin-password")).toBeVisible();
   });
 
-  test("(d) unknown email shows the identical alert text (FR-019)", async ({ page }) => {
+  test("(d) unknown email shows the identical alert text (FR-019)", async ({
+    page,
+    staffFixture,
+  }) => {
     await page.goto("/login?next=%2Fdashboard");
     await page.locator("#signin-email").fill("unknown@example.com");
     await page.locator("#signin-password").fill("anything");
@@ -129,12 +133,16 @@ test.describe("US1: owner signs in with password", () => {
 
 // ----- US2: Staff selects identity with a PIN --------------------------------
 
-const MAYA_ID = "10000000-0000-0000-0000-000000000001";
-
-async function signInOwner(page: import("@playwright/test").Page) {
+// Helper: walk the device-login portion of the auth flow (email + password
+// only), stopping at /select-staff. Used by tests that need to assert on
+// the /select-staff page before picking a tile.
+async function signInOwnerDevice(page: import("@playwright/test").Page, fixture: StaffFixture) {
+  if (!fixture.owner.email || !fixture.owner.password) {
+    throw new Error("signInOwnerDevice: fixture.owner is missing email/password");
+  }
   await page.goto("/login?next=%2Fdashboard");
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
+  await page.locator("#signin-email").fill(fixture.owner.email);
+  await page.locator("#signin-password").fill(fixture.owner.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/select-staff\?next=%2Fdashboard/);
 }
@@ -154,24 +162,27 @@ test.describe("US2: staff selects identity with a PIN", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
     auditCursor = newAuditCursor();
     // Restore the seeded staff to canonical state so earlier specs (012
     // onboarding offboard/remove/reactivate) don't leave Jordan in a
     // non-active state that hides him from /select-staff for this US2.
-    await resetStaffToSeed();
+    await staffFixture.reset();
   });
 
-  test("(a) roster renders three tiles by display name", async ({ page }) => {
-    await signInOwner(page);
+  test("(a) roster renders three tiles by display name", async ({ page, staffFixture }) => {
+    await signInOwnerDevice(page, staffFixture);
     await expect(page.getByRole("button", { name: /Maya Patel/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /Jordan Lee/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /Sam Chen/ })).toBeVisible();
   });
 
-  test("(b) tapping Maya reveals the keypad with 4 empty dots + 11 buttons", async ({ page }) => {
-    await signInOwner(page);
+  test("(b) tapping Maya reveals the keypad with 4 empty dots + 11 buttons", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
     await page.getByRole("button", { name: /Maya Patel/ }).click();
     await page.waitForURL(/selectedTileId=/);
     // 4 dots, none filled yet.
@@ -185,8 +196,11 @@ test.describe("US2: staff selects identity with a PIN", () => {
     await expect(page.getByRole("button", { name: "Clear" })).toBeVisible();
   });
 
-  test("(c) Maya + correct PIN 1234 lands on /dashboard with the chip", async ({ page }) => {
-    await signInOwner(page);
+  test("(c) Maya + correct PIN 1234 lands on /dashboard with the chip", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
     await page.getByRole("button", { name: /Maya Patel/ }).click();
     await page.waitForURL(/selectedTileId=/);
     await page.getByRole("button", { name: "Digit 1" }).click();
@@ -199,9 +213,12 @@ test.describe("US2: staff selects identity with a PIN", () => {
     await expect(page.locator("[data-slot='operator-chip']")).toContainText("Maya Patel");
   });
 
-  test("(d) Maya + wrong PIN 0000 surfaces calm error + audit row", async ({ page }) => {
-    await signInOwner(page);
-    await page.getByRole("button", { name: /Maya Patel/ }).click();
+  test("(d) fixture owner + wrong PIN 0000 surfaces calm error + audit row", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
+    await page.locator(`[data-staff-id="${staffFixture.owner.id}"]`).click();
     await page.waitForURL(/selectedTileId=/);
     await page.getByRole("button", { name: "Digit 0" }).click();
     await page.getByRole("button", { name: "Digit 0" }).click();
@@ -213,15 +230,15 @@ test.describe("US2: staff selects identity with a PIN", () => {
     const failed = await getAuditLogRowsSince(auditCursor, "staff.pin_failed");
     const mismatch = failed.find(
       (row) =>
-        row.entity_id === MAYA_ID &&
+        row.entity_id === staffFixture.owner.id &&
         row.payload !== null &&
         (row.payload as Record<string, unknown>).reason === "mismatch"
     );
     expect(mismatch).toBeTruthy();
   });
 
-  test("(e) keyboard input on Jordan's keypad auto-submits", async ({ page }) => {
-    await signInOwner(page);
+  test("(e) keyboard input on Jordan's keypad auto-submits", async ({ page, staffFixture }) => {
+    await signInOwnerDevice(page, staffFixture);
     await page.getByRole("button", { name: /Jordan Lee/ }).click();
     await page.waitForURL(/selectedTileId=/);
     await expect(page.locator(".auth-keypad")).toBeVisible();
@@ -230,8 +247,11 @@ test.describe("US2: staff selects identity with a PIN", () => {
     expect(new URL(page.url()).pathname).toBe("/dashboard");
   });
 
-  test("(f) refreshing the keypad page collapses back to the roster", async ({ page }) => {
-    await signInOwner(page);
+  test("(f) refreshing the keypad page collapses back to the roster", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
     await page.getByRole("button", { name: /Maya Patel/ }).click();
     await page.waitForURL(/selectedTileId=/);
     // The keypad is visible.
@@ -246,15 +266,8 @@ test.describe("US2: staff selects identity with a PIN", () => {
 
 // ----- US3: Switch staff at shift change ------------------------------------
 
-async function signInAsMaya(page: import("@playwright/test").Page) {
-  await signInOwner(page);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  await page.waitForURL(/\/dashboard($|\?)/);
+async function signInAsOwner(page: import("@playwright/test").Page, fixture: StaffFixture) {
+  return signInAs(page, fixture, fixture.owner, { nextPath: "/dashboard" });
 }
 
 test.describe("US3: switch staff at shift change", () => {
@@ -279,8 +292,9 @@ test.describe("US3: switch staff at shift change", () => {
 
   test("(a) Switch staff from /dashboard lands on /select-staff (no /login flash)", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
 
     // Switch staff is a standalone top-nav button (feature 009); one click
     // submits the `<form action={switchStaff}>` and routes to /select-staff.
@@ -297,23 +311,27 @@ test.describe("US3: switch staff at shift change", () => {
     await expect(page.locator("#signin-password")).toHaveCount(0);
   });
 
-  test("(b) previously-selected tile (Maya) is rendered with the selected modifier", async ({
+  test("(b) previously-selected tile is rendered with the selected modifier", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.locator("[data-slot='switch-staff-button']").click();
     await page.waitForURL(/\/select-staff\?next=/);
 
-    // The redirect carries `selectedTileId=<Maya>` so the page can show
-    // "you were Maya" before the next operator pins in. The .selected class
-    // is the canonical marker (see StaffTile).
-    const mayaTile = page.getByRole("button", { name: /Maya Patel/ });
-    await expect(mayaTile).toHaveClass(/selected/);
-    await expect(mayaTile).toHaveAttribute("aria-pressed", "true");
+    // The redirect carries `selectedTileId=<owner>` so the page can show
+    // "you were <owner>" before the next operator pins in. The .selected
+    // class is the canonical marker (see StaffTile).
+    const ownerTile = page.locator(`[data-staff-id="${staffFixture.owner.id}"]`);
+    await expect(ownerTile).toHaveClass(/selected/);
+    await expect(ownerTile).toHaveAttribute("aria-pressed", "true");
   });
 
-  test("(c) tap Jordan + PIN 5678 → /dashboard with Jordan in the topbar", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(c) tap Jordan + PIN 5678 → /dashboard with Jordan in the topbar", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAsOwner(page, staffFixture);
     await page.locator("[data-slot='switch-staff-button']").click();
     await page.waitForURL(/\/select-staff\?next=/);
 
@@ -331,8 +349,9 @@ test.describe("US3: switch staff at shift change", () => {
 
   test("(d) one staff.switched audit row (acting_as=Maya) + staff.signed_in with previous_staff_id=Maya", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.locator("[data-slot='switch-staff-button']").click();
     await page.waitForURL(/\/select-staff\?next=/);
 
@@ -343,24 +362,25 @@ test.describe("US3: switch staff at shift change", () => {
     await page.waitForURL(/\/dashboard($|\?)/);
 
     const switched = await getAuditLogRowsSince(auditCursor, "staff.switched");
-    const mayaSwitch = switched.filter((r) => r.acting_as_staff_id === MAYA_ID);
+    const mayaSwitch = switched.filter((r) => r.acting_as_staff_id === staffFixture.owner.id);
     expect(mayaSwitch.length).toBe(1);
 
     const signedIn = await getAuditLogRowsSince(auditCursor, "staff.signed_in");
     // The most recent signed_in is Jordan's, with previous_staff_id=Maya.
     const jordanSignIn = signedIn.find(
       (r) =>
-        r.payload !== null && (r.payload as Record<string, unknown>).previous_staff_id === MAYA_ID
+        r.payload !== null &&
+        (r.payload as Record<string, unknown>).previous_staff_id === staffFixture.owner.id
     );
     expect(jordanSignIn).toBeTruthy();
   });
 
-  test("(e) operator chip dropdown contains only Sign out", async ({ page }) => {
+  test("(e) operator chip dropdown contains only Sign out", async ({ page, staffFixture }) => {
     // Feature 009 promoted the "Switch staff" item out of the operator chip
     // dropdown and into a standalone top-nav button. The chip's dropdown
     // must now contain ONLY the "Sign out" item — anything else is a
     // regression on FR-004.
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.locator("[data-slot='operator-chip']").click();
     await expect(page.getByRole("menuitem", { name: /Switch staff/ })).toHaveCount(0);
     await expect(page.getByRole("menuitem", { name: /Sign out/ })).toBeVisible();
@@ -467,6 +487,7 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
 
   test("(a) magic-link form submission with owner email redirects to ?magic_sent=...", async ({
     page,
+    staffFixture,
   }) => {
     // 010-T056: legacy `<details>` disclosure replaced by the dedicated
     // <MagicView>. Navigate directly via the URL precedence rather than
@@ -486,6 +507,7 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
 
   test("(b) clicking the magic link from Inbucket lands on /select-staff?next=%2Fdashboard and writes device.signed_in", async ({
     page,
+    staffFixture,
   }) => {
     // 010-T056: navigate via /login?magic_intent=1 (the new dedicated
     // <MagicView>) instead of expanding the deprecated <details>.
@@ -516,6 +538,7 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
 
   test("(c) empty-email submit is blocked by the HTML5 `required` attribute (URL unchanged)", async ({
     page,
+    staffFixture,
   }) => {
     // 010-T056: same flow, via the dedicated <MagicView>.
     await page.goto("/login?magic_intent=1&next=%2Fdashboard");
@@ -541,6 +564,7 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
   // NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED=true and real credentials are present.
   test.skip("(d) MANUAL ONLY — Google button visible and posts to accounts.google.com", async ({
     page,
+    staffFixture,
   }) => {
     await page.goto("/login");
     const googleButton = page.locator("[data-slot='google-sign-in']");
@@ -596,9 +620,10 @@ test.describe("US5: operator session expiry", () => {
   test("(a)-(e) expired cookie redirects to /select-staff?next=… without flashing /login, and Max-Age=0 clears the cookie", async ({
     page,
     context,
+    staffFixture,
   }) => {
     // (a) Sign in + pin in as Maya.
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     expect(new URL(page.url()).pathname).toBe("/dashboard");
 
     // Resolve Maya's seeded id; the migration uses gen_random_uuid().
@@ -679,8 +704,9 @@ test.describe("US5: operator session expiry", () => {
   test("(f) pinning in again as Maya transitions to /calendar (still 404 expected)", async ({
     page,
     context,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     const maya = await getStaffByDisplayName("Maya Patel");
     const expiredValue = await mintExpiredCookie({
       sid: maya.id,
@@ -742,8 +768,11 @@ test.describe.serial("US6: sign out the device", () => {
     auditCursor = newAuditCursor();
   });
 
-  test("(a) operator menu → Sign out from /dashboard lands on /login", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(a) operator menu → Sign out from /dashboard lands on /login", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAsOwner(page, staffFixture);
     expect(new URL(page.url()).pathname).toBe("/dashboard");
 
     const chip = page.locator("[data-slot='operator-chip']");
@@ -758,8 +787,11 @@ test.describe.serial("US6: sign out the device", () => {
     expect(new URL(page.url()).pathname).toBe("/login");
   });
 
-  test("(b) hard reload after sign-out keeps the user on /login", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(b) hard reload after sign-out keeps the user on /login", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAsOwner(page, staffFixture);
     await page.locator("[data-slot='operator-chip']").click();
     await page.getByRole("menuitem", { name: /Sign out/ }).click();
     await page.waitForURL(/\/login(\?|$)/);
@@ -772,28 +804,33 @@ test.describe.serial("US6: sign out the device", () => {
     await expect(page.locator("#signin-password")).toBeVisible();
   });
 
-  test("(c) one device.signed_out audit row with Maya's auth user + staff id", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(c) one device.signed_out audit row with the fixture owner's auth user + staff id", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAsOwner(page, staffFixture);
     await page.locator("[data-slot='operator-chip']").click();
     await page.getByRole("menuitem", { name: /Sign out/ }).click();
     await page.waitForURL(/\/login(\?|$)/);
 
-    const maya = await getStaffByDisplayName("Maya Patel");
-    const mayaUser = await getAuthUserByEmail("owner@tangnails.dev");
-
-    // Note: `signInAsMaya` signs in as the seeded `owner@tangnails.dev`
-    // device user, then pins in as Maya. The audit row's actor_user_id is
-    // therefore the owner's auth.users.id; acting_as_staff_id is Maya's
-    // staff.id.
+    // `signInAsOwner` signs in via the fixture's per-worker owner device
+    // user (`fixture.owner.email`), then pins in as the fixture owner. The
+    // audit row's actor_user_id is therefore the fixture owner's
+    // auth.users.id; acting_as_staff_id is the fixture owner's staff.id.
     const signedOut = await getAuditLogRowsSince(auditCursor, "device.signed_out");
     const row = signedOut.find(
-      (r) => r.actor_user_id === mayaUser.id && r.acting_as_staff_id === maya.id
+      (r) =>
+        r.actor_user_id === staffFixture.owner.userId &&
+        r.acting_as_staff_id === staffFixture.owner.id
     );
     expect(row).toBeTruthy();
     // Exactly one such row — sign-out should not loop.
     expect(
-      signedOut.filter((r) => r.actor_user_id === mayaUser.id && r.acting_as_staff_id === maya.id)
-        .length
+      signedOut.filter(
+        (r) =>
+          r.actor_user_id === staffFixture.owner.userId &&
+          r.acting_as_staff_id === staffFixture.owner.id
+      ).length
     ).toBe(1);
   });
 });
@@ -837,9 +874,10 @@ test.describe.serial("US-soft-degrade: Supabase outage", () => {
   test.fixme("(a)-(f) Supabase 503 → shell stays, banner appears, switch-staff toasts, recovery rebuilds chip, cookie preserved", async ({
     page,
     context,
+    staffFixture,
   }) => {
     // (a) Sign in + pin in as Maya. The operator cookie is set here.
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     expect(new URL(page.url()).pathname).toBe("/dashboard");
     await expect(page.locator("[data-slot='operator-chip']")).toContainText("Maya Patel");
 
@@ -919,7 +957,7 @@ test.describe.serial("US-soft-degrade: Supabase outage", () => {
 // skip rather than spuriously fail.
 
 test.describe("010-US1: rebranded sign-in shell layout", () => {
-  test("renders two-panel shell at ≥ 720px", async ({ page }) => {
+  test("renders two-panel shell at ≥ 720px", async ({ page, staffFixture }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
 
@@ -942,7 +980,7 @@ test.describe("010-US1: rebranded sign-in shell layout", () => {
     expect(formBox!.width).toBeLessThanOrEqual(500);
   });
 
-  test("collapses to single panel at < 720px", async ({ page }) => {
+  test("collapses to single panel at < 720px", async ({ page, staffFixture }) => {
     const viewports = [
       { width: 320, height: 800 },
       { width: 480, height: 800 },
@@ -984,7 +1022,7 @@ test.describe("010-US1: rebranded sign-in shell layout", () => {
   // separate top-of-page alert. The assertion is structural: there must be
   // at least one `.auth-alert.auth-alert-error` element that is a descendant
   // of `.auth-form-panel`. (US5 acceptance scenario 2.)
-  test("(T060) error alert renders inside form panel", async ({ page }) => {
+  test("(T060) error alert renders inside form panel", async ({ page, staffFixture }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login?error=invalid");
     await expect(page.locator(".auth-form-panel .auth-alert.auth-alert-error")).toBeVisible();
@@ -1000,7 +1038,7 @@ test.describe("010-US1: rebranded sign-in shell layout", () => {
   // `?magic_intent=1` (which swaps to <MagicView>) and back to `/login`
   // (which re-mounts <SignInView> with a fresh `shown=false`).
 
-  test("password reveal toggle flips type", async ({ page }) => {
+  test("password reveal toggle flips type", async ({ page, staffFixture }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
 
@@ -1020,7 +1058,7 @@ test.describe("010-US1: rebranded sign-in shell layout", () => {
     await expect(toggleButton).toHaveAttribute("aria-label", "Show password");
   });
 
-  test("password reveal toggle is keyboard operable", async ({ page }) => {
+  test("password reveal toggle is keyboard operable", async ({ page, staffFixture }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
 
@@ -1035,7 +1073,7 @@ test.describe("010-US1: rebranded sign-in shell layout", () => {
     await expect(passwordInput).toHaveAttribute("type", "text");
   });
 
-  test("password reveal resets on view swap", async ({ page }) => {
+  test("password reveal resets on view swap", async ({ page, staffFixture }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
 
@@ -1055,7 +1093,7 @@ test.describe("010-US1: rebranded sign-in shell layout", () => {
     await expect(page.locator("#signin-password")).toHaveAttribute("type", "password");
   });
 
-  test("browser autofill stays masked on first paint", async ({ page }) => {
+  test("browser autofill stays masked on first paint", async ({ page, staffFixture }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
     // Initial render — no interaction. The invariant: `type="password"`.
@@ -1276,13 +1314,13 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp || !mailpitUp) return;
     auditCursor = newAuditCursor();
     await clearMailpit();
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
     // Defensive restore in case a prior crash left the password mutated.
     // afterEach runs the same call after each test.
@@ -1294,7 +1332,7 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     await restoreResetTestUserPassword();
   });
 
-  test("(T042) full password reset round-trip", async ({ page }) => {
+  test("(T042) full password reset round-trip", async ({ page, staffFixture }) => {
     // (a) Click "Forgot password?" from /login.
     await page.goto("/login");
     await page.getByRole("link", { name: "Forgot password?" }).click();
@@ -1337,7 +1375,7 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     expect(new URL(page.url()).pathname).toBe("/select-staff");
   });
 
-  test("(T043) reset writes device.password_reset audit row", async ({ page }) => {
+  test("(T043) reset writes device.password_reset audit row", async ({ page, staffFixture }) => {
     await page.goto("/login?reset_intent=1");
     await page.locator("#forgot-email").fill(RESET_TEST_EMAIL);
     await page.getByRole("button", { name: "Send reset link" }).click();
@@ -1364,6 +1402,7 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
 
   test("(T044) callback recovery branch writes device.signed_in with method=recovery", async ({
     page,
+    staffFixture,
   }) => {
     await page.goto("/login?reset_intent=1");
     await page.locator("#forgot-email").fill(RESET_TEST_EMAIL);
@@ -1383,7 +1422,7 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     expect(recoveryRow, "must write a device.signed_in row with method=recovery").toBeTruthy();
   });
 
-  test("(T045) mismatched passwords render inline error", async ({ page }) => {
+  test("(T045) mismatched passwords render inline error", async ({ page, staffFixture }) => {
     await page.goto("/login?reset_intent=1");
     await page.locator("#forgot-email").fill(RESET_TEST_EMAIL);
     await page.getByRole("button", { name: "Send reset link" }).click();
@@ -1402,7 +1441,7 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     await expect(page.locator(".auth-alert.auth-alert-error")).toHaveText("Passwords don't match.");
   });
 
-  test("(T046) password < 8 chars renders inline error", async ({ page }) => {
+  test("(T046) password < 8 chars renders inline error", async ({ page, staffFixture }) => {
     await page.goto("/login?reset_intent=1");
     await page.locator("#forgot-email").fill(RESET_TEST_EMAIL);
     await page.getByRole("button", { name: "Send reset link" }).click();
@@ -1496,7 +1535,7 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
 // (after T056's selector update).
 
 test.describe("010-US4: magic-link dedicated views", () => {
-  test("(T053) magic-link request via dedicated view", async ({ page }) => {
+  test("(T053) magic-link request via dedicated view", async ({ page, staffFixture }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
 
@@ -1511,7 +1550,7 @@ test.describe("010-US4: magic-link dedicated views", () => {
     await expect(page.locator(".auth-confirm-card")).toContainText("owner@tangnails.dev");
   });
 
-  test("(T054) magic-sent send-another loops back", async ({ page }) => {
+  test("(T054) magic-sent send-another loops back", async ({ page, staffFixture }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     // Seed the magic-sent view directly via URL precedence.
     await page.goto("/login?magic_sent=owner%40tangnails.dev");
@@ -1522,7 +1561,7 @@ test.describe("010-US4: magic-link dedicated views", () => {
     await expect(page.getByRole("heading", { name: "Sign in with a link" })).toBeVisible();
   });
 
-  test("(T055) back-to-sign-in clears magic params", async ({ page }) => {
+  test("(T055) back-to-sign-in clears magic params", async ({ page, staffFixture }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login?magic_intent=1");
     await expect(page.getByRole("heading", { name: "Sign in with a link" })).toBeVisible();
@@ -1553,7 +1592,7 @@ test.describe("010-US4: magic-link dedicated views", () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 test.describe("010-Phase 8: hydrated view-swap polish", () => {
-  test("(T062) view swap is in-place (no full navigation)", async ({ page }) => {
+  test("(T062) view swap is in-place (no full navigation)", async ({ page, staffFixture }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
     // Wait for hydration so the click handler is installed.
@@ -1591,7 +1630,7 @@ test.describe("010-Phase 8: hydrated view-swap polish", () => {
     expect(docMarker).toBe("before-click");
   });
 
-  test("(T063) view animation respects prefers-reduced-motion", async ({ page }) => {
+  test("(T063) view animation respects prefers-reduced-motion", async ({ page, staffFixture }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
@@ -1689,6 +1728,7 @@ test.describe("012-Phase 2: invite-method password setup leg", () => {
 
   test("invite link lands on /reset-password?type=invite with 'Set your password' heading; submitting password redirects to /select-staff and writes the audit chain", async ({
     page,
+    staffFixture,
   }) => {
     // Issue an invite directly via the admin API. The full Onboard sheet
     // (US2) wires the same call through a server action; Phase 2 verifies

@@ -13,9 +13,7 @@
 // Mirrors the Supabase-reachable / serial / per-test seed pattern from
 // `tests/e2e/staff.spec.ts`.
 
-import { expect, test } from "@playwright/test";
-
-import { resetStaffToSeed } from "./_db";
+import { test, expect, signInAs } from "./_fixtures";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -29,24 +27,6 @@ async function supabaseIsReachable(): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-// Reuses the seeded `owner@tangnails.dev` / `tang-nails-dev` device login
-// pattern from auth.spec.ts, then pins in as Maya Patel (PIN 1234, seeded
-// owner staff row).
-async function signInAsMaya(page: import("@playwright/test").Page) {
-  await page.goto("/login?next=%2Fsettings%2Fstaff");
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  await page.waitForURL(/\/settings\/staff(\?|$)/, { timeout: 10_000 });
 }
 
 test.describe.configure({ mode: "serial" });
@@ -69,15 +49,16 @@ test.describe("US8: Mobile bottom sheet + FAB", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
-    await resetStaffToSeed();
+    await staffFixture.reset();
   });
 
   test("(a) roster renders full-width; identity section is NOT in the DOM until a row is tapped", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
     // The roster (StaffTable) is visible.
     await expect(page.locator("[data-slot='staff-page']")).toBeVisible();
@@ -93,8 +74,11 @@ test.describe("US8: Mobile bottom sheet + FAB", () => {
     await expect(openSheet).toHaveCount(0);
   });
 
-  test("(b) the FAB renders in the lower-right under 900px wide", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(b) the FAB renders in the lower-right under 900px wide", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
     const fab = page.locator("[data-component='staff-fab']");
     await expect(fab).toBeVisible();
@@ -112,8 +96,11 @@ test.describe("US8: Mobile bottom sheet + FAB", () => {
     expect(viewport.height - (box.y + box.height)).toBeLessThanOrEqual(40);
   });
 
-  test("(c) tapping a row opens the bottom sheet, height ≤ 92vh", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(c) tapping a row opens the bottom sheet, height ≤ 92vh", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
     // Tap the first roster row.
     const firstRow = page.locator(".staff-row").first();
@@ -128,8 +115,8 @@ test.describe("US8: Mobile bottom sheet + FAB", () => {
     expect(sheetHeight).toBeLessThanOrEqual(vh92 + 1); // +1 px tolerance for rounding
   });
 
-  test("(d) body scroll is locked while the sheet is open", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(d) body scroll is locked while the sheet is open", async ({ page, staffFixture }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
     await page.locator(".staff-row").first().click();
     const sheet = page.locator("[data-component='staff-mobile-sheet'][data-state='open']");
@@ -152,8 +139,9 @@ test.describe("US8: Mobile bottom sheet + FAB", () => {
 
   test("(e) dismissing the sheet restores body scroll and clears `?selected=`", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
     await page.locator(".staff-row").first().click();
     const sheet = page.locator("[data-component='staff-mobile-sheet'][data-state='open']");
@@ -184,8 +172,11 @@ test.describe("US8: Mobile bottom sheet + FAB", () => {
     expect(url.searchParams.get("selected")).toBeNull();
   });
 
-  test("(f) tapping the FAB opens the Add-staff wizard sheet from US7", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(f) tapping the FAB opens the Add-staff wizard sheet from US7", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
     const fab = page.locator("[data-component='staff-fab']");
     await expect(fab).toBeVisible();

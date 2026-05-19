@@ -8,9 +8,9 @@
 // share the `audit_log` table.
 
 import { createClient } from "@supabase/supabase-js";
-import { expect, test } from "@playwright/test";
 
-import { getAuditLogRowsSince, newAuditCursor, resetStaffToSeed } from "./_db";
+import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+import { test, expect, signInAs } from "./_fixtures";
 
 // ── Supply-types test helpers ─────────────────────────────────────────────
 //
@@ -279,27 +279,6 @@ async function supabaseIsReachable(): Promise<boolean> {
   }
 }
 
-// Sign in as Maya Patel (seeded owner; PIN 1234). Mirrors the same helper in
-// `tests/e2e/staff.spec.ts` so the two specs share the same auth path.
-async function signInAsMaya(page: import("@playwright/test").Page) {
-  await page.goto("/login?next=%2Fsettings%2Fstaff");
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  await page.waitForURL(/\/settings\/staff(\?|$)/, { timeout: 10_000 });
-}
-
-// Sam Chen — seeded technician. Safe to use as the exemption target without
-// tripping the last-owner trigger or self-edit gates.
-const SAM_ID = "10000000-0000-0000-0000-000000000003";
-
 test.describe.configure({ mode: "serial" });
 
 test.describe("US1: Card-fee exemption", () => {
@@ -317,19 +296,20 @@ test.describe("US1: Card-fee exemption", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
     auditCursor = newAuditCursor();
-    await resetStaffToSeed();
+    await staffFixture.reset();
   });
 
   test("(a) toggling Card processing fee off saves, flips subtitle, shows toast + badge, writes audit row", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
     // Open Sam's edit panel directly (the row is a <Link href="?selected=…">).
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     await expect(page.locator("[data-slot='staff-edit-panel']")).toBeVisible();
 
     // Pay & deductions section is mounted; toggle starts ON (fee applies).
@@ -379,12 +359,12 @@ test.describe("US1: Card-fee exemption", () => {
     expect(changes).toContain("card_fee_exempt");
     expect(payload.before).toMatchObject({ card_fee_exempt: false });
     expect(payload.after).toMatchObject({ card_fee_exempt: true });
-    expect(rows[0].entity_id).toBe(SAM_ID);
+    expect(rows[0].entity_id).toBe(staffFixture.tech.id);
   });
 
-  test("(b) reloading after save preserves the off state", async ({ page }) => {
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+  test("(b) reloading after save preserves the off state", async ({ page, staffFixture }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     // Flip + save (same path as (a) — re-establishes the exempt state).
     const cardFeeSwitch = page.locator("[data-slot='pay-deductions-card-fee-switch']");
@@ -396,7 +376,7 @@ test.describe("US1: Card-fee exemption", () => {
     });
 
     // Hard reload — drop client state, re-fetch from DB.
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     // Toggle is still off; exempt subtitle is still shown; badge still visible.
     await expect(page.locator("[data-slot='pay-deductions-card-fee-switch']")).toHaveAttribute(
@@ -439,13 +419,15 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
   test.afterAll(async () => {
     if (!supabaseUp) return;
     await resetSupplyCatalog();
-    await resetStaffToSeed();
+    // Note: the fixture's trio is reset automatically by the next
+    // beforeEach (next file's first test) — no manual reset needed here,
+    // and worker-scoped fixtures aren't accessible in afterAll.
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
     auditCursor = newAuditCursor();
-    await resetStaffToSeed();
+    await staffFixture.reset();
     await resetSupplyCatalog();
 
     // Seed the canonical 3-type catalog the spec's independent-test scenario
@@ -464,9 +446,9 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
     await seedService({ name: "GelX classic", supplyTypeId: gelXId, amountCents: 1500 });
   });
 
-  test("(a) default is Apply all with the documented subtitle", async ({ page }) => {
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+  test("(a) default is Apply all with the documented subtitle", async ({ page, staffFixture }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     await expect(page.locator("[data-slot='staff-edit-panel']")).toBeVisible();
 
     const section = page.locator("[data-slot='pay-deductions-section']");
@@ -491,9 +473,10 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
 
   test("(b) selecting Some reveals the per-type picker with usage hints, alphabetized", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     // Click "Some" in the segmented toggle.
     await page
@@ -521,9 +504,10 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
 
   test("(c) ticking a type + saving persists; reload confirms the tick survives", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     await page
       .locator("[data-slot='pay-deductions-supply-mode-toggle'] [data-value='partial']")
@@ -545,7 +529,7 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
     });
 
     // Reload + re-open: still on Some, Chrome powder still ticked.
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     await expect(
       page.locator("[data-slot='pay-deductions-supply-mode-toggle'] [data-value='partial']")
     ).toHaveAttribute("data-state", "on");
@@ -556,19 +540,20 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
     ).toHaveAttribute("data-state", "checked");
 
     // DB check — supply_mode='partial', supply_except contains chromeId.
-    const persisted = await readStaffSupply(SAM_ID);
+    const persisted = await readStaffSupply(staffFixture.tech.id);
     expect(persisted.mode).toBe("partial");
     expect(persisted.except).toEqual([chromeId]);
   });
 
   test("(d) selecting Exempt + saving hides the picker and clears supply_except", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     // Pre-seed staff in partial mode with a tick, so the wipe is observable.
-    await setStaffSupply({ staffId: SAM_ID, mode: "partial", except: [chromeId] });
+    await setStaffSupply({ staffId: staffFixture.tech.id, mode: "partial", except: [chromeId] });
 
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     // Confirm we start in partial with the chrome tick visible.
     await expect(page.locator("[data-slot='pay-deductions-picker']")).toBeVisible();
 
@@ -588,22 +573,23 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
     });
 
     // Reload: picker remains hidden; DB confirms wipe.
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     await expect(
       page.locator("[data-slot='pay-deductions-supply-mode-toggle'] [data-value='exempt']")
     ).toHaveAttribute("data-state", "on");
     await expect(page.locator("[data-slot='pay-deductions-picker']")).toHaveCount(0);
 
-    const persisted = await readStaffSupply(SAM_ID);
+    const persisted = await readStaffSupply(staffFixture.tech.id);
     expect(persisted.mode).toBe("exempt");
     expect(persisted.except).toEqual([]);
   });
 
   test("(e) draft preservation: Some -> Apply all -> Some restores prior ticks (Clarify Q4)", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     // Enter Some mode and tick Chrome powder + GelX.
     await page
@@ -647,13 +633,14 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
 
   test("(f) archived UX: a still-exempted but archived type renders with the Archived pill and is tickable (Clarify Q3)", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     // Pre-seed Sam in partial mode with Chrome powder ticked, then archive it.
-    await setStaffSupply({ staffId: SAM_ID, mode: "partial", except: [chromeId] });
+    await setStaffSupply({ staffId: staffFixture.tech.id, mode: "partial", except: [chromeId] });
     await archiveSupplyType(chromeId);
 
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     const picker = page.locator("[data-slot='pay-deductions-picker']");
     await expect(picker).toBeVisible();
@@ -673,9 +660,10 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
 
   test("(g) save with supply_mode + supply_except writes one audit row with both keys + raw uuid array", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     // Switch to Some + tick Chrome powder.
     await page
@@ -709,8 +697,9 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
 
   test("(h) empty catalog: selecting Some shows the empty-state copy with a /services link", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     // Wipe everything for this test — empty-state path requires zero active
     // supply_types globally. Single-worker mode (playwright.config.ts:55)
     // means no other spec is touching supply_types in parallel, so the
@@ -728,7 +717,7 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
     SEEDED_SERVICE_IDS.clear();
     SEEDED_SUPPLY_TYPE_IDS.clear();
 
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     await page
       .locator("[data-slot='pay-deductions-supply-mode-toggle'] [data-value='partial']")
       .click();
@@ -744,9 +733,10 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
 
   test("(i) FR-012 stale-tab defensive: unknown supply_except ids are silently dropped server-side", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     // Switch to Some + tick Chrome powder via the UI.
     await page
@@ -780,7 +770,7 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
 
     // Persisted set contains only the valid id; the unknown id was silently
     // dropped by validateSupplyExcept's allowedIds gate.
-    const persisted = await readStaffSupply(SAM_ID);
+    const persisted = await readStaffSupply(staffFixture.tech.id);
     expect(persisted.mode).toBe("partial");
     expect(persisted.except).toEqual([chromeId]);
   });
@@ -810,12 +800,14 @@ test.describe("US3: Summary sentence + live status badges", () => {
   test.afterAll(async () => {
     if (!supabaseUp) return;
     await resetSupplyCatalog();
-    await resetStaffToSeed();
+    // Note: the fixture's trio is reset automatically by the next
+    // beforeEach (next file's first test) — no manual reset needed here,
+    // and worker-scoped fixtures aren't accessible in afterAll.
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
-    await resetStaffToSeed();
+    await staffFixture.reset();
     await resetSupplyCatalog();
 
     // Seed the same 3-type catalog US2 uses so the partial-mode summary
@@ -830,10 +822,10 @@ test.describe("US3: Summary sentence + live status badges", () => {
   // Sam's edit panel, and asserts the rendered summary matches verbatim.
   // Sam's display_name is "Sam Chen" so the first-name interpolation is "Sam".
 
-  test("(a) no exemption + apply mode → no summary rendered", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(a) no exemption + apply mode → no summary rendered", async ({ page, staffFixture }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     // Default seed posture is already cardFeeExempt=false, supplyMode=apply, [].
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     await expect(page.locator("[data-slot='pay-deductions-section']")).toBeVisible();
     await expect(page.locator("[data-slot='pay-deductions-summary']")).toHaveCount(0);
     await expect(page.locator("[data-slot='pay-deductions-front-desk-hint']")).toHaveCount(0);
@@ -841,100 +833,106 @@ test.describe("US3: Summary sentence + live status badges", () => {
 
   test("(b) cardExempt + apply → 'Sam keeps the full payout on card-paid services — no card fee deducted.'", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await setStaffPosture({
-      staffId: SAM_ID,
+      staffId: staffFixture.tech.id,
       cardFeeExempt: true,
       supplyMode: "apply",
       supplyExcept: [],
     });
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     const summary = page.locator("[data-slot='pay-deductions-summary']");
     await expect(summary).toBeVisible();
     await expect(summary).toHaveText(
-      "Sam keeps the full payout on card-paid services — no card fee deducted."
+      "Test keeps the full payout on card-paid services — no card fee deducted."
     );
   });
 
   test("(c) supplyMode=exempt → 'Sam keeps the full payout on every service — no supply costs deducted.'", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await setStaffPosture({
-      staffId: SAM_ID,
+      staffId: staffFixture.tech.id,
       cardFeeExempt: false,
       supplyMode: "exempt",
       supplyExcept: [],
     });
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     const summary = page.locator("[data-slot='pay-deductions-summary']");
     await expect(summary).toBeVisible();
     await expect(summary).toHaveText(
-      "Sam keeps the full payout on every service — no supply costs deducted."
+      "Test keeps the full payout on every service — no supply costs deducted."
     );
   });
 
   test("(d) cardExempt + exempt → 'Sam keeps the full payout on every service — no card fee or supply costs deducted.'", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await setStaffPosture({
-      staffId: SAM_ID,
+      staffId: staffFixture.tech.id,
       cardFeeExempt: true,
       supplyMode: "exempt",
       supplyExcept: [],
     });
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     const summary = page.locator("[data-slot='pay-deductions-summary']");
     await expect(summary).toBeVisible();
     await expect(summary).toHaveText(
-      "Sam keeps the full payout on every service — no card fee or supply costs deducted."
+      "Test keeps the full payout on every service — no card fee or supply costs deducted."
     );
   });
 
   test("(e) partial + [Chrome powder] → 'Sam keeps the full payout on every service and is exempted from chrome-powder supply costs.'", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await setStaffPosture({
-      staffId: SAM_ID,
+      staffId: staffFixture.tech.id,
       cardFeeExempt: false,
       supplyMode: "partial",
       supplyExcept: [chromeId],
     });
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     const summary = page.locator("[data-slot='pay-deductions-summary']");
     await expect(summary).toBeVisible();
     await expect(summary).toHaveText(
-      "Sam keeps the full payout on every service and is exempted from chrome-powder supply costs."
+      "Test keeps the full payout on every service and is exempted from chrome-powder supply costs."
     );
   });
 
   test("(f) cardExempt + partial + [Chrome powder, GelX] → 'Sam keeps the full payout on card-paid services and is exempted from chrome-powder and gelx-tips-gel supply costs.'", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await setStaffPosture({
-      staffId: SAM_ID,
+      staffId: staffFixture.tech.id,
       cardFeeExempt: true,
       supplyMode: "partial",
       supplyExcept: [chromeId, gelXId],
     });
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     const summary = page.locator("[data-slot='pay-deductions-summary']");
     await expect(summary).toBeVisible();
     await expect(summary).toHaveText(
-      "Sam keeps the full payout on card-paid services and is exempted from chrome-powder and gelx-tips-gel supply costs."
+      "Test keeps the full payout on card-paid services and is exempted from chrome-powder and gelx-tips-gel supply costs."
     );
   });
 
   test("(g) front-desk role + no exemption → renders the muted hint instead of the summary", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
-    await setStaffRole({ staffId: SAM_ID, role: "front_desk" });
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await setStaffRole({ staffId: staffFixture.tech.id, role: "front_desk" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     const hint = page.locator("[data-slot='pay-deductions-front-desk-hint']");
     await expect(hint).toBeVisible();
@@ -947,10 +945,11 @@ test.describe("US3: Summary sentence + live status badges", () => {
 
   test("(h) non-front-desk role + no exemption → renders neither summary nor hint", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     // Sam is a technician at the default seed posture.
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     await expect(page.locator("[data-slot='pay-deductions-section']")).toBeVisible();
     await expect(page.locator("[data-slot='pay-deductions-summary']")).toHaveCount(0);
     await expect(page.locator("[data-slot='pay-deductions-front-desk-hint']")).toHaveCount(0);
@@ -958,9 +957,10 @@ test.describe("US3: Summary sentence + live status badges", () => {
 
   test("(i) live badge update: Card-fee exempt badge appears immediately on toggle; reload clears it (FR-016)", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     const cardFeeSwitch = page.locator("[data-slot='pay-deductions-card-fee-switch']");
     await expect(cardFeeSwitch).toHaveAttribute("data-state", "checked");
@@ -974,7 +974,7 @@ test.describe("US3: Summary sentence + live status badges", () => {
     await expect(page.locator("[data-slot='staff-status-badge-card-fee-exempt']")).toBeVisible();
 
     // Reload — draft discarded (no save happened); badge disappears.
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     await expect(page.locator("[data-slot='pay-deductions-card-fee-switch']")).toHaveAttribute(
       "data-state",
       "checked"
@@ -982,9 +982,12 @@ test.describe("US3: Summary sentence + live status badges", () => {
     await expect(page.locator("[data-slot='staff-status-badge-card-fee-exempt']")).toHaveCount(0);
   });
 
-  test("(j) Active/Inactive chip always renders in the panel header", async ({ page }) => {
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+  test("(j) Active/Inactive chip always renders in the panel header", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
     // Sam is seeded active.
     await expect(page.locator("[data-slot='staff-status-badge-active']")).toBeVisible();
     await expect(page.locator("[data-slot='staff-status-badge-active']")).toHaveText("Active");
