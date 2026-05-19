@@ -140,7 +140,11 @@ jobs:
       - name: Install Supabase CLI
         uses: supabase/setup-cli@v2
         with:
-          version: latest
+          # Pinned: `version: latest` hits the GitHub Releases API
+          # unauthenticated (60 req/hr per runner IP). With 4 e2e shards +
+          # migrate workflows firing on every PR, the quota is fragile and
+          # causes flaky "rate limit exceeded" failures. Bump deliberately.
+          version: 2.98.2
 
       - name: Start Supabase + apply migration + seed
         # Issue #34: skip Supabase services Tang Nails doesn't use to shrink
