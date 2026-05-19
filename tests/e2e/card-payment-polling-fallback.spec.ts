@@ -13,7 +13,12 @@
 import { expect, test, type Page, type BrowserContext } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { startSquareServerStub, type ServerStubControls } from "./_square-server-stub";
+import {
+  acquireStubLock,
+  getStubControls,
+  releaseStubLock,
+  type ServerStubControls,
+} from "./_square-server-stub";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -105,18 +110,21 @@ test.describe("US2: Take a card payment — polling fallback", () => {
       test.skip(true, "Supabase not reachable — skipping polling fallback spec.");
       return;
     }
-    serverStub = await startSquareServerStub(4567);
+    await acquireStubLock();
+    serverStub = getStubControls();
   });
 
   test.afterAll(async () => {
-    if (serverStub) await serverStub.close();
+    releaseStubLock();
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    serverStub.reset();
-    serverStub.setMerchant({ id: "MERCHANT_STUB", business_name: "Stub Salon" });
-    serverStub.setDevices([{ id: "device:STUB_POLL", name: "Lobby Terminal", status: "PAIRED" }]);
+    await serverStub.reset();
+    await serverStub.setMerchant({ id: "MERCHANT_STUB", business_name: "Stub Salon" });
+    await serverStub.setDevices([
+      { id: "device:STUB_POLL", name: "Lobby Terminal", status: "PAIRED" },
+    ]);
     await clearSquareTables();
   });
 

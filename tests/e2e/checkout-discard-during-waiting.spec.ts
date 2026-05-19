@@ -18,7 +18,12 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { startSquareServerStub, type ServerStubControls } from "./_square-server-stub";
+import {
+  acquireStubLock,
+  getStubControls,
+  releaseStubLock,
+  type ServerStubControls,
+} from "./_square-server-stub";
 import { squareStub, type SquareStub } from "./_square-stub";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
@@ -107,7 +112,7 @@ async function setupCheckoutInWaiting(
   deviceId: string,
   serverStub: ServerStubControls
 ): Promise<{ ticketId: string; pendingPaymentId: string; checkoutId: string; stub: SquareStub }> {
-  serverStub.setDevices([{ id: deviceId, name: "Lobby Terminal", status: "PAIRED" }]);
+  await serverStub.setDevices([{ id: deviceId, name: "Lobby Terminal", status: "PAIRED" }]);
 
   await signInAsMaya(page, "/settings/square");
   await connectSquareViaStub(page, context, baseURL);
@@ -171,17 +176,18 @@ test.describe("Issue25: Discard during Square Terminal wait cancels checkout fir
       test.skip(true, "Supabase not reachable — skipping Issue25 spec.");
       return;
     }
-    serverStub = await startSquareServerStub(4567);
+    await acquireStubLock();
+    serverStub = getStubControls();
   });
 
   test.afterAll(async () => {
-    if (serverStub) await serverStub.close();
+    releaseStubLock();
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    serverStub.reset();
-    serverStub.setMerchant({ id: "MERCHANT_STUB", business_name: "Stub Salon" });
+    await serverStub.reset();
+    await serverStub.setMerchant({ id: "MERCHANT_STUB", business_name: "Stub Salon" });
     await clearSquareTables();
   });
 
@@ -202,7 +208,7 @@ test.describe("Issue25: Discard during Square Terminal wait cancels checkout fir
     );
 
     // Default stub response is CANCELED, but be explicit for readability.
-    serverStub.setCheckoutCancel(checkoutId, { responseStatus: "CANCELED" });
+    await serverStub.setCheckoutCancel(checkoutId, { responseStatus: "CANCELED" });
 
     // Click Discard from the TxHeader on the waiting screen.
     await page.locator("[data-slot='discard-ticket-button']").click();
@@ -211,11 +217,10 @@ test.describe("Issue25: Discard during Square Terminal wait cancels checkout fir
     // The cancel endpoint was hit — this is what proves cancelTerminalPayment
     // ran. If discard had fired without cancelling, no cancel POST would
     // appear in the stub's recorded calls.
-    const cancelCalls = serverStub
-      .recordedCalls()
-      .filter(
-        (c) => c.method === "POST" && c.path === `/v2/terminals/checkouts/${checkoutId}/cancel`
-      );
+    const recorded = await serverStub.recordedCalls();
+    const cancelCalls = recorded.filter(
+      (c) => c.method === "POST" && c.path === `/v2/terminals/checkouts/${checkoutId}/cancel`
+    );
     expect(cancelCalls.length).toBeGreaterThanOrEqual(1);
 
     // Ticket landed in `discarded` (cancel succeeded → discard proceeded).
@@ -249,7 +254,7 @@ test.describe("Issue25: Discard during Square Terminal wait cancels checkout fir
 
     // Square unreachable for cancel → cancelTerminalPayment returns
     // still_pending → UI must surface the existing banner and abort discard.
-    serverStub.setCheckoutCancel(checkoutId, { responseStatus: "NETWORK_ERROR" });
+    await serverStub.setCheckoutCancel(checkoutId, { responseStatus: "NETWORK_ERROR" });
 
     await page.locator("[data-slot='discard-ticket-button']").click();
 

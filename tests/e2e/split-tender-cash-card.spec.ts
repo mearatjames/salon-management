@@ -19,7 +19,12 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 import { squareStub, type SquareStub } from "./_square-stub";
-import { startSquareServerStub, type ServerStubControls } from "./_square-server-stub";
+import {
+  acquireStubLock,
+  getStubControls,
+  releaseStubLock,
+  type ServerStubControls,
+} from "./_square-server-stub";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -126,19 +131,22 @@ test.describe("US2: split tender — cash + card", () => {
       test.skip(true, "Supabase not reachable — skipping US2 split-tender spec.");
       return;
     }
-    serverStub = await startSquareServerStub(4567);
+    await acquireStubLock();
+    serverStub = getStubControls();
   });
 
   test.afterAll(async () => {
-    if (serverStub) await serverStub.close();
+    releaseStubLock();
   });
 
   test.beforeEach(async ({ baseURL }) => {
     if (!supabaseUp) return;
-    serverStub.reset();
-    serverStub.setMerchant({ id: "MERCHANT_STUB", business_name: "Stub Salon" });
-    serverStub.setDevices([{ id: "device:STUB_SPLIT", name: "Lobby Terminal", status: "PAIRED" }]);
-    serverStub.setWebhookBaseUrl(baseURL ?? "http://127.0.0.1:3000");
+    await serverStub.reset();
+    await serverStub.setMerchant({ id: "MERCHANT_STUB", business_name: "Stub Salon" });
+    await serverStub.setDevices([
+      { id: "device:STUB_SPLIT", name: "Lobby Terminal", status: "PAIRED" },
+    ]);
+    await serverStub.setWebhookBaseUrl(baseURL ?? "http://127.0.0.1:3000");
     await clearSquareTables();
   });
 

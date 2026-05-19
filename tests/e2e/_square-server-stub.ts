@@ -14,12 +14,20 @@
 // Browser-side Square interactions (the `/oauth2/authorize` redirect) are
 // intercepted via Playwright's `context.route` in `_square-stub.ts`.
 //
-// Each spec mutates this server's response state via the imperative
-// helpers it returns (stubMerchant, stubDevices, etc).
+// === Singleton model (issue #41) ===
+// One instance runs for the entire Playwright run, started by
+// `tests/e2e/_global-setup.ts` and torn down by `_global-teardown.ts`.
+// Worker processes can't reach the in-process control closures directly,
+// so each spec gets a controls handle via `getStubControls()` that proxies
+// every mutation through the `/__control/*` HTTP endpoints below. A
+// cross-worker file lock (`acquireStubLock` / `releaseStubLock`) keeps
+// only one Square-using spec file mutating stub state at a time, while
+// non-Square specs run in parallel under `workers: 2`.
 
 import { createHmac } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync, unlinkSync, writeSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 export type DeviceStub = {
@@ -48,41 +56,38 @@ export type CheckoutCancelStub = {
   tipCents?: number;
 };
 
+/**
+ * Controls returned by `getStubControls()` and used by spec files. Each
+ * mutator is async because it round-trips through the singleton stub
+ * server's `/__control/*` endpoints.
+ */
 export type ServerStubControls = {
-  port: number;
-  setMerchant(m: MerchantStub): void;
-  setDevices(devices: DeviceStub[]): void;
-  setTokenResponse(resp: TokenResponseShape | TokenErrorShape): void;
-  /**
-   * Prime the *next* POST /v2/terminals/checkouts response. The server
-   * mints a deterministic checkout id of the form `tco_<rand>` and stores
-   * it so subsequent GET /v2/terminals/checkouts/:id calls can find it.
-   */
-  setNextCheckoutCreate(stub: CheckoutCreateStub | null): void;
-  /**
-   * Prime a GET /v2/terminals/checkouts/:id response for a specific id.
-   * If unset, the server falls back to whatever was last seen.
-   */
-  setCheckoutGet(checkoutId: string, stub: CheckoutGetStub | null): void;
-  /**
-   * Prime POST /v2/terminals/checkouts/:id/cancel.
-   */
-  setCheckoutCancel(checkoutId: string, stub: CheckoutCancelStub | null): void;
-  /** Inspect the last minted checkout id (for tests that need to drive a webhook). */
-  lastCheckoutId(): string | null;
-  /**
-   * Feature 018 — set the base URL the gift-card auto-webhook should POST
-   * to when a gift-card payment completes. Tests should call this with the
-   * Playwright baseURL once per beforeAll/beforeEach so the auto-fired
-   * payment.updated event arrives at the local Next.js dev server.
-   */
-  setWebhookBaseUrl(url: string | null): void;
+  setMerchant(m: MerchantStub): Promise<void>;
+  setDevices(devices: DeviceStub[]): Promise<void>;
+  setTokenResponse(resp: TokenResponseShape | TokenErrorShape): Promise<void>;
+  /** Prime the *next* POST /v2/terminals/checkouts response. */
+  setNextCheckoutCreate(stub: CheckoutCreateStub | null): Promise<void>;
+  /** Prime a GET /v2/terminals/checkouts/:id response for a specific id. */
+  setCheckoutGet(checkoutId: string, stub: CheckoutGetStub | null): Promise<void>;
+  /** Prime POST /v2/terminals/checkouts/:id/cancel. */
+  setCheckoutCancel(checkoutId: string, stub: CheckoutCancelStub | null): Promise<void>;
+  /** Inspect the last minted checkout id (server-side global). */
+  lastCheckoutId(): Promise<string | null>;
+  /** Feature 018 — base URL the gift-card auto-webhook POSTs back to. */
+  setWebhookBaseUrl(url: string | null): Promise<void>;
   /** Feature 018 — suppress the auto-fired gift-card payment.updated webhook. */
-  suppressGiftWebhook(): void;
+  suppressGiftWebhook(): Promise<void>;
   /** Feature 018 — re-enable the auto-fired gift-card payment.updated webhook. */
-  unsuppressGiftWebhook(): void;
-  reset(): void;
-  recordedCalls(): readonly RecordedCall[];
+  unsuppressGiftWebhook(): Promise<void>;
+  reset(): Promise<void>;
+  recordedCalls(): Promise<readonly RecordedCall[]>;
+  /** No-op; the server lifecycle is owned by globalSetup/globalTeardown. */
+  close(): Promise<void>;
+};
+
+/** Returned by `startSquareServerStub()` — what globalSetup holds. */
+export type ServerHandle = {
+  port: number;
   close(): Promise<void>;
 };
 
@@ -185,7 +190,7 @@ function loadWebhookKey(): string {
   }
 }
 
-export async function startSquareServerStub(port = 4567): Promise<ServerStubControls> {
+export async function startSquareServerStub(port = 4567): Promise<ServerHandle> {
   let merchant: MerchantStub = { ...DEFAULT_MERCHANT };
   let devices: DeviceStub[] = [];
   let tokenResponse: TokenResponseShape | TokenErrorShape = { ...DEFAULT_TOKEN };
@@ -200,10 +205,121 @@ export async function startSquareServerStub(port = 4567): Promise<ServerStubCont
   const webhookKey = loadWebhookKey();
   const calls: RecordedCall[] = [];
 
+  function resetState(): void {
+    merchant = { ...DEFAULT_MERCHANT };
+    devices = [];
+    tokenResponse = { ...DEFAULT_TOKEN };
+    nextCheckoutCreate = null;
+    checkoutGetStubs.clear();
+    checkoutCancelStubs.clear();
+    lastMintedCheckoutId = null;
+    giftWebhookSuppressed = false;
+    webhookBaseUrl = null;
+    giftCardCounter = 0;
+    giftPaymentCounter = 0;
+    calls.length = 0;
+  }
+
+  function ack(res: ServerResponse): void {
+    json(res, 200, { ok: true });
+  }
+
+  async function handleControl(
+    method: string,
+    path: string,
+    req: IncomingMessage,
+    res: ServerResponse
+  ): Promise<boolean> {
+    if (!path.startsWith("/__control/")) return false;
+    const op = path.slice("/__control/".length).replace(/\/$/, "");
+
+    if (method === "GET" && op === "last-checkout-id") {
+      json(res, 200, { id: lastMintedCheckoutId });
+      return true;
+    }
+    if (method === "GET" && op === "recorded-calls") {
+      json(res, 200, { calls });
+      return true;
+    }
+
+    if (method !== "POST") {
+      json(res, 405, { error: `method ${method} not allowed for ${path}` });
+      return true;
+    }
+
+    const raw = await readBody(req);
+    let body: Record<string, unknown> = {};
+    if (raw) {
+      try {
+        body = JSON.parse(raw) as Record<string, unknown>;
+      } catch {
+        json(res, 400, { error: "invalid JSON body" });
+        return true;
+      }
+    }
+
+    switch (op) {
+      case "merchant":
+        merchant = body as unknown as MerchantStub;
+        ack(res);
+        return true;
+      case "devices":
+        devices = (body.devices as DeviceStub[] | undefined) ?? [];
+        ack(res);
+        return true;
+      case "token-response":
+        tokenResponse = body as unknown as TokenResponseShape | TokenErrorShape;
+        ack(res);
+        return true;
+      case "next-checkout-create":
+        nextCheckoutCreate = (body.stub as CheckoutCreateStub | null | undefined) ?? null;
+        ack(res);
+        return true;
+      case "checkout-get": {
+        const id = String(body.checkoutId ?? "");
+        const stub = body.stub as CheckoutGetStub | null | undefined;
+        if (stub === null || stub === undefined) checkoutGetStubs.delete(id);
+        else checkoutGetStubs.set(id, stub);
+        ack(res);
+        return true;
+      }
+      case "checkout-cancel": {
+        const id = String(body.checkoutId ?? "");
+        const stub = body.stub as CheckoutCancelStub | null | undefined;
+        if (stub === null || stub === undefined) checkoutCancelStubs.delete(id);
+        else checkoutCancelStubs.set(id, stub);
+        ack(res);
+        return true;
+      }
+      case "webhook-base-url":
+        webhookBaseUrl = (body.url as string | null | undefined) ?? null;
+        ack(res);
+        return true;
+      case "suppress-gift-webhook":
+        giftWebhookSuppressed = true;
+        ack(res);
+        return true;
+      case "unsuppress-gift-webhook":
+        giftWebhookSuppressed = false;
+        ack(res);
+        return true;
+      case "reset":
+        resetState();
+        ack(res);
+        return true;
+      default:
+        json(res, 404, { error: `unknown control op ${op}` });
+        return true;
+    }
+  }
+
   const server: Server = createServer(async (req, res) => {
     const method = req.method ?? "GET";
     const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
     const path = url.pathname;
+
+    if (await handleControl(method, path, req, res)) return;
+
     calls.push({ method, path });
 
     // POST /oauth2/token
@@ -448,69 +564,146 @@ export async function startSquareServerStub(port = 4567): Promise<ServerStubCont
     return json(res, 404, { error: `unstubbed ${method} ${path}` });
   });
 
-  await new Promise<void>((resolve) => server.listen(port, "127.0.0.1", resolve));
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, "127.0.0.1", () => {
+      server.removeListener("error", reject);
+      resolve();
+    });
+  });
 
   return {
     port,
-    setMerchant(m) {
-      merchant = m;
-    },
-    setDevices(d) {
-      devices = d;
-    },
-    setTokenResponse(r) {
-      tokenResponse = r;
-    },
-    setNextCheckoutCreate(stub) {
-      nextCheckoutCreate = stub;
-    },
-    setCheckoutGet(checkoutId, stub) {
-      if (stub === null) {
-        checkoutGetStubs.delete(checkoutId);
-      } else {
-        checkoutGetStubs.set(checkoutId, stub);
-      }
-    },
-    setCheckoutCancel(checkoutId, stub) {
-      if (stub === null) {
-        checkoutCancelStubs.delete(checkoutId);
-      } else {
-        checkoutCancelStubs.set(checkoutId, stub);
-      }
-    },
-    lastCheckoutId() {
-      return lastMintedCheckoutId;
-    },
-    setWebhookBaseUrl(url) {
-      webhookBaseUrl = url;
-    },
-    suppressGiftWebhook() {
-      giftWebhookSuppressed = true;
-    },
-    unsuppressGiftWebhook() {
-      giftWebhookSuppressed = false;
-    },
-    reset() {
-      merchant = { ...DEFAULT_MERCHANT };
-      devices = [];
-      tokenResponse = { ...DEFAULT_TOKEN };
-      nextCheckoutCreate = null;
-      checkoutGetStubs.clear();
-      checkoutCancelStubs.clear();
-      lastMintedCheckoutId = null;
-      giftWebhookSuppressed = false;
-      webhookBaseUrl = null;
-      giftCardCounter = 0;
-      giftPaymentCounter = 0;
-      calls.length = 0;
-    },
-    recordedCalls() {
-      return calls;
-    },
     async close() {
       await new Promise<void>((resolve, reject) =>
         server.close((err) => (err ? reject(err) : resolve()))
       );
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// Client-side controls — used by spec files. Each method round-trips through
+// the singleton stub server via HTTP.
+// ---------------------------------------------------------------------------
+
+const DEFAULT_STUB_BASE = "http://127.0.0.1:4567";
+
+async function controlPost(baseUrl: string, op: string, body: object = {}): Promise<void> {
+  const res = await fetch(`${baseUrl}/__control/${op}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new Error(`stub control POST ${op} failed: ${res.status} ${await res.text()}`);
+  }
+}
+
+async function controlGet<T>(baseUrl: string, op: string): Promise<T> {
+  const res = await fetch(`${baseUrl}/__control/${op}`);
+  if (!res.ok) {
+    throw new Error(`stub control GET ${op} failed: ${res.status} ${await res.text()}`);
+  }
+  return (await res.json()) as T;
+}
+
+export function getStubControls(baseUrl: string = DEFAULT_STUB_BASE): ServerStubControls {
+  return {
+    async setMerchant(m) {
+      await controlPost(baseUrl, "merchant", m);
+    },
+    async setDevices(devices) {
+      await controlPost(baseUrl, "devices", { devices });
+    },
+    async setTokenResponse(resp) {
+      await controlPost(baseUrl, "token-response", resp);
+    },
+    async setNextCheckoutCreate(stub) {
+      await controlPost(baseUrl, "next-checkout-create", { stub });
+    },
+    async setCheckoutGet(checkoutId, stub) {
+      await controlPost(baseUrl, "checkout-get", { checkoutId, stub });
+    },
+    async setCheckoutCancel(checkoutId, stub) {
+      await controlPost(baseUrl, "checkout-cancel", { checkoutId, stub });
+    },
+    async lastCheckoutId() {
+      const { id } = await controlGet<{ id: string | null }>(baseUrl, "last-checkout-id");
+      return id;
+    },
+    async setWebhookBaseUrl(url) {
+      await controlPost(baseUrl, "webhook-base-url", { url });
+    },
+    async suppressGiftWebhook() {
+      await controlPost(baseUrl, "suppress-gift-webhook");
+    },
+    async unsuppressGiftWebhook() {
+      await controlPost(baseUrl, "unsuppress-gift-webhook");
+    },
+    async reset() {
+      await controlPost(baseUrl, "reset");
+    },
+    async recordedCalls() {
+      const { calls } = await controlGet<{ calls: RecordedCall[] }>(baseUrl, "recorded-calls");
+      return calls;
+    },
+    async close() {
+      // Server lifecycle owned by globalSetup/globalTeardown.
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Cross-worker file lock — serializes Square-using spec files across the
+// worker pool so two specs don't race on shared stub response state.
+// ---------------------------------------------------------------------------
+
+const LOCK_PATH = join(tmpdir(), "tang-nails-square-stub.lock");
+const STALE_LOCK_MS = 15 * 60 * 1000;
+
+export async function acquireStubLock(timeoutMs = 300_000, pollMs = 100): Promise<void> {
+  const startAt = Date.now();
+  while (true) {
+    try {
+      const fd = openSync(LOCK_PATH, "wx");
+      writeSync(fd, `${process.pid}\n${Date.now()}\n`);
+      closeSync(fd);
+      return;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      try {
+        const raw = readFileSync(LOCK_PATH, "utf-8");
+        const lines = raw.split("\n");
+        const stampedAt = Number(lines[1]);
+        if (Number.isFinite(stampedAt) && Date.now() - stampedAt > STALE_LOCK_MS) {
+          unlinkSync(LOCK_PATH);
+          continue;
+        }
+      } catch {
+        // race with holder; retry
+      }
+      if (Date.now() - startAt > timeoutMs) {
+        throw new Error(`acquireStubLock: timed out after ${timeoutMs}ms waiting for ${LOCK_PATH}`);
+      }
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+  }
+}
+
+export function releaseStubLock(): void {
+  try {
+    unlinkSync(LOCK_PATH);
+  } catch {
+    // already gone — fine
+  }
+}
+
+/** Called by globalSetup to clear any lock left behind by a crashed worker. */
+export function clearStubLock(): void {
+  try {
+    unlinkSync(LOCK_PATH);
+  } catch {
+    // not present — fine
+  }
 }
