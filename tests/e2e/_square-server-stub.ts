@@ -707,3 +707,61 @@ export function clearStubLock(): void {
     // not present — fine
   }
 }
+
+// ---------------------------------------------------------------------------
+// Ticket-state lock — separate from the Square stub lock above. Held by
+// specs that delete + restore the today-paid-tickets seed (`dashboard.spec`
+// and `end-of-day-cash.spec`) so their wipes don't race each other when
+// `workers > 1`. Checkout-creating specs don't need this lock because they
+// only INSERT new tickets — never delete the seed — so they can't drive a
+// dashboard read below the expected seed count.
+// ---------------------------------------------------------------------------
+
+const TICKET_LOCK_PATH = join(tmpdir(), "tang-nails-ticket-state.lock");
+
+export async function acquireTicketStateLock(timeoutMs = 300_000, pollMs = 100): Promise<void> {
+  const startAt = Date.now();
+  while (true) {
+    try {
+      const fd = openSync(TICKET_LOCK_PATH, "wx");
+      writeSync(fd, `${process.pid}\n${Date.now()}\n`);
+      closeSync(fd);
+      return;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      try {
+        const raw = readFileSync(TICKET_LOCK_PATH, "utf-8");
+        const lines = raw.split("\n");
+        const stampedAt = Number(lines[1]);
+        if (Number.isFinite(stampedAt) && Date.now() - stampedAt > STALE_LOCK_MS) {
+          unlinkSync(TICKET_LOCK_PATH);
+          continue;
+        }
+      } catch {
+        // race with holder; retry
+      }
+      if (Date.now() - startAt > timeoutMs) {
+        throw new Error(
+          `acquireTicketStateLock: timed out after ${timeoutMs}ms waiting for ${TICKET_LOCK_PATH}`
+        );
+      }
+      await new Promise((r) => setTimeout(r, pollMs));
+    }
+  }
+}
+
+export function releaseTicketStateLock(): void {
+  try {
+    unlinkSync(TICKET_LOCK_PATH);
+  } catch {
+    // already gone — fine
+  }
+}
+
+export function clearTicketStateLock(): void {
+  try {
+    unlinkSync(TICKET_LOCK_PATH);
+  } catch {
+    // not present — fine
+  }
+}

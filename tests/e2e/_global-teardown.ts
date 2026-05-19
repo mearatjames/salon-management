@@ -4,10 +4,9 @@
 // server after the Playwright run completes. Runs in the same process as
 // globalSetup, so it can reach the handle stashed on `globalThis`.
 
-import { clearStubLock, type ServerHandle } from "./_square-server-stub";
+import { clearStubLock, clearTicketStateLock, type ServerHandle } from "./_square-server-stub";
 
 declare global {
-  // eslint-disable-next-line no-var
   var __SQUARE_STUB_HANDLE__: ServerHandle | undefined;
 }
 
@@ -18,4 +17,5 @@ export default async function globalTeardown(): Promise<void> {
     globalThis.__SQUARE_STUB_HANDLE__ = undefined;
   }
   clearStubLock();
+  clearTicketStateLock();
 }

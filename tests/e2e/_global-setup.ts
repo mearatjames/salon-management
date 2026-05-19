@@ -15,16 +15,21 @@
 //     serializes Square-using specs so they don't trample each other's
 //     primed responses.
 
-import { clearStubLock, startSquareServerStub, type ServerHandle } from "./_square-server-stub";
+import {
+  clearStubLock,
+  clearTicketStateLock,
+  startSquareServerStub,
+  type ServerHandle,
+} from "./_square-server-stub";
 
 declare global {
-  // eslint-disable-next-line no-var
   var __SQUARE_STUB_HANDLE__: ServerHandle | undefined;
 }
 
 export default async function globalSetup(): Promise<void> {
-  // Clear any lock file left behind by a crashed worker from a prior run.
+  // Clear lock files left behind by crashed workers from prior runs.
   clearStubLock();
+  clearTicketStateLock();
 
   if (globalThis.__SQUARE_STUB_HANDLE__) {
     // Hot-reload guard — Playwright's TS transformer can re-execute this

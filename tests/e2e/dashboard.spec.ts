@@ -22,6 +22,7 @@ import { createClient } from "@supabase/supabase-js";
 import { formatSubtitle, formatTime } from "@/lib/time/format";
 import { todayWindow } from "@/lib/time/period-windows";
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+import { acquireTicketStateLock, releaseTicketStateLock } from "./_square-server-stub";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 const SALON_TZ = "America/Los_Angeles";
@@ -480,6 +481,16 @@ async function clearAllTodayPaidTickets(): Promise<void> {
 }
 
 test.describe.configure({ mode: "serial" });
+
+// Cross-worker serialization (issue #41). This spec and end-of-day-cash both
+// wipe + restore today's paid-tickets seed; if they run concurrently under
+// workers > 1 the wipes race and dashboard reads see a sub-seed count.
+test.beforeAll(async () => {
+  await acquireTicketStateLock();
+});
+test.afterAll(() => {
+  releaseTicketStateLock();
+});
 
 test.describe("US1: today's real numbers", () => {
   let supabaseUp = false;
