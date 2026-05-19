@@ -44,7 +44,10 @@ Run them in this order so the cheapest checks fail fast:
 5. `npm run test:e2e` — Playwright against a local Supabase. Defaults to
    parallel workers; set `PLAYWRIGHT_PROD=1` to opt into the same prebuilt
    `npm run start` server CI uses (avoids next-dev JIT compile flake under
-   load). Two state-scoping patterns let the suite run with `workers > 1`:
+   load). The script is wrapped in `flock /tmp/tang-nails-e2e.lock` so
+   parallel Claude Code sessions (each in its own worktree) sharing the
+   local Supabase stack serialize their e2e runs — see "Parallel sessions"
+   below. Two state-scoping patterns let the suite run with `workers > 1`:
    - **Audit-log cursor**: per-test cursors via `newAuditCursor()` /
      `getAuditLogRowsSince()` in `tests/e2e/_db.ts` keep parallel workers
      from racing on the shared `audit_log` table.
@@ -61,6 +64,32 @@ Run them in this order so the cheapest checks fail fast:
 
 All five MUST be green locally. Constitution v1.0.3 § Development Workflow
 & Quality Gates is the authority.
+
+### Parallel sessions
+
+Multiple Claude Code sessions can work on different GitHub issues
+concurrently — one git worktree per issue (under `.claude/worktrees/`,
+which `.worktreeinclude` auto-populates with env files + local Claude
+settings). All worktrees share the **same** locally-running Supabase
+stack: `supabase start` is namespaced by `project_id` in
+`supabase/config.toml`, identical across worktrees, so the first session
+that boots it wins and others' calls no-op against that shared stack.
+
+That's fine for non-e2e work (typecheck, lint, unit tests, `npm run
+dev` smoke). But two e2e runs against one shared Postgres would race —
+the test suite mutates shared tables (`staff`, `tickets`, `audit_log`)
+and `supabase db reset` between runs would wipe another session's seed
+state mid-test.
+
+`npm run test:e2e` is wrapped in `flock /tmp/tang-nails-e2e.lock` to
+serialize concurrent runs across sessions: only one e2e invocation holds
+the lock at a time, others block until release. Single-session runs are
+unaffected — uncontended `flock` acquires immediately. **One-time setup
+on macOS: `brew install flock`** (Linux ships it via `util-linux`).
+
+`npm run dev` doesn't share state via the lock; if you need to run dev
+servers in two worktrees simultaneously, set `PORT=3001` (etc.) in the
+second worktree's `.env.local` to avoid the port-3000 collision.
 
 ### Scoping intermediate phase gates
 
