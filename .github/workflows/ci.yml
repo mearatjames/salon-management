@@ -150,7 +150,12 @@ jobs:
   e2e:
     name: E2E (shard ${{ matrix.shard }}/${{ strategy.job-total }})
     runs-on: ubuntu-latest
-    needs: build
+    needs: [branch-freshness, build]
+    # Without an explicit `if:`, the implicit success() check returns false
+    # when any transitive ancestor was skipped — and `branch-freshness` is
+    # skipped on push-to-main. Mirror the override used by static/unit/build
+    # so push-to-main runs actually execute the matrix. (Issue #74.)
+    if: ${{ !cancelled() && needs.branch-freshness.result != 'failure' }}
     strategy:
       fail-fast: false
       matrix:
