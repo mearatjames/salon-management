@@ -22,7 +22,12 @@ import { expect, test, type Page } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
-import { startSquareServerStub, type ServerStubControls } from "./_square-server-stub";
+import {
+  acquireStubLock,
+  getStubControls,
+  releaseStubLock,
+  type ServerStubControls,
+} from "./_square-server-stub";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -79,18 +84,19 @@ test.describe("US1: Connect Square", () => {
       test.skip(true, "Supabase not reachable — skipping US1 Square OAuth spec.");
       return;
     }
-    stub = await startSquareServerStub(4567);
+    await acquireStubLock();
+    stub = getStubControls();
   });
 
   test.afterAll(async () => {
-    if (stub) await stub.close();
+    releaseStubLock();
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    stub.reset();
-    stub.setMerchant({ id: "MERCHANT_STUB", business_name: "Stub Salon" });
-    stub.setDevices([
+    await stub.reset();
+    await stub.setMerchant({ id: "MERCHANT_STUB", business_name: "Stub Salon" });
+    await stub.setDevices([
       { id: "device:STUB_AAA", name: "Lobby Terminal", status: "PAIRED" },
       { id: "device:STUB_BBB", name: "Back Room Terminal", status: "PAIRED" },
     ]);

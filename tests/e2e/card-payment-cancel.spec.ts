@@ -17,7 +17,12 @@ import { expect, test, type Page, type BrowserContext } from "@playwright/test";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { squareStub, type SquareStub } from "./_square-stub";
-import { startSquareServerStub, type ServerStubControls } from "./_square-server-stub";
+import {
+  acquireStubLock,
+  getStubControls,
+  releaseStubLock,
+  type ServerStubControls,
+} from "./_square-server-stub";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -112,17 +117,18 @@ test.describe("US3: Cancel and recover", () => {
       test.skip(true, "Supabase not reachable — skipping US3 cancel spec.");
       return;
     }
-    serverStub = await startSquareServerStub(4567);
+    await acquireStubLock();
+    serverStub = getStubControls();
   });
 
   test.afterAll(async () => {
-    if (serverStub) await serverStub.close();
+    releaseStubLock();
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    serverStub.reset();
-    serverStub.setMerchant({ id: "MERCHANT_STUB", business_name: "Stub Salon" });
+    await serverStub.reset();
+    await serverStub.setMerchant({ id: "MERCHANT_STUB", business_name: "Stub Salon" });
     await clearSquareTables();
   });
 
@@ -133,7 +139,7 @@ test.describe("US3: Cancel and recover", () => {
   }) => {
     if (!supabaseUp) test.skip();
     const deviceId = "device:STUB_CANCEL_A";
-    serverStub.setDevices([{ id: deviceId, name: "Lobby Terminal", status: "PAIRED" }]);
+    await serverStub.setDevices([{ id: deviceId, name: "Lobby Terminal", status: "PAIRED" }]);
 
     await signInAsMaya(page, "/settings/square");
     await connectSquareViaStub(page, context, baseURL!, deviceId);
@@ -180,7 +186,7 @@ test.describe("US3: Cancel and recover", () => {
 
     // Prime the server-side cancel to return CANCELED so the action calls
     // the RPC and the row settles to failed/cancelled_by_operator.
-    serverStub.setCheckoutCancel(checkoutId, { responseStatus: "CANCELED" });
+    await serverStub.setCheckoutCancel(checkoutId, { responseStatus: "CANCELED" });
 
     // Click Cancel link inside the waiting screen.
     await page.locator("[data-slot='card-waiting-cancel']").click();
@@ -207,11 +213,10 @@ test.describe("US3: Cancel and recover", () => {
       .toBe("failed");
 
     // The cancel stub was consumed (proves cancelCheckout was actually called).
-    const cancelCalls = serverStub
-      .recordedCalls()
-      .filter(
-        (c) => c.method === "POST" && c.path === `/v2/terminals/checkouts/${checkoutId}/cancel`
-      );
+    const recorded = await serverStub.recordedCalls();
+    const cancelCalls = recorded.filter(
+      (c) => c.method === "POST" && c.path === `/v2/terminals/checkouts/${checkoutId}/cancel`
+    );
     expect(cancelCalls.length).toBeGreaterThanOrEqual(1);
 
     // Pick Cash and complete.
@@ -237,7 +242,7 @@ test.describe("US3: Cancel and recover", () => {
   }) => {
     if (!supabaseUp) test.skip();
     const deviceId = "device:STUB_CANCEL_B";
-    serverStub.setDevices([{ id: deviceId, name: "Lobby Terminal", status: "PAIRED" }]);
+    await serverStub.setDevices([{ id: deviceId, name: "Lobby Terminal", status: "PAIRED" }]);
 
     await signInAsMaya(page, "/settings/square");
     await connectSquareViaStub(page, context, baseURL!, deviceId);

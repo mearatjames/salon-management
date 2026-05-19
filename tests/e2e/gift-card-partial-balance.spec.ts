@@ -30,7 +30,12 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 import { squareStub, type SquareStub } from "./_square-stub";
-import { startSquareServerStub, type ServerStubControls } from "./_square-server-stub";
+import {
+  acquireStubLock,
+  getStubControls,
+  releaseStubLock,
+  type ServerStubControls,
+} from "./_square-server-stub";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -129,19 +134,20 @@ test.describe("US3: gift card partial balance", () => {
       test.skip(true, "Supabase not reachable — skipping US3 gift-card partial spec.");
       return;
     }
-    serverStub = await startSquareServerStub(4567);
+    await acquireStubLock();
+    serverStub = getStubControls();
   });
 
   test.afterAll(async () => {
-    if (serverStub) await serverStub.close();
+    releaseStubLock();
   });
 
   test.beforeEach(async ({ baseURL }) => {
     if (!supabaseUp) return;
-    serverStub.reset();
-    serverStub.setMerchant({ id: "MERCHANT_STUB", business_name: "Stub Salon" });
-    serverStub.setDevices([{ id: "device:STUB_GIFT_US3", name: "Lobby", status: "PAIRED" }]);
-    serverStub.setWebhookBaseUrl(baseURL ?? "http://127.0.0.1:3000");
+    await serverStub.reset();
+    await serverStub.setMerchant({ id: "MERCHANT_STUB", business_name: "Stub Salon" });
+    await serverStub.setDevices([{ id: "device:STUB_GIFT_US3", name: "Lobby", status: "PAIRED" }]);
+    await serverStub.setWebhookBaseUrl(baseURL ?? "http://127.0.0.1:3000");
     await clearSquareTables();
   });
 
@@ -204,7 +210,7 @@ test.describe("US3: gift card partial balance", () => {
     //    operator absolutely has time to pick the second method before
     //    Square's webhook arrives — the stub's 100ms auto-fire is
     //    unrealistically fast for an interactive flow, so we gate it.
-    serverStub.suppressGiftWebhook();
+    await serverStub.suppressGiftWebhook();
 
     // 9) Tap "Redeem available".
     const redeemBtn = page.locator("[data-slot='gift-card-balance-redeem']");

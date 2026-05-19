@@ -22,6 +22,7 @@ import { expect, test } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+import { acquireTicketStateLock, releaseTicketStateLock } from "./_square-server-stub";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -329,6 +330,14 @@ async function seedExtraCashPaymentNow(amountCents: number): Promise<string> {
 }
 
 test.describe.configure({ mode: "serial" });
+
+// Cross-worker serialization (issue #41). See sibling note in dashboard.spec.
+test.beforeAll(async () => {
+  await acquireTicketStateLock();
+});
+test.afterAll(() => {
+  releaseTicketStateLock();
+});
 
 test.describe("US1: count + close exact match", () => {
   let supabaseUp = false;

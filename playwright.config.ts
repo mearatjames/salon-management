@@ -46,26 +46,19 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  // Single-worker mode (still). The Category A staff-mutation race that
-  // forced workers=1 was the original blocker; issue #39 ships the
-  // worker-scoped staff fixture (`tests/e2e/_fixtures.ts`) that resolves
-  // it, so flipping the workers cap is now safe for Category A specs.
+  // CI uses 2 workers; local stays unconstrained (CPU-count default).
   //
-  // Two Category B subsystems still rely on shared resources that
-  // collide under `workers > 1`, so the flip is deferred until they get
-  // fixture-equivalent isolation:
-  //
-  //  - **Square stub server** (`tests/e2e/_square-server-stub.ts`) listens
-  //    on a fixed `127.0.0.1:4567` matching the Next.js
-  //    `SQUARE_API_BASE_URL` env. Two workers running Square-stub specs
-  //    in parallel hit `EADDRINUSE`. Needs a per-shard singleton stub
-  //    (globalSetup) plus cross-worker state coordination.
-  //  - Other pre-existing Category B races (gift-card sandbox state,
-  //    Square OAuth state) need parallel-safe seeding before workers>1
-  //    is reliable.
-  //
-  // Follow-up issue: #41 (do not unpin without resolving the stubs first).
-  workers: 1,
+  // The Category A staff-mutation race that originally forced workers=1
+  // is resolved by the worker-scoped staff fixture in `_fixtures.ts`
+  // (#38, #39). The Category B races — Square stub server listening on a
+  // fixed port + shared response state — are resolved by the singleton
+  // stub model wired in `_global-setup.ts` / `_global-teardown.ts`
+  // (#41): the server binds 127.0.0.1:4567 once for the whole run, and
+  // Square-using specs acquire `acquireStubLock()` in `beforeAll` so
+  // only one of them mutates the shared stub state at a time.
+  workers: process.env.CI ? 2 : undefined,
+  globalSetup: require.resolve("./tests/e2e/_global-setup"),
+  globalTeardown: require.resolve("./tests/e2e/_global-teardown"),
   reporter: "html",
   // Per-test budget. Local timeout is generous (60s) because parallel
   // workers contending on the Next.js prod server can stretch a single
