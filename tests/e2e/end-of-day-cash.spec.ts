@@ -22,6 +22,7 @@ import { expect, test } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+import { laTodayMidnightUtcMs } from "./_la-time";
 import { acquireTicketStateLock, releaseTicketStateLock } from "./_square-server-stub";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
@@ -122,24 +123,6 @@ async function clearAllTodayPaidTickets(): Promise<void> {
   await admin.from("ticket_items").delete().in("ticket_id", ticketIds);
   await admin.from("payments").delete().in("ticket_id", ticketIds);
   await admin.from("tickets").delete().in("id", ticketIds);
-}
-
-// LA-today-midnight as a UTC instant. Mirrors the helper in
-// dashboard.spec.ts — kept inline here to avoid cross-spec coupling.
-function laTodayMidnightUtcMs(): number {
-  const now = new Date();
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/Los_Angeles",
-    hourCycle: "h23",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  const parts = fmt.formatToParts(now);
-  const partVal = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
-  const elapsed =
-    partVal("hour") * 3_600_000 + partVal("minute") * 60_000 + partVal("second") * 1000;
-  return now.getTime() - elapsed;
 }
 
 // Restore just the cash ticket fixtures we care about for this spec —
