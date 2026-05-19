@@ -68,7 +68,7 @@ description: "Task list for 042-ephemeral-cart"
 
 - [ ] T010 [P] [US1] Write Vitest unit tests for `submitCashFromCart` in `tests/unit/checkout/submit-cash-from-cart.test.ts`. Cover: rejects invalid input via schema, rejects `cashTenderedCents < total`, happy-path returns `{ ok: true, ticketId }` with mocked DB. Confirm failing before implementation.
 - [ ] T011 [P] [US1] Write Vitest unit tests for `submitGiftFromCart` in `tests/unit/checkout/submit-gift-from-cart.test.ts`. Cover: rejects invalid input, `GIFT_NOT_FOUND`, `GIFT_INSUFFICIENT_BALANCE`, happy path. Confirm failing.
-- [ ] T012 [P] [US1] Write Playwright e2e specs in `tests/e2e/checkout-ephemeral-cart.spec.ts` for: (a) abandon-cart hygiene invariant (visit `/checkout`, walk away, assert zero new rows), (b) build cart + submit cash → assert tickets/ticket_items/payments and audit_log rows, (c) build cart + submit gift → same shape with `method='gift'`, (d) submit cash with stale (deactivated) service → assert error toast + cart preserved + zero new rows. Use the `_fixtures.ts` worker-scoped staff trio and `newAuditCursor()` per the CLAUDE.md parallel-tests pattern. Confirm failing before implementation.
+- [ ] T012 [P] [US1] Write Playwright e2e specs in `tests/e2e/checkout-ephemeral-cart.spec.ts` for: (a) abandon-cart hygiene invariant (visit `/checkout`, walk away, assert zero new rows) — ALSO assert `localStorage`/`sessionStorage` contain no cart-related keys after walk-away, to verify FR-011 by direct observation; (b) build cart + submit cash → assert tickets/ticket_items/payments and audit_log rows; (c) build cart + submit gift → same shape with `method='gift'`; (d) submit cash with stale (deactivated) service → assert error toast + cart preserved + zero new rows; (e) add a brand-new customer mid-build → assert `customers` row appears immediately, then walk away → assert only the `customers` row remains and zero `tickets`/`ticket_items` rows exist (covers FR-002a). Use the `_fixtures.ts` worker-scoped staff trio and `newAuditCursor()` per the CLAUDE.md parallel-tests pattern. Confirm failing before implementation.
 
 ### Implementation for User Story 1
 
@@ -126,6 +126,7 @@ description: "Task list for 042-ephemeral-cart"
 
 - [ ] T024 [P] Update `components/lacquer/new-transaction-cta.tsx` so the dashboard "New transaction" CTA links to `/checkout` (no `?fresh=1` query param).
 - [ ] T025 [P] Update `components/lacquer/sidebar/nav-items.ts` line 87 so the sidebar Checkout link points to `/checkout` (semantics now: cart-building entry, no eager create).
+- [ ] T025a [P] Audit `components/lacquer/sidebar/**` for any "today's open tickets" / resume-open-ticket surface and either remove it or confirm it gracefully shows an empty state (since `status='open'` tickets only exist transiently during Square Terminal waiting or mid-split-tender, never as cart drafts). Per FR-012. If a follow-up issue is appropriate, open one and reference it in the task closure note rather than leaving silent dead code.
 - [ ] T026 [P] Update `components/lacquer/checkout/done-screen.tsx` line 70 so the "New sale" link points to `/checkout` (no eager create).
 - [ ] T027 [P] Update `components/lacquer/checkout/tx-header.tsx` (lines 58–105) to hide the Cancel and Discard buttons when the component is rendered without a `ticketId` (i.e., on the cart-building phase). Keep them visible and functional when `ticketId` is provided (i.e., on the mid-split-tender screen). Per FR-006 and FR-007.
 - [ ] T028 Update the three existing checkout e2e specs for the route topology change: `tests/e2e/checkout-cash-sale.spec.ts`, `tests/e2e/checkout-square-terminal.spec.ts`, `tests/e2e/checkout-gift-split-tender.spec.ts`. Replace navigation to `/checkout/<id>` for cart-building with `/checkout`; remove assertions on the Cancel button at cart-build time; keep mid-split-tender Discard assertions intact. (Single task because these three files share the same edit pattern and `actions.ts` reference; conflict risk if parallelized.)
@@ -167,7 +168,7 @@ description: "Task list for 042-ephemeral-cart"
 - **US1 tests in parallel**: T010, T011, T012 — three different files.
 - **US2 tests in parallel**: T016 and T017.
 - **US3 tests in parallel**: T020 and T021.
-- **Polish UI rewires in parallel**: T024, T025, T026, T027 — four different files.
+- **Polish UI rewires in parallel**: T024, T025, T025a, T026, T027 — five different files / sidebar surfaces.
 - **Test-infrastructure tasks in parallel**: T029 (`_affected-map.mjs`) can run alongside T028 (e2e spec updates) and T030 (dead-code removal).
 - **Cross-story Server Action implementations**: NOT parallelizable due to the shared `actions.ts` file.
 
