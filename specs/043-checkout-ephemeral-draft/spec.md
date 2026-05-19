@@ -19,9 +19,19 @@ never became a sale.
 This feature makes the checkout an **ephemeral working document**. While an
 operator is building a cart, nothing is written to the sales records. The ticket
 and its items are persisted only when the operator submits the sale (takes
-payment). Every screen, button, step, and timing the operator sees stays exactly
-the same — this is strictly a change to when and how data is persisted behind the
-scenes.
+payment). Within a checkout session every screen, button, step, and timing the
+operator sees stays exactly the same — this is a change to when and how data is
+persisted behind the scenes. The one accepted exception is resume behavior:
+because the in-progress cart is now held only in memory, leaving or refreshing
+checkout discards it (see Clarifications).
+
+## Clarifications
+
+### Session 2026-05-19
+
+- Q: How should an unsubmitted checkout draft be held so it survives navigation away and page refresh? → A: In-memory only — the draft lives solely in the checkout screen's memory. Navigating away from checkout or refreshing the page discards it; an unsubmitted cart is never recovered. This removes today's resume behavior (a deliberate, accepted change).
+- Q: When is the ticket persisted for a split-tender sale? → A: At the first payment-initiating action of any kind, including composing the first split-tender draft leg. The existing draft-leg machinery is reused unchanged; composing a leg then fully abandoning the cart leaves one empty open ticket — an accepted rare residual.
+- Q: What happens to the per-edit audit-log rows once the cart is ephemeral? → A: Stop emitting them entirely. Cart editing moves no money and persists nothing, so there is nothing to trace; the audit trail for payment capture and ticket discard is fully preserved.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -92,34 +102,38 @@ rows exist for that session.
 
 ---
 
-### User Story 3 - Resume an in-progress checkout (Priority: P2)
+### User Story 3 - Checkout always opens a fresh cart (Priority: P2)
 
-An operator builds a partial cart, navigates away from checkout (or refreshes the
-page), and returns. The in-progress cart is still there, exactly as the resume
-behavior works today. Starting a fresh checkout from the dashboard's checkout
-call-to-action still begins an empty cart.
+The in-progress cart exists only while the operator is on the checkout screen.
+Every arrival at checkout — from the sidebar or from the dashboard's "new sale"
+call-to-action — opens a fresh empty cart. Navigating away from checkout, or
+refreshing the page, discards whatever cart was being built; an unsubmitted cart
+is never recovered.
 
-**Why this priority**: Resume is an existing part of the operator's flow, and the
-feature must not change the flow. It is separable from US1/US2 because it concerns
-continuity of an unsubmitted cart rather than completion or abandonment.
+**Why this priority**: This defines what replaces today's resume behavior. The
+in-memory-only draft (see Clarifications) means an unsubmitted cart cannot
+outlive the checkout screen. This is a deliberate, accepted change to the resume
+flow. It is separable from US1/US2 because it concerns the lifetime of an
+unsubmitted cart rather than completion or abandonment.
 
 **Independent Test**: Build a partial cart, navigate to the dashboard, return to
-checkout via the sidebar, and confirm the same cart is restored; then use the
-dashboard's "new sale" call-to-action and confirm a fresh empty cart starts.
+checkout, and confirm a fresh empty cart opens (prior contents gone); refresh the
+checkout page and confirm the cart is likewise cleared.
 
 **Acceptance Scenarios**:
 
 1. **Given** an operator has a partially built, unsubmitted cart, **When** they
-   navigate away and return to checkout via the sidebar, **Then** the same cart
-   contents (services, techs, prices, discounts) are restored.
+   navigate away from checkout and return, **Then** a fresh empty cart opens and
+   the prior contents are not recovered.
 2. **Given** an operator has a partially built, unsubmitted cart, **When** they
-   refresh the checkout page, **Then** the cart contents are restored.
-3. **Given** an operator has a partially built cart, **When** they start a
-   checkout from the dashboard's "new sale" call-to-action, **Then** a fresh
-   empty cart opens instead of resuming the prior one, exactly as today.
+   refresh the checkout page, **Then** the cart is cleared and a fresh empty cart
+   opens.
+3. **Given** an operator arrives at checkout from either the sidebar or the
+   dashboard's "new sale" call-to-action, **When** the page loads, **Then** an
+   empty cart opens in both cases — there is no longer a resume path.
 4. **Given** two different operators use the same device in turn, **When** the
-   second operator opens checkout, **Then** they do not see the first operator's
-   in-progress cart.
+   second operator opens checkout, **Then** they see a fresh empty cart with no
+   trace of the first operator's cart.
 
 ---
 
@@ -168,17 +182,18 @@ settles to a paid ticket with the same records as today.
   operator discards the cart, the discard behaves exactly as today for a real
   ticket (the ticket is marked discarded and the discard is audited). Only carts
   that never reached payment leave no trace.
-- **Refresh or crash mid-cart**: An in-progress cart survives a page refresh. If
-  the working draft is lost (e.g., browser data cleared, different device), the
-  operator simply starts a new cart — no partial ticket is stranded in the
-  database.
+- **Refresh or crash mid-cart**: Refreshing the checkout page, closing it, or a
+  crash discards the in-progress cart — it lives only in the checkout screen's
+  memory. The operator simply starts a new cart; no partial ticket is ever
+  stranded in the database.
 - **Concurrent carts for one operator**: If the same operator has checkout open
-  in two places at once, each is an independent ephemeral draft; whichever one
+  in two places at once, each is an independent in-memory draft; whichever one
   takes payment first persists its own ticket. No shared half-built database
   ticket is contended over.
-- **Switching operators on a shared device**: The in-progress draft is scoped to
-  the operator; switching the acting staff member does not surface another
-  operator's cart.
+- **Switching operators on a shared device**: Because the cart lives only in the
+  active checkout screen and is never stored, a new operator opening checkout
+  always gets a fresh empty cart — there is no stored draft from a prior operator
+  to surface.
 - **Unconfirmed variable price at submission**: Submission is blocked until every
   variable price is confirmed, identical to today's guard — the only difference
   is the guard now runs against the draft before persistence rather than against
@@ -197,9 +212,11 @@ settles to a paid ticket with the same records as today.
   assigning techs to lines, setting or overriding prices, and adding or removing
   discounts — the system MUST keep all of that state in an ephemeral working
   draft and MUST NOT write any ticket or ticket-item records.
-- **FR-003**: The checkout user interface, screens, controls, steps, ordering,
-  and perceived timing MUST remain exactly as they are today. This feature
-  changes only when and how data is persisted; it introduces no visible change.
+- **FR-003**: Within a checkout session, the user interface, screens, controls,
+  steps, ordering, and perceived timing MUST remain exactly as they are today.
+  Aside from the resume-behavior change in FR-012 and FR-013, this feature
+  changes only when and how data is persisted and introduces no other visible
+  change.
 - **FR-004**: The ephemeral draft MUST track everything the persisted ticket
   tracks today — selected services with name and price snapshots, per-line
   assigned tech, confirmed/unconfirmed variable prices, price overrides,
@@ -231,16 +248,18 @@ settles to a paid ticket with the same records as today.
   was initiated, then it failed or was cancelled) MUST behave exactly as today
   for a persisted ticket, including marking it discarded and recording the
   discard in the audit log.
-- **FR-012**: An in-progress, unsubmitted cart MUST remain resumable by the same
-  operator after navigating away from checkout and returning, and after a page
-  refresh — preserving the resume behavior operators rely on today.
-- **FR-013**: Starting a checkout from the dashboard's "new sale" call-to-action
-  MUST begin a fresh empty cart, while reaching checkout from the sidebar MUST
-  resume an existing in-progress cart if one exists — the same dispatch behavior
-  as today.
-- **FR-014**: The ephemeral draft MUST be scoped to the operator who is building
-  it; switching the acting staff member or a different operator using the same
-  device MUST NOT surface another operator's in-progress cart.
+- **FR-012**: The in-progress cart MUST exist only in the checkout screen's
+  memory while the operator is on that screen. Navigating away from checkout, or
+  refreshing the page, MUST discard the in-progress cart; no unsubmitted cart is
+  recovered. This is a deliberate, accepted change from today's resume behavior
+  (see Clarifications).
+- **FR-013**: Every entry to checkout — from the dashboard's "new sale"
+  call-to-action or from the sidebar — MUST open a fresh empty cart. The current
+  entry-point dispatch that resumes an operator's existing same-day open ticket
+  is removed, because no unsubmitted cart persists to be resumed.
+- **FR-014**: Because the in-progress cart lives only in the active checkout
+  screen and is never stored, no in-progress cart is ever shared between
+  operators, devices, or sessions; each visit to checkout is independent.
 - **FR-015**: Submission MUST be refused, with the same messaging shown today,
   for a cart that has no services, a zero total, or any unconfirmed variable
   price; in every refused case no ticket MUST be persisted.
@@ -263,8 +282,9 @@ settles to a paid ticket with the same records as today.
   snapshots, per-line tech assignments, confirmed/unconfirmed price states,
   price overrides, discounts, and the computed subtotal and total. It is not a
   sales record, is never reported on, and can be discarded or lost with no
-  consequence. It exists only until the sale is submitted, at which point its
-  contents become a Ticket and Ticket Items.
+  consequence. It lives only in the checkout screen's memory and exists only
+  until the sale is submitted (its contents become a Ticket and Ticket Items) or
+  the checkout screen is left (it is discarded).
 - **Ticket**: The persisted record of a sale. Its structure and lifecycle are
   unchanged. The only change is timing: a Ticket now comes into existence at
   submission rather than at checkout page open.
@@ -289,40 +309,48 @@ settles to a paid ticket with the same records as today.
 - **SC-004**: The count of tickets that exist in an open-but-never-paid or
   discarded-but-never-paid state drops to zero for all checkout sessions started
   after this change ships.
-- **SC-005**: Every checkout operator flow — opening, building a cart, taking
-  cash, card, gift-card, and split-tender payments, resuming, and discarding —
-  behaves identically from the operator's point of view, with no visible change
-  to any screen, control, step, or perceived timing.
-- **SC-006**: An in-progress, unsubmitted cart abandoned and returned to within
-  the same business day restores its full contents for the same operator.
+- **SC-005**: Within a checkout session, every operator flow — opening, building
+  a cart, taking cash, card, gift-card, and split-tender payments, and
+  discarding — behaves identically from the operator's point of view, with no
+  visible change to any screen, control, step, or perceived timing.
+- **SC-006**: Leaving the checkout screen or refreshing it always results in a
+  fresh empty cart on the next visit; no unsubmitted cart contents are ever
+  carried over.
 
 ## Assumptions
 
-- **Submission boundary**: "Submit the sale or service transaction" is taken to
-  mean the first payment-initiating action — taking cash, sending a card charge
-  to the terminal, redeeming a gift card, or composing the first split-tender
-  leg. The ticket and items are persisted at that point because the existing
-  payment records require a real ticket to reference. Cart edits before that
-  point are ephemeral.
-- **Resume continuity**: To honor "the flow stays exactly the same," an
-  unsubmitted cart must survive navigation away and page refresh for the same
-  operator. The mechanism for holding that ephemeral state is a design decision
-  for the planning phase. Cross-device resume (continuing a cart started on a
-  different device) is rare for a single salon and is not treated as a hard
-  requirement; if the chosen mechanism does not carry a draft across devices, an
-  operator simply starts a fresh cart on the second device.
-- **Audit scope**: Per-edit cart actions (adding a line, changing a price,
-  applying a discount) are no longer recorded in the audit log, because there is
-  no persisted entity to reference and no money moves during cart editing. The
-  audit trail for money movement and ticket finalization (payment capture,
-  ticket discard for a persisted ticket) is preserved, satisfying the money-
-  integrity auditing requirement.
+- **Submission boundary** (confirmed in Clarifications): "Submit the sale or
+  service transaction" means the first payment-initiating action — taking cash,
+  sending a card charge to the terminal, redeeming a gift card, or composing the
+  first split-tender draft leg. The ticket and items are persisted at that point
+  because the existing payment records require a real ticket to reference, and
+  the split-tender draft-leg machinery is reused unchanged. Cart edits before
+  that point are ephemeral. Accepted residual: composing a split leg and then
+  fully abandoning the cart leaves one empty open ticket — far rarer than the
+  browse-time ghost rows this feature eliminates.
+- **No resume of unsubmitted carts**: Per the Clarifications session, the
+  in-progress cart is held only in the checkout screen's memory. It does not
+  survive navigating away from checkout or a page refresh. This is a deliberate,
+  accepted deviation from today's resume behavior: the operator's experience
+  within a single checkout session is unchanged, but an unsubmitted cart is no
+  longer recoverable once the screen is left, and the entry-point dispatch that
+  resumed a same-day open ticket is removed.
+- **Audit scope** (confirmed in Clarifications): Per-edit cart actions (adding a
+  line, changing or overriding a price, applying a discount) are no longer
+  recorded in the audit log, because there is no persisted entity to reference
+  and no money moves during cart editing. The audit trail for money movement and
+  ticket finalization (payment capture, ticket discard for a persisted ticket)
+  is preserved, satisfying the constitution's money-integrity auditing
+  requirement (Principle III).
 - **No data migration**: Pre-existing open or discarded ticket rows are left as
   they are. This feature does not clean up historical ghost rows; it only stops
   creating new ones.
-- **Scope boundary**: This change is strictly back-end / persistence-timing. No
-  UI component, layout, copy, route-visible behavior, or interaction is altered.
-  Any change visible to the operator would be a regression.
+- **Scope boundary**: This change is back-end / persistence-timing plus the
+  accepted resume-behavior change above. No UI component, layout, copy, or
+  on-screen interaction within a checkout session is altered. The checkout route
+  no longer needs to carry a database ticket id before submission; the exact
+  route shape is a planning-phase decision. Apart from the accepted
+  resume-behavior change, any operator-visible change would be a regression.
 - **Test suite as the contract**: The existing checkout unit and end-to-end test
   suites define the expected persisted outcome of a completed sale. Tests that
   currently assert a ticket or ticket-item row exists *before* payment will be
