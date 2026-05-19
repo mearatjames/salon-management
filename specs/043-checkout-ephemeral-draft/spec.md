@@ -32,6 +32,8 @@ checkout discards it (see Clarifications).
 - Q: How should an unsubmitted checkout draft be held so it survives navigation away and page refresh? → A: In-memory only — the draft lives solely in the checkout screen's memory. Navigating away from checkout or refreshing the page discards it; an unsubmitted cart is never recovered. This removes today's resume behavior (a deliberate, accepted change).
 - Q: When is the ticket persisted for a split-tender sale? → A: At the first payment-initiating action of any kind, including composing the first split-tender draft leg. The existing draft-leg machinery is reused unchanged; composing a leg then fully abandoning the cart leaves one empty open ticket — an accepted rare residual.
 - Q: What happens to the per-edit audit-log rows once the cart is ephemeral? → A: Stop emitting them entirely. Cart editing moves no money and persists nothing, so there is nothing to trace; the audit trail for payment capture and ticket discard is fully preserved.
+- Q: Pre-submission, Cancel and Discard now do the same thing — what should the header show? → A: A single exit control. While no ticket is persisted it is labeled "Cancel" and simply leaves checkout, abandoning the in-memory draft.
+- Q: After a payment has been attempted and a real ticket exists, what should the exit control do? → A: It becomes "Discard" — exiting marks the persisted ticket discarded (terminal, audited), exactly as today's Discard. With resume removed, exiting never leaves a persisted ticket open, so no unreachable orphan ticket is created.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -76,28 +78,31 @@ existed at any point before payment was taken.
 ### User Story 2 - Abandon an unsubmitted checkout with no residue (Priority: P2)
 
 An operator opens checkout, optionally adds and removes some services, then leaves
-without taking payment — by discarding the cart or simply navigating elsewhere.
-Nothing about that abandoned cart is left in the database.
+without taking payment — by using the header exit control (labeled "Cancel" while
+no ticket is persisted) or simply navigating elsewhere. Nothing about that
+abandoned cart is left in the database.
 
 **Why this priority**: This is the primary problem the feature solves —
 eliminating ghost rows. It is separable from US1: a sale could complete correctly
 yet still leave residue from abandoned carts, so this needs its own verification.
 
-**Independent Test**: Open checkout, add and remove services, then discard the
-cart (or navigate away), and confirm zero ticket, ticket-item, payment, or audit
-rows exist for that session.
+**Independent Test**: Open checkout, add and remove services, then use the
+header exit control (or navigate away), and confirm zero ticket, ticket-item,
+payment, or audit rows exist for that session.
 
 **Acceptance Scenarios**:
 
 1. **Given** an operator has opened checkout and added several services, **When**
-   they discard the cart, **Then** they are returned to the dashboard exactly as
-   today, and no ticket, ticket-item, or audit rows exist for that cart.
+   they use the header exit control (labeled "Cancel"), **Then** they are
+   returned to the dashboard, and no ticket, ticket-item, or audit rows exist for
+   that cart.
 2. **Given** an operator has opened checkout, **When** they navigate away without
    taking payment, **Then** no ticket or ticket-item rows are left behind.
 3. **Given** an operator opens checkout and adds nothing at all, **When** they
    leave the page, **Then** the database is unchanged.
-4. **Given** an unsubmitted cart is discarded, **When** the dashboard's daily
-   counts and feed are viewed, **Then** they are unaffected — the abandoned cart
+4. **Given** an unsubmitted cart is abandoned via the header exit control,
+   **When** the dashboard's daily counts and feed are viewed, **Then** they are
+   unaffected — the abandoned cart
    never existed as far as reporting is concerned.
 
 ---
@@ -179,9 +184,9 @@ settles to a paid ticket with the same records as today.
   today and no ticket is persisted.
 - **Payment attempted, then abandoned**: Once payment has been initiated the
   ticket is already persisted. If that payment then fails or is cancelled and the
-  operator discards the cart, the discard behaves exactly as today for a real
-  ticket (the ticket is marked discarded and the discard is audited). Only carts
-  that never reached payment leave no trace.
+  operator uses the header exit control — now labeled "Discard" because a ticket
+  exists — the ticket is marked discarded and the discard is audited, exactly as
+  today's Discard. Only carts that never reached payment leave no trace.
 - **Refresh or crash mid-cart**: Refreshing the checkout page, closing it, or a
   crash discards the in-progress cart — it lives only in the checkout screen's
   memory. The operator simply starts a new cart; no partial ticket is ever
@@ -213,10 +218,11 @@ settles to a paid ticket with the same records as today.
   discounts — the system MUST keep all of that state in an ephemeral working
   draft and MUST NOT write any ticket or ticket-item records.
 - **FR-003**: Within a checkout session, the user interface, screens, controls,
-  steps, ordering, and perceived timing MUST remain exactly as they are today.
-  Aside from the resume-behavior change in FR-012 and FR-013, this feature
-  changes only when and how data is persisted and introduces no other visible
-  change.
+  steps, ordering, and perceived timing MUST remain exactly as they are today,
+  with two deliberate exceptions: the resume-behavior change (FR-012, FR-013) and
+  the consolidation of the header's "Cancel" and "Discard" buttons into a single
+  exit control (FR-019, FR-020). Apart from those, this feature changes only when
+  and how data is persisted and introduces no other visible change.
 - **FR-004**: The ephemeral draft MUST track everything the persisted ticket
   tracks today — selected services with name and price snapshots, per-line
   assigned tech, confirmed/unconfirmed variable prices, price overrides,
@@ -241,9 +247,9 @@ settles to a paid ticket with the same records as today.
   a submitted ticket: at most one charge in flight at a time, webhook
   idempotency, late-capture recovery, and invalidation of draft payment legs when
   the cart is edited after a leg exists.
-- **FR-010**: Abandoning an unsubmitted checkout — by discarding the cart or
-  navigating away before any payment is initiated — MUST leave no ticket,
-  ticket-item, payment, or audit-log records.
+- **FR-010**: Abandoning an unsubmitted checkout — by using the header exit
+  control or navigating away before any payment is initiated — MUST leave no
+  ticket, ticket-item, payment, or audit-log records.
 - **FR-011**: Discarding a checkout that has already been submitted (a payment
   was initiated, then it failed or was cancelled) MUST behave exactly as today
   for a persisted ticket, including marking it discarded and recording the
@@ -274,6 +280,18 @@ settles to a paid ticket with the same records as today.
 - **FR-018**: Tickets already persisted in an open or discarded state from before
   this change MUST be left intact; the feature only stops producing new
   unsubmitted ticket rows and requires no migration of existing data.
+- **FR-019**: The checkout header MUST replace today's two separate buttons
+  ("Cancel" and "Discard") with a single context-aware exit control. While no
+  ticket is persisted, the control MUST be labeled "Cancel"; once a ticket has
+  been persisted (a payment has been attempted), it MUST be labeled "Discard".
+- **FR-020**: When used while no ticket is persisted, the exit control MUST leave
+  checkout and abandon the in-memory draft with no database effect — no ticket,
+  ticket-item, payment, or audit rows. When used after a ticket has been
+  persisted, it MUST discard that ticket — marking it discarded, terminal and
+  audited, exactly as today's Discard action — and then leave checkout. With
+  resume removed, exiting MUST never leave a persisted ticket in the open state,
+  so no unreachable orphan ticket is created. (The existing refusal to discard a
+  ticket with an in-flight or succeeded payment still applies — see FR-011.)
 
 ### Key Entities *(include if feature involves data)*
 
@@ -300,8 +318,9 @@ settles to a paid ticket with the same records as today.
 
 - **SC-001**: Opening the checkout page and browsing the service catalog creates
   zero sales records — no ticket, no ticket items, no payments, no audit entries.
-- **SC-002**: Building a cart of any size and then abandoning it (discard or
-  navigate away, before any payment) creates zero sales records.
+- **SC-002**: Building a cart of any size and then abandoning it (via the header
+  exit control or by navigating away, before any payment) creates zero sales
+  records.
 - **SC-003**: 100% of completed sales produce ticket, ticket-item, and payment
   records — including totals, snapshots, and statuses — that are identical to
   those produced before this change, verified by the existing checkout test
@@ -310,9 +329,11 @@ settles to a paid ticket with the same records as today.
   discarded-but-never-paid state drops to zero for all checkout sessions started
   after this change ships.
 - **SC-005**: Within a checkout session, every operator flow — opening, building
-  a cart, taking cash, card, gift-card, and split-tender payments, and
-  discarding — behaves identically from the operator's point of view, with no
-  visible change to any screen, control, step, or perceived timing.
+  a cart, taking cash, card, gift-card, and split-tender payments, and exiting —
+  behaves identically from the operator's point of view, with no visible change
+  to any screen, control, step, or perceived timing, apart from the two
+  deliberate changes: resume removal (FR-012/FR-013) and the consolidation of the
+  header's Cancel/Discard buttons into a single exit control (FR-019/FR-020).
 - **SC-006**: Leaving the checkout screen or refreshing it always results in a
   fresh empty cart on the next visit; no unsubmitted cart contents are ever
   carried over.
