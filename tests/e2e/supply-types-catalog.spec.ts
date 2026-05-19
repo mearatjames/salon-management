@@ -1,24 +1,23 @@
 // E2E for the 022 supply-types catalog feature.
 //
-// Phase 3 (US1) scaffolds: picker pre-population for a backfilled service,
-// inline-create commits + pre-selects, soft-hint on collision. Each test
-// captures `newAuditCursor()` and asserts the expected
-// `supply_type.created` audit row via `getAuditLogRowsSince()`.
+// Pruned per the audit in `docs/e2e-pruning-audit.md` (issue #63): the
+// validators, server-action mutations, and audit emissions are now unit-
+// tested in `tests/unit/policy/actions.test.ts` and `tests/unit/policy/
+// canonicalize-name.test.ts`. What stays here is the irreducibly-browser
+// surface area: post-migration invariants, picker projection, archive-
+// disabled tooltip, archived-types picker filter, sub-row navigation, and
+// the `revalidatePath` cache invalidation contract.
 //
-// Mirrors `tests/e2e/services-deductions.spec.ts` for sign-in helpers +
-// supabase service-role reset patterns. The seed.sql does NOT include any
-// `supply_label` rows, so the suite installs its own per-test fixture:
-//   - Direct service-role insert into `supply_types` (a "Backfilled gel"
-//     row + an audit_log row with `payload.source = 'migration:022'`).
-//   - Direct service-role update on Classic manicure to point at it.
-// `afterEach` clears both fixture rows so re-runs stay deterministic.
+// The fixtures still use direct service-role inserts into `supply_types`
+// (plus an `audit_log` row with `payload.source = 'migration:022'` to
+// replay the migration snapshot) and direct service-role updates to point
+// services at the new FK. `afterEach` clears both fixture rows so re-runs
+// stay deterministic.
 
 import { expect, test } from "./_fixtures";
 import { createClient } from "@supabase/supabase-js";
 
 import { canonicalizeName } from "@/lib/policy/canonicalize-name";
-
-import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 
 test.use({
   storageState: async ({ authState }, provide) => {
@@ -44,10 +43,10 @@ async function supabaseIsReachable(): Promise<boolean> {
 const CLASSIC_MANICURE_ID = "20000000-0000-0000-0000-000000000001";
 const GEL_POLISH_ID = "20000000-0000-0000-0000-000000000002";
 
-// Names the suite uses to seed supply types. Picked so they're easy to
-// recognize in the audit log and won't collide with any real catalog content.
+// Name the suite uses to seed the US1 picker-pre-population fixture.
+// Picked so it's easy to recognize in the audit log and won't collide with
+// any real catalog content.
 const BACKFILLED_TYPE_NAME = "Backfilled gel";
-const COLLIDING_TYPE_NAME = "Chrome powder";
 
 function admin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -122,24 +121,6 @@ async function cleanupSupplyTypes(typeIds: string[], serviceIds: string[]): Prom
   }
 }
 
-/**
- * Also clean up any supply types created mid-test (e.g. by the inline-create
- * UI) so the next run starts clean. Matches by name.
- */
-async function deleteSupplyTypesByName(names: string[]): Promise<void> {
-  if (names.length === 0) return;
-  const c = admin();
-  const { data } = await c.from("supply_types").select("id, name").in("name", names);
-  const ids = (data ?? []).map((r: { id: string }) => r.id);
-  if (ids.length === 0) return;
-  await c
-    .from("services")
-    .update({ supply_type_id: null, supply_amount_cents: null })
-    .in("supply_type_id", ids);
-  await c.from("audit_log").delete().in("entity_id", ids);
-  await c.from("supply_types").delete().in("id", ids);
-}
-
 test.describe.configure({ mode: "serial" });
 
 test.describe("022 supply types catalog", () => {
@@ -155,37 +136,43 @@ test.describe("022 supply types catalog", () => {
     }
   });
 
-  test.describe("US1: picker + inline create", () => {
-    // Per-test fixture state — captured ids so afterEach can detach + delete.
+  // Defend against shard-mate pollution: services.spec.ts US4 archives Gel
+  // polish (sets active=false) and only restores it in its own beforeEach.
+  // If that test crashes mid-flight, the seeded services can land here
+  // inactive — the supply-types loader filters by active=true, so usage
+  // badges count wrong, service rows disappear from the catalog UI, and
+  // sub-rows are hidden. Reset both seeded services to active=true.
+  test.beforeEach(async () => {
+    if (!supabaseUp) return;
+    const c = admin();
+    const { error } = await c
+      .from("services")
+      .update({ active: true })
+      .in("id", [CLASSIC_MANICURE_ID, GEL_POLISH_ID]);
+    if (error) throw new Error(`activate fixture services failed: ${error.message}`);
+  });
+
+  test.describe("US1: picker pre-population", () => {
+    // Per-test fixture state — captured id so afterEach can detach + delete.
     let backfilledTypeId: string | null = null;
-    let collidingTypeId: string | null = null;
-    const createdNames: string[] = [];
 
     test.beforeEach(async () => {
       if (!supabaseUp) return;
-      // Test (a) needs a backfilled type wired to Classic manicure with a
-      // migration:022 audit row already in place.
+      // The kept test needs a backfilled type wired to Classic manicure
+      // with a migration:022 audit row already in place.
       backfilledTypeId = await seedSupplyType({
         name: BACKFILLED_TYPE_NAME,
         withMigrationAudit: true,
         attachToServiceId: CLASSIC_MANICURE_ID,
         attachAmountCents: 500,
       });
-      // Test (c) needs an active type the operator can collide with.
-      collidingTypeId = await seedSupplyType({
-        name: COLLIDING_TYPE_NAME,
-        withMigrationAudit: false,
-      });
     });
 
     test.afterEach(async () => {
       if (!supabaseUp) return;
-      const typeIds = [backfilledTypeId, collidingTypeId].filter((id): id is string => id !== null);
+      const typeIds = [backfilledTypeId].filter((id): id is string => id !== null);
       await cleanupSupplyTypes(typeIds, [CLASSIC_MANICURE_ID, GEL_POLISH_ID]);
-      await deleteSupplyTypesByName(createdNames);
       backfilledTypeId = null;
-      collidingTypeId = null;
-      createdNames.length = 0;
     });
 
     test("(a) picker is pre-populated with the migrated type for a backfilled service", async ({
@@ -211,102 +198,6 @@ test.describe("022 supply types catalog", () => {
       // Hidden form input reflects the FK.
       const hidden = page.locator("input[type='hidden'][name='supply_type_id']");
       await expect(hidden).toHaveValue(backfilledTypeId!);
-
-      // Migration audit row exists with source = migration:022.
-      const rows = await getAuditLogRowsSince(
-        new Date(Date.now() - 60_000).toISOString(),
-        "supply_type.created"
-      );
-      const migrationRow = rows.find(
-        (r) =>
-          r.entity_id === backfilledTypeId &&
-          (r.payload as { source?: string } | null)?.source === "migration:022"
-      );
-      expect(migrationRow).toBeDefined();
-      expect((migrationRow!.payload as { name?: string }).name).toBe(BACKFILLED_TYPE_NAME);
-    });
-
-    test("(b) inline-create commits a new type and pre-selects it", async ({ page }) => {
-      await page.goto("/services");
-
-      // Open Gel polish (no supply set initially).
-      const row = page.locator(`[data-slot='service-row'][data-service-id='${GEL_POLISH_ID}']`);
-      const link = row.locator("xpath=ancestor::a");
-      await link.focus();
-      await link.press("Enter");
-      await page.waitForURL(new RegExp(`\\?selected=${GEL_POLISH_ID}`));
-
-      // Turn supply on.
-      await page.locator("[data-slot='deductions-supply-toggle']").click();
-
-      // Capture cursor before the inline-create round-trip.
-      const cursor = newAuditCursor();
-
-      // Open the picker.
-      const trigger = page.locator("[data-slot='supply-type-picker-trigger']");
-      await trigger.click();
-
-      // Click the inline-create row.
-      await page.locator("[data-slot='supply-type-picker-create-row']").click();
-
-      // Fill the inline-create input.
-      const newName = `Test ${Date.now().toString().slice(-6)}`;
-      createdNames.push(newName);
-      const inlineInput = page.locator("[data-slot='supply-type-picker-create-input']");
-      await expect(inlineInput).toBeVisible();
-      await inlineInput.fill(newName);
-
-      // Save via the inline-create flow (programmatic action via
-      // useActionState — closes back to the dropdown on success).
-      await page.locator("[data-slot='supply-type-picker-create-save']").click();
-
-      // The picker's trigger now shows the new name (programmatic pre-select).
-      await expect(trigger).toContainText(newName, { timeout: 5000 });
-
-      // The hidden form input carries the newly-created uuid.
-      const hidden = page.locator("input[type='hidden'][name='supply_type_id']");
-      await expect(hidden).not.toHaveValue("");
-
-      // Exactly one new supply_type.created audit row with the typed name.
-      const rows = await getAuditLogRowsSince(cursor, "supply_type.created");
-      const created = rows.filter((r) => (r.payload as { name?: string } | null)?.name === newName);
-      expect(created).toHaveLength(1);
-    });
-
-    test("(c) typing a colliding name shows the 'select existing' soft hint", async ({ page }) => {
-      await page.goto("/services");
-
-      // Open Gel polish, turn supply on.
-      const row = page.locator(`[data-slot='service-row'][data-service-id='${GEL_POLISH_ID}']`);
-      const link = row.locator("xpath=ancestor::a");
-      await link.focus();
-      await link.press("Enter");
-      await page.waitForURL(new RegExp(`\\?selected=${GEL_POLISH_ID}`));
-      await page.locator("[data-slot='deductions-supply-toggle']").click();
-
-      const cursor = newAuditCursor();
-
-      // Open the picker + inline-create.
-      await page.locator("[data-slot='supply-type-picker-trigger']").click();
-      await page.locator("[data-slot='supply-type-picker-create-row']").click();
-
-      // Type the colliding name (case-insensitive on canonicalizeName).
-      const inlineInput = page.locator("[data-slot='supply-type-picker-create-input']");
-      await inlineInput.fill(COLLIDING_TYPE_NAME.toUpperCase());
-
-      // The save button morphs into "Select existing" (data-state="collide").
-      const saveBtn = page.locator("[data-slot='supply-type-picker-create-save']");
-      await expect(saveBtn).toHaveAttribute("data-state", "collide");
-      await expect(saveBtn).toContainText(/Select existing/i);
-
-      // Clicking it selects the existing row WITHOUT a server round-trip.
-      await saveBtn.click();
-      const trigger = page.locator("[data-slot='supply-type-picker-trigger']");
-      await expect(trigger).toContainText(COLLIDING_TYPE_NAME);
-
-      // Zero new supply_type.created audit rows since the cursor.
-      const rows = await getAuditLogRowsSince(cursor, "supply_type.created");
-      expect(rows).toHaveLength(0);
     });
   });
 
@@ -581,241 +472,17 @@ test.describe("022 supply types catalog", () => {
   });
 
   // ──────────────────────────────────────────────────────────────────────
-  // US2 — Rename a supply type once and see it update everywhere.
-  //
-  // Seed: one supply type "GelX tips & gel" referenced by two services
-  // (Classic manicure + Gel polish). Open Edit Policy, rename inline,
-  // verify both services' pickers pick up the new name on next render.
-  // Also: empty rename restores prior name; colliding rename surfaces
-  // soft hint; successful rename writes exactly one supply_type.renamed
-  // audit row with the expected payload.
-  // ──────────────────────────────────────────────────────────────────────
-  test.describe("US2: rename propagates", () => {
-    const SHARED_TYPE_NAME = "GelX tips & gel";
-    const COLLIDING_TYPE_NAME_US2 = "Chrome powder";
-    let sharedTypeId: string | null = null;
-    let collidingTypeId: string | null = null;
-    const createdNames: string[] = [];
-
-    test.beforeEach(async () => {
-      if (!supabaseUp) return;
-      // Seed the shared type wired to BOTH Classic manicure and Gel polish.
-      sharedTypeId = await seedSupplyType({
-        name: SHARED_TYPE_NAME,
-        attachToServiceId: CLASSIC_MANICURE_ID,
-        attachAmountCents: 500,
-      });
-      // Also point Gel polish at the same shared type.
-      const c = admin();
-      const { error: attachErr } = await c
-        .from("services")
-        .update({ supply_type_id: sharedTypeId, supply_amount_cents: 700 })
-        .eq("id", GEL_POLISH_ID);
-      if (attachErr) throw new Error(`US2 attach failed: ${attachErr.message}`);
-
-      // Seed a second active type to use as the rename-collision target in
-      // test (c).
-      collidingTypeId = await seedSupplyType({ name: COLLIDING_TYPE_NAME_US2 });
-    });
-
-    test.afterEach(async () => {
-      if (!supabaseUp) return;
-      const typeIds = [sharedTypeId, collidingTypeId].filter((id): id is string => id !== null);
-      await cleanupSupplyTypes(typeIds, [CLASSIC_MANICURE_ID, GEL_POLISH_ID]);
-      await deleteSupplyTypesByName(createdNames);
-      sharedTypeId = null;
-      collidingTypeId = null;
-      createdNames.length = 0;
-    });
-
-    test("(a) renaming via inline edit propagates to both referencing services' pickers", async ({
-      page,
-    }) => {
-      await page.goto("/services");
-
-      // Open Edit Policy.
-      await page.locator("[data-slot='services-edit-policy-button']").click();
-      const sheet = page.locator("[data-slot='edit-policy-sheet']");
-      await expect(sheet).toBeVisible();
-
-      // Click the type's name to engage rename mode.
-      const row = sheet.locator(
-        `[data-slot='supply-types-row'][data-supply-type-id='${sharedTypeId}']`
-      );
-      await expect(row).toBeVisible();
-      await row.locator("[data-slot='supply-types-row-name']").click();
-
-      // Type a new name + commit via Enter.
-      const newName = `GelX materials ${Date.now().toString().slice(-6)}`;
-      createdNames.push(newName);
-      const renameInput = sheet.locator(
-        `[data-slot='supply-types-row-rename-form'][data-supply-type-id='${sharedTypeId}'] [data-slot='supply-types-row-rename-input']`
-      );
-      await expect(renameInput).toBeVisible();
-      await renameInput.fill(newName);
-      await renameInput.press("Enter");
-
-      // After the redirect the sheet re-opens via `?policy=open`. Wait for
-      // the URL to settle then close the sheet manually.
-      await page.waitForURL(/policy=open/);
-
-      // Open Classic manicure — picker shows the new name.
-      await page.goto(`/services?selected=${CLASSIC_MANICURE_ID}`);
-      const trigger1 = page.locator("[data-slot='supply-type-picker-trigger']");
-      await expect(trigger1).toBeVisible();
-      await expect(trigger1).toContainText(newName);
-
-      // Open Gel polish — picker shows the same new name.
-      await page.goto(`/services?selected=${GEL_POLISH_ID}`);
-      const trigger2 = page.locator("[data-slot='supply-type-picker-trigger']");
-      await expect(trigger2).toBeVisible();
-      await expect(trigger2).toContainText(newName);
-
-      // Verify the DB: only one row in supply_types was updated, no services
-      // rows were rewritten (the FK is still the same id).
-      const c = admin();
-      const { data: typeRow } = await c
-        .from("supply_types")
-        .select("id, name")
-        .eq("id", sharedTypeId!)
-        .single();
-      expect((typeRow as { name: string }).name).toBe(newName);
-      const { data: serviceRows } = await c
-        .from("services")
-        .select("id, supply_type_id")
-        .in("id", [CLASSIC_MANICURE_ID, GEL_POLISH_ID]);
-      for (const r of serviceRows as Array<{ id: string; supply_type_id: string | null }>) {
-        expect(r.supply_type_id).toBe(sharedTypeId);
-      }
-    });
-
-    test("(b) empty rename surfaces hint and restores the prior name", async ({ page }) => {
-      await page.goto("/services");
-
-      await page.locator("[data-slot='services-edit-policy-button']").click();
-      const sheet = page.locator("[data-slot='edit-policy-sheet']");
-      await expect(sheet).toBeVisible();
-
-      const row = sheet.locator(
-        `[data-slot='supply-types-row'][data-supply-type-id='${sharedTypeId}']`
-      );
-      await row.locator("[data-slot='supply-types-row-name']").click();
-
-      const renameInput = sheet.locator(
-        `[data-slot='supply-types-row-rename-form'][data-supply-type-id='${sharedTypeId}'] [data-slot='supply-types-row-rename-input']`
-      );
-      await renameInput.fill("");
-      // Press Enter on the empty input — should be blocked client-side
-      // (submit disabled until trimmed length ≥ 2). Then blur to cancel.
-      await renameInput.press("Enter");
-
-      // The form should NOT have submitted — verify the URL did not pick up
-      // a toast or error. Press Escape to cancel.
-      await renameInput.press("Escape");
-
-      // Row should be back to its read-only state with the original name.
-      const nameButton = sheet.locator(
-        `[data-slot='supply-types-row'][data-supply-type-id='${sharedTypeId}'] [data-slot='supply-types-row-name']`
-      );
-      await expect(nameButton).toBeVisible();
-      await expect(nameButton).toContainText(SHARED_TYPE_NAME);
-
-      // Verify the DB still shows the original name.
-      const c = admin();
-      const { data } = await c.from("supply_types").select("name").eq("id", sharedTypeId!).single();
-      expect((data as { name: string }).name).toBe(SHARED_TYPE_NAME);
-    });
-
-    test("(c) colliding rename surfaces a soft hint and blocks submit", async ({ page }) => {
-      await page.goto("/services");
-
-      await page.locator("[data-slot='services-edit-policy-button']").click();
-      const sheet = page.locator("[data-slot='edit-policy-sheet']");
-      await expect(sheet).toBeVisible();
-
-      // Click the shared type's name to rename.
-      const row = sheet.locator(
-        `[data-slot='supply-types-row'][data-supply-type-id='${sharedTypeId}']`
-      );
-      await row.locator("[data-slot='supply-types-row-name']").click();
-
-      // Type the colliding name (case-insensitive on canonicalizeName).
-      const renameInput = sheet.locator(
-        `[data-slot='supply-types-row-rename-form'][data-supply-type-id='${sharedTypeId}'] [data-slot='supply-types-row-rename-input']`
-      );
-      await renameInput.fill(COLLIDING_TYPE_NAME_US2.toUpperCase());
-
-      // The soft-hint should surface.
-      const hint = sheet.locator(
-        `[data-slot='supply-types-row-rename-form'][data-supply-type-id='${sharedTypeId}'] [data-slot='supply-types-row-rename-hint']`
-      );
-      await expect(hint).toBeVisible();
-
-      // Attempting to commit should be blocked (Enter is no-op client-side
-      // while collision is true).
-      await renameInput.press("Enter");
-
-      // Cancel out.
-      await renameInput.press("Escape");
-
-      // DB still shows the original shared name (no rename happened).
-      const c = admin();
-      const { data } = await c.from("supply_types").select("name").eq("id", sharedTypeId!).single();
-      expect((data as { name: string }).name).toBe(SHARED_TYPE_NAME);
-    });
-
-    test("(d) successful rename writes exactly one supply_type.renamed audit row", async ({
-      page,
-    }) => {
-      await page.goto("/services");
-
-      const cursor = newAuditCursor();
-
-      await page.locator("[data-slot='services-edit-policy-button']").click();
-      const sheet = page.locator("[data-slot='edit-policy-sheet']");
-      await expect(sheet).toBeVisible();
-
-      const row = sheet.locator(
-        `[data-slot='supply-types-row'][data-supply-type-id='${sharedTypeId}']`
-      );
-      await row.locator("[data-slot='supply-types-row-name']").click();
-
-      const newName = `GelX renamed ${Date.now().toString().slice(-6)}`;
-      createdNames.push(newName);
-      const renameInput = sheet.locator(
-        `[data-slot='supply-types-row-rename-form'][data-supply-type-id='${sharedTypeId}'] [data-slot='supply-types-row-rename-input']`
-      );
-      await renameInput.fill(newName);
-      await renameInput.press("Enter");
-
-      await page.waitForURL(/policy=open/);
-
-      // Exactly one supply_type.renamed audit row since the cursor with the
-      // expected before/after payload.
-      const rows = await getAuditLogRowsSince(cursor, "supply_type.renamed");
-      const matching = rows.filter((r) => r.entity_id === sharedTypeId);
-      expect(matching).toHaveLength(1);
-      const payload = matching[0].payload as {
-        before?: { name?: string };
-        after?: { name?: string };
-      } | null;
-      expect(payload?.before?.name).toBe(SHARED_TYPE_NAME);
-      expect(payload?.after?.name).toBe(newName);
-    });
-  });
-
-  // ──────────────────────────────────────────────────────────────────────
-  // US3 — Archive a supply type that's no longer in use.
+  // US3 — Archive blocker + archived-type picker filter (browser-only
+  // surface area that survives the prune).
   //
   // Seed: a supply type "Cat-eye gel" referenced by exactly one service
   // (Classic manicure). The archive button should be disabled with a
-  // count-aware tooltip while usage > 0. After the operator removes the
-  // last reference (toggles Supply off + saves the service), archiving
-  // succeeds, the row moves to the Archived group, and the type is hidden
-  // from the picker on new edits. Reactivate restores it. Each successful
-  // mutation writes exactly one audit row of the matching verb.
+  // count-aware tooltip while usage > 0. Separately, archived types must
+  // not appear in the picker on a fresh edit. The happy-path archive +
+  // reactivate flows + their audit row emissions are covered by unit tests
+  // against `app/(studio)/settings/policy/actions.ts`.
   // ──────────────────────────────────────────────────────────────────────
-  test.describe("US3: archive blocker + reactivate", () => {
+  test.describe("US3: archive blocker + archived picker filter", () => {
     const TARGET_TYPE_NAME = "Cat-eye gel";
     let targetTypeId: string | null = null;
 
@@ -869,61 +536,7 @@ test.describe("022 supply types catalog", () => {
       );
     });
 
-    test("(b) after the last reference is removed, archive succeeds and the row moves to Archived", async ({
-      page,
-    }) => {
-      await page.goto("/services");
-
-      // Step 1: open Classic manicure, toggle Supply off, save.
-      await page.goto(`/services?selected=${CLASSIC_MANICURE_ID}`);
-      await page.locator("[data-slot='deductions-supply-toggle']").click();
-      await page.locator("[data-slot='services-edit-panel-save']").click();
-      // Wait for the save redirect that fires `toast=changes_saved`. This
-      // ensures the catalog (and thus the supply-types section's
-      // `usage_count`) has been re-fetched before we open Edit Policy.
-      await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}.*toast=changes_saved`));
-
-      // Step 2: open Edit Policy → the archive button is now enabled.
-      await page.locator("[data-slot='services-edit-policy-button']").click();
-      const sheet = page.locator("[data-slot='edit-policy-sheet']");
-      await expect(sheet).toBeVisible();
-
-      const row = sheet.locator(
-        `[data-slot='supply-types-row'][data-supply-type-id='${targetTypeId}']`
-      );
-      await expect(row).toBeVisible();
-
-      const archiveBtn = row.locator("[data-slot='supply-types-row-archive']");
-      await expect(archiveBtn).toBeVisible();
-      await expect(archiveBtn).not.toHaveAttribute("aria-disabled", "true");
-
-      // Step 3: click archive → the form submits, redirect lands on
-      // /services?policy=open&toast=supply_type_archived.
-      await archiveBtn.click();
-      await page.waitForURL(/policy=open/);
-
-      // Step 4: the row moved from the active card to the archived group.
-      const sheetAfter = page.locator("[data-slot='edit-policy-sheet']");
-      await expect(sheetAfter).toBeVisible();
-      const archivedGroup = sheetAfter.locator("[data-slot='supply-types-section-archived-group']");
-      await expect(archivedGroup).toBeVisible();
-      const archivedRow = archivedGroup.locator(
-        `[data-slot='supply-types-archived-row'][data-supply-type-id='${targetTypeId}']`
-      );
-      await expect(archivedRow).toBeVisible();
-      await expect(archivedRow).toContainText(TARGET_TYPE_NAME);
-
-      // DB defense-in-depth: the type is archived = true.
-      const c = admin();
-      const { data } = await c
-        .from("supply_types")
-        .select("archived")
-        .eq("id", targetTypeId!)
-        .single();
-      expect((data as { archived: boolean }).archived).toBe(true);
-    });
-
-    test("(c) archived types are excluded from the picker on new edits", async ({ page }) => {
+    test("(b) archived types are excluded from the picker on new edits", async ({ page }) => {
       // Archive directly via the DB so this test focuses on the picker.
       const c = admin();
       await c
@@ -946,116 +559,6 @@ test.describe("022 supply types catalog", () => {
         `[data-slot='supply-type-picker-item'][data-supply-type-id='${targetTypeId}']`
       );
       await expect(archivedItem).toHaveCount(0);
-    });
-
-    test("(d) reactivate restores the archived type to active", async ({ page }) => {
-      // Pre-archive via the DB so we land directly in the reactivate flow.
-      const c = admin();
-      await c
-        .from("services")
-        .update({ supply_type_id: null, supply_amount_cents: null })
-        .eq("id", CLASSIC_MANICURE_ID);
-      await c.from("supply_types").update({ archived: true }).eq("id", targetTypeId!);
-
-      await page.goto("/services");
-      await page.locator("[data-slot='services-edit-policy-button']").click();
-      const sheet = page.locator("[data-slot='edit-policy-sheet']");
-      await expect(sheet).toBeVisible();
-
-      // The row sits in the Archived group with a Reactivate button.
-      const archivedGroup = sheet.locator("[data-slot='supply-types-section-archived-group']");
-      await expect(archivedGroup).toBeVisible();
-      const archivedRow = archivedGroup.locator(
-        `[data-slot='supply-types-archived-row'][data-supply-type-id='${targetTypeId}']`
-      );
-      const reactivateBtn = archivedRow.locator(
-        "[data-slot='supply-types-archived-row-reactivate']"
-      );
-      await expect(reactivateBtn).toBeVisible();
-      await reactivateBtn.click();
-
-      await page.waitForURL(/policy=open/);
-
-      // The row is back in the active card.
-      const activeRow = page.locator(
-        `[data-slot='supply-types-row'][data-supply-type-id='${targetTypeId}']`
-      );
-      await expect(activeRow).toBeVisible();
-      await expect(activeRow).toContainText(TARGET_TYPE_NAME);
-
-      // DB defense-in-depth.
-      const { data } = await c
-        .from("supply_types")
-        .select("archived")
-        .eq("id", targetTypeId!)
-        .single();
-      expect((data as { archived: boolean }).archived).toBe(false);
-    });
-
-    test("(e) successful archive writes exactly one supply_type.archived audit row", async ({
-      page,
-    }) => {
-      // Detach the service so archive is allowed; do this via the DB so the
-      // test focuses on the archive action's audit emission.
-      const c = admin();
-      await c
-        .from("services")
-        .update({ supply_type_id: null, supply_amount_cents: null })
-        .eq("id", CLASSIC_MANICURE_ID);
-
-      await page.goto("/services");
-      const cursor = newAuditCursor();
-
-      await page.locator("[data-slot='services-edit-policy-button']").click();
-      const sheet = page.locator("[data-slot='edit-policy-sheet']");
-      await expect(sheet).toBeVisible();
-
-      const row = sheet.locator(
-        `[data-slot='supply-types-row'][data-supply-type-id='${targetTypeId}']`
-      );
-      const archiveBtn = row.locator("[data-slot='supply-types-row-archive']");
-      await expect(archiveBtn).not.toHaveAttribute("aria-disabled", "true");
-      await archiveBtn.click();
-      await page.waitForURL(/policy=open/);
-
-      const rows = await getAuditLogRowsSince(cursor, "supply_type.archived");
-      const matching = rows.filter((r) => r.entity_id === targetTypeId);
-      expect(matching).toHaveLength(1);
-      const payload = matching[0].payload as { name?: string } | null;
-      expect(payload?.name).toBe(TARGET_TYPE_NAME);
-    });
-
-    test("(f) successful reactivate writes exactly one supply_type.reactivated audit row", async ({
-      page,
-    }) => {
-      // Pre-archive via the DB so the UI lands in the reactivate path.
-      const c = admin();
-      await c
-        .from("services")
-        .update({ supply_type_id: null, supply_amount_cents: null })
-        .eq("id", CLASSIC_MANICURE_ID);
-      await c.from("supply_types").update({ archived: true }).eq("id", targetTypeId!);
-
-      await page.goto("/services");
-      const cursor = newAuditCursor();
-
-      await page.locator("[data-slot='services-edit-policy-button']").click();
-      const sheet = page.locator("[data-slot='edit-policy-sheet']");
-      await expect(sheet).toBeVisible();
-
-      const archivedRow = sheet.locator(
-        `[data-slot='supply-types-archived-row'][data-supply-type-id='${targetTypeId}']`
-      );
-      await expect(archivedRow).toBeVisible();
-      await archivedRow.locator("[data-slot='supply-types-archived-row-reactivate']").click();
-
-      await page.waitForURL(/policy=open/);
-
-      const rows = await getAuditLogRowsSince(cursor, "supply_type.reactivated");
-      const matching = rows.filter((r) => r.entity_id === targetTypeId);
-      expect(matching).toHaveLength(1);
-      const payload = matching[0].payload as { name?: string } | null;
-      expect(payload?.name).toBe(TARGET_TYPE_NAME);
     });
   });
 
@@ -1223,7 +726,7 @@ test.describe("022 supply types catalog", () => {
       // and trigger the same revalidation paths the catalog actions would.
       // (We can't update a service through the UI here without re-opening
       // the picker, and the goal of this test is the count refresh — not
-      // the action plumbing, which earlier US3 tests already cover.)
+      // the action plumbing, which the policy actions unit tests cover.)
       const c = admin();
       await c
         .from("services")
