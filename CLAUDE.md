@@ -200,4 +200,5 @@ Spec Kit (`/speckit-specify`, `/speckit-plan`, etc.) inside the worktree
 instead of trying to ship it in one PR.
 
 <!-- SPECKIT START -->
+Active feature plan: [specs/042-ephemeral-cart/plan.md](specs/042-ephemeral-cart/plan.md)
 <!-- SPECKIT END -->
