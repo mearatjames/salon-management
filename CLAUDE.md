@@ -159,5 +159,28 @@ forbidden" — is the authority.
 
 Next.js 16 (App Router, RSC + Server Actions) · Vercel · Supabase (Postgres/RLS, Auth, Realtime, Storage) · Square SDK (server-side) · shadcn/ui + Tailwind + Lucide. See `docs/system-design.md` for the full picture.
 
+## Working on a GitHub issue
+
+Default workflow when asked to work on issue #N:
+
+1. `git -C <repo-root> fetch origin main`
+2. `git -C <repo-root> worktree add .claude/worktrees/<N>-<slug> -b <type>/<N>-<slug> origin/main`
+   — `<type>` is `chore`, `fix`, or `feat`. Use a worktree (not a plain
+   `git checkout -b`) so parallel sessions on other issues stay isolated
+   from each other's working directory.
+3. Work in the worktree. Run the pre-push gate set there (see "Pre-push
+   quality gates" above; e2e is `flock`-serialized so it's safe to run
+   even with other sessions active).
+4. Commit, push the branch, open a PR with `Closes #N` in the body.
+5. Leave the worktree in place for verification; remove after merge with
+   `git worktree remove .claude/worktrees/<N>-<slug>`.
+
+Never commit directly to `main`, even for one-line fixes. Check
+`git rev-parse --abbrev-ref HEAD` before any commit if unsure.
+
+If the issue is large enough that it doesn't fit a single session, use
+Spec Kit (`/speckit-specify`, `/speckit-plan`, etc.) inside the worktree
+instead of trying to ship it in one PR.
+
 <!-- SPECKIT START -->
 <!-- SPECKIT END -->
