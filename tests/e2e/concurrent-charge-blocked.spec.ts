@@ -12,7 +12,6 @@
 // attempting an activation from device B. Square is not involved in this
 // path — we exercise the DB-side guard directly.
 
-import { type Page } from "@playwright/test";
 import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
