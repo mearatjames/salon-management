@@ -10,9 +10,7 @@
 // Mirrors the Supabase-reachable / serial / per-test seed pattern from
 // `tests/e2e/staff.spec.ts`.
 
-import { expect, test } from "@playwright/test";
-
-import { resetStaffToSeed } from "./_db";
+import { test, expect, signInAs } from "./_fixtures";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -26,24 +24,6 @@ async function supabaseIsReachable(): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-// Reuses the seeded `owner@tangnails.dev` / `tang-nails-dev` device login
-// pattern from auth.spec.ts, then pins in as Maya Patel (PIN 1234, seeded
-// owner staff row).
-async function signInAsMaya(page: import("@playwright/test").Page) {
-  await page.goto("/login?next=%2Fsettings%2Fstaff");
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  await page.waitForURL(/\/settings\/staff(\?|$)/, { timeout: 10_000 });
 }
 
 test.describe.configure({ mode: "serial" });
@@ -62,13 +42,17 @@ test.describe("US7: Add-staff wizard sheet", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
-    await resetStaffToSeed();
+    await staffFixture.reset();
+    await staffFixture.deleteExtras();
   });
 
-  test("(a) Add staff opens a right-side sheet at the wizard root", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(a) Add staff opens a right-side sheet at the wizard root", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
     // Wizard not yet visible.
     await expect(page.locator("[data-slot='add-staff-wizard-sheet']")).toHaveCount(0);
@@ -81,8 +65,11 @@ test.describe("US7: Add-staff wizard sheet", () => {
     await expect(wizard).toHaveAttribute("data-side", "right");
   });
 
-  test("(b) header shows three step pills with Details highlighted", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(b) header shows three step pills with Details highlighted", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await page.locator("[data-slot='add-staff-button']").click();
     await expect(
       page.locator("[data-slot='add-staff-wizard-sheet'][data-state='open']")
@@ -107,8 +94,8 @@ test.describe("US7: Add-staff wizard sheet", () => {
     );
   });
 
-  test("(c) live preview card mirrors the in-progress draft", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(c) live preview card mirrors the in-progress draft", async ({ page, staffFixture }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await page.locator("[data-slot='add-staff-button']").click();
     await expect(
       page.locator("[data-slot='add-staff-wizard-sheet'][data-state='open']")
@@ -124,8 +111,9 @@ test.describe("US7: Add-staff wizard sheet", () => {
 
   test("(d) footer shows Cancel + 'Next: set PIN' disabled until display_name non-empty", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await page.locator("[data-slot='add-staff-button']").click();
     await expect(
       page.locator("[data-slot='add-staff-wizard-sheet'][data-state='open']")
@@ -153,8 +141,9 @@ test.describe("US7: Add-staff wizard sheet", () => {
 
   test("(e) step 1 → step 2: pill highlights + PIN input renders + footer label updates", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await page.locator("[data-slot='add-staff-button']").click();
 
     await page.locator("[data-slot='wizard-name-input']").fill("Step Two");
@@ -179,11 +168,17 @@ test.describe("US7: Add-staff wizard sheet", () => {
     await expect(primary).toContainText("Set PIN");
   });
 
-  test("(f) step 2 → step 3: Done pill highlights + success state renders", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(f) step 2 → step 3: Done pill highlights + success state renders", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await page.locator("[data-slot='add-staff-button']").click();
 
-    await page.locator("[data-slot='wizard-name-input']").fill("Three Steps");
+    // Suffix the created display_name with `[wN]` so `staffFixture.deleteExtras()`
+    // (run in the next beforeEach) cleans the row up under workers > 1.
+    const name = `Three Steps [w${staffFixture.workerIndex}]`;
+    await page.locator("[data-slot='wizard-name-input']").fill(name);
     await page.locator("[data-slot='add-staff-wizard-footer-primary']").click();
 
     // Enter phase — tap 1 9 8 4.
@@ -206,6 +201,7 @@ test.describe("US7: Add-staff wizard sheet", () => {
 
   test("(g) cancel mid-wizard does not break the wizard; no partial-create (PIN-required)", async ({
     page,
+    staffFixture,
   }) => {
     // FR-030 in the spec calls for "cancel mid-wizard leaves the partially-
     // created staff in the roster with a No PIN pill," but the underlying
@@ -214,10 +210,11 @@ test.describe("US7: Add-staff wizard sheet", () => {
     // wizard's top-of-file PIN-required deviation note). The redesign keeps
     // that behavior unchanged per T059. We assert the closer: cancelling
     // mid-wizard cleanly tears down without leaving any staff row behind.
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await page.locator("[data-slot='add-staff-button']").click();
 
-    await page.locator("[data-slot='wizard-name-input']").fill("Will Cancel");
+    const cancelName = `Will Cancel [w${staffFixture.workerIndex}]`;
+    await page.locator("[data-slot='wizard-name-input']").fill(cancelName);
     await page.locator("[data-slot='add-staff-wizard-footer-primary']").click();
     await expect(page.locator("[data-slot='wizard-pin-step']")).toBeVisible();
 
@@ -230,7 +227,7 @@ test.describe("US7: Add-staff wizard sheet", () => {
     // No "Will Cancel" row in the roster — PIN-required guard means no row
     // was ever created.
     await expect(
-      page.locator("[data-slot='staff-table'] [data-staff-id]").filter({ hasText: "Will Cancel" })
+      page.locator("[data-slot='staff-table'] [data-staff-id]").filter({ hasText: cancelName })
     ).toHaveCount(0);
   });
 });

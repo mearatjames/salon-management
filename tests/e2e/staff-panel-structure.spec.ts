@@ -10,9 +10,7 @@
 // Mirrors the Supabase-reachable / serial pattern from
 // `staff-payout-exemptions.spec.ts`.
 
-import { expect, test } from "@playwright/test";
-
-import { resetStaffToSeed } from "./_db";
+import { test, expect, signInAs, type StaffFixture } from "./_fixtures";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -28,40 +26,26 @@ async function supabaseIsReachable(): Promise<boolean> {
   }
 }
 
-// Sign in as Maya Patel (seeded owner; PIN 1234). Mirrors the helpers in
-// `staff-payout-exemptions.spec.ts` and `staff-roster-chrome.spec.ts`.
-async function signInAsMaya(page: import("@playwright/test").Page) {
-  await page.goto("/login?next=%2Fsettings%2Fstaff");
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  await page.waitForURL(/\/settings\/staff(\?|$)/, { timeout: 10_000 });
+// Per-worker inactive-staff row id. The display_name embeds `[wN]` so
+// `staffFixture.deleteExtras()` in `beforeEach` cleans it up under
+// `workers > 1`.
+function inactiveIrisId(fixture: StaffFixture): string {
+  const w = fixture.workerIndex.toString(16).padStart(4, "0");
+  return `f0000000-0000-0000-${w}-000000000099`;
 }
 
-// Sam Chen — seeded technician (active). Safe target for the active-state
-// section tests; doesn't trip last-owner gating or self-edit blocks.
-const SAM_ID = "10000000-0000-0000-0000-000000000003";
-// Inactive Iris — seeded only by `insertInactiveSeed()` below.
-const IRIS_ID = "10000000-0000-0000-0000-000000000099";
-
-async function insertInactiveSeed(): Promise<void> {
+async function insertInactiveSeed(fixture: StaffFixture): Promise<string> {
   const { createClient } = await import("@supabase/supabase-js");
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   const c = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  const id = inactiveIrisId(fixture);
   const { error } = await c.from("staff").upsert(
     {
-      id: IRIS_ID,
-      display_name: "Inactive Iris",
+      id,
+      display_name: `Inactive Iris [w${fixture.workerIndex}]`,
       role: "technician",
       pin_hash: "$2b$11$0000000000000000000000.0000000000000000000000000000000",
       color_token: "--avatar-slate",
@@ -70,6 +54,7 @@ async function insertInactiveSeed(): Promise<void> {
     { onConflict: "id" }
   );
   if (error) throw new Error(`insertInactiveSeed: ${error.message}`);
+  return id;
 }
 
 test.describe.configure({ mode: "serial" });
@@ -88,21 +73,23 @@ test.describe("US6: Panel sectioning + danger zone", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
-    await resetStaffToSeed();
+    await staffFixture.reset();
+    await staffFixture.deleteExtras();
   });
 
   test("(a) panel-profile header renders at the top with avatar, name, role, added date, and status badges", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     const header = page.locator("[data-slot='staff-panel-profile-header']");
     await expect(header).toBeVisible();
     // Display name appears in the header.
-    await expect(header).toContainText("Sam Chen");
+    await expect(header).toContainText(staffFixture.tech.displayName);
     // "Tech · Added <Mon YYYY>" subtitle — exact month varies with seed, so
     // assert the pattern "Tech · Added " + 3-letter month + 4-digit year.
     await expect(header.locator("[data-slot='staff-panel-profile-subtitle']")).toHaveText(
@@ -122,9 +109,9 @@ test.describe("US6: Panel sectioning + danger zone", () => {
     expect(headerBox!.y).toBeLessThan(firstSectionBox!.y);
   });
 
-  test("(b) panel sections render in the contracted DOM order", async ({ page }) => {
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+  test("(b) panel sections render in the contracted DOM order", async ({ page, staffFixture }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     await expect(page.locator("[data-slot='staff-edit-panel']")).toBeVisible();
 
@@ -151,9 +138,12 @@ test.describe("US6: Panel sectioning + danger zone", () => {
     expect(await sections.count()).toBeGreaterThanOrEqual(expected.length);
   });
 
-  test("(c) danger-zone background is distinct from neutral section cards", async ({ page }) => {
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+  test("(c) danger-zone background is distinct from neutral section cards", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     await expect(page.locator("[data-section='danger-zone']")).toBeVisible();
 
@@ -174,9 +164,10 @@ test.describe("US6: Panel sectioning + danger zone", () => {
 
   test("(d) active staff shows Deactivate + Remove from roster inside the danger zone", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     const dz = page.locator("[data-section='danger-zone']");
     await expect(dz).toBeVisible();
@@ -190,10 +181,11 @@ test.describe("US6: Panel sectioning + danger zone", () => {
 
   test("(e) inactive staff shows Reactivate + Remove from roster inside the danger zone", async ({
     page,
+    staffFixture,
   }) => {
-    await insertInactiveSeed();
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${IRIS_ID}`);
+    const irisId = await insertInactiveSeed(staffFixture);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${irisId}`);
 
     const dz = page.locator("[data-section='danger-zone']");
     await expect(dz).toBeVisible();
@@ -205,9 +197,12 @@ test.describe("US6: Panel sectioning + danger zone", () => {
     );
   });
 
-  test("(f) FR-028: no destructive action exists outside the danger zone", async ({ page }) => {
-    await signInAsMaya(page);
-    await page.goto(`/settings/staff?selected=${SAM_ID}`);
+  test("(f) FR-028: no destructive action exists outside the danger zone", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
+    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
 
     await expect(page.locator("[data-slot='staff-edit-panel']")).toBeVisible();
     await expect(page.locator("[data-section='danger-zone']")).toBeVisible();

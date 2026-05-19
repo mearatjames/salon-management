@@ -46,13 +46,14 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  // Single-worker mode: a parallel-worker race between onboarding.spec.ts and
-  // staff.spec.ts on the shared seeded staff (Maya/Jordan/Sam) caused flaky
-  // failures. Option 3 (per-spec staff namespace) introduced its own pollution
-  // problems. Until either a proper namespace refactor (runtime fixtures) or a
-  // Playwright project-dependency setup lands, workers=1 keeps the suite
-  // deterministic. See specs/012-user-onboarding for context.
-  workers: 1,
+  // Two-worker mode (CI). The Category A specs that previously raced on the
+  // shared seeded staff (Maya/Jordan/Sam) now provision their own per-worker
+  // trio via `tests/e2e/_fixtures.ts` (see issues #33 + #39). The fixture's
+  // distinctive `[wN]` suffix on display_name means Category B specs (which
+  // log in via the seeded Maya tile) stay unmodified. Local runs default to
+  // Playwright's auto-detected worker count; CI pins workers=2 so the
+  // reduction in wall time is deterministic.
+  workers: process.env.CI ? 2 : undefined,
   reporter: "html",
   // Per-test budget. Local timeout is generous (60s) because parallel
   // workers contending on the Next.js prod server can stretch a single

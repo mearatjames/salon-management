@@ -44,9 +44,20 @@ Run them in this order so the cheapest checks fail fast:
 5. `npm run test:e2e` — Playwright against a local Supabase. Defaults to
    parallel workers; set `PLAYWRIGHT_PROD=1` to opt into the same prebuilt
    `npm run start` server CI uses (avoids next-dev JIT compile flake under
-   load). Audit-log assertions are cursor-scoped per-test (see
-   `tests/e2e/_db.ts` — `newAuditCursor()` / `getAuditLogRowsSince()`),
-   so parallel workers no longer race on the shared `audit_log` table.
+   load). Two state-scoping patterns let the suite run with `workers > 1`:
+   - **Audit-log cursor**: per-test cursors via `newAuditCursor()` /
+     `getAuditLogRowsSince()` in `tests/e2e/_db.ts` keep parallel workers
+     from racing on the shared `audit_log` table.
+   - **Worker-scoped staff fixture**: `tests/e2e/_fixtures.ts` provisions
+     a per-worker staff trio (`Test Owner / Manager / Tech [w<N>]`) plus
+     auth users. Specs that mutate staff (`staff.spec.ts`,
+     `onboarding.spec.ts`, `staff-payout-exemptions.spec.ts`,
+     `auth.spec.ts`, `staff-add-wizard.spec.ts`, `staff-mobile.spec.ts`,
+     `staff-panel-structure.spec.ts`, `staff-roster-chrome.spec.ts`)
+     import `test` from `_fixtures` and operate only on their worker's
+     trio. Read-only specs that pick the seeded Maya tile by name keep
+     working because the fixture's `[w<N>]` suffix avoids selector
+     collisions.
 
 All five MUST be green locally. Constitution v1.0.3 § Development Workflow
 & Quality Gates is the authority.

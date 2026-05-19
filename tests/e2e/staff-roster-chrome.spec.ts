@@ -6,10 +6,9 @@
 // `staff-payout-exemptions.spec.ts`. Mirrors the Supabase-reachable / serial /
 // per-test seed pattern from `tests/e2e/staff.spec.ts`.
 
-import { expect, test } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
-import { resetStaffToSeed } from "./_db";
+import { test, expect, signInAs, type StaffFixture } from "./_fixtures";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -25,36 +24,44 @@ async function supabaseIsReachable(): Promise<boolean> {
   }
 }
 
-// Reuses the seeded `owner@tangnails.dev` / `tang-nails-dev` device login
-// pattern from auth.spec.ts, then pins in as Maya Patel (PIN 1234, seeded
-// owner staff row).
-async function signInAsMaya(page: import("@playwright/test").Page) {
-  await page.goto("/login?next=%2Fsettings%2Fstaff");
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  await page.waitForURL(/\/settings\/staff(\?|$)/, { timeout: 10_000 });
+// Per-worker namespaced ids for the extra staff this spec inserts. The
+// `[wN]` suffix on display_name lets `staffFixture.deleteExtras()` reclaim
+// them in the next `beforeEach` under `workers > 1`.
+function workerHex(workerIndex: number): string {
+  return workerIndex.toString(16).padStart(4, "0");
+}
+function inactiveIrisId(fixture: StaffFixture): string {
+  return `f0000000-0000-0000-${workerHex(fixture.workerIndex)}-000000000099`;
+}
+function inactiveIvyId(fixture: StaffFixture): string {
+  return `f0000000-0000-0000-${workerHex(fixture.workerIndex)}-000000000098`;
+}
+function pendingPatId(fixture: StaffFixture): string {
+  return `f0000000-0000-0000-${workerHex(fixture.workerIndex)}-000000000097`;
+}
+function inactiveIrisName(fixture: StaffFixture): string {
+  return `Inactive Iris [w${fixture.workerIndex}]`;
+}
+function inactiveIvyName(fixture: StaffFixture): string {
+  return `Inactive Ivy [w${fixture.workerIndex}]`;
+}
+function pendingPatName(fixture: StaffFixture): string {
+  return `Pending Pat [w${fixture.workerIndex}]`;
 }
 
-// Insert one inactive seed row (Inactive Iris) directly via the service-role
-// client. Cleaned up by `resetStaffToSeed()` in the next `beforeEach`.
-async function insertInactiveSeed(): Promise<void> {
+// Insert one inactive staff row scoped to the fixture's worker namespace.
+// `staffFixture.deleteExtras()` in the next `beforeEach` reclaims it.
+async function insertInactiveSeed(fixture: StaffFixture): Promise<string> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   const c = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  const id = inactiveIrisId(fixture);
   const { error } = await c.from("staff").upsert(
     {
-      id: "10000000-0000-0000-0000-000000000099",
-      display_name: "Inactive Iris",
+      id,
+      display_name: inactiveIrisName(fixture),
       role: "front_desk",
       pin_hash: "$2b$11$0000000000000000000000.0000000000000000000000000000000",
       color_token: "--avatar-slate",
@@ -63,6 +70,7 @@ async function insertInactiveSeed(): Promise<void> {
     { onConflict: "id" }
   );
   if (error) throw new Error(`insertInactiveSeed: ${error.message}`);
+  return id;
 }
 
 test.describe.configure({ mode: "serial" });
@@ -81,9 +89,22 @@ test.describe("US4: Filter chips", () => {
     }
   });
 
-  test.beforeEach(async ({ context }) => {
+  test.beforeEach(async ({ context, staffFixture }) => {
     if (!supabaseUp) return;
-    await resetStaffToSeed();
+    await staffFixture.reset();
+    await staffFixture.deleteExtras();
+    // Sweep any `@tangnails.test` staff that onboarding tests leak (they
+    // use display_names without `[wN]` so deleteExtras can't catch them).
+    // Required for US4(f) "No inactive staff" empty-state to render
+    // deterministically when the suite runs end-to-end.
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (url && key) {
+      const c = createClient(url, key, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      await c.from("staff").delete().like("email", "%@tangnails.test");
+    }
     // Each test starts as a "first-time visitor": clear cookies and ensure
     // no prior `tn:settings:staff:filter` localStorage value bleeds across
     // tests (Playwright contexts persist localStorage within the same
@@ -91,8 +112,11 @@ test.describe("US4: Filter chips", () => {
     await context.clearCookies();
   });
 
-  test("(a) chip bar renders with three chips + tabular counts matching seed", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(a) chip bar renders with three chips + tabular counts including seed + fixture trio", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
     const chips = page.locator("[data-slot='staff-filter-chip']");
     await expect(chips).toHaveCount(3);
@@ -101,13 +125,24 @@ test.describe("US4: Filter chips", () => {
     const active = page.locator("[data-slot='staff-filter-chip'][data-filter='active']");
     const inactive = page.locator("[data-slot='staff-filter-chip'][data-filter='inactive']");
 
-    // Default seed: 3 active, 0 inactive, 3 total.
     await expect(active).toContainText("Active");
-    await expect(active).toContainText("3");
     await expect(inactive).toContainText("Inactive");
-    await expect(inactive).toContainText("0");
     await expect(all).toContainText("All");
-    await expect(all).toContainText("3");
+
+    // Counts come from the global roster. Workers > 1 means other workers'
+    // fixture trios may or may not be live, so the floor (this worker's
+    // trio + the 3 seeded staff = 6) is what we can assert deterministically.
+    // Inactive count is left unasserted: parallel workers may have their
+    // own inactive extras live during this test (their fixture's
+    // `deleteExtras` only sweeps the worker's own namespace).
+    const activeCount = Number(
+      (await active.locator("[data-slot='staff-filter-chip-count']").textContent()) ?? "0"
+    );
+    expect(activeCount).toBeGreaterThanOrEqual(6);
+    const allCount = Number(
+      (await all.locator("[data-slot='staff-filter-chip-count']").textContent()) ?? "0"
+    );
+    expect(allCount).toBeGreaterThanOrEqual(6);
 
     // Count spans use tabular numerals.
     await expect(page.locator("[data-slot='staff-filter-chip-count']").first()).toHaveCSS(
@@ -118,8 +153,9 @@ test.describe("US4: Filter chips", () => {
 
   test("(b) first-time visitor (cleared localStorage) sees Active selected by default", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
     // Clear localStorage AFTER the first navigation (clearCookies in
     // beforeEach already gives us a fresh session storage at the start of
@@ -137,11 +173,14 @@ test.describe("US4: Filter chips", () => {
     await expect(inactive).toHaveAttribute("data-selected", "false");
   });
 
-  test("(c) clicking Inactive, All, then Active filters rows accordingly", async ({ page }) => {
+  test("(c) clicking Inactive, All, then Active filters rows accordingly", async ({
+    page,
+    staffFixture,
+  }) => {
     // Add an inactive row so the Inactive filter has something to show.
-    await insertInactiveSeed();
+    const irisId = await insertInactiveSeed(staffFixture);
 
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await page.evaluate(() => localStorage.clear());
     await page.reload();
     await page.waitForURL(/\/settings\/staff(\?|$)/);
@@ -150,31 +189,36 @@ test.describe("US4: Filter chips", () => {
     const all = page.locator("[data-slot='staff-filter-chip'][data-filter='all']");
     const active = page.locator("[data-slot='staff-filter-chip'][data-filter='active']");
     const inactive = page.locator("[data-slot='staff-filter-chip'][data-filter='inactive']");
+    const irisRow = page.locator(`[data-slot='staff-table'] [data-staff-id='${irisId}']`);
 
-    // Default Active: 3 active rows visible.
-    await expect(rows).toHaveCount(3);
+    // Default Active: at least 6 active rows visible (3 seed + 3 fixture trio).
+    // The inactive Iris must NOT be among them.
+    await expect(rows).not.toHaveCount(0);
+    expect(await rows.count()).toBeGreaterThanOrEqual(6);
+    await expect(irisRow).toHaveCount(0);
 
-    // Click Inactive → only Inactive Iris (1 row).
+    // Click Inactive — Iris becomes visible; only inactive rows show.
     await inactive.click();
     await expect(inactive).toHaveAttribute("data-selected", "true");
-    await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText("Inactive Iris");
+    await expect(irisRow).toBeVisible();
+    await expect(irisRow).toContainText(inactiveIrisName(staffFixture));
 
-    // Click All → all 4 rows.
+    // Click All — Iris stays visible alongside the active rows.
     await all.click();
     await expect(all).toHaveAttribute("data-selected", "true");
-    await expect(rows).toHaveCount(4);
+    await expect(irisRow).toBeVisible();
+    expect(await rows.count()).toBeGreaterThanOrEqual(7);
 
-    // Click Active → back to 3.
+    // Click Active — Iris disappears again.
     await active.click();
     await expect(active).toHaveAttribute("data-selected", "true");
-    await expect(rows).toHaveCount(3);
+    await expect(irisRow).toHaveCount(0);
   });
 
-  test("(d) reload preserves selection", async ({ page }) => {
-    await insertInactiveSeed();
+  test("(d) reload preserves selection", async ({ page, staffFixture }) => {
+    const irisId = await insertInactiveSeed(staffFixture);
 
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await page.evaluate(() => localStorage.clear());
     await page.reload();
     await page.waitForURL(/\/settings\/staff(\?|$)/);
@@ -193,16 +237,17 @@ test.describe("US4: Filter chips", () => {
       page.locator("[data-slot='staff-filter-chip'][data-filter='inactive']")
     ).toHaveAttribute("data-selected", "true");
 
-    // The roster should still be filtered to inactive.
-    const rows = page.locator("[data-slot='staff-table'] [data-staff-id]");
-    await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText("Inactive Iris");
+    // The inactive Iris is still visible under the Inactive filter.
+    const irisRow = page.locator(`[data-slot='staff-table'] [data-staff-id='${irisId}']`);
+    await expect(irisRow).toBeVisible();
+    await expect(irisRow).toContainText(inactiveIrisName(staffFixture));
   });
 
   test("(e) localStorage uses new key; legacy show-inactive key is never written", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await page.evaluate(() => localStorage.clear());
     await page.reload();
     await page.waitForURL(/\/settings\/staff(\?|$)/);
@@ -224,9 +269,11 @@ test.describe("US4: Filter chips", () => {
 
   test("(f) empty Inactive state shows 'No inactive staff.' with 'Switch to Active' link (FR-020)", async ({
     page,
+    staffFixture,
   }) => {
-    // Default seed has zero inactive staff — perfect for the empty-state.
-    await signInAsMaya(page);
+    // Default seed + fixture trio have zero inactive staff — perfect for
+    // the empty-state.
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
     await page.evaluate(() => localStorage.clear());
     await page.reload();
     await page.waitForURL(/\/settings\/staff(\?|$)/);
@@ -242,13 +289,14 @@ test.describe("US4: Filter chips", () => {
     await expect(switchLink).toBeVisible();
     await expect(switchLink).toContainText("Switch to Active");
 
-    // Click → filter flips to Active, rows return.
+    // Click → filter flips to Active, the fixture owner row is visible.
     await switchLink.click();
     await expect(
       page.locator("[data-slot='staff-filter-chip'][data-filter='active']")
     ).toHaveAttribute("data-selected", "true");
-    const rows = page.locator("[data-slot='staff-table'] [data-staff-id]");
-    await expect(rows).toHaveCount(3);
+    await expect(
+      page.locator(`[data-slot='staff-table'] [data-staff-id='${staffFixture.owner.id}']`)
+    ).toBeVisible();
   });
 });
 
@@ -256,16 +304,17 @@ test.describe("US4: Filter chips", () => {
 // row-redesign opacity/dot tests can target it. (Pin-set state isn't what
 // this row asserts on — it's the inactive dot + opacity behaviour.) The
 // dummy hash satisfies the CHECK without needing a free auth user.
-async function insertInactiveNoPinSeed(): Promise<void> {
+async function insertInactiveNoPinSeed(fixture: StaffFixture): Promise<string> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   const c = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
+  const id = inactiveIvyId(fixture);
   const { error } = await c.from("staff").upsert(
     {
-      id: "10000000-0000-0000-0000-000000000098",
-      display_name: "Inactive Ivy",
+      id,
+      display_name: inactiveIvyName(fixture),
       role: "technician",
       pin_hash: "$2b$11$0000000000000000000000.0000000000000000000000000000000",
       user_id: null,
@@ -275,33 +324,57 @@ async function insertInactiveNoPinSeed(): Promise<void> {
     { onConflict: "id" }
   );
   if (error) throw new Error(`insertInactiveNoPinSeed: ${error.message}`);
+  return id;
 }
 
 // US5 helper — insert one active row with NO PIN so the active+no-PIN pill
-// variant has a target independent of the inactive case.
-async function insertActiveNoPinSeed(): Promise<void> {
+// variant has a target independent of the inactive case. The staff CHECK
+// requires pin_hash IS NOT NULL OR user_id IS NOT NULL — so we mint a
+// throwaway per-worker auth user and link it.
+async function insertActiveNoPinSeed(fixture: StaffFixture): Promise<string> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
   const c = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  // CHECK requires pin_hash IS NOT NULL OR user_id IS NOT NULL. The seeded
-  // `reset-test@tangnails.dev` auth user (00000000-0000-0000-0000-0000000000ff)
-  // has no associated staff row in the seed, so we can attach it here
-  // without colliding with Maya/Jordan/Sam's user_ids.
+  const id = pendingPatId(fixture);
+  const w = workerHex(fixture.workerIndex);
+  const authUserId = `f0000000-1111-0000-${w}-000000000097`;
+  const email = `pending-pat-w${fixture.workerIndex}@e2e.test`;
+
+  // Best-effort idempotent auth-user create (skip on already-exists).
+  const existing = await c.auth.admin.getUserById(authUserId);
+  if (!existing.data.user) {
+    const { error: authErr } = await c.auth.admin.createUser({
+      id: authUserId,
+      email,
+      password: "tang-nails-test",
+      email_confirm: true,
+    } as Parameters<typeof c.auth.admin.createUser>[0]);
+    if (authErr && !/already (registered|exists)/i.test(authErr.message)) {
+      throw new Error(`insertActiveNoPinSeed auth-user create failed: ${authErr.message}`);
+    }
+  }
+
+  // The unique constraint on staff.user_id forbids two rows sharing a user;
+  // wipe any prior worker-namespaced Pat row attached to this user before
+  // re-inserting.
+  await c.from("staff").delete().eq("user_id", authUserId);
+
   const { error } = await c.from("staff").upsert(
     {
-      id: "10000000-0000-0000-0000-000000000097",
-      display_name: "Pending Pat",
+      id,
+      display_name: pendingPatName(fixture),
       role: "technician",
       pin_hash: null,
-      user_id: "00000000-0000-0000-0000-0000000000ff",
+      user_id: authUserId,
       color_token: "--avatar-teal",
       active: true,
     },
     { onConflict: "id" }
   );
   if (error) throw new Error(`insertActiveNoPinSeed: ${error.message}`);
+  return id;
 }
 
 // Helper: surface inactive rows in the roster regardless of whether US4's
@@ -338,20 +411,22 @@ test.describe("US5: Staff row redesign", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
-    await resetStaffToSeed();
+    await staffFixture.reset();
+    await staffFixture.deleteExtras();
   });
 
   test("(a) active row with PIN shows success dot + Set pill + tabular Added MMM YYYY", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
-    // Maya is always active + PIN set, so she's a stable target for the
-    // happy-path assertions regardless of the default filter chip.
+    // The fixture owner is always active + PIN set, so it's a stable target
+    // for the happy-path assertions regardless of the default filter chip.
     const row = page.locator(
-      "[data-slot='staff-table'] [data-staff-id='10000000-0000-0000-0000-000000000001']"
+      `[data-slot='staff-table'] [data-staff-id='${staffFixture.owner.id}']`
     );
     await expect(row).toBeVisible();
 
@@ -367,13 +442,14 @@ test.describe("US5: Staff row redesign", () => {
     await expect(dateSlot).toHaveCSS("font-variant-numeric", /tabular-nums/);
   });
 
-  test("(b) active row without PIN shows the same dot + warning No PIN pill", async ({ page }) => {
-    await insertActiveNoPinSeed();
-    await signInAsMaya(page);
+  test("(b) active row without PIN shows the same dot + warning No PIN pill", async ({
+    page,
+    staffFixture,
+  }) => {
+    const patId = await insertActiveNoPinSeed(staffFixture);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
-    const row = page.locator(
-      "[data-slot='staff-table'] [data-staff-id='10000000-0000-0000-0000-000000000097']"
-    );
+    const row = page.locator(`[data-slot='staff-table'] [data-staff-id='${patId}']`);
     await expect(row).toBeVisible();
 
     const dot = row.locator("[data-slot='staff-status-dot']");
@@ -384,15 +460,13 @@ test.describe("US5: Staff row redesign", () => {
     await expect(pinPill).toHaveClass(/staff-pin-pill--no-pin/);
   });
 
-  test("(c) inactive row shows muted dot + ~60% opacity", async ({ page }) => {
-    await insertInactiveNoPinSeed();
-    await signInAsMaya(page);
+  test("(c) inactive row shows muted dot + ~60% opacity", async ({ page, staffFixture }) => {
+    const ivyId = await insertInactiveNoPinSeed(staffFixture);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
     await showInactiveRows(page);
 
-    const row = page.locator(
-      "[data-slot='staff-table'] [data-staff-id='10000000-0000-0000-0000-000000000098']"
-    );
+    const row = page.locator(`[data-slot='staff-table'] [data-staff-id='${ivyId}']`);
     await expect(row).toBeVisible();
 
     const dot = row.locator("[data-slot='staff-status-dot']");
@@ -404,22 +478,21 @@ test.describe("US5: Staff row redesign", () => {
 
   test("(d) selecting an inactive row restores opacity to 1 + paints a 3px left accent bar", async ({
     page,
+    staffFixture,
   }) => {
-    await insertInactiveNoPinSeed();
-    await signInAsMaya(page);
+    const ivyId = await insertInactiveNoPinSeed(staffFixture);
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
     await showInactiveRows(page);
 
-    const row = page.locator(
-      "[data-slot='staff-table'] [data-staff-id='10000000-0000-0000-0000-000000000098']"
-    );
+    const row = page.locator(`[data-slot='staff-table'] [data-staff-id='${ivyId}']`);
     await expect(row).toBeVisible();
     await row.click();
 
     // The page navigates to ?selected=… ; wait for the URL transition before
     // asserting on the row's selected-state attribute. Without this wait the
     // assertion may race the soft-nav re-render.
-    await page.waitForURL(/\/settings\/staff\?selected=10000000-0000-0000-0000-000000000098/, {
+    await page.waitForURL(new RegExp(`\\/settings\\/staff\\?selected=${ivyId}`), {
       timeout: 5_000,
     });
     await expect(row).toHaveAttribute("data-selected", "true");
@@ -433,13 +506,16 @@ test.describe("US5: Staff row redesign", () => {
     expect(beforeWidth).toBe("3px");
   });
 
-  test("(e) viewport <900px hides the date and shows the chevron", async ({ page }) => {
-    await signInAsMaya(page);
+  test("(e) viewport <900px hides the date and shows the chevron", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
 
     await page.setViewportSize({ width: 800, height: 600 });
 
     const row = page.locator(
-      "[data-slot='staff-table'] [data-staff-id='10000000-0000-0000-0000-000000000001']"
+      `[data-slot='staff-table'] [data-staff-id='${staffFixture.owner.id}']`
     );
     await expect(row).toBeVisible();
 

@@ -8,9 +8,26 @@
 // Skips automatically when Docker/Supabase is unreachable, matching the
 // pattern in tests/e2e/auth.spec.ts.
 
-import { expect, test } from "@playwright/test";
+import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+import { test, expect, signInAs, type StaffFixture } from "./_fixtures";
 
-import { getAuditLogRowsSince, newAuditCursor, resetStaffToSeed } from "./_db";
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// Reclaim test-created `@tangnails.test` staff rows that aren't covered by
+// `staffFixture.deleteExtras()` (their display_name doesn't carry the
+// `[wN]` suffix). Idempotent and safe to call from any beforeEach.
+async function deleteTangnailsTestStaff(): Promise<void> {
+  const { createClient } = await import("@supabase/supabase-js");
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return;
+  const c = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  await c.from("staff").delete().like("email", "%@tangnails.test");
+}
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -83,39 +100,21 @@ function extractMagicLinkUrl(body: InbucketMessageBody): string | null {
 
 test.describe.configure({ mode: "serial" });
 
-// Maya Patel is the canonical seeded owner (PIN 1234). Jordan Lee is the
-// canonical seeded manager (PIN 5678). See SEEDED_STAFF in tests/e2e/_db.ts.
-// The auth helpers below mirror tests/e2e/auth.spec.ts — the pattern is
-// duplicated rather than exported to keep the two spec files independent.
-
-async function signInOwner(page: import("@playwright/test").Page) {
-  await page.goto("/login?next=%2Fdashboard");
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=%2Fdashboard/);
+// Local convenience wrappers around `signInAs(page, fixture, member)`.
+// Sign in via the fixture's per-worker owner / manager auth users.
+function signInAsOwner(
+  page: import("@playwright/test").Page,
+  fixture: StaffFixture,
+  nextPath = "/dashboard"
+) {
+  return signInAs(page, fixture, fixture.owner, { nextPath });
 }
-
-async function signInAsMaya(page: import("@playwright/test").Page) {
-  await signInOwner(page);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  await page.waitForURL(/\/dashboard($|\?)/);
-}
-
-async function signInAsJordan(page: import("@playwright/test").Page) {
-  await signInOwner(page);
-  await page.getByRole("button", { name: /Jordan Lee/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 5" }).click();
-  await page.getByRole("button", { name: "Digit 6" }).click();
-  await page.getByRole("button", { name: "Digit 7" }).click();
-  await page.getByRole("button", { name: "Digit 8" }).click();
-  await page.waitForURL(/\/dashboard($|\?)/);
+function signInAsManager(
+  page: import("@playwright/test").Page,
+  fixture: StaffFixture,
+  nextPath = "/dashboard"
+) {
+  return signInAs(page, fixture, fixture.manager, { nextPath });
 }
 
 test.describe("012-Phase 2: foundation", () => {
@@ -132,16 +131,20 @@ test.describe("012-Phase 2: foundation", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
     // Reset the seeded staff to its canonical state so prior tests (US3
     // offboard/reactivate, US4 hard-remove, etc.) don't leave Jordan in a
     // non-active state that hides him from /select-staff during sign-in.
-    await resetStaffToSeed();
+    await staffFixture.reset();
+    await deleteTangnailsTestStaff();
   });
 
-  test("owner sees the hero, three sections, and owners-only notice", async ({ page }) => {
-    await signInAsMaya(page);
+  test("owner sees the hero, three sections, and owners-only notice", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
 
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
@@ -161,8 +164,8 @@ test.describe("012-Phase 2: foundation", () => {
     await expect(page.locator("[data-slot='onboard-cta']")).toBeVisible();
   });
 
-  test("manager is redirected to /settings/staff", async ({ page }) => {
-    await signInAsJordan(page);
+  test("manager is redirected to /settings/staff", async ({ page, staffFixture }) => {
+    await signInAsManager(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/staff(\?|$)/);
     expect(new URL(page.url()).pathname).toBe("/settings/staff");
@@ -188,18 +191,20 @@ test.describe("US1: Quick magic-link onboard", () => {
     // unreachable; the magic-link follow assertion is skipped if missing.
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
     auditCursor = newAuditCursor();
-    // Reset the ONB-namespace staff so prior US1 invites (which create
-    // @tangnails.test pending rows) don't leak into the next run.
-    await resetStaffToSeed();
+    await staffFixture.reset();
+    await deleteTangnailsTestStaff();
+    await staffFixture.deleteExtras();
+    await deleteTangnailsTestStaff();
   });
 
   test("owner opens hero CTA, sends magic-link invite, sees toast + new pending row, audit recorded", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
@@ -221,11 +226,11 @@ test.describe("US1: Quick magic-link onboard", () => {
       "false"
     );
 
-    // 2. Fill the Quick form. Use a unique email so re-runs don't collide
-    //    with the staff_email_lower_unique index (the conflict-check is its
-    //    own test, not this one).
-    const inviteeName = "Hana Test";
-    const inviteeEmail = `hana.${Date.now()}@tangnails.test`;
+    // 2. Fill the Quick form. Use a unique email + worker-suffixed name so
+    //    re-runs don't collide with the staff_email_lower_unique index and
+    //    `staffFixture.deleteExtras()` can reclaim the row.
+    const inviteeName = `Hana Test [w${staffFixture.workerIndex}]`;
+    const inviteeEmail = `hana.${Date.now()}.w${staffFixture.workerIndex}@tangnails.test`;
 
     await page.locator("[data-slot='onb-name-input']").fill(inviteeName);
     await page.locator("[data-slot='onb-email-input']").fill(inviteeEmail);
@@ -370,23 +375,25 @@ test.describe("US2: Thorough wizard onboard", () => {
     inbucketUp = await inbucketIsReachable();
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
     auditCursor = newAuditCursor();
     // Reset the ONB-namespace staff so prior US2 invites (Thorough wizard
     // creates @tangnails.test pending rows) don't leak into the next run.
-    await resetStaffToSeed();
+    await staffFixture.reset();
+    await deleteTangnailsTestStaff();
   });
 
   test("(a) magic-link via Thorough: 4-step wizard reaches the same end state as US1 Quick", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
-    const name = "Thorough ML";
-    const email = `thorough.ml.${Date.now()}@tangnails.test`;
+    const name = `Thorough ML [w${staffFixture.workerIndex}]`;
+    const email = `thorough.ml.${Date.now()}.w${staffFixture.workerIndex}@tangnails.test`;
 
     await walkThoroughIdentity(page, { name });
     await walkThoroughInvite(page, { email, method: "magic_link" });
@@ -414,13 +421,14 @@ test.describe("US2: Thorough wizard onboard", () => {
 
   test("(b) password-setup via Thorough: audit method='password', invite email landable on /reset-password", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
-    const name = "Thorough PW";
-    const email = `thorough.pw.${Date.now()}@tangnails.test`;
+    const name = `Thorough PW [w${staffFixture.workerIndex}]`;
+    const email = `thorough.pw.${Date.now()}.w${staffFixture.workerIndex}@tangnails.test`;
     const pin = "8821";
 
     await walkThoroughIdentity(page, { name });
@@ -488,8 +496,9 @@ test.describe("US2: Thorough wizard onboard", () => {
   test.describe("PIN mismatch loop", () => {
     test("first PIN ≠ confirm PIN → error copy renders, both entries clear, can complete with matching PINs", async ({
       page,
+      staffFixture,
     }) => {
-      await signInAsMaya(page);
+      await signInAsOwner(page, staffFixture);
       await page.goto("/settings/onboarding");
       await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
@@ -573,19 +582,21 @@ test.describe("US3: Soft offboard", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
     auditCursor = newAuditCursor();
     // Re-seed so Jordan Lee is active again after the previous test offboarded him.
-    await resetStaffToSeed();
+    await staffFixture.reset();
+    await deleteTangnailsTestStaff();
   });
 
-  test("offboards Jordan Lee with reason 'Performance' → row moves, audit logged, sign-in fails within 5s, picker omits him", async ({
+  test("offboards the fixture manager with reason 'Performance' → row moves, audit logged, sign-in fails within 5s, picker omits him", async ({
     page,
     context,
     browser,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
@@ -593,27 +604,35 @@ test.describe("US3: Soft offboard", () => {
     const activeSection = page
       .locator(".onb-section")
       .filter({ has: page.getByRole("heading", { name: /Active users/ }) });
-    await expect(activeSection.getByText("Jordan Lee")).toBeVisible();
+    await expect(activeSection.getByText(staffFixture.manager.displayName)).toBeVisible();
 
-    // 2. Open his row menu → Offboard.
-    await openActiveRowMenu(page, "Jordan Lee");
-    await page.getByRole("menuitem", { name: /Offboard Jordan/ }).click();
+    // 2. Open his row menu → Offboard. The menuitem + CTA derive their label
+    //    from the staff's first name (display_name split on whitespace).
+    const firstName = staffFixture.manager.displayName.split(" ")[0] ?? "user";
+    await openActiveRowMenu(page, staffFixture.manager.displayName);
+    await page.getByRole("menuitem", { name: new RegExp(`Offboard ${firstName}`) }).click();
     await expect(page.locator("[data-slot='offboard-sheet']")).toBeVisible();
 
     // 3. Pick reason "Performance".
     await page.locator("[data-slot='offb-reason-chip'][data-reason='Performance']").click();
 
     // 4. Confirm.
-    await page.getByRole("button", { name: /Offboard Jordan/ }).click();
+    await page.getByRole("button", { name: new RegExp(`Offboard ${firstName}`) }).click();
 
     // 5. Toast.
-    await expect(page.getByText(/Jordan Lee offboarded/)).toBeVisible({ timeout: 5_000 });
+    await expect(
+      page.getByText(
+        new RegExp(`${staffFixture.manager.displayName.replace(/[[\]]/g, "\\$&")} offboarded`)
+      )
+    ).toBeVisible({ timeout: 5_000 });
 
     // 6. Row now lives in Offboarded with the reason metadata.
     const offSection = page
       .locator(".onb-section")
       .filter({ has: page.getByRole("heading", { name: /Offboarded/ }) });
-    const jordanOffRow = offSection.locator(".onb-row", { hasText: "Jordan Lee" });
+    const jordanOffRow = offSection.locator(".onb-row", {
+      hasText: staffFixture.manager.displayName,
+    });
     await expect(jordanOffRow).toBeVisible();
     await expect(jordanOffRow).toContainText(/Performance/);
 
@@ -624,46 +643,49 @@ test.describe("US3: Soft offboard", () => {
     );
     expect(ourRow).toBeDefined();
 
-    // 8. Jordan Lee's sign-in attempt (manager@tangnails.dev / tang-nails-dev) fails
-    //    within 5s — SC-003. Use a fresh browser context so we don't disturb
-    //    Maya Patel's session.
-    const jordanCtx = await browser.newContext();
-    const jordanPage = await jordanCtx.newPage();
+    // 8. The offboarded manager's sign-in attempt fails within 5s — SC-003.
+    //    Use a fresh browser context so we don't disturb the owner's session.
+    const managerCtx = await browser.newContext();
+    const managerPage = await managerCtx.newPage();
     const t0 = Date.now();
-    await jordanPage.goto("/login");
-    await jordanPage.locator("#signin-email").fill("manager@tangnails.dev");
-    await jordanPage.locator("#signin-password").fill("tang-nails-dev");
-    await jordanPage.getByRole("button", { name: "Sign in" }).click();
-    // Either /login?error=… or /select-staff with no Jordan Lee tile is acceptable
-    // — both satisfy "can't sign in". The fast path is the error redirect.
-    // Wait up to 5s for either.
+    await managerPage.goto("/login");
+    if (!staffFixture.manager.email || !staffFixture.manager.password) {
+      throw new Error("fixture manager is missing email/password");
+    }
+    await managerPage.locator("#signin-email").fill(staffFixture.manager.email);
+    await managerPage.locator("#signin-password").fill(staffFixture.manager.password);
+    await managerPage.getByRole("button", { name: "Sign in" }).click();
+    // Either /login?error=… or /select-staff without the manager's tile is
+    // acceptable — both satisfy "can't sign in". The fast path is the error
+    // redirect. Wait up to 5s for either.
     await Promise.race([
-      jordanPage.waitForURL(/\/login\?error=/, { timeout: 5_000 }).catch(() => null),
-      jordanPage.waitForURL(/\/select-staff/, { timeout: 5_000 }).catch(() => null),
+      managerPage.waitForURL(/\/login\?error=/, { timeout: 5_000 }).catch(() => null),
+      managerPage.waitForURL(/\/select-staff/, { timeout: 5_000 }).catch(() => null),
     ]);
     const elapsed = Date.now() - t0;
     expect(elapsed).toBeLessThan(6_000);
 
-    // 9. As Maya Patel (in original context), navigate to /select-staff. Jordan Lee's
-    //    tile is absent (FR-043: active=false filter hides offboarded).
+    // 9. Back in the owner's session, navigate to /select-staff. The offboarded
+    //    manager's tile is absent (FR-043: active=false filter hides offboarded).
     await page.goto("/select-staff");
     await page.waitForURL(/\/select-staff(\?|$)/);
-    await expect(page.getByRole("button", { name: /Jordan Lee/ })).toHaveCount(0);
+    await expect(page.locator(`[data-staff-id="${staffFixture.manager.id}"]`)).toHaveCount(0);
 
-    await jordanCtx.close();
+    await managerCtx.close();
     // Silence unused 'context' lint — Playwright fixture is always required
     // even when not directly invoked in body.
     void context;
   });
 
-  test("self-row: Maya Patel opens her own row menu → sees 'You can't offboard yourself' line, no destructive item", async ({
+  test("self-row: the fixture owner opens their own row menu → sees 'You can't offboard yourself' line, no destructive item", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
-    await openActiveRowMenu(page, "Maya Patel");
+    await openActiveRowMenu(page, staffFixture.owner.displayName);
 
     // The self-line is the bottom slot in the menu — no Offboard menuitem.
     await expect(page.locator("[data-slot='user-row-menu-content']")).toContainText(
@@ -690,20 +712,22 @@ test.describe("US3: Active row Reset PIN + notice", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
-    await resetStaffToSeed();
+    await staffFixture.reset();
+    await deleteTangnailsTestStaff();
   });
 
   test("owner resets Sam's PIN → notice appears at /select-staff → successful PIN clears notice + clears pin_reset_admin_at", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
     // 1. Open Sam's row → Reset PIN.
-    await openActiveRowMenu(page, "Sam Chen");
+    await openActiveRowMenu(page, staffFixture.tech.displayName);
     await page.getByRole("menuitem", { name: /Reset PIN/ }).click();
     await expect(page.locator("[data-slot='reset-pin-modal']")).toBeVisible();
 
@@ -718,21 +742,24 @@ test.describe("US3: Active row Reset PIN + notice", () => {
     }
 
     // 3. Toast confirms (matches toaster copy in onboarding-toaster.client.tsx).
-    await expect(page.getByText(/Sam Chen.*PIN reset/i)).toBeVisible({ timeout: 5_000 });
+    await expect(
+      page.getByText(new RegExp(`${escapeRegExp(staffFixture.tech.displayName)}.*PIN reset`, "i"))
+    ).toBeVisible({ timeout: 5_000 });
 
-    // 4. Sign out, go to /select-staff. The notice should appear on Sam's tile.
+    // 4. Sign out, go to /select-staff. The notice should appear on the
+    //    fixture tech's tile.
     await page.goto("/select-staff");
     await page.waitForURL(/\/select-staff/);
-    const samTile = page
-      .locator(".auth-staff-tile", { hasText: "Sam Chen" })
-      .or(page.getByRole("button", { name: /Sam Chen/ }));
-    await expect(samTile.first()).toBeVisible();
+    const techTile = page.locator(`[data-staff-id="${staffFixture.tech.id}"]`);
+    await expect(techTile).toBeVisible();
     await expect(
-      page.locator("[data-slot='pin-reset-notice'][data-staff-name='Sam Chen']")
+      page.locator(
+        `[data-slot='pin-reset-notice'][data-staff-name='${staffFixture.tech.displayName}']`
+      )
     ).toBeVisible();
 
-    // 5. Pick Sam, enter 7777 → lands on /dashboard, banner clears.
-    await page.getByRole("button", { name: /Sam Chen/ }).click();
+    // 5. Pick the tech tile, enter 7777 → lands on /dashboard, banner clears.
+    await techTile.click();
     await page.waitForURL(/selectedTileId=/);
     for (const d of "7777") {
       await page.getByRole("button", { name: `Digit ${d}` }).click();
@@ -740,7 +767,7 @@ test.describe("US3: Active row Reset PIN + notice", () => {
     await page.waitForURL(/\/dashboard($|\?)/);
 
     // 6. Verify pin_reset_admin_at is NULL after successful auth.
-    const sam = await getStaffWithPinResetAt("Sam Chen");
+    const sam = await getStaffWithPinResetAt(staffFixture.tech.displayName);
     expect(sam.pin_reset_admin_at).toBeNull();
   });
 });
@@ -789,21 +816,25 @@ test.describe("US3: Send password reset", () => {
     inbucketUp = await inbucketIsReachable();
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
     auditCursor = newAuditCursor();
-    await resetStaffToSeed();
+    await staffFixture.reset();
+    await deleteTangnailsTestStaff();
   });
 
   test("owner sends password reset → toast confirms, audit logged, Inbucket receives recovery email", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
-    // Use Jordan Lee as the target — he has email manager@tangnails.dev.
-    await openActiveRowMenu(page, "Jordan Lee");
+    // Target the fixture manager — they have a per-worker email
+    // (`manager-w<N>@e2e.test`) and a real auth user, so the send-reset
+    // action mints a recovery link Inbucket receives.
+    await openActiveRowMenu(page, staffFixture.manager.displayName);
     await page.getByRole("menuitem", { name: /Send password reset/ }).click();
 
     // Toast.
@@ -811,21 +842,21 @@ test.describe("US3: Send password reset", () => {
       timeout: 5_000,
     });
 
-    // Audit: device.password_reset { actor: 'admin', by: maya.user_id }.
+    // Audit: device.password_reset { actor: 'admin', by: <fixture owner user_id> }.
     const rows = await getAuditLogRowsSince(auditCursor, "device.password_reset");
     const adminRow = rows.find(
       (r) => r.payload !== null && (r.payload as Record<string, unknown>).actor === "admin"
     );
     expect(adminRow).toBeDefined();
-    expect((adminRow!.payload as Record<string, unknown>).by).toBe(
-      "00000000-0000-0000-0000-000000000001"
-    );
+    expect((adminRow!.payload as Record<string, unknown>).by).toBe(staffFixture.owner.userId);
 
     // Inbucket: a recovery email arrives; the link lands on /reset-password.
     test.fixme(!inbucketUp, "Inbucket unreachable — skipping recovery-email sub-assertion.");
     if (!inbucketUp) return;
 
-    const mailbox = "manager";
+    // The fixture manager's email is `manager-w<N>@e2e.test`, so the
+    // Inbucket mailbox name is `manager-w<N>`.
+    const mailbox = (staffFixture.manager.email ?? "").split("@")[0];
     const message = await fetchLatestMagicLinkEmail(mailbox);
     expect(message).not.toBeNull();
     const recoveryUrl = extractMagicLinkUrl(message!);
@@ -853,10 +884,11 @@ test.describe("US3: Send password reset", () => {
 //      (data-model.md Invariant D).
 //   7. Audit row `user.removed` carries the original identity snapshot.
 
-async function softOffboardJordanDirect(): Promise<void> {
+async function softOffboardManagerDirect(fixture: StaffFixture): Promise<void> {
   // Direct service-role UPDATE shortcut — bypasses the UI for setup speed.
-  // The US3 spec already exercises the UI flow; here we just need Jordan Lee in
-  // the offboarded bucket so the hard-remove flow has a target.
+  // The US3 spec already exercises the UI flow; here we just need the
+  // fixture's manager in the offboarded bucket so the hard-remove flow has
+  // a target.
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("SUPABASE env vars missing — required for US4 setup");
@@ -867,13 +899,13 @@ async function softOffboardJordanDirect(): Promise<void> {
       state: "offboarded",
       active: false,
       pin_hash: null,
-      email: "manager@tangnails.dev",
+      email: fixture.manager.email,
       offboarded_at: new Date().toISOString(),
-      offboarded_by: "10000000-0000-0000-0000-000000000001",
+      offboarded_by: fixture.owner.id,
       offboard_reason: "Performance",
       pin_reset_admin_at: null,
     })
-    .eq("display_name", "Jordan Lee");
+    .eq("id", fixture.manager.id);
   if (error) throw new Error(`US4 setup soft-offboard failed: ${error.message}`);
 }
 
@@ -916,17 +948,19 @@ test.describe("US4: Hard remove", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
     auditCursor = newAuditCursor();
-    await resetStaffToSeed();
-    await softOffboardJordanDirect();
+    await staffFixture.reset();
+    await deleteTangnailsTestStaff();
+    await softOffboardManagerDirect(staffFixture);
   });
 
-  test("opens sheet, validates three gates, removes Jordan Lee permanently, frees email for re-invite, audit logged", async ({
+  test("opens sheet, validates three gates, removes fixture manager permanently, frees email for re-invite, audit logged", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
@@ -934,10 +968,12 @@ test.describe("US4: Hard remove", () => {
     const offSection = page
       .locator(".onb-section")
       .filter({ has: page.getByRole("heading", { name: /Offboarded/ }) });
-    await expect(offSection.getByText("Jordan Lee")).toBeVisible();
+    await expect(offSection.getByText(staffFixture.manager.displayName)).toBeVisible();
 
     // 2. Open his row menu → Remove permanently.
-    const jordanOffRow = offSection.locator(".onb-row", { hasText: "Jordan Lee" });
+    const jordanOffRow = offSection.locator(".onb-row", {
+      hasText: staffFixture.manager.displayName,
+    });
     await jordanOffRow.locator("[data-slot='user-row-menu-trigger']").click();
     await expect(page.locator("[data-slot='user-row-menu-content']")).toBeVisible();
     await page.getByRole("menuitem", { name: /Remove permanently/ }).click();
@@ -962,17 +998,23 @@ test.describe("US4: Hard remove", () => {
     await expect(submit).toBeDisabled();
 
     // 8. Type correct name with different casing → enabled.
-    await page.locator("[data-slot='remove-typed-name']").fill("jordan lee");
+    await page
+      .locator("[data-slot='remove-typed-name']")
+      .fill(staffFixture.manager.displayName.toLowerCase());
     await expect(submit).toBeEnabled();
 
     // 9. Click → toast appears.
     await submit.click();
-    await expect(page.getByText(/Jordan Lee permanently removed/i)).toBeVisible({
+    await expect(
+      page.getByText(
+        new RegExp(`${escapeRegExp(staffFixture.manager.displayName)} permanently removed`, "i")
+      )
+    ).toBeVisible({
       timeout: 5_000,
     });
 
-    // 10. Jordan Lee no longer in Offboarded under his original display_name.
-    await expect(offSection.getByText("Jordan Lee")).toHaveCount(0);
+    // 10. The manager is no longer in Offboarded under his original display_name.
+    await expect(offSection.getByText(staffFixture.manager.displayName)).toHaveCount(0);
 
     // 11. DB row anonymized — display_name now starts with "Former staff #".
     //     Look up by id (still stable) via the email-free helper.
@@ -1000,11 +1042,12 @@ test.describe("US4: Hard remove", () => {
     const ourRow = removedRows.find(
       (r) =>
         r.payload !== null &&
-        (r.payload as Record<string, unknown>).display_name_at_removal === "Jordan Lee"
+        (r.payload as Record<string, unknown>).display_name_at_removal ===
+          staffFixture.manager.displayName
     );
     expect(ourRow).toBeDefined();
     expect((ourRow!.payload as Record<string, unknown>).email_at_removal).toBe(
-      "manager@tangnails.dev"
+      staffFixture.manager.email
     );
     expect((ourRow!.payload as Record<string, unknown>).role_at_removal).toBe("manager");
 
@@ -1081,10 +1124,11 @@ test.describe("US5: Pending invite actions", () => {
     inbucketUp = await inbucketIsReachable();
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
     auditCursor = newAuditCursor();
-    await resetStaffToSeed();
+    await staffFixture.reset();
+    await deleteTangnailsTestStaff();
   });
 
   async function quickInvite(
@@ -1103,8 +1147,11 @@ test.describe("US5: Pending invite actions", () => {
     await expect(page.getByText(`Invite sent to ${opts.name}`)).toBeVisible({ timeout: 5_000 });
   }
 
-  test("Resend: inline icon rotates the token + new email arrives + toast", async ({ page }) => {
-    await signInAsMaya(page);
+  test("Resend: inline icon rotates the token + new email arrives + toast", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
@@ -1179,10 +1226,14 @@ test.describe("US5: Pending invite actions", () => {
     expect(sawNew).toBe(true);
   });
 
-  test("Copy invite link: menu item writes URL to clipboard", async ({ page, context }) => {
+  test("Copy invite link: menu item writes URL to clipboard", async ({
+    page,
+    context,
+    staffFixture,
+  }) => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
@@ -1209,8 +1260,9 @@ test.describe("US5: Pending invite actions", () => {
 
   test("Cancel: row disappears, audit recorded with snapshot email, email is freed for re-invite", async ({
     page,
+    staffFixture,
   }) => {
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
@@ -1287,7 +1339,7 @@ test.describe("US5: Pending invite actions", () => {
 // Key invariant (FR-061): the auth user is PRESERVED — staff.id is the same
 // UUID before and after, so the audit chain stays consistent.
 
-async function softOffboardJordanForReactivate(): Promise<void> {
+async function softOffboardManagerForReactivate(fixture: StaffFixture): Promise<void> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("SUPABASE env vars missing — required for US6 setup");
@@ -1298,13 +1350,13 @@ async function softOffboardJordanForReactivate(): Promise<void> {
       state: "offboarded",
       active: false,
       pin_hash: null,
-      email: "manager@tangnails.dev",
+      email: fixture.manager.email,
       offboarded_at: new Date().toISOString(),
-      offboarded_by: "10000000-0000-0000-0000-000000000001",
+      offboarded_by: fixture.owner.id,
       offboard_reason: "Performance",
       pin_reset_admin_at: null,
     })
-    .eq("display_name", "Jordan Lee");
+    .eq("id", fixture.manager.id);
   if (error) throw new Error(`US6 setup soft-offboard failed: ${error.message}`);
 }
 
@@ -1322,19 +1374,21 @@ test.describe("US6: Reactivate", () => {
     inbucketUp = await inbucketIsReachable();
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
     auditCursor = newAuditCursor();
-    await resetStaffToSeed();
-    await softOffboardJordanForReactivate();
+    await staffFixture.reset();
+    await deleteTangnailsTestStaff();
+    await softOffboardManagerForReactivate(staffFixture);
   });
 
-  test("owner reactivates Jordan Lee → row moves to Pending → audit + fresh email + staff.id preserved", async ({
+  test("owner reactivates the fixture manager → row moves to Pending → audit + fresh email + staff.id preserved", async ({
     page,
+    staffFixture,
   }) => {
     // Snapshot Jordan Lee's staff.id BEFORE reactivation so we can confirm it's
     // preserved (proves the row wasn't deleted + re-inserted).
-    const jordanBefore = await getStaffByName("Jordan Lee");
+    const jordanBefore = await getStaffByName(staffFixture.manager.displayName);
 
     // Drain any pre-existing emails for the manager mailbox so the post-
     // reactivate assertion sees the NEW one.
@@ -1352,7 +1406,7 @@ test.describe("US6: Reactivate", () => {
       }
     }
 
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
@@ -1360,10 +1414,12 @@ test.describe("US6: Reactivate", () => {
     const offSection = page
       .locator(".onb-section")
       .filter({ has: page.getByRole("heading", { name: /Offboarded/ }) });
-    await expect(offSection.getByText("Jordan Lee")).toBeVisible();
+    await expect(offSection.getByText(staffFixture.manager.displayName)).toBeVisible();
 
     // 2. Open his row menu → Reactivate.
-    const jordanOffRow = offSection.locator(".onb-row", { hasText: "Jordan Lee" });
+    const jordanOffRow = offSection.locator(".onb-row", {
+      hasText: staffFixture.manager.displayName,
+    });
     await jordanOffRow.locator("[data-slot='user-row-menu-trigger']").click();
     await expect(page.locator("[data-slot='user-row-menu-content']")).toBeVisible();
     await page.getByRole("menuitem", { name: /Reactivate/i }).click();
@@ -1374,11 +1430,13 @@ test.describe("US6: Reactivate", () => {
     //    on-screen, and Sonner's stacking + auto-dismiss window causes
     //    the new toast to flicker briefly. The row-move + audit assertions
     //    below are the real proof the reactivation completed.
-    await expect(offSection.getByText("Jordan Lee")).toHaveCount(0, { timeout: 5_000 });
+    await expect(offSection.getByText(staffFixture.manager.displayName)).toHaveCount(0, {
+      timeout: 5_000,
+    });
     const pendingSection = page
       .locator(".onb-section")
       .filter({ has: page.getByRole("heading", { name: /Pending invites/ }) });
-    await expect(pendingSection.getByText("Jordan Lee")).toBeVisible();
+    await expect(pendingSection.getByText(staffFixture.manager.displayName)).toBeVisible();
 
     // 5. Audit row `user.reactivated` with payload.method='magic_link'.
     const reactRows = await getAuditLogRowsSince(auditCursor, "user.reactivated");
@@ -1389,7 +1447,7 @@ test.describe("US6: Reactivate", () => {
 
     // 6. Staff.id preserved — proves the staff row was UPDATEd in-place, not
     //    deleted + re-inserted. (FR-061: audit chain stays consistent.)
-    const jordanAfter = await getStaffByName("Jordan Lee");
+    const jordanAfter = await getStaffByName(staffFixture.manager.displayName);
     expect(jordanAfter.id).toBe(jordanBefore.id);
 
     // 7. Inbucket: a fresh email arrived (best-effort — fixme when unreachable).
@@ -1436,7 +1494,7 @@ test.describe("US6: Reactivate", () => {
 //   • Invite 2+ pending users via the Quick onboard sheet (mirrors US1).
 // That yields ≥ 5 users across all three buckets.
 
-async function softOffboardJordanForSearch(): Promise<void> {
+async function softOffboardManagerForSearch(fixture: StaffFixture): Promise<void> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error("SUPABASE env vars missing — required for US7 setup");
@@ -1447,13 +1505,13 @@ async function softOffboardJordanForSearch(): Promise<void> {
       state: "offboarded",
       active: false,
       pin_hash: null,
-      email: "manager@tangnails.dev",
+      email: fixture.manager.email,
       offboarded_at: new Date().toISOString(),
-      offboarded_by: "10000000-0000-0000-0000-000000000001",
+      offboarded_by: fixture.owner.id,
       offboard_reason: "Performance",
       pin_reset_admin_at: null,
     })
-    .eq("display_name", "Jordan Lee");
+    .eq("id", fixture.manager.id);
   if (error) throw new Error(`US7 setup soft-offboard failed: ${error.message}`);
 }
 
@@ -1468,9 +1526,10 @@ test.describe("US7: Search", () => {
     }
   });
 
-  test.beforeEach(async () => {
+  test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
-    await resetStaffToSeed();
+    await staffFixture.reset();
+    await deleteTangnailsTestStaff();
   });
 
   // Direct service-role insert for an invited row. Faster + sturdier than
@@ -1480,7 +1539,11 @@ test.describe("US7: Search", () => {
   // onboard flow does the same via supabase.auth.admin.inviteUserByEmail).
   // The page is reloaded after setup so the new rows show up in the rendered
   // roster.
-  async function insertPendingDirect(opts: { name: string; email: string }): Promise<void> {
+  async function insertPendingDirect(opts: {
+    name: string;
+    email: string;
+    invitedBy: string;
+  }): Promise<void> {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!url || !key) throw new Error("SUPABASE env vars missing — required for US7 setup");
@@ -1504,7 +1567,7 @@ test.describe("US7: Search", () => {
       active: false,
       state: "invited",
       invited_at: new Date().toISOString(),
-      invited_by: "10000000-0000-0000-0000-000000000001",
+      invited_by: opts.invitedBy,
       invite_method: "magic_link",
     });
     if (error) throw new Error(`US7 setup pending insert failed: ${error.message}`);
@@ -1512,16 +1575,25 @@ test.describe("US7: Search", () => {
 
   test("typing filters rows, hides empty sections, clearing restores; ?q= URL-sync; empty Offboarded without ?q= shows placeholder", async ({
     page,
+    staffFixture,
   }) => {
     // 1. Seed the roster BEFORE the page loads (faster + avoids toast races).
     //    Result: 2 Pending (Hana + Yuki), 2 Active (Maya Patel, Sam Chen), 1 Offboarded (Jordan Lee).
     const hanaEmail = `hana.search.${Date.now()}@tangnails.test`;
     const yukiEmail = `yuki.search.${Date.now()}@tangnails.test`;
-    await insertPendingDirect({ name: "Hana Search", email: hanaEmail });
-    await insertPendingDirect({ name: "Yuki Search", email: yukiEmail });
-    await softOffboardJordanForSearch();
+    await insertPendingDirect({
+      name: "Hana Search",
+      email: hanaEmail,
+      invitedBy: staffFixture.owner.id,
+    });
+    await insertPendingDirect({
+      name: "Yuki Search",
+      email: yukiEmail,
+      invitedBy: staffFixture.owner.id,
+    });
+    await softOffboardManagerForSearch(staffFixture);
 
-    await signInAsMaya(page);
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
@@ -1533,8 +1605,8 @@ test.describe("US7: Search", () => {
     await expect(onbPage.getByText("Hana Search")).toBeVisible();
     await expect(onbPage.getByText("Yuki Search")).toBeVisible();
     await expect(onbPage.getByText("Maya Patel")).toBeVisible();
-    await expect(onbPage.getByText("Sam Chen")).toBeVisible();
-    await expect(onbPage.getByText("Jordan Lee")).toBeVisible();
+    await expect(onbPage.getByText(staffFixture.tech.displayName)).toBeVisible();
+    await expect(onbPage.getByText(staffFixture.manager.displayName)).toBeVisible();
 
     // 2. Type into the search input → URL becomes ?q=Hana (debounced).
     await page.locator("[data-slot='onboarding-search'] input").fill("Hana");
@@ -1548,8 +1620,8 @@ test.describe("US7: Search", () => {
     await expect(onbPage.getByText("Hana Search")).toBeVisible();
     await expect(onbPage.getByText("Yuki Search")).toHaveCount(0);
     await expect(onbPage.getByText("Maya Patel")).toHaveCount(0);
-    await expect(onbPage.getByText("Sam Chen")).toHaveCount(0);
-    await expect(onbPage.getByText("Jordan Lee")).toHaveCount(0);
+    await expect(onbPage.getByText(staffFixture.tech.displayName)).toHaveCount(0);
+    await expect(onbPage.getByText(staffFixture.manager.displayName)).toHaveCount(0);
 
     // Sections with zero matches are hidden entirely (header included):
     //   - Active users: 0 matches → header hidden.
@@ -1581,8 +1653,8 @@ test.describe("US7: Search", () => {
     await expect(onbPage.getByText("Hana Search")).toBeVisible();
     await expect(onbPage.getByText("Yuki Search")).toBeVisible();
     await expect(onbPage.getByText("Maya Patel")).toBeVisible();
-    await expect(onbPage.getByText("Sam Chen")).toBeVisible();
-    await expect(onbPage.getByText("Jordan Lee")).toBeVisible();
+    await expect(onbPage.getByText(staffFixture.tech.displayName)).toBeVisible();
+    await expect(onbPage.getByText(staffFixture.manager.displayName)).toBeVisible();
     await expect(page.getByRole("heading", { name: /Pending invites/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: /Active users/ })).toBeVisible();
     await expect(page.getByRole("heading", { name: /^Offboarded/ })).toBeVisible();
@@ -1590,9 +1662,10 @@ test.describe("US7: Search", () => {
 
   test("Sub-case 2: without ?q= and an empty Offboarded bucket, the section header IS visible with the empty-row placeholder", async ({
     page,
+    staffFixture,
   }) => {
-    // No setup beyond resetStaffToSeed() → Offboarded bucket is empty.
-    await signInAsMaya(page);
+    // No setup beyond staffFixture.reset() → Offboarded bucket is empty.
+    await signInAsOwner(page, staffFixture);
     await page.goto("/settings/onboarding");
     await page.waitForURL(/\/settings\/onboarding(\?|$)/);
 
