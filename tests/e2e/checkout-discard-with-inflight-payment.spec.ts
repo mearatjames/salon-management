@@ -19,7 +19,6 @@
 //
 // Describe name uses "Issue26" so `-g "Issue26"` filters this spec.
 
-import { type Page } from "@playwright/test";
 import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 

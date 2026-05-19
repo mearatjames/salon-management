@@ -14,12 +14,7 @@
 
 import { mintExpiredCookie } from "../unit/auth/_fixtures";
 
-import {
-  getAuditLogRowsSince,
-  getAuthUserByEmail,
-  getStaffByDisplayName,
-  newAuditCursor,
-} from "./_db";
+import { getAuditLogRowsSince, getStaffByDisplayName, newAuditCursor } from "./_db";
 import { test, expect, signInAs, type StaffFixture } from "./_fixtures";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
@@ -62,7 +57,6 @@ test.describe("US1: owner signs in with password", () => {
 
   test("(a) signed-out visit to /dashboard redirects to /login?next=%2Fdashboard", async ({
     page,
-    staffFixture,
   }) => {
     await page.goto("/dashboard");
     await page.waitForURL(/\/login\?next=%2Fdashboard/);
@@ -72,7 +66,6 @@ test.describe("US1: owner signs in with password", () => {
 
   test("(b) valid credentials redirect to /select-staff?next=%2Fdashboard and write one audit row", async ({
     page,
-    staffFixture,
   }) => {
     await page.goto("/login?next=%2Fdashboard");
     await page.locator("#signin-email").fill("owner@tangnails.dev");
@@ -86,7 +79,6 @@ test.describe("US1: owner signs in with password", () => {
 
   test("(c) wrong password shows the identical invalid alert and re-renders the form", async ({
     page,
-    staffFixture,
   }) => {
     await page.goto("/login?next=%2Fdashboard");
     await page.locator("#signin-email").fill("owner@tangnails.dev");
@@ -102,10 +94,7 @@ test.describe("US1: owner signs in with password", () => {
     await expect(page.locator("#signin-password")).toBeVisible();
   });
 
-  test("(d) unknown email shows the identical alert text (FR-019)", async ({
-    page,
-    staffFixture,
-  }) => {
+  test("(d) unknown email shows the identical alert text (FR-019)", async ({ page }) => {
     await page.goto("/login?next=%2Fdashboard");
     await page.locator("#signin-email").fill("unknown@example.com");
     await page.locator("#signin-password").fill("anything");
@@ -487,7 +476,6 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
 
   test("(a) magic-link form submission with owner email redirects to ?magic_sent=...", async ({
     page,
-    staffFixture,
   }) => {
     // 010-T056: legacy `<details>` disclosure replaced by the dedicated
     // <MagicView>. Navigate directly via the URL precedence rather than
@@ -507,7 +495,6 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
 
   test("(b) clicking the magic link from Inbucket lands on /select-staff?next=%2Fdashboard and writes device.signed_in", async ({
     page,
-    staffFixture,
   }) => {
     // 010-T056: navigate via /login?magic_intent=1 (the new dedicated
     // <MagicView>) instead of expanding the deprecated <details>.
@@ -538,7 +525,6 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
 
   test("(c) empty-email submit is blocked by the HTML5 `required` attribute (URL unchanged)", async ({
     page,
-    staffFixture,
   }) => {
     // 010-T056: same flow, via the dedicated <MagicView>.
     await page.goto("/login?magic_intent=1&next=%2Fdashboard");
@@ -564,7 +550,6 @@ test.describe("US4: Google sign-in + magic-link recovery", () => {
   // NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED=true and real credentials are present.
   test.skip("(d) MANUAL ONLY — Google button visible and posts to accounts.google.com", async ({
     page,
-    staffFixture,
   }) => {
     await page.goto("/login");
     const googleButton = page.locator("[data-slot='google-sign-in']");
@@ -957,7 +942,7 @@ test.describe.serial("US-soft-degrade: Supabase outage", () => {
 // skip rather than spuriously fail.
 
 test.describe("010-US1: rebranded sign-in shell layout", () => {
-  test("renders two-panel shell at ≥ 720px", async ({ page, staffFixture }) => {
+  test("renders two-panel shell at ≥ 720px", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
 
@@ -980,7 +965,7 @@ test.describe("010-US1: rebranded sign-in shell layout", () => {
     expect(formBox!.width).toBeLessThanOrEqual(500);
   });
 
-  test("collapses to single panel at < 720px", async ({ page, staffFixture }) => {
+  test("collapses to single panel at < 720px", async ({ page }) => {
     const viewports = [
       { width: 320, height: 800 },
       { width: 480, height: 800 },
@@ -1022,7 +1007,7 @@ test.describe("010-US1: rebranded sign-in shell layout", () => {
   // separate top-of-page alert. The assertion is structural: there must be
   // at least one `.auth-alert.auth-alert-error` element that is a descendant
   // of `.auth-form-panel`. (US5 acceptance scenario 2.)
-  test("(T060) error alert renders inside form panel", async ({ page, staffFixture }) => {
+  test("(T060) error alert renders inside form panel", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login?error=invalid");
     await expect(page.locator(".auth-form-panel .auth-alert.auth-alert-error")).toBeVisible();
@@ -1038,7 +1023,7 @@ test.describe("010-US1: rebranded sign-in shell layout", () => {
   // `?magic_intent=1` (which swaps to <MagicView>) and back to `/login`
   // (which re-mounts <SignInView> with a fresh `shown=false`).
 
-  test("password reveal toggle flips type", async ({ page, staffFixture }) => {
+  test("password reveal toggle flips type", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
 
@@ -1058,7 +1043,7 @@ test.describe("010-US1: rebranded sign-in shell layout", () => {
     await expect(toggleButton).toHaveAttribute("aria-label", "Show password");
   });
 
-  test("password reveal toggle is keyboard operable", async ({ page, staffFixture }) => {
+  test("password reveal toggle is keyboard operable", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
 
@@ -1073,7 +1058,7 @@ test.describe("010-US1: rebranded sign-in shell layout", () => {
     await expect(passwordInput).toHaveAttribute("type", "text");
   });
 
-  test("password reveal resets on view swap", async ({ page, staffFixture }) => {
+  test("password reveal resets on view swap", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
 
@@ -1093,7 +1078,7 @@ test.describe("010-US1: rebranded sign-in shell layout", () => {
     await expect(page.locator("#signin-password")).toHaveAttribute("type", "password");
   });
 
-  test("browser autofill stays masked on first paint", async ({ page, staffFixture }) => {
+  test("browser autofill stays masked on first paint", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
     // Initial render — no interaction. The invariant: `type="password"`.
@@ -1314,13 +1299,13 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     }
   });
 
-  test.beforeEach(async ({ staffFixture }) => {
+  test.beforeEach(async () => {
     if (!supabaseUp || !mailpitUp) return;
     auditCursor = newAuditCursor();
     await clearMailpit();
   });
 
-  test.beforeEach(async ({ staffFixture }) => {
+  test.beforeEach(async () => {
     if (!supabaseUp) return;
     // Defensive restore in case a prior crash left the password mutated.
     // afterEach runs the same call after each test.
@@ -1332,7 +1317,7 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     await restoreResetTestUserPassword();
   });
 
-  test("(T042) full password reset round-trip", async ({ page, staffFixture }) => {
+  test("(T042) full password reset round-trip", async ({ page }) => {
     // (a) Click "Forgot password?" from /login.
     await page.goto("/login");
     await page.getByRole("link", { name: "Forgot password?" }).click();
@@ -1375,7 +1360,7 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     expect(new URL(page.url()).pathname).toBe("/select-staff");
   });
 
-  test("(T043) reset writes device.password_reset audit row", async ({ page, staffFixture }) => {
+  test("(T043) reset writes device.password_reset audit row", async ({ page }) => {
     await page.goto("/login?reset_intent=1");
     await page.locator("#forgot-email").fill(RESET_TEST_EMAIL);
     await page.getByRole("button", { name: "Send reset link" }).click();
@@ -1402,7 +1387,6 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
 
   test("(T044) callback recovery branch writes device.signed_in with method=recovery", async ({
     page,
-    staffFixture,
   }) => {
     await page.goto("/login?reset_intent=1");
     await page.locator("#forgot-email").fill(RESET_TEST_EMAIL);
@@ -1422,7 +1406,7 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     expect(recoveryRow, "must write a device.signed_in row with method=recovery").toBeTruthy();
   });
 
-  test("(T045) mismatched passwords render inline error", async ({ page, staffFixture }) => {
+  test("(T045) mismatched passwords render inline error", async ({ page }) => {
     await page.goto("/login?reset_intent=1");
     await page.locator("#forgot-email").fill(RESET_TEST_EMAIL);
     await page.getByRole("button", { name: "Send reset link" }).click();
@@ -1441,7 +1425,7 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     await expect(page.locator(".auth-alert.auth-alert-error")).toHaveText("Passwords don't match.");
   });
 
-  test("(T046) password < 8 chars renders inline error", async ({ page, staffFixture }) => {
+  test("(T046) password < 8 chars renders inline error", async ({ page }) => {
     await page.goto("/login?reset_intent=1");
     await page.locator("#forgot-email").fill(RESET_TEST_EMAIL);
     await page.getByRole("button", { name: "Send reset link" }).click();
@@ -1535,7 +1519,7 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
 // (after T056's selector update).
 
 test.describe("010-US4: magic-link dedicated views", () => {
-  test("(T053) magic-link request via dedicated view", async ({ page, staffFixture }) => {
+  test("(T053) magic-link request via dedicated view", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
 
@@ -1550,7 +1534,7 @@ test.describe("010-US4: magic-link dedicated views", () => {
     await expect(page.locator(".auth-confirm-card")).toContainText("owner@tangnails.dev");
   });
 
-  test("(T054) magic-sent send-another loops back", async ({ page, staffFixture }) => {
+  test("(T054) magic-sent send-another loops back", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     // Seed the magic-sent view directly via URL precedence.
     await page.goto("/login?magic_sent=owner%40tangnails.dev");
@@ -1561,7 +1545,7 @@ test.describe("010-US4: magic-link dedicated views", () => {
     await expect(page.getByRole("heading", { name: "Sign in with a link" })).toBeVisible();
   });
 
-  test("(T055) back-to-sign-in clears magic params", async ({ page, staffFixture }) => {
+  test("(T055) back-to-sign-in clears magic params", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login?magic_intent=1");
     await expect(page.getByRole("heading", { name: "Sign in with a link" })).toBeVisible();
@@ -1592,7 +1576,7 @@ test.describe("010-US4: magic-link dedicated views", () => {
 // ─────────────────────────────────────────────────────────────────────────
 
 test.describe("010-Phase 8: hydrated view-swap polish", () => {
-  test("(T062) view swap is in-place (no full navigation)", async ({ page, staffFixture }) => {
+  test("(T062) view swap is in-place (no full navigation)", async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
     // Wait for hydration so the click handler is installed.
@@ -1630,7 +1614,7 @@ test.describe("010-Phase 8: hydrated view-swap polish", () => {
     expect(docMarker).toBe("before-click");
   });
 
-  test("(T063) view animation respects prefers-reduced-motion", async ({ page, staffFixture }) => {
+  test("(T063) view animation respects prefers-reduced-motion", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/login");
@@ -1728,7 +1712,6 @@ test.describe("012-Phase 2: invite-method password setup leg", () => {
 
   test("invite link lands on /reset-password?type=invite with 'Set your password' heading; submitting password redirects to /select-staff and writes the audit chain", async ({
     page,
-    staffFixture,
   }) => {
     // Issue an invite directly via the admin API. The full Onboard sheet
     // (US2) wires the same call through a server action; Phase 2 verifies
