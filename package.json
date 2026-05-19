@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "flock /tmp/tang-nails-e2e.lock playwright test",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },
