@@ -107,6 +107,20 @@ export function validateSupplyMode(input: string): StaffSupplyMode {
 const SUPPLY_EXCEPT_MAX = 64;
 
 /**
+ * When the saved supply mode is not `partial`, the persisted `supply_except`
+ * MUST be empty — this mirrors the DB CHECK constraint and keeps the audit
+ * diff in lockstep with what actually gets written. Used by the `updateStaff`
+ * action after validation so the proposed snapshot reflects the wipe before
+ * `buildChanges` runs.
+ */
+export function clearSupplyExceptIfWiped(
+  mode: StaffSupplyMode,
+  except: readonly string[]
+): readonly string[] {
+  return mode === "partial" ? except : [];
+}
+
+/**
  * Clean a raw `supply_except` array from FormData into the persisted shape.
  *   - Throws `invalid_supply_except_shape` if `raw` is not an array.
  *   - Drops non-string entries silently.

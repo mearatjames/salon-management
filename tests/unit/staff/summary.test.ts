@@ -7,7 +7,12 @@
 
 import { describe, expect, it } from "vitest";
 
-import { formatFrontDeskHint, formatSummary } from "@/app/(studio)/settings/staff/_summary";
+import {
+  formatCardFeeSubtitle,
+  formatFrontDeskHint,
+  formatSummary,
+  formatSupplyModeSubtitle,
+} from "@/app/(studio)/settings/staff/_summary";
 
 describe("formatSummary", () => {
   it("returns null when no exemptions are in effect", () => {
@@ -85,6 +90,36 @@ describe("formatFrontDeskHint", () => {
   it("returns the front-desk hint copy", () => {
     expect(formatFrontDeskHint()).toBe(
       "Front desk staff don't take services, so these settings normally don't affect their payouts. Configure if they occasionally cover service tickets."
+    );
+  });
+});
+
+describe("formatCardFeeSubtitle", () => {
+  it("non-exempt → 'Standard $3 deducted on card-paid services.'", () => {
+    expect(formatCardFeeSubtitle(false)).toBe("Standard $3 deducted on card-paid services.");
+  });
+
+  it("exempt → 'Exempt — card fee never deducted from payout.'", () => {
+    expect(formatCardFeeSubtitle(true)).toBe("Exempt — card fee never deducted from payout.");
+  });
+});
+
+describe("formatSupplyModeSubtitle", () => {
+  it("apply → 'Per-service supply cost deducted from payout when configured.'", () => {
+    expect(formatSupplyModeSubtitle("apply", "Sam")).toBe(
+      "Per-service supply cost deducted from payout when configured."
+    );
+  });
+
+  it("partial → interpolates the first name", () => {
+    expect(formatSupplyModeSubtitle("partial", "Sam")).toBe(
+      "Apply most supply costs, but exempt Sam from specific types."
+    );
+  });
+
+  it("exempt → 'Exempt — no supply costs ever deducted, on any service.'", () => {
+    expect(formatSupplyModeSubtitle("exempt", "Sam")).toBe(
+      "Exempt — no supply costs ever deducted, on any service."
     );
   });
 });

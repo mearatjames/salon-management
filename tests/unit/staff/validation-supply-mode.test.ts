@@ -8,7 +8,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { ValidationError, validateSupplyMode } from "@/app/(studio)/settings/staff/_validation";
+import {
+  ValidationError,
+  clearSupplyExceptIfWiped,
+  validateSupplyMode,
+} from "@/app/(studio)/settings/staff/_validation";
 
 describe("validateSupplyMode", () => {
   it.each(["apply", "partial", "exempt"] as const)("accepts %s and returns it verbatim", (mode) => {
@@ -30,5 +34,21 @@ describe("validateSupplyMode", () => {
       expect(err).toBeInstanceOf(ValidationError);
       expect((err as ValidationError).code).toBe("invalid_supply_mode");
     }
+  });
+});
+
+describe("clearSupplyExceptIfWiped", () => {
+  const TICKS = ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"] as const;
+
+  it("returns input as-is when mode is 'partial'", () => {
+    expect(clearSupplyExceptIfWiped("partial", TICKS)).toEqual(TICKS);
+  });
+
+  it("returns [] when mode is 'apply' (mirrors the DB CHECK constraint)", () => {
+    expect(clearSupplyExceptIfWiped("apply", TICKS)).toEqual([]);
+  });
+
+  it("returns [] when mode is 'exempt' (wipes ticks at save time)", () => {
+    expect(clearSupplyExceptIfWiped("exempt", TICKS)).toEqual([]);
   });
 });

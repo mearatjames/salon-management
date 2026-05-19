@@ -42,9 +42,12 @@ Run them in this order so the cheapest checks fail fast:
 3. `npm run typecheck` — `tsc --noEmit`.
 4. `npm test` — Vitest unit suite.
 5. `npm run test:e2e` — Playwright against a local Supabase. Defaults to
-   parallel workers; set `PLAYWRIGHT_PROD=1` to opt into the same prebuilt
-   `npm run start` server CI uses (avoids next-dev JIT compile flake under
-   load). The script is wrapped in `flock /tmp/tang-nails-e2e.lock` so
+   parallel workers and to the same prebuilt `npm run start` server CI uses
+   (sets `PLAYWRIGHT_PROD=1` internally), so cold paths don't pay the
+   next-dev JIT compile tax under load. For iterating on a single failing
+   spec, use `npm run test:e2e:dev` instead — it leaves `PLAYWRIGHT_PROD`
+   unset so `npm run dev` hot-reloads edits between runs. The script is
+   wrapped in `flock /tmp/tang-nails-e2e.lock` so
    parallel Claude Code sessions (each in its own worktree) sharing the
    local Supabase stack serialize their e2e runs — see "Parallel sessions"
    below. Two state-scoping patterns let the suite run with `workers > 1`:
@@ -98,10 +101,24 @@ per-phase gates (e.g. "Phase 5 verification" between user stories) should
 run **scoped** commands instead of the full versions. The full suite
 belongs at the final gate only.
 
-**E2E** — filter by user story:
-- Phase N verifying User Story M: `npx playwright test tests/e2e/<file>.spec.ts -g "USm"`
-  (the describe-name convention `US1: …`, `US2: …`, `010-US3: …` is what
-  the `-g` filter matches.)
+**E2E** — pick the cheapest tool that fits the phase:
+
+- Default: `npm run test:e2e:changed`. Runs only the specs Playwright
+  considers changed (transitive import graph via `--only-changed=<base>`)
+  plus any specs the affected-map in `tests/e2e/_affected-map.mjs` pulls
+  in for the diff. Base defaults to `origin/main`; override with
+  `E2E_BASE=<ref> npm run test:e2e:changed`. No working-tree changes vs
+  base prints a no-op message and exits 0. Changes to spec-imported
+  helpers (`tests/e2e/_*.ts`) or `playwright.config.ts` fall back to the
+  full suite (their blast radius makes scoping unsafe).
+- Phase N verifying User Story M (manual override): `npx playwright test
+  tests/e2e/<file>.spec.ts -g "USm"`. Use this when you want to target a
+  specific user-story slice that the affected-map can't infer — the
+  describe-name convention `US1: …`, `US2: …`, `010-US3: …` is what the
+  `-g` filter matches.
+- When adding a new production code path that no spec imports directly,
+  add an entry to `tests/e2e/_affected-map.mjs` so future phases that
+  touch it pull the right specs in automatically.
 
 **Prettier + ESLint** — scope to the files the phase touched:
 - `npx prettier --check $(git diff --name-only --diff-filter=ACMR HEAD)`

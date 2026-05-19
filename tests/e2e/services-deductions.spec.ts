@@ -1,10 +1,16 @@
 // E2E for the per-service deductions + two-pane services layout
 // (specs/021-services-deductions).
 //
-// US1 — two-pane layout (this phase). The drawer was deleted; the page now
-// renders a `services-two-pane` grid with the catalog on the left and an
-// always-mounted edit inspector on the right. Discard-changes dialog gates
-// row-switches and Add-service clicks when the draft is dirty.
+// This spec was pruned in #61 (issue #45 follow-up). The audit at
+// `docs/e2e-pruning-audit.md § services-deductions.spec.ts` removed 7
+// duplicates of `tests/unit/services/deductions.test.ts` +
+// `validation.test.ts` outright, and migrated 22 more to unit coverage —
+// `tests/unit/services/audit-diff-keys.test.ts` picked up the FR-030
+// audit-diff selectivity cases the legacy US5 (e)/(f)/(g) tests used to
+// exercise via the browser. What stays here is the work that genuinely
+// needs Playwright: two-pane DOM shape, panel mode transitions, discard
+// guards, toast redirects, live-preview keystroke timing, the FR-021
+// supply buffer-preservation cycle, and the role-gate aria/View-only chip.
 //
 // Patterns intentionally mirror tests/e2e/services.spec.ts (the 008 suite)
 // so failures here read familiarly: same sign-in helper shape, same
@@ -14,8 +20,6 @@
 import { expect, test } from "@playwright/test";
 
 import { createClient } from "@supabase/supabase-js";
-
-import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -53,8 +57,26 @@ async function signInAsMaya(page: import("@playwright/test").Page) {
   await page.waitForURL(/\/services(\?|$)/, { timeout: 10_000 });
 }
 
+// Sign in as Sam (technician). Same pattern as services.spec.ts
+// `signInAsSamOnServicesPage` — Sam has `user_id: null` so the device user
+// (owner@tangnails.dev) is used and Sam is picked at /select-staff with PIN
+// 9999.
+async function signInAsSamOnServicesPage(page: import("@playwright/test").Page): Promise<void> {
+  await page.goto("/login?next=%2Fservices");
+  await page.locator("#signin-email").fill("owner@tangnails.dev");
+  await page.locator("#signin-password").fill("tang-nails-dev");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.waitForURL(/\/select-staff\?next=/);
+  await page.getByRole("button", { name: /Sam Chen/ }).click();
+  await page.waitForURL(/selectedTileId=/);
+  for (const d of ["9", "9", "9", "9"]) {
+    await page.getByRole("button", { name: `Digit ${d}`, exact: true }).click();
+  }
+  await page.waitForURL(/\/services(\?|$)/, { timeout: 10_000 });
+}
+
 // Restore the seed name for Classic manicure so the edit-and-save case in
-// this describe doesn't leak modified state into later runs of the suite.
+// US1 doesn't leak modified state into later runs of the suite.
 async function restoreClassicManicureName(): Promise<void> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -64,9 +86,105 @@ async function restoreClassicManicureName(): Promise<void> {
   await c.from("services").update({ name: "Classic manicure" }).eq("id", CLASSIC_MANICURE_ID);
 }
 
+// Reset Classic manicure's supply + card-fee fields back to the seeded
+// defaults (mode = 'default', custom = null, supply = null). Run from
+// `beforeEach` of the US3 / US4 describes that drive the supply form.
+async function restoreClassicManicureDeductions(): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const c = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  await c
+    .from("services")
+    .update({
+      card_fee_mode: "default",
+      card_fee_custom_cents: null,
+      supply_amount_cents: null,
+      supply_type_id: null,
+    })
+    .eq("id", CLASSIC_MANICURE_ID);
+}
+
+// Tracks every supply type this suite seeded so afterAll can detach + delete
+// them in one pass (idempotent — re-runs see an empty set on the second pass).
+const seededSupplyTypeIds = new Set<string>();
+
+// Find-or-create a supply type by display name. Returns its uuid. Idempotent.
+async function ensureSupplyType(name: string): Promise<string> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const c = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  // Match on the canonical column the DB enforces via UNIQUE (lower(trim(name))
+  // collapsed whitespace). Cheaper than running canonicalizeName client-side.
+  const trimmedLower = name.trim().toLowerCase().replace(/\s+/g, " ");
+  const { data: existing, error: selErr } = await c
+    .from("supply_types")
+    .select("id")
+    .eq("name_canonical", trimmedLower)
+    .maybeSingle();
+  if (selErr) throw new Error(`ensureSupplyType select failed: ${selErr.message}`);
+  if (existing) {
+    seededSupplyTypeIds.add(existing.id as string);
+    return existing.id as string;
+  }
+  const { data, error } = await c.from("supply_types").insert({ name }).select("id").single();
+  if (error) throw new Error(`ensureSupplyType insert failed: ${error.message}`);
+  const id = data.id as string;
+  seededSupplyTypeIds.add(id);
+  return id;
+}
+
+// Detach any services pointing at the suite's seeded supply types, then
+// delete the types + their audit rows. Idempotent.
+async function cleanupSeededSupplyTypes(): Promise<void> {
+  if (seededSupplyTypeIds.size === 0) return;
+  const ids = Array.from(seededSupplyTypeIds);
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const c = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  await c
+    .from("services")
+    .update({ supply_type_id: null, supply_amount_cents: null })
+    .in("supply_type_id", ids);
+  await c.from("audit_log").delete().in("entity_id", ids);
+  await c.from("supply_types").delete().in("id", ids);
+  seededSupplyTypeIds.clear();
+}
+
+// Picker-driven supply selection: open the trigger, then either click an
+// existing row or use the inline-create flow. Returns when the picker has
+// closed and the trigger reflects the chosen name.
+async function pickSupplyType(
+  page: import("@playwright/test").Page,
+  name: string,
+  mode: "create" | "existing"
+): Promise<void> {
+  const trigger = page.locator("[data-slot='supply-type-picker-trigger']");
+  await trigger.click();
+  if (mode === "create") {
+    await page.locator("[data-slot='supply-type-picker-create-row']").click();
+    const inlineInput = page.locator("[data-slot='supply-type-picker-create-input']");
+    await expect(inlineInput).toBeVisible();
+    await inlineInput.fill(name);
+    await page.locator("[data-slot='supply-type-picker-create-save']").click();
+  } else {
+    await page.locator(`[data-slot='supply-type-picker-item']:has-text("${name}")`).first().click();
+  }
+  await expect(trigger).toContainText(name, { timeout: 5000 });
+}
+
 // Track any ad-hoc rows the Add-service case creates so afterAll can clean
 // them up; keeps re-runs idempotent and prevents leaking into 008/011 specs.
 const createdIds: string[] = [];
+
+// Tooltip copy must match the deductions-section / owner-only-tooltip
+// vocabulary exactly. If you change it in one place, change it in both.
+const ROLE_GATE_TOOLTIP_COPY = "Only owners and managers can edit the catalog.";
 
 test.describe.configure({ mode: "serial" });
 
@@ -317,490 +435,10 @@ test.describe("021-US1: two-pane layout", () => {
 });
 
 // ============================================================================
-// US2 — Per-service card-fee mode
+// US3 — Supply deduction (only the FR-021 buffer-preservation case remains;
+// the rest moved to `tests/unit/services/validation.test.ts` +
+// `deductions.test.ts` per the #61 prune).
 // ============================================================================
-
-// Reset Classic manicure's card-fee fields back to the seeded default
-// (mode = 'default', custom = null). Run from `beforeEach` so each US2
-// test starts from the same baseline regardless of what the prior test left
-// behind.
-async function restoreClassicManicureCardFee(): Promise<void> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const c = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  await c
-    .from("services")
-    .update({
-      card_fee_mode: "default",
-      card_fee_custom_cents: null,
-    })
-    .eq("id", CLASSIC_MANICURE_ID);
-}
-
-async function readCardFeeRow(id: string): Promise<{
-  card_fee_mode: string;
-  card_fee_custom_cents: number | null;
-}> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const c = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data, error } = await c
-    .from("services")
-    .select("card_fee_mode, card_fee_custom_cents")
-    .eq("id", id)
-    .single();
-  if (error) throw new Error(`readCardFeeRow failed: ${error.message}`);
-  return data as { card_fee_mode: string; card_fee_custom_cents: number | null };
-}
-
-test.describe("021-US2: card-fee mode", () => {
-  let supabaseUp = false;
-
-  test.beforeAll(async () => {
-    supabaseUp = await supabaseIsReachable();
-    if (!supabaseUp) {
-      test.skip(
-        true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping 021-US2 specs (Docker unavailable)."
-      );
-      return;
-    }
-  });
-
-  test.beforeEach(async () => {
-    if (!supabaseUp) return;
-    await restoreClassicManicureCardFee();
-  });
-
-  test.afterAll(async () => {
-    if (!supabaseUp) return;
-    await restoreClassicManicureCardFee();
-  });
-
-  test("(a) seeded service shows default $3 card fee chip on its row", async ({ page }) => {
-    await signInAsMaya(page);
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const chip = row.locator("[data-slot='deduction-chip'][data-kind='card-default']");
-    await expect(chip).toBeVisible();
-    await expect(chip).toHaveText("$3 card fee");
-  });
-
-  test("(b) default → custom round-trip persists value, chip updates", async ({ page }) => {
-    await signInAsMaya(page);
-
-    // Open Classic manicure.
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    // Click Custom option.
-    const customOption = page.locator(
-      "[data-slot='deductions-card-fee-option'][data-value='custom']"
-    );
-    await customOption.click();
-
-    // Type 4.50 into the amount input.
-    const amount = page.locator("[data-slot='deductions-card-fee-custom-input']");
-    await expect(amount).toBeVisible();
-    await amount.fill("4.50");
-
-    // Save enables; click.
-    const save = page.locator("[data-slot='services-edit-panel-save']");
-    await expect(save).toBeEnabled();
-    await save.click();
-
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}.*toast=changes_saved`), {
-      timeout: 5000,
-    });
-
-    // Row shows custom chip with $4.50.
-    const customChip = row.locator("[data-slot='deduction-chip'][data-kind='card-custom']");
-    await expect(customChip).toBeVisible();
-    await expect(customChip).toHaveText("$4.50 card fee");
-
-    // Re-opening the panel renders the saved value in the input.
-    await expect(amount).toHaveValue("4.50");
-
-    // DB row reflects the change.
-    const dbRow = await readCardFeeRow(CLASSIC_MANICURE_ID);
-    expect(dbRow.card_fee_mode).toBe("custom");
-    expect(dbRow.card_fee_custom_cents).toBe(450);
-  });
-
-  test("(c) custom → exempt clears chip, hides custom input", async ({ page }) => {
-    await signInAsMaya(page);
-
-    // Set up custom first.
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-    await page.locator("[data-slot='deductions-card-fee-option'][data-value='custom']").click();
-    await page.locator("[data-slot='deductions-card-fee-custom-input']").fill("4.50");
-    await page.locator("[data-slot='services-edit-panel-save']").click();
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}.*toast=changes_saved`));
-
-    // Now flip to exempt.
-    await page.locator("[data-slot='deductions-card-fee-option'][data-value='exempt']").click();
-    // Custom input disappears.
-    await expect(page.locator("[data-slot='deductions-card-fee-custom-input']")).toHaveCount(0);
-    // Save.
-    await page.locator("[data-slot='services-edit-panel-save']").click();
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}.*toast=changes_saved`));
-
-    // No blue chip on the row (US3 will add the muted "No fees" chip; here
-    // we assert only that the blue/default chip is absent).
-    await expect(row.locator("[data-slot='deduction-chip'][data-kind='card-default']")).toHaveCount(
-      0
-    );
-    await expect(row.locator("[data-slot='deduction-chip'][data-kind='card-custom']")).toHaveCount(
-      0
-    );
-  });
-
-  test("(d) exempt → default brings chip back; custom cents null", async ({ page }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    // Set custom first (so the next flip to default proves the cents got nulled).
-    await page.locator("[data-slot='deductions-card-fee-option'][data-value='custom']").click();
-    await page.locator("[data-slot='deductions-card-fee-custom-input']").fill("7");
-    await page.locator("[data-slot='services-edit-panel-save']").click();
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}.*toast=changes_saved`));
-
-    // Flip to default + save.
-    await page.locator("[data-slot='deductions-card-fee-option'][data-value='default']").click();
-    await page.locator("[data-slot='services-edit-panel-save']").click();
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}.*toast=changes_saved`));
-
-    // Default chip back.
-    const chip = row.locator("[data-slot='deduction-chip'][data-kind='card-default']");
-    await expect(chip).toHaveText("$3 card fee");
-
-    // DB: custom cents null.
-    const dbRow = await readCardFeeRow(CLASSIC_MANICURE_ID);
-    expect(dbRow.card_fee_mode).toBe("default");
-    expect(dbRow.card_fee_custom_cents).toBeNull();
-  });
-
-  test("(e) custom > $50 surfaces inline hint and Save stays disabled", async ({ page }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    await page.locator("[data-slot='deductions-card-fee-option'][data-value='custom']").click();
-    await page.locator("[data-slot='deductions-card-fee-custom-input']").fill("60");
-
-    const hint = page.locator("[data-slot='deductions-card-fee-custom-hint']");
-    await expect(hint).toHaveText("Card fee can't exceed $50.");
-    await expect(page.locator("[data-slot='services-edit-panel-save']")).toBeDisabled();
-  });
-
-  test("(f) empty custom-amount in custom mode disables Save", async ({ page }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    await page.locator("[data-slot='deductions-card-fee-option'][data-value='custom']").click();
-    // Buffer starts empty for a baseline that was 'default' — typing nothing
-    // keeps it empty. Assert the hint + disabled state.
-    const amount = page.locator("[data-slot='deductions-card-fee-custom-input']");
-    await expect(amount).toHaveValue("");
-    await expect(page.locator("[data-slot='deductions-card-fee-custom-hint']")).toHaveText(
-      "Enter an amount up to $50."
-    );
-    await expect(page.locator("[data-slot='services-edit-panel-save']")).toBeDisabled();
-  });
-
-  test("(g) custom = 0 is allowed and persists card_fee_custom_cents = 0", async ({ page }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    await page.locator("[data-slot='deductions-card-fee-option'][data-value='custom']").click();
-    await page.locator("[data-slot='deductions-card-fee-custom-input']").fill("0");
-
-    // No inline hint, Save enabled.
-    await expect(page.locator("[data-slot='deductions-card-fee-custom-hint']")).toHaveCount(0);
-    const save = page.locator("[data-slot='services-edit-panel-save']");
-    await expect(save).toBeEnabled();
-    await save.click();
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}.*toast=changes_saved`));
-
-    const dbRow = await readCardFeeRow(CLASSIC_MANICURE_ID);
-    expect(dbRow.card_fee_mode).toBe("custom");
-    expect(dbRow.card_fee_custom_cents).toBe(0);
-  });
-});
-
-// ============================================================================
-// US3 — Per-service supply deduction
-// ============================================================================
-//
-// 022-supply-types-catalog (T052): the legacy free-text `services.supply_label`
-// column was dropped by migration `0017_supply_types_catalog.sql` in favor of
-// `services.supply_type_id` (FK → `public.supply_types`). The picker UI
-// (`<SupplyTypePicker>`) replaced the per-service label input. This spec's
-// supply helpers + UI assertions were rewritten accordingly:
-//   - Direct DB writes go to `supply_type_id` (with on-demand `ensureSupplyType()`
-//     to seed types lazily by name).
-//   - Reads project `supply_types(name)` via the LEFT JOIN syntax so the
-//     resolved `supply_type_name` is available without a second roundtrip.
-//   - UI flows that "type a label" now drive the picker: open trigger →
-//     either click an existing row OR click the "+ Create new supply type…"
-//     affordance → fill the inline-create input → click Save.
-//   - Audit payload assertions switched from `supply_label` (string) to
-//     `supply_type_id` (uuid), matching `_audit-diff.ts § SERVICE_DIFF_KEYS`.
-// The 5 user stories (US1–US5) stay green; only the supply mechanism changed.
-
-// Tracks every supply type this suite seeded so afterAll can detach + delete
-// them in one pass (idempotent — re-runs see an empty set on the second pass).
-const seededSupplyTypeIds = new Set<string>();
-
-// Find-or-create a supply type by display name. Returns its uuid. Idempotent:
-// a second call with the same canonical name returns the same id. Used by the
-// US3/US4/US5 helpers below to swap legacy `supply_label: 'chrome'` patterns
-// to a `supply_type_id` FK without forcing each test to manage its own seed.
-async function ensureSupplyType(name: string): Promise<string> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const c = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  // Match on the canonical column the DB enforces via UNIQUE (lower(trim(name))
-  // collapsed whitespace). Cheaper than running canonicalizeName client-side.
-  const trimmedLower = name.trim().toLowerCase().replace(/\s+/g, " ");
-  const { data: existing, error: selErr } = await c
-    .from("supply_types")
-    .select("id")
-    .eq("name_canonical", trimmedLower)
-    .maybeSingle();
-  if (selErr) throw new Error(`ensureSupplyType select failed: ${selErr.message}`);
-  if (existing) {
-    seededSupplyTypeIds.add(existing.id as string);
-    return existing.id as string;
-  }
-  const { data, error } = await c.from("supply_types").insert({ name }).select("id").single();
-  if (error) throw new Error(`ensureSupplyType insert failed: ${error.message}`);
-  const id = data.id as string;
-  seededSupplyTypeIds.add(id);
-  return id;
-}
-
-// Detach any services pointing at the suite's seeded supply types, then
-// delete the types + their audit rows. Idempotent. Called from afterAll of
-// each describe that uses `ensureSupplyType`.
-async function cleanupSeededSupplyTypes(): Promise<void> {
-  if (seededSupplyTypeIds.size === 0) return;
-  const ids = Array.from(seededSupplyTypeIds);
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const c = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  await c
-    .from("services")
-    .update({ supply_type_id: null, supply_amount_cents: null })
-    .in("supply_type_id", ids);
-  await c.from("audit_log").delete().in("entity_id", ids);
-  await c.from("supply_types").delete().in("id", ids);
-  seededSupplyTypeIds.clear();
-}
-
-// Reset Classic manicure's supply + card-fee fields back to the seeded
-// defaults (mode = 'default', custom = null, supply = null). Run from
-// `beforeEach` so each US3 test starts from the same baseline regardless of
-// what the prior test left behind.
-async function restoreClassicManicureDeductions(): Promise<void> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const c = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  await c
-    .from("services")
-    .update({
-      card_fee_mode: "default",
-      card_fee_custom_cents: null,
-      supply_amount_cents: null,
-      supply_type_id: null,
-    })
-    .eq("id", CLASSIC_MANICURE_ID);
-}
-
-// Reset a list of services to seeded defaults. Used after the
-// combined/exempt chip tests that need to leave the DB clean for
-// subsequent runs.
-async function resetServicesDeductions(ids: string[]): Promise<void> {
-  if (ids.length === 0) return;
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const c = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  await c
-    .from("services")
-    .update({
-      card_fee_mode: "default",
-      card_fee_custom_cents: null,
-      supply_amount_cents: null,
-      supply_type_id: null,
-    })
-    .in("id", ids);
-}
-
-// Directly set deduction columns on a service via service-role — used to
-// seed combined/exempt-only scenarios that the US3 chip tests assert
-// against. Bypasses RLS + the Server Action so the test setup stays
-// deterministic.
-//
-// 022-supply-types-catalog: callers pass a `supply_type_name` (string); this
-// helper resolves it to a `supply_type_id` via `ensureSupplyType`. Passing
-// `null` clears the FK.
-async function setServiceDeductions(
-  id: string,
-  patch: {
-    card_fee_mode: "default" | "custom" | "exempt";
-    card_fee_custom_cents: number | null;
-    supply_amount_cents: number | null;
-    supply_type_name: string | null;
-  }
-): Promise<void> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const c = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const supply_type_id = patch.supply_type_name
-    ? await ensureSupplyType(patch.supply_type_name)
-    : null;
-  const { error } = await c
-    .from("services")
-    .update({
-      card_fee_mode: patch.card_fee_mode,
-      card_fee_custom_cents: patch.card_fee_custom_cents,
-      supply_amount_cents: patch.supply_amount_cents,
-      supply_type_id,
-    })
-    .eq("id", id);
-  if (error) throw new Error(`setServiceDeductions failed: ${error.message}`);
-}
-
-// Reads the supply state of a service, projecting `supply_types.name` through
-// the same LEFT JOIN the page loader uses. The returned `supply_type_name` is
-// `null` when no type is attached (mirroring `supply_label: null` from the
-// pre-022 schema).
-async function readSupplyRow(id: string): Promise<{
-  supply_amount_cents: number | null;
-  supply_type_id: string | null;
-  supply_type_name: string | null;
-}> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const c = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data, error } = await c
-    .from("services")
-    .select("supply_amount_cents, supply_type_id, supply_types(name)")
-    .eq("id", id)
-    .single();
-  if (error) throw new Error(`readSupplyRow failed: ${error.message}`);
-  const row = data as {
-    supply_amount_cents: number | null;
-    supply_type_id: string | null;
-    supply_types: { name: string } | { name: string }[] | null;
-  };
-  const nested = row.supply_types;
-  const supply_type_name = nested
-    ? Array.isArray(nested)
-      ? (nested[0]?.name ?? null)
-      : nested.name
-    : null;
-  return {
-    supply_amount_cents: row.supply_amount_cents,
-    supply_type_id: row.supply_type_id,
-    supply_type_name,
-  };
-}
-
-// 022 picker-driven supply selection: open the trigger, then either click an
-// existing row (if `mode === 'existing'`) or click "+ Create new supply
-// type…", fill the inline-create input, and save. Returns when the picker has
-// closed and the trigger reflects the chosen name.
-//
-// Mirrors `tests/e2e/supply-types-catalog.spec.ts § US1 (b)` / (c) so the two
-// suites stay in lockstep on picker conventions.
-async function pickSupplyType(
-  page: import("@playwright/test").Page,
-  name: string,
-  mode: "create" | "existing"
-): Promise<void> {
-  const trigger = page.locator("[data-slot='supply-type-picker-trigger']");
-  await trigger.click();
-  if (mode === "create") {
-    await page.locator("[data-slot='supply-type-picker-create-row']").click();
-    const inlineInput = page.locator("[data-slot='supply-type-picker-create-input']");
-    await expect(inlineInput).toBeVisible();
-    await inlineInput.fill(name);
-    await page.locator("[data-slot='supply-type-picker-create-save']").click();
-    // The test that called us is expected to invoke
-    // `captureSupplyTypeIdByName(name)` post-save so afterAll's
-    // `cleanupSeededSupplyTypes()` knows to detach + delete the new row.
-  } else {
-    // Existing — the row's `value` is the type's name (case-sensitive),
-    // and `data-supply-type-id` is the FK.
-    await page.locator(`[data-slot='supply-type-picker-item']:has-text("${name}")`).first().click();
-  }
-  await expect(trigger).toContainText(name, { timeout: 5000 });
-}
-
-// After-effect for `pickSupplyType('create', ...)` — captures the newly-
-// created type's id so cleanupSeededSupplyTypes can detach + delete it.
-// Called from afterEach where the UI test actually exercised inline-create.
-async function captureSupplyTypeIdByName(name: string): Promise<void> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const c = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const trimmedLower = name.trim().toLowerCase().replace(/\s+/g, " ");
-  const { data } = await c
-    .from("supply_types")
-    .select("id")
-    .eq("name_canonical", trimmedLower)
-    .maybeSingle();
-  if (data) seededSupplyTypeIds.add(data.id as string);
-}
-
-// Seeded service ids the US3 combined/exempt chip tests reuse.
-const CLASSIC_PEDI_ID = "20000000-0000-0000-0000-000000000003";
-const SPA_PEDI_ID = "20000000-0000-0000-0000-000000000004";
-const NAIL_ART_ID = "20000000-0000-0000-0000-000000000005";
 
 test.describe("021-US3: supply deduction", () => {
   let supabaseUp = false;
@@ -823,134 +461,8 @@ test.describe("021-US3: supply deduction", () => {
 
   test.afterAll(async () => {
     if (!supabaseUp) return;
-    await resetServicesDeductions([
-      CLASSIC_MANICURE_ID,
-      GEL_POLISH_ID,
-      CLASSIC_PEDI_ID,
-      SPA_PEDI_ID,
-      NAIL_ART_ID,
-    ]);
-    // 022 (T052): tear down the supply types this describe seeded (via
-    // `ensureSupplyType` from `setServiceDeductions` + any picker inline-
-    // creates the UI tests added).
+    await restoreClassicManicureDeductions();
     await cleanupSeededSupplyTypes();
-  });
-
-  test("(a) default state: pre-existing service shows no supply chip + toggle off, inputs hidden", async ({
-    page,
-  }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    // No supply chip on the row.
-    await expect(row.locator("[data-slot='deduction-chip'][data-kind='supply']")).toHaveCount(0);
-
-    // Open panel — supply toggle off, inputs hidden.
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    const toggle = page.locator("[data-slot='deductions-supply-toggle']");
-    await expect(toggle).toBeVisible();
-    await expect(toggle).toHaveAttribute("data-state", "unchecked");
-    await expect(page.locator("[data-slot='deductions-supply-inputs']")).toHaveCount(0);
-  });
-
-  test("(b) toggle on → amount pre-fills 5.00, picker renders empty (no type selected)", async ({
-    page,
-  }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    await page.locator("[data-slot='deductions-supply-toggle']").click();
-
-    // 022 (T052): the free-text label input is gone — the picker owns the
-    // selection UX. Per `deductions-section.client.tsx` § 240, the picker
-    // owns its own focus management so the old `toBeFocused` assertion no
-    // longer applies. We instead verify the amount pre-fill (FR-021) plus
-    // the picker rendering in its empty state.
-    const amount = page.locator("[data-slot='deductions-supply-amount-input']");
-    await expect(amount).toHaveValue("5.00");
-
-    const picker = page.locator("[data-slot='supply-type-picker']");
-    await expect(picker).toBeVisible();
-    const trigger = page.locator("[data-slot='supply-type-picker-trigger']");
-    await expect(trigger).toHaveAttribute("data-empty", "true");
-    // Hidden FK input is present but blank when no type is picked.
-    const hidden = page.locator("input[type='hidden'][name='supply_type_id']");
-    await expect(hidden).toHaveValue("");
-  });
-
-  test("(c) save with valid values: amber chip on row, DB persists", async ({ page }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    await page.locator("[data-slot='deductions-supply-toggle']").click();
-    // 022 (T052): drive the picker's inline-create flow instead of the
-    // legacy free-text label input.
-    const typeName = "GelX tips & gel";
-    await pickSupplyType(page, typeName, "create");
-
-    const save = page.locator("[data-slot='services-edit-panel-save']");
-    await expect(save).toBeEnabled();
-    await save.click();
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}.*toast=changes_saved`));
-
-    const chip = row.locator("[data-slot='deduction-chip'][data-kind='supply']");
-    await expect(chip).toBeVisible();
-    await expect(chip).toHaveText(`$5 ${typeName}`);
-
-    const db = await readSupplyRow(CLASSIC_MANICURE_ID);
-    expect(db.supply_amount_cents).toBe(500);
-    expect(db.supply_type_id).not.toBeNull();
-    expect(db.supply_type_name).toBe(typeName);
-    // Register the picker-created type so afterAll detaches + deletes it.
-    await captureSupplyTypeIdByName(typeName);
-  });
-
-  test("(d) toggle off clears columns + chip disappears", async ({ page }) => {
-    await signInAsMaya(page);
-
-    // First, seed supply on Classic manicure directly. 022 (T052): pass
-    // `supply_type_name` (resolved to a `supply_type_id` FK).
-    await setServiceDeductions(CLASSIC_MANICURE_ID, {
-      card_fee_mode: "default",
-      card_fee_custom_cents: null,
-      supply_amount_cents: 500,
-      supply_type_name: "Chrome powder",
-    });
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    // Toggle on initially (baseline supply present).
-    const toggle = page.locator("[data-slot='deductions-supply-toggle']");
-    await expect(toggle).toHaveAttribute("data-state", "checked");
-    await toggle.click();
-    await expect(toggle).toHaveAttribute("data-state", "unchecked");
-
-    await page.locator("[data-slot='services-edit-panel-save']").click();
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}.*toast=changes_saved`));
-
-    const db = await readSupplyRow(CLASSIC_MANICURE_ID);
-    expect(db.supply_amount_cents).toBeNull();
-    expect(db.supply_type_id).toBeNull();
-
-    await expect(row.locator("[data-slot='deduction-chip'][data-kind='supply']")).toHaveCount(0);
   });
 
   test("(e) buffer preservation on toggle off → on (FR-021)", async ({ page }) => {
@@ -981,201 +493,13 @@ test.describe("021-US3: supply deduction", () => {
     const trigger = page.locator("[data-slot='supply-type-picker-trigger']");
     await expect(trigger).toContainText(typeName);
   });
-
-  test("(f) amount empty rejection: inline hint + Save disabled", async ({ page }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    await page.locator("[data-slot='deductions-supply-toggle']").click();
-    await page.locator("[data-slot='deductions-supply-amount-input']").fill("");
-
-    const hint = page.locator("[data-slot='deductions-supply-amount-hint']");
-    await expect(hint).toHaveText("Enter a positive amount up to $50, or turn Supply off.");
-    await expect(page.locator("[data-slot='services-edit-panel-save']")).toBeDisabled();
-  });
-
-  test("(g) amount zero rejection: inline hint + Save disabled", async ({ page }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    await page.locator("[data-slot='deductions-supply-toggle']").click();
-    await page.locator("[data-slot='deductions-supply-amount-input']").fill("0");
-
-    const hint = page.locator("[data-slot='deductions-supply-amount-hint']");
-    await expect(hint).toHaveText("Enter a positive amount up to $50, or turn Supply off.");
-    await expect(page.locator("[data-slot='services-edit-panel-save']")).toBeDisabled();
-  });
-
-  test("(h) amount over $50 rejection: cap hint + Save disabled", async ({ page }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    await page.locator("[data-slot='deductions-supply-toggle']").click();
-    await page.locator("[data-slot='deductions-supply-amount-input']").fill("60");
-
-    const hint = page.locator("[data-slot='deductions-supply-amount-hint']");
-    await expect(hint).toHaveText("Supply can't exceed $50.");
-    await expect(page.locator("[data-slot='services-edit-panel-save']")).toBeDisabled();
-  });
-
-  test("(i) supply type unpicked rejection: inline hint + Save disabled", async ({ page }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    await page.locator("[data-slot='deductions-supply-toggle']").click();
-    // 022 (T052): the legacy `deductions-supply-label-hint` (which tied to a
-    // free-text label input) is replaced by `deductions-supply-type-hint`,
-    // surfaced when the toggle is on but no supply type has been picked yet.
-    // Copy: see `resolveSupplyTypeHint` in deductions-section.client.tsx.
-    const hint = page.locator("[data-slot='deductions-supply-type-hint']");
-    await expect(hint).toHaveText("Pick a supply type from the dropdown, or turn Supply off.");
-    await expect(page.locator("[data-slot='services-edit-panel-save']")).toBeDisabled();
-  });
-
-  // 022 (T052): legacy tests (j) `label over 64 chars` + (k) `char counter
-  // appears within 8 of limit` were tied to the free-text supply-label input
-  // (`deductions-supply-label-input` / `deductions-supply-label-counter`),
-  // which the picker (T028) eliminated. The 64-char rule still applies inside
-  // the picker's inline-create flow (validated server-side; surfaced via
-  // `supply-type-picker-create-error` with copy
-  // `"Name must be 64 characters or fewer."`) but that path is exercised by
-  // the 022 spec (`tests/e2e/supply-types-catalog.spec.ts`) rather than here.
-  // The 021 supply-deduction user story is fully covered by (a)–(i) above
-  // plus the chip cases (l)–(n) below.
-
-  test("(l) combined chips: card-custom first, supply second", async ({ page }) => {
-    // Seed Gel polish with custom card fee + supply BEFORE the page load so
-    // the initial RSC render picks the fresh row up. (The page is a Server
-    // Component — direct DB writes via service-role bypass the Next.js
-    // revalidation cache, so a post-load `reload()` is needed if we seed
-    // after navigation. Seeding first avoids the dance.)
-    await setServiceDeductions(GEL_POLISH_ID, {
-      card_fee_mode: "custom",
-      card_fee_custom_cents: 450,
-      supply_amount_cents: 700,
-      supply_type_name: "chrome",
-    });
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${GEL_POLISH_ID}']`);
-    const chips = row.locator("[data-slot='deduction-chip']");
-    await expect(chips).toHaveCount(2);
-    await expect(chips.nth(0)).toHaveAttribute("data-kind", "card-custom");
-    await expect(chips.nth(0)).toHaveText("$4.50 card fee");
-    await expect(chips.nth(1)).toHaveAttribute("data-kind", "supply");
-    await expect(chips.nth(1)).toHaveText("$7 chrome");
-  });
-
-  test("(m) exempt + supply: only the supply chip renders (no No fees, no card-fee chip)", async ({
-    page,
-  }) => {
-    await setServiceDeductions(CLASSIC_PEDI_ID, {
-      card_fee_mode: "exempt",
-      card_fee_custom_cents: null,
-      supply_amount_cents: 800,
-      supply_type_name: "premium soak",
-    });
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_PEDI_ID}']`);
-    const chips = row.locator("[data-slot='deduction-chip']");
-    await expect(chips).toHaveCount(1);
-    await expect(chips.first()).toHaveAttribute("data-kind", "supply");
-    await expect(chips.first()).toHaveText("$8 premium soak");
-
-    // Defensive — no exempt-no-fees chip and no card-fee chip.
-    await expect(
-      row.locator("[data-slot='deduction-chip'][data-kind='exempt-no-fees']")
-    ).toHaveCount(0);
-    await expect(row.locator("[data-slot='deduction-chip'][data-kind='card-default']")).toHaveCount(
-      0
-    );
-    await expect(row.locator("[data-slot='deduction-chip'][data-kind='card-custom']")).toHaveCount(
-      0
-    );
-  });
-
-  test("(n) exempt without supply: muted No fees chip", async ({ page }) => {
-    await setServiceDeductions(SPA_PEDI_ID, {
-      card_fee_mode: "exempt",
-      card_fee_custom_cents: null,
-      supply_amount_cents: null,
-      supply_type_name: null,
-    });
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${SPA_PEDI_ID}']`);
-    const chip = row.locator("[data-slot='deduction-chip'][data-kind='exempt-no-fees']");
-    await expect(chip).toBeVisible();
-    await expect(chip).toHaveText("No fees");
-  });
 });
 
 // ============================================================================
-// US4 — Net-to-tech (card) preview (live, no save required)
+// US4 — Net-to-tech (card) preview (only the live-keystroke timing case
+// remains; the math itself moved to `tests/unit/services/deductions.test.ts`
+// per the #61 prune).
 // ============================================================================
-
-// Reset Nail art (the seeded variable-price row) back to its seed state so
-// the variable-price preview case starts from a known baseline. Nail art's
-// seeded `price_from_cents` is 1500 — the variable-price test below sets it
-// to 3000 first, then asserts the preview reads `$30 - 3 = $27` (default
-// card fee, no supply).
-async function restoreNailArt(): Promise<void> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const c = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  await c
-    .from("services")
-    .update({
-      variable_price: true,
-      price_from_cents: 1500,
-      price_to_cents: null,
-      variable_price_note: "Depends on design complexity",
-      card_fee_mode: "default",
-      card_fee_custom_cents: null,
-      supply_amount_cents: null,
-      supply_type_id: null,
-    })
-    .eq("id", NAIL_ART_ID);
-}
-
-// Mutate a service row's `price_from_cents` directly (service-role bypass)
-// so a test can land on a known variable-price baseline without needing to
-// drive the form through a sequence of clicks.
-async function setVariablePriceFrom(id: string, fromCents: number): Promise<void> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const c = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { error } = await c
-    .from("services")
-    .update({ variable_price: true, price_from_cents: fromCents })
-    .eq("id", id);
-  if (error) throw new Error(`setVariablePriceFrom failed: ${error.message}`);
-}
 
 test.describe("021-US4: net-to-tech preview", () => {
   let supabaseUp = false;
@@ -1189,62 +513,20 @@ test.describe("021-US4: net-to-tech preview", () => {
       );
       return;
     }
-    // 022 (T052): seed the "chrome" supply type once so the UI tests below
-    // can pick it via the existing-row path (no inline-create round-trip per
-    // test — keeps US4's preview-math focus from getting tangled up in the
-    // picker's create flow).
+    // Seed the "chrome" supply type once so the kept (b) case can pick it
+    // via the existing-row path.
     await ensureSupplyType("chrome");
   });
 
   test.beforeEach(async () => {
     if (!supabaseUp) return;
-    // Reset both rows used in this describe so each test starts clean.
     await restoreClassicManicureDeductions();
-    await restoreNailArt();
   });
 
   test.afterAll(async () => {
     if (!supabaseUp) return;
     await restoreClassicManicureDeductions();
-    await restoreNailArt();
-    // 022 (T052): tear down the "chrome" supply type the beforeAll seeded.
     await cleanupSeededSupplyTypes();
-  });
-
-  test("(a) classic case: $50 + default + $5 supply → $42 with three breakdown lines", async ({
-    page,
-  }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    // Set price to 50, leave card-fee on default ($3), turn on supply at
-    // the default $5 + label "chrome".
-    await page.locator("[data-slot='service-form-price-input']").fill("50");
-    await page.locator("[data-slot='deductions-supply-toggle']").click();
-    // 022 (T052): drive the picker (existing-row path) instead of typing
-    // into the legacy free-text label input.
-    await pickSupplyType(page, "chrome", "existing");
-
-    const amount = page.locator("[data-slot='deductions-net-to-tech-amount']");
-    await expect(amount).toHaveText("$42");
-
-    // Breakdown lines in order: service, card fee, supply.
-    const lines = page.locator("[data-slot='deductions-net-to-tech-line']");
-    await expect(lines).toHaveCount(3);
-    await expect(lines.nth(0)).toHaveAttribute("data-kind", "service");
-    await expect(lines.nth(0)).toContainText("$50");
-    await expect(lines.nth(0)).toContainText("service");
-    await expect(lines.nth(1)).toHaveAttribute("data-kind", "card-fee");
-    await expect(lines.nth(1)).toContainText("−$3");
-    await expect(lines.nth(1)).toContainText("card fee");
-    await expect(lines.nth(2)).toHaveAttribute("data-kind", "supply");
-    await expect(lines.nth(2)).toContainText("−$5");
-    await expect(lines.nth(2)).toContainText("chrome");
   });
 
   test("(b) live price keystroke → preview recomputes within ~200ms", async ({ page }) => {
@@ -1259,8 +541,6 @@ test.describe("021-US4: net-to-tech preview", () => {
     // Set price = 50, default + supply $5 chrome.
     await page.locator("[data-slot='service-form-price-input']").fill("50");
     await page.locator("[data-slot='deductions-supply-toggle']").click();
-    // 022 (T052): drive the picker (existing-row path) instead of typing
-    // into the legacy free-text label input.
     await pickSupplyType(page, "chrome", "existing");
     const amount = page.locator("[data-slot='deductions-net-to-tech-amount']");
     await expect(amount).toHaveText("$42");
@@ -1269,197 +549,20 @@ test.describe("021-US4: net-to-tech preview", () => {
     await page.locator("[data-slot='service-form-price-input']").fill("60");
     await expect(amount).toHaveText("$52", { timeout: 500 });
   });
-
-  test("(c) switch to exempt → preview becomes $55, card-fee breakdown line drops", async ({
-    page,
-  }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    await page.locator("[data-slot='service-form-price-input']").fill("60");
-    await page.locator("[data-slot='deductions-supply-toggle']").click();
-    // 022 (T052): drive the picker (existing-row path) instead of typing
-    // into the legacy free-text label input.
-    await pickSupplyType(page, "chrome", "existing");
-    // Sanity: $60 - $3 - $5 = $52 with default mode.
-    const amount = page.locator("[data-slot='deductions-net-to-tech-amount']");
-    await expect(amount).toHaveText("$52");
-
-    // Flip to exempt. Preview = $60 - $5 = $55. Card-fee line drops.
-    await page.locator("[data-slot='deductions-card-fee-option'][data-value='exempt']").click();
-    await expect(amount).toHaveText("$55");
-
-    const cardFeeLine = page.locator(
-      "[data-slot='deductions-net-to-tech-line'][data-kind='card-fee']"
-    );
-    await expect(cardFeeLine).toHaveCount(0);
-
-    // Service + supply lines still present.
-    await expect(
-      page.locator("[data-slot='deductions-net-to-tech-line'][data-kind='service']")
-    ).toHaveCount(1);
-    await expect(
-      page.locator("[data-slot='deductions-net-to-tech-line'][data-kind='supply']")
-    ).toHaveCount(1);
-  });
-
-  test("(d) toggle supply off → preview becomes $60, supply breakdown line drops", async ({
-    page,
-  }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    await page.locator("[data-slot='service-form-price-input']").fill("63");
-    await page.locator("[data-slot='deductions-supply-toggle']").click();
-    // 022 (T052): drive the picker (existing-row path) instead of typing
-    // into the legacy free-text label input.
-    await pickSupplyType(page, "chrome", "existing");
-    const amount = page.locator("[data-slot='deductions-net-to-tech-amount']");
-    // Sanity: $63 - $3 - $5 = $55.
-    await expect(amount).toHaveText("$55");
-
-    // Flip supply off. Preview = $63 - $3 = $60. Supply line drops.
-    await page.locator("[data-slot='deductions-supply-toggle']").click();
-    await expect(amount).toHaveText("$60");
-    await expect(
-      page.locator("[data-slot='deductions-net-to-tech-line'][data-kind='supply']")
-    ).toHaveCount(0);
-  });
-
-  test("(e) variable-price service: preview uses price_from (not the empty fixed price) per FR-026", async ({
-    page,
-  }) => {
-    // Seed Nail art's price_from to 30 (cents = 3000) so the preview has
-    // a known baseline; default card-fee + no supply.
-    await setVariablePriceFrom(NAIL_ART_ID, 3000);
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${NAIL_ART_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${NAIL_ART_ID}`));
-
-    // Variable-price toggle should be on; fixed price input absent.
-    await expect(page.locator("[data-slot='service-form-price-input']")).toHaveCount(0);
-    await expect(page.locator("[data-slot='service-form-price-from-input']")).toHaveValue("30");
-
-    // Preview uses price_from = 30 (cents = 3000). Default mode → $30 - $3 = $27.
-    const amount = page.locator("[data-slot='deductions-net-to-tech-amount']");
-    await expect(amount).toHaveText("$27");
-  });
-
-  test("(f) negative net clamps to $0; raw breakdown lines remain visible", async ({ page }) => {
-    await signInAsMaya(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    // Price = 0, default ($3) + supply $5 = -$8 → clamps to $0.
-    await page.locator("[data-slot='service-form-price-input']").fill("0");
-    await page.locator("[data-slot='deductions-supply-toggle']").click();
-    // 022 (T052): drive the picker (existing-row path) instead of typing
-    // into the legacy free-text label input.
-    await pickSupplyType(page, "chrome", "existing");
-
-    const amount = page.locator("[data-slot='deductions-net-to-tech-amount']");
-    await expect(amount).toHaveText("$0");
-
-    // All three breakdown lines are still visible.
-    const lines = page.locator("[data-slot='deductions-net-to-tech-line']");
-    await expect(lines).toHaveCount(3);
-    await expect(lines.nth(0)).toContainText("$0");
-    await expect(lines.nth(1)).toContainText("−$3");
-    await expect(lines.nth(2)).toContainText("−$5");
-  });
 });
 
 // ============================================================================
 // 021-US5 — Role-gated edits + audit trail
 // ============================================================================
 //
-// Phase 7 / T040. Mirrors the seeded-role pattern from
-// tests/e2e/services.spec.ts § US6 (technician = Sam Chen, PIN 9999) and
-// staff.spec.ts § signInAsJordan (manager = Jordan Lee, PIN 5678, linked to
-// manager@tangnails.dev). Maya stays the owner-equivalent for cross-checks
-// but isn't needed here — the contract only distinguishes write-capable
-// (owner/manager) from read-only (technician/front-desk).
-//
-// Direct-POST forbidden assertion: deferred for the same reason the 008
-// US6 spec deferred its equivalent (see services.spec.ts § US6 trailing
-// NOTE) — Next.js 16 Server Actions are dispatched with a bundler-derived
-// `Next-Action` header whose value changes on every rebuild, so crafting a
-// reliable forged POST is brittle. Defense-in-depth is already covered by
-// (1) the Vitest `permissions.test.ts` suite that asserts
-// `assertCanWriteCatalog('technician')` throws PermissionError, (2) the
-// Server Action prelude in `app/(studio)/services/actions.ts` that calls
-// `assertCanWriteCatalog(viewer.staff.role)` before any mutation, and
-// (3) the UI gate in this describe (parts (b), (c)) that prevents a
-// technician from dispatching the action via any legitimate path.
-
-// Sign in as Sam (technician). Same pattern as services.spec.ts
-// `signInAsSamOnServicesPage` — Sam has `user_id: null` so the device user
-// (owner@tangnails.dev) is used and Sam is picked at /select-staff with PIN
-// 9999.
-async function signInAsSamOnServicesPage(page: import("@playwright/test").Page): Promise<void> {
-  await page.goto("/login?next=%2Fservices");
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Sam Chen/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  for (const d of ["9", "9", "9", "9"]) {
-    await page.getByRole("button", { name: `Digit ${d}`, exact: true }).click();
-  }
-  await page.waitForURL(/\/services(\?|$)/, { timeout: 10_000 });
-}
-
-// Sign in as Jordan (manager). Same pattern as staff.spec.ts §
-// signInAsJordan but lands on /services instead of /settings/staff.
-async function signInAsJordanOnServicesPage(page: import("@playwright/test").Page): Promise<void> {
-  await page.goto("/login?next=%2Fservices");
-  await page.locator("#signin-email").fill("manager@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Jordan Lee/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  for (const d of ["5", "6", "7", "8"]) {
-    await page.getByRole("button", { name: `Digit ${d}`, exact: true }).click();
-  }
-  await page.waitForURL(/\/services(\?|$)/, { timeout: 10_000 });
-}
-
-// Tooltip copy must match the deductions-section / owner-only-tooltip
-// vocabulary exactly. If you change it in one place, change it in both.
-const ROLE_GATE_TOOLTIP_COPY = "Only owners and managers can edit the catalog.";
-
-// Reset Classic manicure's price back to its seeded $25 (2500 cents from
-// supabase/seed.sql). Used by US5 because test (g) writes a $60 price and
-// the next iteration — plus shared specs that depend on the $25 baseline
-// (checkout, services, card-payment) — need the canonical seed value.
-async function resetClassicManicurePrice(): Promise<void> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  const c = createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  await c.from("services").update({ price_cents: 2500 }).eq("id", CLASSIC_MANICURE_ID);
-}
+// Only the aria-disabled / View-only chip / tooltip case remains. The audit
+// row + minimal-diff (FR-030) tests moved to
+// `tests/unit/services/audit-diff-keys.test.ts`; the role permission
+// matrix is already exhaustively covered by
+// `tests/unit/services/permissions.test.ts`. What's irreducibly e2e here
+// is the accessibility wiring: aria-disabled on the segmented control + its
+// options, the View-only chip swap, and the role-gate tooltip surfacing on
+// hover of the wrapper span around the disabled Switch.
 
 test.describe("021-US5: role gating + audit", () => {
   let supabaseUp = false;
@@ -1473,47 +576,6 @@ test.describe("021-US5: role gating + audit", () => {
       );
       return;
     }
-    // 022 (T052): seed the "chrome" supply type once so test (e) can pick it
-    // via the existing-row path. Tests (f) + (g) also seed it via
-    // `setServiceDeductions` (ensureSupplyType is idempotent — second call
-    // returns the same id).
-    await ensureSupplyType("chrome");
-  });
-
-  test.beforeEach(async () => {
-    if (!supabaseUp) return;
-    // Reset deductions to seed defaults on every test so each case starts
-    // from a known baseline (mode='default', custom=null, supply=null).
-    // Also reset price_cents in case the previous test changed it (test
-    // (g) sets price to 6000).
-    await restoreClassicManicureDeductions();
-    await resetClassicManicurePrice();
-  });
-
-  test.afterAll(async () => {
-    if (!supabaseUp) return;
-    await restoreClassicManicureDeductions();
-    await resetClassicManicurePrice();
-    // Also reset name in case the manager-write test renamed it
-    // accidentally; defensive.
-    await restoreClassicManicureName();
-    // 022 (T052): tear down the supply types this describe seeded.
-    await cleanupSeededSupplyTypes();
-  });
-
-  test("(a) technician sees deduction chips on every row (read works)", async ({ page }) => {
-    await signInAsSamOnServicesPage(page);
-
-    // At least one row renders. The default $3 card-fee chip ships on
-    // every active seeded service (US2 fixture).
-    const rows = page.locator("[data-slot='service-row']");
-    expect(await rows.count()).toBeGreaterThan(0);
-
-    // The seeded Classic manicure row carries the default card-fee chip.
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const chip = row.locator("[data-slot='deduction-chip'][data-kind='card-default']");
-    await expect(chip).toBeVisible();
-    await expect(chip).toHaveText("$3 card fee");
   });
 
   test("(b) technician sees disabled deduction controls with role-gate tooltip", async ({
@@ -1541,10 +603,6 @@ test.describe("021-US5: role gating + audit", () => {
       await expect(options.nth(i)).toHaveAttribute("tabindex", "-1");
     }
 
-    // Custom amount input isn't rendered (mode=default), so no assertion
-    // there; the (c) sub-case below tests it in isolation by switching to
-    // custom via direct DB (we can't toggle from the disabled UI).
-
     // Supply toggle: aria-disabled at the underlying Radix Switch root.
     const supplyToggle = page.locator("[data-slot='deductions-supply-toggle']");
     await expect(supplyToggle).toHaveAttribute("aria-disabled", "true");
@@ -1553,12 +611,10 @@ test.describe("021-US5: role gating + audit", () => {
 
     // Supply amount input + picker are not rendered (toggle is off). We
     // assert this is the contracted state.
-    // 022 (T052): the free-text label input is gone — the picker is what
-    // would mount when supply is on.
     await expect(page.locator("[data-slot='deductions-supply-amount-input']")).toHaveCount(0);
     await expect(page.locator("[data-slot='supply-type-picker']")).toHaveCount(0);
 
-    // Save button is replaced by the "View only" chip per existing 008
+    // Save button is replaced by the "View only" chip per the existing 008
     // pattern (services.spec.ts § US6 (b)). The 021 contract is the same:
     // mutations are blocked, the operator sees an explicit view-only chip
     // rather than a disabled-looking Save button.
@@ -1584,233 +640,5 @@ test.describe("021-US5: role gating + audit", () => {
         hasText: ROLE_GATE_TOOLTIP_COPY,
       })
     ).toBeVisible();
-  });
-
-  test("(c) technician sees the net-to-tech preview (read-only by design)", async ({ page }) => {
-    await signInAsSamOnServicesPage(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    // Net-to-tech preview block renders regardless of role (FR-029).
-    const preview = page.locator("[data-slot='deductions-net-to-tech']");
-    await expect(preview).toBeVisible();
-
-    // Headline + amount + service breakdown line all present.
-    await expect(page.locator("[data-slot='deductions-net-to-tech-headline']")).toHaveText(
-      "Net to tech (card)"
-    );
-    await expect(page.locator("[data-slot='deductions-net-to-tech-amount']")).toBeVisible();
-
-    // Seeded Classic manicure has price 2500 + default ($3) + no supply
-    // → net = $25 - $3 = $22. The breakdown shows two lines (service +
-    // card-fee, no supply since the seed has it off).
-    await expect(page.locator("[data-slot='deductions-net-to-tech-amount']")).toHaveText("$22");
-    const lines = page.locator("[data-slot='deductions-net-to-tech-line']");
-    await expect(lines).toHaveCount(2);
-    await expect(lines.nth(0)).toHaveAttribute("data-kind", "service");
-    await expect(lines.nth(1)).toHaveAttribute("data-kind", "card-fee");
-  });
-
-  test("(d) manager has full interactivity (no aria-disabled, controls write)", async ({
-    page,
-  }) => {
-    await signInAsJordanOnServicesPage(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    // Segmented control + every option have no aria-disabled.
-    const segmented = page.locator("[data-slot='deductions-card-fee-segmented']");
-    const segDisabled = await segmented.getAttribute("aria-disabled");
-    expect(segDisabled).toBeNull();
-
-    const options = page.locator("[data-slot='deductions-card-fee-option']");
-    const optCount = await options.count();
-    for (let i = 0; i < optCount; i++) {
-      const v = await options.nth(i).getAttribute("aria-disabled");
-      expect(v).toBeNull();
-      const tabIndex = await options.nth(i).getAttribute("tabindex");
-      // Radix RadioGroup uses roving tabindex: exactly one item is
-      // tabbable (0), the rest are -1. Either case is fine — what
-      // matters is the disabled state isn't forced everywhere.
-      if (tabIndex !== null) {
-        expect(["0", "-1"]).toContain(tabIndex);
-      }
-    }
-
-    // Supply toggle is interactive (no aria-disabled, not disabled).
-    const supplyToggle = page.locator("[data-slot='deductions-supply-toggle']");
-    const toggleDisabled = await supplyToggle.getAttribute("aria-disabled");
-    expect(toggleDisabled).toBeNull();
-    await expect(supplyToggle).not.toBeDisabled();
-
-    // Save button rendered (not replaced by the View only chip). It's
-    // initially disabled (draft is clean) — flipping a control should
-    // enable it; tested in part (e).
-    await expect(page.locator("[data-slot='services-edit-panel-save']")).toHaveCount(1);
-    await expect(page.locator("[data-slot='services-edit-panel-view-only-chip']")).toHaveCount(0);
-
-    // Archive button visible (active service + write role).
-    await expect(page.locator("[data-slot='services-edit-panel-archive-button']")).toBeVisible();
-  });
-
-  test("(e) manager flipping supply on writes a service.updated audit row with the four deduction keys diffed", async ({
-    page,
-  }) => {
-    const cursor = newAuditCursor();
-
-    await signInAsJordanOnServicesPage(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    // Flip Supply on.
-    await page.locator("[data-slot='deductions-supply-toggle']").click();
-    // The amount input pre-fills with $5.00 per FR-021 toggle-on default.
-    await expect(page.locator("[data-slot='deductions-supply-amount-input']")).toHaveValue("5.00");
-    // 022 (T052): pick "chrome" via the picker's existing-row path. The
-    // `ensureSupplyType("chrome")` in this describe's beforeAll guarantees
-    // it's selectable.
-    await pickSupplyType(page, "chrome", "existing");
-    // Resolve the seeded type's id so the audit payload assertion below
-    // knows what `supply_type_id` value to expect in the after-snapshot.
-    const chromeTypeId = await ensureSupplyType("chrome");
-
-    // Save.
-    await page.locator("[data-slot='services-edit-panel-save']").click();
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}.*toast=changes_saved`));
-
-    // Audit row was written. Filter by `service.updated` and pick the row
-    // for this service id.
-    const rows = await getAuditLogRowsSince(cursor, "service.updated");
-    const match = rows.find((r) => r.entity_id === CLASSIC_MANICURE_ID);
-    expect(match).toBeDefined();
-    expect(match!.entity_type).toBe("service");
-
-    const payload = match!.payload as {
-      changes: Record<string, [unknown, unknown]>;
-      before: Record<string, unknown>;
-      after: Record<string, unknown>;
-    };
-
-    // 022 (T052): two deduction keys flipped — supply_amount_cents
-    // (null → 500) and supply_type_id (null → chromeTypeId). The
-    // diff-keys constant in `_audit-diff.ts` swapped `supply_label` for
-    // `supply_type_id` to match the schema change.
-    expect(payload.changes).toEqual({
-      supply_amount_cents: [null, 500],
-      supply_type_id: [null, chromeTypeId],
-    });
-
-    // before/after snapshots include the four deduction fields.
-    expect(payload.before.card_fee_mode).toBe("default");
-    expect(payload.before.card_fee_custom_cents).toBeNull();
-    expect(payload.before.supply_amount_cents).toBeNull();
-    expect(payload.before.supply_type_id).toBeNull();
-    expect(payload.after.card_fee_mode).toBe("default");
-    expect(payload.after.card_fee_custom_cents).toBeNull();
-    expect(payload.after.supply_amount_cents).toBe(500);
-    expect(payload.after.supply_type_id).toBe(chromeTypeId);
-  });
-
-  test("(f) deduction-only edit produces a minimal diff (only the changed key)", async ({
-    page,
-  }) => {
-    // 022 (T052): pre-seed supply $5 + the 'chrome' supply type so the
-    // manager can change just the amount and we can assert the diff covers
-    // ONLY supply_amount_cents. `setServiceDeductions` now takes
-    // `supply_type_name`; it resolves to a `supply_type_id` via
-    // `ensureSupplyType` (idempotent — beforeAll already seeded "chrome").
-    await setServiceDeductions(CLASSIC_MANICURE_ID, {
-      card_fee_mode: "default",
-      card_fee_custom_cents: null,
-      supply_amount_cents: 500,
-      supply_type_name: "chrome",
-    });
-
-    const cursor = newAuditCursor();
-    await signInAsJordanOnServicesPage(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    // Confirm baseline supply state hydrated. `makeDraftFromBaseline` formats
-    // whole-dollar amounts without a decimal (i.e. "5" not "5.00") — see
-    // `dollarsFromCents` in service-form.client.tsx.
-    await expect(page.locator("[data-slot='deductions-supply-amount-input']")).toHaveValue("5");
-    // 022 (T052): assert the picker reflects the pre-seeded type instead of
-    // the legacy free-text label input value.
-    await expect(page.locator("[data-slot='supply-type-picker-trigger']")).toContainText("chrome");
-
-    // Change ONLY the supply amount from $5 → $7.50.
-    await page.locator("[data-slot='deductions-supply-amount-input']").fill("7.50");
-    // Blur off the input so the on-blur reformat fires (no-op for 7.50).
-    // Blur target was the legacy label input; use the picker's trigger now.
-    await page.locator("[data-slot='supply-type-picker-trigger']").focus();
-
-    await page.locator("[data-slot='services-edit-panel-save']").click();
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}.*toast=changes_saved`));
-
-    const rows = await getAuditLogRowsSince(cursor, "service.updated");
-    const match = rows.find((r) => r.entity_id === CLASSIC_MANICURE_ID);
-    expect(match).toBeDefined();
-    const payload = match!.payload as {
-      changes: Record<string, [unknown, unknown]>;
-    };
-
-    // FR-030: the diff contains EXACTLY the changed key.
-    expect(payload.changes).toEqual({ supply_amount_cents: [500, 750] });
-  });
-
-  test("(g) non-deduction edit produces no spurious deduction diff", async ({ page }) => {
-    // Pre-seed supply on so the row has all four deduction fields populated;
-    // the test then changes ONLY the price and asserts the diff doesn't
-    // gratuitously include the deduction keys.
-    // 022 (T052): `supply_type_name` (not `supply_label`) — helper resolves
-    // to a `supply_type_id` FK.
-    await setServiceDeductions(CLASSIC_MANICURE_ID, {
-      card_fee_mode: "default",
-      card_fee_custom_cents: null,
-      supply_amount_cents: 500,
-      supply_type_name: "chrome",
-    });
-
-    const cursor = newAuditCursor();
-    await signInAsJordanOnServicesPage(page);
-
-    const row = page.locator(`[data-slot='service-row'][data-service-id='${CLASSIC_MANICURE_ID}']`);
-    const link = row.locator("xpath=ancestor::a");
-    await link.focus();
-    await link.press("Enter");
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}`));
-
-    // Change ONLY the price from $25 (seed: 2500) → $60.
-    await page.locator("[data-slot='service-form-price-input']").fill("60");
-
-    await page.locator("[data-slot='services-edit-panel-save']").click();
-    await page.waitForURL(new RegExp(`\\?selected=${CLASSIC_MANICURE_ID}.*toast=changes_saved`));
-
-    const rows = await getAuditLogRowsSince(cursor, "service.updated");
-    const match = rows.find((r) => r.entity_id === CLASSIC_MANICURE_ID);
-    expect(match).toBeDefined();
-    const payload = match!.payload as {
-      changes: Record<string, [unknown, unknown]>;
-    };
-
-    // FR-030 inverse: ONLY price_cents in the diff — no deduction keys.
-    expect(payload.changes).toEqual({ price_cents: [2500, 6000] });
   });
 });

@@ -144,4 +144,86 @@ describe("buildChanges (deduction key coverage)", () => {
     expect(changes.card_fee_mode).toEqual(["default", "exempt"]);
     expect(changes.card_fee_custom_cents).toBeUndefined();
   });
+
+  // FR-030 selectivity, scenario from the legacy
+  // `services-deductions.spec.ts § US5 (f)` e2e test. Pruning #61 removed
+  // that browser-side audit-diff assertion; this unit test takes its place.
+  it("supply-amount-only change emits exactly one diff key (FR-030, was e2e US5 (f))", () => {
+    const before = {
+      ...baseSnapshot,
+      supply_amount_cents: 500,
+      supply_type_id: "10000000-0000-0000-0000-000000000001",
+    };
+    const after = {
+      ...baseSnapshot,
+      supply_amount_cents: 750,
+      supply_type_id: "10000000-0000-0000-0000-000000000001",
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const changes = buildChanges(before as any, after as any);
+    expect(changes).toEqual({ supply_amount_cents: [500, 750] });
+  });
+
+  // FR-030 inverse, scenario from the legacy
+  // `services-deductions.spec.ts § US5 (g)` e2e test. A non-deduction edit
+  // must NOT pull deduction keys into the diff just because they're in
+  // `SERVICE_DIFF_KEYS`.
+  it("price-only change emits price_cents and zero deduction keys (FR-030, was e2e US5 (g))", () => {
+    const before = {
+      ...baseSnapshot,
+      price_cents: 2500,
+      supply_amount_cents: 500,
+      supply_type_id: "10000000-0000-0000-0000-000000000001",
+    };
+    const after = {
+      ...baseSnapshot,
+      price_cents: 6000,
+      supply_amount_cents: 500,
+      supply_type_id: "10000000-0000-0000-0000-000000000001",
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const changes = buildChanges(before as any, after as any);
+    expect(changes).toEqual({ price_cents: [2500, 6000] });
+    expect(changes.card_fee_mode).toBeUndefined();
+    expect(changes.card_fee_custom_cents).toBeUndefined();
+    expect(changes.supply_amount_cents).toBeUndefined();
+    expect(changes.supply_type_id).toBeUndefined();
+  });
+
+  // The full US5 (e) audit row contract: supply toggled on emits both
+  // supply_amount_cents and supply_type_id (and nothing else). Already
+  // covered by "emits supply keys when toggling on" above — this case
+  // additionally asserts no card-fee keys leak in.
+  it("supply toggle-on emits supply_amount_cents + supply_type_id only (was e2e US5 (e))", () => {
+    const before = { ...baseSnapshot };
+    const after = {
+      ...baseSnapshot,
+      supply_amount_cents: 500,
+      supply_type_id: "10000000-0000-0000-0000-000000000001",
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const changes = buildChanges(before as any, after as any);
+    expect(changes).toEqual({
+      supply_amount_cents: [null, 500],
+      supply_type_id: [null, "10000000-0000-0000-0000-000000000001"],
+    });
+  });
+
+  // Counterpart to the legacy US3 (d) "toggle supply off clears columns"
+  // test. The diff must surface both supply keys flipping back to null so
+  // downstream consumers see the full transition.
+  it("supply toggle-off emits both supply keys nulling out (was e2e US3 (d))", () => {
+    const before = {
+      ...baseSnapshot,
+      supply_amount_cents: 500,
+      supply_type_id: "10000000-0000-0000-0000-000000000001",
+    };
+    const after = { ...baseSnapshot };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const changes = buildChanges(before as any, after as any);
+    expect(changes).toEqual({
+      supply_amount_cents: [500, null],
+      supply_type_id: ["10000000-0000-0000-0000-000000000001", null],
+    });
+  });
 });

@@ -197,44 +197,6 @@ async function setStaffSupply(args: {
   }
 }
 
-/** Force the staff's role via the service-role client. Used by the US3
- *  front-desk hint test (the seed has no front_desk staff, so the test
- *  flips Sam's role before opening the panel). */
-async function setStaffRole(args: {
-  staffId: string;
-  role: "owner" | "manager" | "technician" | "front_desk";
-}): Promise<void> {
-  const c = adminClient();
-  const { error } = await c.from("staff").update({ role: args.role }).eq("id", args.staffId);
-  if (error) {
-    throw new Error(`setStaffRole failed: ${error.message}`);
-  }
-}
-
-/** Force the staff's card_fee_exempt + supply_mode + supply_except in a
- *  single call. Used by the US3 summary-posture tests to seed each of the
- *  6 posture combinations from quickstart § 4 without clicking through
- *  the UI on every test. */
-async function setStaffPosture(args: {
-  staffId: string;
-  cardFeeExempt: boolean;
-  supplyMode: "apply" | "partial" | "exempt";
-  supplyExcept: readonly string[];
-}): Promise<void> {
-  const c = adminClient();
-  const { error } = await c
-    .from("staff")
-    .update({
-      card_fee_exempt: args.cardFeeExempt,
-      supply_mode: args.supplyMode,
-      supply_except: [...args.supplyExcept],
-    })
-    .eq("id", args.staffId);
-  if (error) {
-    throw new Error(`setStaffPosture failed: ${error.message}`);
-  }
-}
-
 /** Archive an existing supply_type by setting `archived=true`. */
 async function archiveSupplyType(id: string): Promise<void> {
   const c = adminClient();
@@ -242,27 +204,6 @@ async function archiveSupplyType(id: string): Promise<void> {
   if (error) {
     throw new Error(`archiveSupplyType failed: ${error.message}`);
   }
-}
-
-/** Read a staff row's supply_mode + supply_except from the DB (used by
- *  the FR-012 stale-tab-defensive test to confirm the persisted set). */
-async function readStaffSupply(staffId: string): Promise<{
-  mode: string;
-  except: readonly string[];
-}> {
-  const c = adminClient();
-  const { data, error } = await c
-    .from("staff")
-    .select("supply_mode, supply_except")
-    .eq("id", staffId)
-    .single();
-  if (error || !data) {
-    throw new Error(`readStaffSupply failed: ${error?.message ?? "no row"}`);
-  }
-  return {
-    mode: (data as { supply_mode: string }).supply_mode,
-    except: ((data as { supply_except: string[] }).supply_except ?? []) as readonly string[],
-  };
 }
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
@@ -361,38 +302,10 @@ test.describe("US1: Card-fee exemption", () => {
     expect(payload.after).toMatchObject({ card_fee_exempt: true });
     expect(rows[0].entity_id).toBe(staffFixture.tech.id);
   });
-
-  test("(b) reloading after save preserves the off state", async ({ page, staffFixture }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-
-    // Flip + save (same path as (a) — re-establishes the exempt state).
-    const cardFeeSwitch = page.locator("[data-slot='pay-deductions-card-fee-switch']");
-    await expect(cardFeeSwitch).toHaveAttribute("data-state", "checked");
-    await cardFeeSwitch.click();
-    await page.locator("[data-slot='edit-panel-save']").click();
-    await page.waitForURL(/\/settings\/staff\?selected=.+&toast=changes_saved/, {
-      timeout: 10_000,
-    });
-
-    // Hard reload — drop client state, re-fetch from DB.
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-
-    // Toggle is still off; exempt subtitle is still shown; badge still visible.
-    await expect(page.locator("[data-slot='pay-deductions-card-fee-switch']")).toHaveAttribute(
-      "data-state",
-      "unchecked"
-    );
-    await expect(page.locator("[data-slot='pay-deductions-card-fee-row']")).toContainText(
-      "Exempt — card fee never deducted from payout."
-    );
-    await expect(page.locator("[data-slot='staff-status-badge-card-fee-exempt']")).toBeVisible();
-  });
 });
 
 test.describe("US2: Supply deductions mode + per-type picker", () => {
   let supabaseUp = false;
-  let auditCursor = "";
 
   // Per-test seeded catalog. Reset + repopulated in beforeEach so each test
   // gets a deterministic 3-type catalog plus referencing services.
@@ -426,7 +339,6 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
 
   test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
-    auditCursor = newAuditCursor();
     await staffFixture.reset();
     await resetSupplyCatalog();
 
@@ -444,31 +356,6 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
     await seedService({ name: "Chrome powder add-on", supplyTypeId: chromeId, amountCents: 500 });
     await seedService({ name: "Chrome powder full set", supplyTypeId: chromeId, amountCents: 500 });
     await seedService({ name: "GelX classic", supplyTypeId: gelXId, amountCents: 1500 });
-  });
-
-  test("(a) default is Apply all with the documented subtitle", async ({ page, staffFixture }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-    await expect(page.locator("[data-slot='staff-edit-panel']")).toBeVisible();
-
-    const section = page.locator("[data-slot='pay-deductions-section']");
-    await expect(section).toBeVisible();
-
-    // Supply deductions row default — Apply all selected, documented subtitle.
-    const supplyRow = page.locator("[data-slot='pay-deductions-supply-row']");
-    await expect(supplyRow).toBeVisible();
-    await expect(supplyRow).toContainText("Supply deductions");
-    await expect(supplyRow).toContainText(
-      "Per-service supply cost deducted from payout when configured."
-    );
-
-    const applyAllToggle = page.locator(
-      "[data-slot='pay-deductions-supply-mode-toggle'] [data-value='apply']"
-    );
-    await expect(applyAllToggle).toHaveAttribute("data-state", "on");
-
-    // Picker is hidden when mode is 'apply'.
-    await expect(page.locator("[data-slot='pay-deductions-picker']")).toHaveCount(0);
   });
 
   test("(b) selecting Some reveals the per-type picker with usage hints, alphabetized", async ({
@@ -500,88 +387,6 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
     await expect(rows.nth(0)).toContainText("1 service · typically $7.00 per ticket");
     await expect(rows.nth(1)).toContainText("2 services · typically $5.00 per ticket");
     await expect(rows.nth(2)).toContainText("1 service · typically $15.00 per ticket");
-  });
-
-  test("(c) ticking a type + saving persists; reload confirms the tick survives", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-
-    await page
-      .locator("[data-slot='pay-deductions-supply-mode-toggle'] [data-value='partial']")
-      .click();
-
-    // Tick Chrome powder.
-    const chromeRow = page.locator(
-      "[data-slot='pay-deductions-picker-row'][data-name='Chrome powder']"
-    );
-    await chromeRow.locator("[data-slot='pay-deductions-picker-checkbox']").click();
-    await expect(chromeRow.locator("[data-slot='pay-deductions-picker-checkbox']")).toHaveAttribute(
-      "data-state",
-      "checked"
-    );
-
-    await page.locator("[data-slot='edit-panel-save']").click();
-    await page.waitForURL(/\/settings\/staff\?selected=.+&toast=changes_saved/, {
-      timeout: 10_000,
-    });
-
-    // Reload + re-open: still on Some, Chrome powder still ticked.
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-    await expect(
-      page.locator("[data-slot='pay-deductions-supply-mode-toggle'] [data-value='partial']")
-    ).toHaveAttribute("data-state", "on");
-    await expect(
-      page
-        .locator("[data-slot='pay-deductions-picker-row'][data-name='Chrome powder']")
-        .locator("[data-slot='pay-deductions-picker-checkbox']")
-    ).toHaveAttribute("data-state", "checked");
-
-    // DB check — supply_mode='partial', supply_except contains chromeId.
-    const persisted = await readStaffSupply(staffFixture.tech.id);
-    expect(persisted.mode).toBe("partial");
-    expect(persisted.except).toEqual([chromeId]);
-  });
-
-  test("(d) selecting Exempt + saving hides the picker and clears supply_except", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    // Pre-seed staff in partial mode with a tick, so the wipe is observable.
-    await setStaffSupply({ staffId: staffFixture.tech.id, mode: "partial", except: [chromeId] });
-
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-    // Confirm we start in partial with the chrome tick visible.
-    await expect(page.locator("[data-slot='pay-deductions-picker']")).toBeVisible();
-
-    // Switch to Exempt + save.
-    await page
-      .locator("[data-slot='pay-deductions-supply-mode-toggle'] [data-value='exempt']")
-      .click();
-    // Picker hides immediately in draft state.
-    await expect(page.locator("[data-slot='pay-deductions-picker']")).toHaveCount(0);
-    await expect(page.locator("[data-slot='pay-deductions-supply-row']")).toContainText(
-      "Exempt — no supply costs ever deducted, on any service."
-    );
-
-    await page.locator("[data-slot='edit-panel-save']").click();
-    await page.waitForURL(/\/settings\/staff\?selected=.+&toast=changes_saved/, {
-      timeout: 10_000,
-    });
-
-    // Reload: picker remains hidden; DB confirms wipe.
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-    await expect(
-      page.locator("[data-slot='pay-deductions-supply-mode-toggle'] [data-value='exempt']")
-    ).toHaveAttribute("data-state", "on");
-    await expect(page.locator("[data-slot='pay-deductions-picker']")).toHaveCount(0);
-
-    const persisted = await readStaffSupply(staffFixture.tech.id);
-    expect(persisted.mode).toBe("exempt");
-    expect(persisted.except).toEqual([]);
   });
 
   test("(e) draft preservation: Some -> Apply all -> Some restores prior ticks (Clarify Q4)", async ({
@@ -658,43 +463,6 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
     await expect(cb).not.toBeDisabled();
   });
 
-  test("(g) save with supply_mode + supply_except writes one audit row with both keys + raw uuid array", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-
-    // Switch to Some + tick Chrome powder.
-    await page
-      .locator("[data-slot='pay-deductions-supply-mode-toggle'] [data-value='partial']")
-      .click();
-    await page
-      .locator("[data-slot='pay-deductions-picker-row'][data-name='Chrome powder']")
-      .locator("[data-slot='pay-deductions-picker-checkbox']")
-      .click();
-
-    await page.locator("[data-slot='edit-panel-save']").click();
-    await page.waitForURL(/\/settings\/staff\?selected=.+&toast=changes_saved/, {
-      timeout: 10_000,
-    });
-
-    const rows = await getAuditLogRowsSince(auditCursor, "staff.updated");
-    expect(rows).toHaveLength(1);
-    const payload = (rows[0].payload ?? {}) as Record<string, unknown>;
-    const changes = payload.changes as readonly string[];
-    expect(changes).toContain("supply_mode");
-    expect(changes).toContain("supply_except");
-    const after = payload.after as Record<string, unknown>;
-    expect(after.supply_mode).toBe("partial");
-    // payload.after.supply_except is the raw uuid array — not name snapshots.
-    const exceptAfter = after.supply_except as readonly string[];
-    expect(Array.isArray(exceptAfter)).toBe(true);
-    expect(exceptAfter).toHaveLength(1);
-    expect(exceptAfter[0]).toMatch(/^[0-9a-f-]{36}$/i);
-    expect(exceptAfter[0]).toBe(chromeId);
-  });
-
   test("(h) empty catalog: selecting Some shows the empty-state copy with a /services link", async ({
     page,
     staffFixture,
@@ -730,59 +498,10 @@ test.describe("US2: Supply deductions mode + per-type picker", () => {
     // The "Services page" text is wrapped in a Link href="/services".
     await expect(empty.locator("a[href='/services']")).toBeVisible();
   });
-
-  test("(i) FR-012 stale-tab defensive: unknown supply_except ids are silently dropped server-side", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-
-    // Switch to Some + tick Chrome powder via the UI.
-    await page
-      .locator("[data-slot='pay-deductions-supply-mode-toggle'] [data-value='partial']")
-      .click();
-    await page
-      .locator("[data-slot='pay-deductions-picker-row'][data-name='Chrome powder']")
-      .locator("[data-slot='pay-deductions-picker-checkbox']")
-      .click();
-
-    // Inject an extra hidden input with an unknown uuid into the same form
-    // before submitting — simulates a stale tab whose catalog has been
-    // narrowed in another window. The action's validateSupplyExcept gate
-    // should drop the unknown id silently and accept the rest.
-    await page.evaluate(() => {
-      const form = document.querySelector(
-        "form[data-slot='staff-edit-panel']"
-      ) as HTMLFormElement | null;
-      if (!form) throw new Error("staff-edit-panel form not found");
-      const input = document.createElement("input");
-      input.type = "hidden";
-      input.name = "supply_except";
-      input.value = "00000000-0000-0000-0000-000000000000";
-      form.appendChild(input);
-    });
-
-    await page.locator("[data-slot='edit-panel-save']").click();
-    await page.waitForURL(/\/settings\/staff\?selected=.+&toast=changes_saved/, {
-      timeout: 10_000,
-    });
-
-    // Persisted set contains only the valid id; the unknown id was silently
-    // dropped by validateSupplyExcept's allowedIds gate.
-    const persisted = await readStaffSupply(staffFixture.tech.id);
-    expect(persisted.mode).toBe("partial");
-    expect(persisted.except).toEqual([chromeId]);
-  });
 });
 
 test.describe("US3: Summary sentence + live status badges", () => {
   let supabaseUp = false;
-
-  // Per-test seeded catalog — the partial-mode posture tests reference the
-  // Chrome powder and GelX type ids in their assertions.
-  let chromeId = "";
-  let gelXId = "";
 
   test.beforeAll(async () => {
     supabaseUp = await supabaseIsReachable();
@@ -795,164 +514,9 @@ test.describe("US3: Summary sentence + live status badges", () => {
     }
   });
 
-  // T068 — final cleanup so the last test's leaked supply_types don't collide
-  // with downstream specs (e.g. `supply-types-catalog.spec.ts`).
-  test.afterAll(async () => {
-    if (!supabaseUp) return;
-    await resetSupplyCatalog();
-    // Note: the fixture's trio is reset automatically by the next
-    // beforeEach (next file's first test) — no manual reset needed here,
-    // and worker-scoped fixtures aren't accessible in afterAll.
-  });
-
   test.beforeEach(async ({ staffFixture }) => {
     if (!supabaseUp) return;
     await staffFixture.reset();
-    await resetSupplyCatalog();
-
-    // Seed the same 3-type catalog US2 uses so the partial-mode summary
-    // tests can reference Chrome powder + GelX by id.
-    await seedSupplyType("Cat-eye gel");
-    chromeId = await seedSupplyType("Chrome powder");
-    gelXId = await seedSupplyType("GelX tips & gel");
-  });
-
-  // ── 6-posture table from quickstart § 4 ────────────────────────────────
-  // Each test pre-seeds the persisted posture via the admin client, opens
-  // Sam's edit panel, and asserts the rendered summary matches verbatim.
-  // Sam's display_name is "Sam Chen" so the first-name interpolation is "Sam".
-
-  test("(a) no exemption + apply mode → no summary rendered", async ({ page, staffFixture }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    // Default seed posture is already cardFeeExempt=false, supplyMode=apply, [].
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-    await expect(page.locator("[data-slot='pay-deductions-section']")).toBeVisible();
-    await expect(page.locator("[data-slot='pay-deductions-summary']")).toHaveCount(0);
-    await expect(page.locator("[data-slot='pay-deductions-front-desk-hint']")).toHaveCount(0);
-  });
-
-  test("(b) cardExempt + apply → 'Sam keeps the full payout on card-paid services — no card fee deducted.'", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    await setStaffPosture({
-      staffId: staffFixture.tech.id,
-      cardFeeExempt: true,
-      supplyMode: "apply",
-      supplyExcept: [],
-    });
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-    const summary = page.locator("[data-slot='pay-deductions-summary']");
-    await expect(summary).toBeVisible();
-    await expect(summary).toHaveText(
-      "Test keeps the full payout on card-paid services — no card fee deducted."
-    );
-  });
-
-  test("(c) supplyMode=exempt → 'Sam keeps the full payout on every service — no supply costs deducted.'", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    await setStaffPosture({
-      staffId: staffFixture.tech.id,
-      cardFeeExempt: false,
-      supplyMode: "exempt",
-      supplyExcept: [],
-    });
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-    const summary = page.locator("[data-slot='pay-deductions-summary']");
-    await expect(summary).toBeVisible();
-    await expect(summary).toHaveText(
-      "Test keeps the full payout on every service — no supply costs deducted."
-    );
-  });
-
-  test("(d) cardExempt + exempt → 'Sam keeps the full payout on every service — no card fee or supply costs deducted.'", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    await setStaffPosture({
-      staffId: staffFixture.tech.id,
-      cardFeeExempt: true,
-      supplyMode: "exempt",
-      supplyExcept: [],
-    });
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-    const summary = page.locator("[data-slot='pay-deductions-summary']");
-    await expect(summary).toBeVisible();
-    await expect(summary).toHaveText(
-      "Test keeps the full payout on every service — no card fee or supply costs deducted."
-    );
-  });
-
-  test("(e) partial + [Chrome powder] → 'Sam keeps the full payout on every service and is exempted from chrome-powder supply costs.'", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    await setStaffPosture({
-      staffId: staffFixture.tech.id,
-      cardFeeExempt: false,
-      supplyMode: "partial",
-      supplyExcept: [chromeId],
-    });
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-    const summary = page.locator("[data-slot='pay-deductions-summary']");
-    await expect(summary).toBeVisible();
-    await expect(summary).toHaveText(
-      "Test keeps the full payout on every service and is exempted from chrome-powder supply costs."
-    );
-  });
-
-  test("(f) cardExempt + partial + [Chrome powder, GelX] → 'Sam keeps the full payout on card-paid services and is exempted from chrome-powder and gelx-tips-gel supply costs.'", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    await setStaffPosture({
-      staffId: staffFixture.tech.id,
-      cardFeeExempt: true,
-      supplyMode: "partial",
-      supplyExcept: [chromeId, gelXId],
-    });
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-    const summary = page.locator("[data-slot='pay-deductions-summary']");
-    await expect(summary).toBeVisible();
-    await expect(summary).toHaveText(
-      "Test keeps the full payout on card-paid services and is exempted from chrome-powder and gelx-tips-gel supply costs."
-    );
-  });
-
-  test("(g) front-desk role + no exemption → renders the muted hint instead of the summary", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    await setStaffRole({ staffId: staffFixture.tech.id, role: "front_desk" });
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-
-    const hint = page.locator("[data-slot='pay-deductions-front-desk-hint']");
-    await expect(hint).toBeVisible();
-    await expect(hint).toHaveText(
-      "Front desk staff don't take services, so these settings normally don't affect their payouts. Configure if they occasionally cover service tickets."
-    );
-    // No summary in this state.
-    await expect(page.locator("[data-slot='pay-deductions-summary']")).toHaveCount(0);
-  });
-
-  test("(h) non-front-desk role + no exemption → renders neither summary nor hint", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    // Sam is a technician at the default seed posture.
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-    await expect(page.locator("[data-slot='pay-deductions-section']")).toBeVisible();
-    await expect(page.locator("[data-slot='pay-deductions-summary']")).toHaveCount(0);
-    await expect(page.locator("[data-slot='pay-deductions-front-desk-hint']")).toHaveCount(0);
   });
 
   test("(i) live badge update: Card-fee exempt badge appears immediately on toggle; reload clears it (FR-016)", async ({
@@ -980,16 +544,5 @@ test.describe("US3: Summary sentence + live status badges", () => {
       "checked"
     );
     await expect(page.locator("[data-slot='staff-status-badge-card-fee-exempt']")).toHaveCount(0);
-  });
-
-  test("(j) Active/Inactive chip always renders in the panel header", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAs(page, staffFixture, staffFixture.owner, { nextPath: "/settings/staff" });
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-    // Sam is seeded active.
-    await expect(page.locator("[data-slot='staff-status-badge-active']")).toBeVisible();
-    await expect(page.locator("[data-slot='staff-status-badge-active']")).toHaveText("Active");
   });
 });

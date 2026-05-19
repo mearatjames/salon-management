@@ -35,9 +35,12 @@ if (!process.env.CI) {
   }
 }
 
-// Local e2e can opt into the same prebuilt server CI uses (`npm run start`).
-// Saves the ~30–90s of Next.js dev-mode JIT compile latency on the first run
-// after edits. Default stays `npm run dev` so iterative editing still works.
+// Local e2e uses the same prebuilt server CI uses (`npm run start`) by
+// default — `npm run test:e2e` sets `PLAYWRIGHT_PROD=1`. That avoids the
+// ~30–90s of Next.js dev-mode JIT compile latency that flakes cold paths
+// under the full suite. For iteration on a single failing spec, use
+// `npm run test:e2e:dev`, which leaves `PLAYWRIGHT_PROD` unset and runs
+// `npm run dev` so edits hot-reload.
 const localServerCommand =
   process.env.PLAYWRIGHT_PROD === "1" ? "npm run build && npm run start" : "npm run dev";
 
@@ -78,8 +81,9 @@ export default defineConfig({
   webServer: {
     // Production build in CI avoids next-dev's compile-on-first-request
     // latency, which can push individual page loads past the test timeout.
-    // The CI workflow runs `npm run build` before this. Locally, set
-    // PLAYWRIGHT_PROD=1 to opt into the same prebuilt server.
+    // The CI workflow runs `npm run build` before this. Locally,
+    // `npm run test:e2e` defaults to the same prebuilt server via
+    // PLAYWRIGHT_PROD=1; `npm run test:e2e:dev` falls back to `npm run dev`.
     command: process.env.CI ? "npm run start" : localServerCommand,
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
