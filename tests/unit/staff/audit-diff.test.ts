@@ -88,6 +88,27 @@ describe("buildChanges", () => {
     expect(out.after).toEqual({ supply_except: ["a", "b", "c"] });
   });
 
+  it("returns supply_mode + supply_except in canonical order with raw uuid array preserved", () => {
+    // Mirrors the e2e "save with supply_mode + supply_except writes one
+    // audit row with both keys + raw uuid array" assertion: both keys appear
+    // in `changes`, supply_except is preserved verbatim as a uuid array (no
+    // name snapshots, no reordering), and the canonical STAFF_DIFF_KEYS
+    // order puts supply_mode before supply_except.
+    const uuid = "11111111-1111-1111-1111-111111111111";
+    const before: StaffSnapshot = { ...BASE, supply_mode: "apply", supply_except: [] };
+    const after: StaffSnapshot = {
+      ...BASE,
+      supply_mode: "partial",
+      supply_except: [uuid],
+    };
+    const out = buildChanges(before, after);
+    expect(out.changes).toEqual(["supply_mode", "supply_except"]);
+    expect(out.before).toEqual({ supply_mode: "apply", supply_except: [] });
+    expect(out.after).toEqual({ supply_mode: "partial", supply_except: [uuid] });
+    // The audit payload must carry the raw uuid array, not a name snapshot.
+    expect((out.after.supply_except as readonly string[])[0]).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+
   it("returns multi-key change in `STAFF_DIFF_KEYS` order", () => {
     // Change display_name (idx 0), card_fee_exempt (idx 4), supply_mode (idx 5)
     // out of order in the snapshot literal to confirm the helper enforces
