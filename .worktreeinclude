@@ -1,0 +1,11 @@
+# .worktreeinclude — files copied into Claude Code worktrees when both
+# matched here AND gitignored. Tracked files are never duplicated.
+# Syntax: .gitignore-style globs.
+
+# Env vars for dev + e2e (Supabase, Square, salon timezone, cookie secret)
+.env.local
+.env.test
+
+# Project-local Claude Code settings (permission allowlist, etc.) so
+# parallel cloud sessions don't hit permission prompts on routine cmds.
+.claude/settings.local.json
