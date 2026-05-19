@@ -136,6 +136,22 @@ test.describe("022 supply types catalog", () => {
     }
   });
 
+  // Defend against shard-mate pollution: services.spec.ts US4 archives Gel
+  // polish (sets active=false) and only restores it in its own beforeEach.
+  // If that test crashes mid-flight, the seeded services can land here
+  // inactive — the supply-types loader filters by active=true, so usage
+  // badges count wrong, service rows disappear from the catalog UI, and
+  // sub-rows are hidden. Reset both seeded services to active=true.
+  test.beforeEach(async () => {
+    if (!supabaseUp) return;
+    const c = admin();
+    const { error } = await c
+      .from("services")
+      .update({ active: true })
+      .in("id", [CLASSIC_MANICURE_ID, GEL_POLISH_ID]);
+    if (error) throw new Error(`activate fixture services failed: ${error.message}`);
+  });
+
   test.describe("US1: picker pre-population", () => {
     // Per-test fixture state — captured id so afterEach can detach + delete.
     let backfilledTypeId: string | null = null;
