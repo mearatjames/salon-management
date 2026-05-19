@@ -8,6 +8,13 @@
 
 **Input**: User description: "Convert the checkout/cart-building page from a database-backed flow to an in-memory ephemeral cart. The cart only writes to the database when the operator commits to a payment."
 
+## Clarifications
+
+### Session 2026-05-18
+
+- Q: How should the ephemeral cart handle a brand-new customer being added during cart build? → A: New-customer creation writes the `customers` row immediately on add; the "zero writes pre-commit" guarantee is scoped to `tickets` and `ticket_items` only, since customer records are reusable across many future transactions and operators expect them to persist immediately.
+- Q: Should the ephemeral cart survive a failed commit attempt, allowing the operator to retry without rebuilding? → A: Yes, across all four commit paths (cash, gift, Square Terminal, split-tender init). The cart is consumed (cleared) only after a server-confirmed success. For Square Terminal handoff failure specifically, the DB-row rollback still occurs but the operator's in-memory cart is preserved so they can retry without rebuilding.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Cash or gift commit promotes ephemeral cart to ticket (Priority: P1)
@@ -65,7 +72,8 @@ An operator builds the cart and chooses to split payment across methods. At the 
 - **Two tabs open on same browser**: Each tab holds its own independent ephemeral cart. A commit in one tab does not affect the other tab's cart; the other tab continues to hold uncommitted state until the operator submits, refreshes, or navigates away.
 - **Operator navigates to another sidebar route and back to `/checkout`**: Cart state is lost on leaving the route. Returning to `/checkout` shows an empty cart. (Aligned with the unsaved-document model.)
 - **Network failure mid-submit**: The atomic transaction either completes fully or rolls back fully. No partial ticket/items/payment state can exist.
-- **Square Terminal API rejection after local DB write**: The just-created rows are rolled back (deleted) inside the same server action; the operator sees an error and must rebuild the cart (the ephemeral cart state was already consumed by the commit attempt).
+- **Square Terminal API rejection after local DB write**: The just-created rows are rolled back (deleted) inside the same server action. The operator's in-memory cart is preserved so they can retry without rebuilding; the operator sees an error toast referring to the Square failure.
+- **Server-side validation failure on cash, gift, or split-init commit**: No DB rows are written (the atomic transaction never completes); the operator sees an error and the in-memory cart is preserved for retry.
 - **Operator-attempted Discard on the cart-building phase**: Not possible — the button is removed entirely because no row exists to discard.
 - **Pre-existing real ticket mid-split-tender**: Discard remains available and operates against the real ticket exactly as today.
 
@@ -75,6 +83,7 @@ An operator builds the cart and chooses to split payment across methods. At the 
 
 - **FR-001**: System MUST NOT write rows to the `tickets` or `ticket_items` tables when an operator navigates to the cart-building checkout page.
 - **FR-002**: System MUST hold cart state — selected services, discounts, customer reference, tech assignment, and intended tip/notes if any — exclusively in client-side state until a payment commit is attempted.
+- **FR-002a**: When the operator adds a *new* customer mid-build, system MUST create the corresponding `customers` row immediately (outside the ephemeral-cart write boundary). The cart then holds a reference to that newly-created customer ID. Linking to an existing customer is a read-only lookup and writes nothing.
 - **FR-003**: System MUST create the ticket row, all corresponding ticket item rows, and the first payment row (or initial split-tender draft state) atomically in a single transaction at payment commit.
 - **FR-004**: System MUST clear ephemeral cart state when the operator navigates away from, refreshes, or closes the cart-building route.
 - **FR-005**: System MUST route the three existing entry points — dashboard "New transaction" CTA, sidebar "Checkout" link, and DoneScreen "New sale" link — to `/checkout` with no ticket ID and no eager ticket creation.
@@ -85,6 +94,7 @@ An operator builds the cart and chooses to split payment across methods. At the 
 - **FR-010**: System MUST treat the post-commit URL `/checkout/<ticket-id>` as a valid view for mid-split-tender and completed-sale receipt purposes only — never as a cart-building entry point.
 - **FR-011**: System MUST NOT persist cart state to local storage, session storage, IndexedDB, cookies, or any server-side draft store; the cart is purely in-memory React state.
 - **FR-012**: The cart-building page MUST function without depending on the resume-today's-open-ticket sidebar capability, which is removed as part of this change because no pre-commit tickets exist to resume.
+- **FR-013**: System MUST preserve the in-memory ephemeral cart across a failed commit attempt on all four payment paths (cash, gift, Square Terminal handoff, split-tender initiation). The cart is consumed only after the server confirms a successful commit. Failure modes covered include server-side validation rejections, RLS denials, network errors, and Square API rejections that trigger DB-row rollback.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -110,7 +120,7 @@ An operator builds the cart and chooses to split payment across methods. At the 
 - **Multi-device pre-commit cart visibility is not supported**. Each operator's ephemeral cart lives only in the tab where it was built; no other device or tab can see or contribute to it pre-commit. (Two staff on different iPads sharing a mid-build cart was not an observed workflow.)
 - **No inactivity auto-clear timer is required**. The cart simply persists until the operator navigates away or refreshes; if a browser is left open overnight, the cart is still there in the morning. This avoids surprising the operator with silent clears.
 - **No pre-commit audit events are needed**. The current `ticket.created` event fires for many empty tickets that are abandoned, which is largely noise. Post-commit audit coverage (sale, payment, discard of real ticket) remains intact and complete.
-- **Square Terminal handoff failure is recovered by direct row deletion** in the same server action — this is system rollback of a failed transaction, not an operator-facing discard, so it bypasses `discardTicket` and its in-flight-payment guard. No audit event is needed because the rows never persisted past the failed transaction boundary.
+- **Square Terminal handoff failure is recovered by direct row deletion** in the same server action — this is system rollback of a failed transaction, not an operator-facing discard, so it bypasses `discardTicket` and its in-flight-payment guard. No audit event is needed because the rows never persisted past the failed transaction boundary. The operator's in-memory cart is preserved across this failure so they can retry without rebuilding (see FR-013).
 - **The three prerequisite bugfix issues (#25, #26, #27) are merged to `main` before this work begins**. Without them, the new commit paths inherit known money-handling gaps from today's checkout flow.
 - **No schema migrations are required**. All existing tables, columns, constraints, indexes, and RPCs are reused as-is; the only changes are in the application layer (server actions, client cart state, route topology, button visibility).
 - **The existing split-tender mid-flow UI continues to assume a real ticket row exists** at the URL `/checkout/<id>`. Initiating split tender from the ephemeral cart performs the ticket+items create, then redirects to this URL so the existing split-tender screen takes over unchanged.
