@@ -1452,7 +1452,6 @@ export function CheckoutScreen({
       <div className="checkout-shell" data-slot="checkout-shell" data-ticket-id={ticketId}>
         <TxHeader
           subtitle="Walk-in"
-          ticketId={ticketId}
           onCancel={() => void handleCancelTerminalPayment()}
           onDiscard={handleDiscard}
           disabled={inflight}
@@ -1506,7 +1505,6 @@ export function CheckoutScreen({
       <div className="checkout-shell" data-slot="checkout-shell" data-ticket-id={ticketId}>
         <TxHeader
           subtitle="Walk-in"
-          ticketId={ticketId}
           onCancel={returnToPickerFromWaiting}
           onDiscard={handleDiscard}
           disabled={inflight}
@@ -1583,7 +1581,6 @@ export function CheckoutScreen({
     <div className="checkout-shell" data-slot="checkout-shell" data-ticket-id={ticketId}>
       <TxHeader
         subtitle="Walk-in"
-        ticketId={ticketId}
         onCancel={handleCancel}
         onDiscard={handleDiscard}
         disabled={inflight}

@@ -31,7 +31,6 @@ import {
   releaseStubLock,
   type ServerStubControls,
 } from "./_square-server-stub";
-import { createOpenTicket, SEEDED_SERVICE_IDS, SEEDED_STAFF_IDS } from "./_open-ticket";
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -139,22 +138,15 @@ test.describe("US3: Cancel and recover", () => {
     const stub: SquareStub = await squareStub(context, baseURL!);
     stub.stubListDevices([{ id: deviceId, name: "Lobby Terminal", status: "PAIRED" }]);
 
-    // 042-ephemeral-cart: direct-insert open ticket (Jordan + Classic
-    // manicure $25) so we land on the cart-edit route ready for the
-    // Square Terminal card flow.
-    const supabaseSeed = serviceClient();
-    const ticketId = await createOpenTicket(supabaseSeed, {
-      techId: SEEDED_STAFF_IDS.jordan,
-      openedByStaffId: SEEDED_STAFF_IDS.maya,
-      items: [
-        {
-          serviceId: SEEDED_SERVICE_IDS.classicManicure,
-          displayName: "Classic manicure",
-          unitPriceCents: 2500,
-        },
-      ],
-    });
-    await page.goto(`/checkout/${ticketId}`);
+    await page.goto("/dashboard");
+    await page.locator("[data-slot='new-transaction-cta']").click();
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+
+    await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Jordan Lee']").click();
+    await page
+      .locator("[data-slot='service-tile'][data-service-id='20000000-0000-0000-0000-000000000001']")
+      .click();
     await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$25.00");
 
     // Send to Square Terminal.
@@ -249,22 +241,15 @@ test.describe("US3: Cancel and recover", () => {
     const stub: SquareStub = await squareStub(context, baseURL!);
     stub.stubListDevices([{ id: deviceId, name: "Lobby Terminal", status: "PAIRED" }]);
 
-    // 042-ephemeral-cart: direct-insert open ticket (Jordan + Classic
-    // manicure $25) so we land on the cart-edit route ready for the
-    // Square Terminal card flow.
-    const supabaseSeed = serviceClient();
-    const ticketId = await createOpenTicket(supabaseSeed, {
-      techId: SEEDED_STAFF_IDS.jordan,
-      openedByStaffId: SEEDED_STAFF_IDS.maya,
-      items: [
-        {
-          serviceId: SEEDED_SERVICE_IDS.classicManicure,
-          displayName: "Classic manicure",
-          unitPriceCents: 2500,
-        },
-      ],
-    });
-    await page.goto(`/checkout/${ticketId}`);
+    await page.goto("/dashboard");
+    await page.locator("[data-slot='new-transaction-cta']").click();
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+
+    await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Jordan Lee']").click();
+    await page
+      .locator("[data-slot='service-tile'][data-service-id='20000000-0000-0000-0000-000000000001']")
+      .click();
     await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$25.00");
 
     await page.locator("[data-slot='payment-tile'][data-method='card']").click();

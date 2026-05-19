@@ -22,7 +22,6 @@ import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
-import { createOpenTicket, SEEDED_SERVICE_IDS, SEEDED_STAFF_IDS } from "./_open-ticket";
 
 test.use({
   storageState: async ({ authState }, provide) => {
@@ -53,41 +52,20 @@ function adminClient(): SupabaseClient {
 }
 
 // Seeded ids (see supabase/seed.sql).
-// Classic manicure ($25, Jordan + Sam) is seeded by `openFreshTicket` via
-// the `_open-ticket` helper. Gel polish is referenced explicitly by the
-// (d) snapshot semantics test, which adds a second service line.
+const CLASSIC_MANI_SERVICE_ID = "20000000-0000-0000-0000-000000000001"; // $25 fixed
 const GEL_POLISH_SERVICE_ID = "20000000-0000-0000-0000-000000000002"; // assigned to Sam only
 
-// 042-ephemeral-cart: the dashboard CTA no longer eager-creates a ticket
-// (it lands on /checkout, cart-build, in-memory). Specs in this file
-// exercise mid-build affordances (Bill sheet) on an OPEN ticket, so the
-// setup direct-inserts a ticket with the tech assigned + a single $25
-// Classic manicure line and navigates to /checkout/<id>. The cart-edit
-// UI at /checkout/[ticketId] is unchanged and renders the same affordances.
 async function openFreshTicket(
   page: import("@playwright/test").Page,
-  admin: SupabaseClient,
-  techName: "Jordan Lee" | "Sam Chen"
+  techName: string
 ): Promise<string> {
-  const techId = techName === "Jordan Lee" ? SEEDED_STAFF_IDS.jordan : SEEDED_STAFF_IDS.sam;
-  const ticketId = await createOpenTicket(admin, {
-    techId,
-    openedByStaffId: SEEDED_STAFF_IDS.maya,
-    items: [
-      {
-        serviceId: SEEDED_SERVICE_IDS.classicManicure,
-        displayName: "Classic manicure",
-        unitPriceCents: 2500,
-      },
-    ],
-  });
-  await page.goto(`/checkout/${ticketId}`);
-  // Tech chip is rendered because the seeded line has an assigned tech.
-  await expect(page.locator("[data-slot='checkout-tech-chip']")).toBeVisible({
-    timeout: 10_000,
-  });
-  // Seeded cart line is visible.
-  await expect(page.locator("[data-slot='cart-line']").first()).toContainText("Classic manicure");
+  await page.locator("[data-slot='new-transaction-cta']").click();
+  await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+  const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+  const techRow = page.locator("[data-slot='checkout-tech-row']");
+  await expect(techRow).toBeVisible();
+  await techRow.locator(`[data-staff-name='${techName}']`).click();
+  await expect(page.locator("[data-slot='checkout-tech-chip']")).toBeVisible();
   return ticketId;
 }
 
@@ -139,8 +117,18 @@ test.describe("US4: Bill preview", () => {
   }) => {
     const admin = adminClient();
 
-    // Direct-insert open ticket with Jordan + Classic manicure pre-seeded.
-    const ticketId = await openFreshTicket(page, admin, "Jordan Lee");
+    await page.goto("/dashboard");
+    const ticketId = await openFreshTicket(page, "Jordan Lee");
+
+    // Add one $25 Classic manicure line.
+    await page
+      .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
+      .click();
+    const serviceLine = page
+      .locator("[data-slot='cart-line']")
+      .filter({ hasText: "Classic manicure" })
+      .first();
+    await waitForConfirmedLine(serviceLine);
 
     // (a) Click Bill → sheet opens.
     const billBtn = page.locator("[data-slot='bill-button']");
@@ -185,7 +173,17 @@ test.describe("US4: Bill preview", () => {
   }) => {
     const admin = adminClient();
 
-    const ticketId = await openFreshTicket(page, admin, "Jordan Lee");
+    await page.goto("/dashboard");
+    const ticketId = await openFreshTicket(page, "Jordan Lee");
+
+    await page
+      .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
+      .click();
+    const serviceLine = page
+      .locator("[data-slot='cart-line']")
+      .filter({ hasText: "Classic manicure" })
+      .first();
+    await waitForConfirmedLine(serviceLine);
 
     await page.locator("[data-slot='bill-button']").click();
     const billDoc = page.locator(".lacquer-bill-doc");
@@ -214,8 +212,18 @@ test.describe("US4: Bill preview", () => {
   }) => {
     const admin = adminClient();
 
+    await page.goto("/dashboard");
     // Sam has both Classic manicure ($25) AND Gel polish ($35) access.
-    const ticketId = await openFreshTicket(page, admin, "Sam Chen");
+    const ticketId = await openFreshTicket(page, "Sam Chen");
+
+    await page
+      .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
+      .click();
+    const firstService = page
+      .locator("[data-slot='cart-line']")
+      .filter({ hasText: "Classic manicure" })
+      .first();
+    await waitForConfirmedLine(firstService);
 
     // Open the bill — snapshot captures the single $25 item.
     await page.locator("[data-slot='bill-button']").click();
@@ -266,7 +274,17 @@ test.describe("US4: Bill preview", () => {
     const admin = adminClient();
     const cursor = newAuditCursor();
 
-    const ticketId = await openFreshTicket(page, admin, "Jordan Lee");
+    await page.goto("/dashboard");
+    const ticketId = await openFreshTicket(page, "Jordan Lee");
+
+    await page
+      .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
+      .click();
+    const serviceLine = page
+      .locator("[data-slot='cart-line']")
+      .filter({ hasText: "Classic manicure" })
+      .first();
+    await waitForConfirmedLine(serviceLine);
 
     await page.locator("[data-slot='bill-button']").click();
     const billSheet = page.locator("[data-slot='bill-sheet']");
@@ -326,7 +344,17 @@ test.describe("US4: Bill preview", () => {
     const admin = adminClient();
     const cursor = newAuditCursor();
 
-    const ticketId = await openFreshTicket(page, admin, "Jordan Lee");
+    await page.goto("/dashboard");
+    const ticketId = await openFreshTicket(page, "Jordan Lee");
+
+    await page
+      .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
+      .click();
+    const serviceLine = page
+      .locator("[data-slot='cart-line']")
+      .filter({ hasText: "Classic manicure" })
+      .first();
+    await waitForConfirmedLine(serviceLine);
 
     await page.locator("[data-slot='bill-button']").click();
     await page.locator("[data-slot='bill-sheet-email']").click();
@@ -360,7 +388,17 @@ test.describe("US4: Bill preview", () => {
   }) => {
     const admin = adminClient();
 
-    const ticketId = await openFreshTicket(page, admin, "Jordan Lee");
+    await page.goto("/dashboard");
+    const ticketId = await openFreshTicket(page, "Jordan Lee");
+
+    await page
+      .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
+      .click();
+    const serviceLine = page
+      .locator("[data-slot='cart-line']")
+      .filter({ hasText: "Classic manicure" })
+      .first();
+    await waitForConfirmedLine(serviceLine);
 
     await page.locator("[data-slot='bill-button']").click();
     const billSheet = page.locator("[data-slot='bill-sheet']");

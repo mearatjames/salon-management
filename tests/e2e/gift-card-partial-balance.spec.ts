@@ -31,7 +31,6 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 import { squareStub, type SquareStub } from "./_square-stub";
-import { createOpenTicket, SEEDED_SERVICE_IDS, SEEDED_STAFF_IDS } from "./_open-ticket";
 
 test.use({
   storageState: async ({ authState }, provide) => {
@@ -162,22 +161,17 @@ test.describe("US3: gift card partial balance", () => {
     const stub: SquareStub = await squareStub(context, baseURL!);
     stub.stubListDevices([{ id: "device:STUB_GIFT_US3", name: "Lobby", status: "PAIRED" }]);
 
-    // 3) 042-ephemeral-cart: direct-insert open ticket with Sam +
-    //    Classic pedicure ($40) so we can navigate straight to the
-    //    cart-edit route for the gift-card flow.
-    const supabaseSeed = serviceClient();
-    const ticketId = await createOpenTicket(supabaseSeed, {
-      techId: SEEDED_STAFF_IDS.sam,
-      openedByStaffId: SEEDED_STAFF_IDS.maya,
-      items: [
-        {
-          serviceId: SEEDED_SERVICE_IDS.classicPedicure,
-          displayName: "Classic pedicure",
-          unitPriceCents: 4000,
-        },
-      ],
-    });
-    await page.goto(`/checkout/${ticketId}`);
+    // 3) Open a fresh ticket via dashboard.
+    await page.goto("/dashboard");
+    await page.locator("[data-slot='new-transaction-cta']").click();
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+
+    // 4) Pick Sam + Classic pedicure ($40).
+    await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Sam Chen']").click();
+    await page
+      .locator("[data-slot='service-tile'][data-service-id='20000000-0000-0000-0000-000000000003']")
+      .click();
     await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$40.00");
 
     // 5) Tap Gift tile → GanNumpadSheet.

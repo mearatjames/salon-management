@@ -22,8 +22,6 @@
 import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { createOpenTicket, SEEDED_SERVICE_IDS, SEEDED_STAFF_IDS } from "./_open-ticket";
-
 test.use({
   storageState: async ({ authState }, provide) => {
     await provide(authState.owner);
@@ -71,22 +69,20 @@ test.describe("Issue26: discard refuses while in-flight payments exist", () => {
     if (!supabaseUp) test.skip();
     const supabase = serviceClient();
 
-    // 042-ephemeral-cart: direct-insert an open ticket with Jordan +
-    // Classic manicure ($25) and navigate to the cart-edit route. A
-    // non-empty cart matches how a real partial split would arrive
-    // before the captured cash leg lands below.
-    const ticketId = await createOpenTicket(supabase, {
-      techId: SEEDED_STAFF_IDS.jordan,
-      openedByStaffId: SEEDED_STAFF_IDS.maya,
-      items: [
-        {
-          serviceId: SEEDED_SERVICE_IDS.classicManicure,
-          displayName: "Classic manicure",
-          unitPriceCents: 2500,
-        },
-      ],
-    });
-    await page.goto(`/checkout/${ticketId}`);
+    await page.goto("/dashboard");
+
+    // Open a fresh ticket via the dashboard CTA.
+    await page.locator("[data-slot='new-transaction-cta']").click();
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+
+    // Pick a tech + Classic manicure ($25) so the ticket isn't empty
+    // (the Discard button is enabled on any non-terminal ticket regardless,
+    // but a non-empty cart matches how a real partial split would arrive).
+    await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Jordan Lee']").click();
+    await page
+      .locator("[data-slot='service-tile'][data-service-id='20000000-0000-0000-0000-000000000001']")
+      .click();
     await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$25.00");
 
     // Simulate a captured cash leg of a split tender by inserting the

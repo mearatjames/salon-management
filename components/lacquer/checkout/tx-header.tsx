@@ -20,18 +20,10 @@ export type TxHeaderProps = {
   title?: string;
   /** Optional small subline under the title (e.g. "Walk-in"). */
   subtitle?: string;
-  /**
-   * Present only in the post-commit phase (mid-split-tender, card waiting,
-   * card-failed, post-commit cash-edit) where a persisted ticket exists.
-   * When omitted, the Cancel/Discard buttons are not rendered — the
-   * cart-build phase has no ticket to cancel or discard (the in-memory
-   * cart is GC'd on unmount). FR-006 / FR-007.
-   */
-  ticketId?: string;
-  /** Called when the operator taps "Cancel". Required when `ticketId` is set. */
-  onCancel?: () => void;
-  /** Called when the operator taps "Discard". Required when `ticketId` is set. */
-  onDiscard?: () => void;
+  /** Called when the operator taps "Cancel". */
+  onCancel: () => void;
+  /** Called when the operator taps "Discard". */
+  onDiscard: () => void;
   /** When true, disables the buttons (e.g. while a discard is in flight). */
   disabled?: boolean;
 };
@@ -39,7 +31,6 @@ export type TxHeaderProps = {
 export function TxHeader({
   title = "New transaction",
   subtitle,
-  ticketId,
   onCancel,
   onDiscard,
   disabled = false,
@@ -63,58 +54,56 @@ export function TxHeader({
           ) : null}
         </div>
       </div>
-      {ticketId ? (
-        <div className="checkout-header-actions">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={disabled}
-            data-slot="cancel-ticket-button"
-            aria-label="Cancel — keep this ticket open and go back to dashboard"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "var(--space-2)",
-              height: "var(--space-8)",
-              padding: "0 var(--space-3)",
-              background: "var(--secondary)",
-              color: "var(--secondary-foreground)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-sm)",
-              fontSize: "var(--text-sm)",
-              fontWeight: 500,
-              cursor: disabled ? "not-allowed" : "pointer",
-            }}
-          >
-            <X size={16} strokeWidth={1.5} aria-hidden="true" />
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onDiscard}
-            disabled={disabled}
-            data-slot="discard-ticket-button"
-            aria-label="Discard this ticket — cannot be undone"
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "var(--space-2)",
-              height: "var(--space-8)",
-              padding: "0 var(--space-3)",
-              background: "var(--card)",
-              color: "var(--destructive)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius-sm)",
-              fontSize: "var(--text-sm)",
-              fontWeight: 500,
-              cursor: disabled ? "not-allowed" : "pointer",
-            }}
-          >
-            <Trash2 size={16} strokeWidth={1.5} aria-hidden="true" />
-            Discard
-          </button>
-        </div>
-      ) : null}
+      <div className="checkout-header-actions">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={disabled}
+          data-slot="cancel-ticket-button"
+          aria-label="Cancel — keep this ticket open and go back to dashboard"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "var(--space-2)",
+            height: "var(--space-8)",
+            padding: "0 var(--space-3)",
+            background: "var(--secondary)",
+            color: "var(--secondary-foreground)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            fontSize: "var(--text-sm)",
+            fontWeight: 500,
+            cursor: disabled ? "not-allowed" : "pointer",
+          }}
+        >
+          <X size={16} strokeWidth={1.5} aria-hidden="true" />
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onDiscard}
+          disabled={disabled}
+          data-slot="discard-ticket-button"
+          aria-label="Discard this ticket — cannot be undone"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "var(--space-2)",
+            height: "var(--space-8)",
+            padding: "0 var(--space-3)",
+            background: "var(--card)",
+            color: "var(--destructive)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius-sm)",
+            fontSize: "var(--text-sm)",
+            fontWeight: 500,
+            cursor: disabled ? "not-allowed" : "pointer",
+          }}
+        >
+          <Trash2 size={16} strokeWidth={1.5} aria-hidden="true" />
+          Discard
+        </button>
+      </div>
     </header>
   );
 }

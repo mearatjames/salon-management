@@ -158,17 +158,6 @@ export default async function CheckoutTicketPage({
 
   const ticket = ticketRes.data;
 
-  // Feature 042 (T009) — defensive guard. The ephemeral-cart flow at
-  // `/checkout` never creates an empty open ticket; the only path that
-  // used to produce one (`createEmptyTicket` / `resumeOrCreateTicket`)
-  // is gone. If a future regression re-introduces it OR if seed data
-  // contains a stray `status='open'` row with zero items, treat it as
-  // not-found so the operator's URL bar doesn't accidentally surface
-  // an unjoined ticket. Protects SC-003 ("zero rows on walk-away").
-  if (ticket.status === "open" && (itemsRes.data ?? []).length === 0) {
-    notFound();
-  }
-
   if (ticket.status === "paid") {
     const paidByMethod: "cash" | "card" =
       lastSucceededPaymentRes.data?.method === "card" ? "card" : "cash";

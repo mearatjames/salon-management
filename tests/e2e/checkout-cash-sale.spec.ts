@@ -1,13 +1,12 @@
 // E2E for the US1 happy path of feature 011 (cash-only walk-in sale).
-// Covers acceptance scenarios 1–5 — UPDATED for 042 ephemeral cart:
-//   (a) dashboard CTA → /checkout (cart-build, no ticketId yet)
+// Covers acceptance scenarios 1–5:
+//   (a) dashboard CTA → /checkout → fresh ticket created → redirected to
+//       /checkout/[ticketId]
 //   (b) header tech avatar row → tap collapses to chip + Change link
 //   (c) service tile → cart line appears with snapshotted price
-//   (d) Take cash → ticket row materialized → redirected to
-//       /checkout/[ticketId] → DoneScreen shows "Charged $X"; DB:
-//       payments row with method='cash', status='succeeded' +
-//       tickets.status='paid'
-//   (e) "New sale" → returns to /checkout cart-build entry
+//   (d) Take cash → DoneScreen shows "Charged $X"; DB: payments row with
+//       method='cash', status='succeeded' + tickets.status='paid'
+//   (e) "New sale" → fresh empty ticket reachable
 //
 // Docker / Supabase availability: same probe pattern as the rest of the
 // suite — skip when the local Supabase is unreachable.
@@ -65,11 +64,10 @@ test.describe("US1: process a cash-only walk-in sale end-to-end", () => {
 
     await page.goto("/dashboard");
 
-    // (a) Click "New transaction" CTA from the dashboard. 042 ephemeral
-    // cart: lands on /checkout (cart-build), NOT /checkout/<id> — no
-    // ticket row is created until the operator commits a payment.
+    // (a) Click "New transaction" CTA from the dashboard.
     await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const firstTicketId = new URL(page.url()).pathname.split("/").pop()!;
 
     // (b) Pre-pick state: tech avatar row visible. Pick Jordan Lee.
     const techRow = page.locator("[data-slot='checkout-tech-row']");
@@ -89,12 +87,9 @@ test.describe("US1: process a cash-only walk-in sale end-to-end", () => {
     await expect(cartLine).toContainText("Classic manicure");
     await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$25.00");
 
-    // (d) Take cash. Server Action materializes the ticket row and
-    // returns the new ticketId; the client routes to /checkout/<id>.
+    // (d) Take cash. Wait for DoneScreen.
     await page.locator("[data-slot='payment-tile'][data-method='cash']").click();
     await page.locator("[data-slot='take-cash-button']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const firstTicketId = new URL(page.url()).pathname.split("/").pop()!;
     await expect(page.locator("[data-slot='done-screen']")).toBeVisible({ timeout: 10_000 });
     await expect(page.locator("[data-slot='done-charged-amount']")).toHaveText("$25.00");
 
@@ -129,10 +124,30 @@ test.describe("US1: process a cash-only walk-in sale end-to-end", () => {
     expect(captureRows[captureRows.length - 1].entity_type).toBe("payment");
     expect((captureRows[captureRows.length - 1].payload ?? {}).ticket_id).toBe(firstTicketId);
 
-    // (e) "New sale" returns to /checkout — the cart-build entry point.
-    //     042 ephemeral cart: no new ticket row is created on navigation;
-    //     a fresh in-memory cart is rendered.
+    // (e) "New sale" must reach a fresh empty ticket. The browser is
+    //     already on /checkout/<firstTicketId>; the Link target is
+    //     /checkout, which the entry-point page redirects to a *new*
+    //     /checkout/<newTicketId>. Wait specifically for the path to be
+    //     a checkout-ticket URL that is NOT the firstTicketId.
     await page.locator("[data-slot='new-sale-button']").click();
-    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
+    await page.waitForURL(
+      (url) => {
+        const m = url.pathname.match(/^\/checkout\/([0-9a-f-]{36})$/);
+        return m !== null && m[1] !== firstTicketId;
+      },
+      { timeout: 15_000 }
+    );
+    const secondTicketId = new URL(page.url()).pathname.split("/").pop()!;
+    expect(secondTicketId).not.toBe(firstTicketId);
+
+    // Cleanup: discard the freshly created ticket so a re-run starts clean.
+    await admin
+      .from("tickets")
+      .update({
+        status: "discarded",
+        closed_at: new Date().toISOString(),
+        closed_by_staff_id: "10000000-0000-0000-0000-000000000001",
+      })
+      .eq("id", secondTicketId);
   });
 });

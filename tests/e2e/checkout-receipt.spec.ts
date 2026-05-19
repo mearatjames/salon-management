@@ -19,8 +19,6 @@
 import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { createPaidTicket, SEEDED_SERVICE_IDS, SEEDED_STAFF_IDS } from "./_open-ticket";
-
 test.use({
   storageState: async ({ authState }, provide) => {
     await provide(authState.owner);
@@ -49,29 +47,31 @@ function adminClient(): SupabaseClient {
   });
 }
 
+const CLASSIC_MANICURE_ID = "20000000-0000-0000-0000-000000000001";
+
 /**
- * Direct-inserts a paid ticket via the admin client and returns its id.
- *
- * 042-ephemeral-cart removed the eager-create entry point from the
- * dashboard CTA. Driving the cart-build → cash-take flow through the UI
- * just to land a paid ticket in the DB adds ~5 navigations per test and
- * exercises code paths that have their own dedicated spec
- * (`checkout-cash-sale.spec.ts`). The receipt-page assertions only need
- * a paid ticket sitting in the DB, so we skip the UI entirely.
+ * Walks the US1 happy path UI to land a paid ticket in the DB, returning
+ * its id. Uses the same selectors as `checkout-cash-sale.spec.ts` so a
+ * change in the cart screen breaks both specs in the same place.
  */
-async function seedPaidTicket(): Promise<string> {
-  return createPaidTicket(adminClient(), {
-    techId: SEEDED_STAFF_IDS.jordan,
-    openedByStaffId: SEEDED_STAFF_IDS.maya,
-    closedByStaffId: SEEDED_STAFF_IDS.maya,
-    items: [
-      {
-        serviceId: SEEDED_SERVICE_IDS.classicManicure,
-        displayName: "Classic manicure",
-        unitPriceCents: 2500,
-      },
-    ],
-  });
+async function createPaidTicket(page: import("@playwright/test").Page): Promise<string> {
+  await page.goto("/dashboard");
+  await page.locator("[data-slot='new-transaction-cta']").click();
+  await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+  const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+
+  await page
+    .locator("[data-slot='checkout-tech-row']")
+    .locator("[data-staff-name='Jordan Lee']")
+    .click();
+  await page
+    .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANICURE_ID}']`)
+    .click();
+  await page.locator("[data-slot='payment-tile'][data-method='cash']").click();
+  await page.locator("[data-slot='take-cash-button']").click();
+  await expect(page.locator("[data-slot='done-screen']")).toBeVisible({ timeout: 10_000 });
+
+  return ticketId;
 }
 
 test.describe.configure({ mode: "serial" });
@@ -92,7 +92,7 @@ test.describe("US4: printable receipt", () => {
   test("(a) authenticated GET renders salon name, line items, subtotal, total, cash payment", async ({
     page,
   }) => {
-    const ticketId = await seedPaidTicket();
+    const ticketId = await createPaidTicket(page);
 
     await page.goto(`/checkout/${ticketId}/receipt`);
     await expect(page.locator("[data-slot='receipt-page']")).toBeVisible({ timeout: 10_000 });
@@ -125,7 +125,7 @@ test.describe("US4: printable receipt", () => {
   test("(b) printable layout omits the studio chrome (sidebar + topbar absent from DOM)", async ({
     page,
   }) => {
-    const ticketId = await seedPaidTicket();
+    const ticketId = await createPaidTicket(page);
     await page.goto(`/checkout/${ticketId}/receipt`);
     await expect(page.locator("[data-slot='receipt-page']")).toBeVisible({ timeout: 10_000 });
 
@@ -140,10 +140,11 @@ test.describe("US4: printable receipt", () => {
 
   test("(c) anonymous GET redirects to /login and does not leak receipt content (FR-026)", async ({
     browser,
+    page,
   }) => {
-    // Seed a paid ticket via the admin client (no UI needed), then verify
-    // anonymous access is barred via a fresh context with no cookies.
-    const ticketId = await seedPaidTicket();
+    // Use the authenticated session only to seed a paid ticket; then
+    // discard the session entirely and verify anonymous access is barred.
+    const ticketId = await createPaidTicket(page);
 
     // Clean context: no cookies, no storageState — simulates a fully
     // anonymous browser.

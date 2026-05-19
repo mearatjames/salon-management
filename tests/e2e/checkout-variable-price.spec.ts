@@ -22,7 +22,6 @@ import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
-import { createOpenTicket, SEEDED_STAFF_IDS } from "./_open-ticket";
 
 test.use({
   storageState: async ({ authState }, provide) => {
@@ -72,30 +71,19 @@ test.describe("US1: Variable price entry", () => {
     page,
   }) => {
     const cursor = newAuditCursor();
-    const admin = adminClient();
 
-    // 042-ephemeral-cart: the dashboard CTA no longer eager-creates a
-    // ticket and `/checkout/<id>` notFound()s open tickets with 0 lines.
-    // To preserve the tile-click auto-open assertion (selectedStaffId
-    // is only set from a service line's assigned tech), direct-insert
-    // a Classic manicure noise line first; the spec then clicks the
-    // Nail art tile to exercise the variable-price entry sheet, and
-    // the assertions below filter to the Nail art line specifically.
-    const ticketId = await createOpenTicket(admin, {
-      techId: SEEDED_STAFF_IDS.jordan,
-      openedByStaffId: SEEDED_STAFF_IDS.maya,
-      items: [
-        {
-          serviceId: "20000000-0000-0000-0000-000000000001", // Classic manicure $25
-          displayName: "Classic manicure",
-          unitPriceCents: 2500,
-        },
-      ],
-    });
-    await page.goto(`/checkout/${ticketId}`);
-    await expect(page.locator("[data-slot='checkout-tech-chip']")).toBeVisible({
-      timeout: 10_000,
-    });
+    await page.goto("/dashboard");
+
+    // Open a fresh ticket via the dashboard CTA.
+    await page.locator("[data-slot='new-transaction-cta']").click();
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+
+    // Pick Jordan Lee as the header tech.
+    const techRow = page.locator("[data-slot='checkout-tech-row']");
+    await expect(techRow).toBeVisible();
+    await techRow.locator("[data-staff-name='Jordan Lee']").click();
+    await expect(page.locator("[data-slot='checkout-tech-chip']")).toBeVisible();
 
     // (a) Tap the variable-priced "Nail art" tile.
     const tile = page.locator(
@@ -114,9 +102,7 @@ test.describe("US1: Variable price entry", () => {
     const priceSheet = page.locator("[data-slot='price-sheet']");
     await expect(priceSheet).toBeVisible({ timeout: 5_000 });
 
-    // Charge reads the unconfirmed-line hint and is disabled. The Nail
-    // art row is the unconfirmed one; the seeded Classic manicure noise
-    // line is confirmed but the unconfirmed-gate takes precedence.
+    // Charge reads the unconfirmed-line hint and is disabled.
     const chargeBtn = page.locator("[data-slot='take-cash-button']");
     await expect(chargeBtn).toBeDisabled();
     await expect(chargeBtn).toHaveText(/Set price on highlighted items/);
@@ -155,39 +141,32 @@ test.describe("US1: Variable price entry", () => {
     // The cart line now shows the saved amount.
     await expect(cartLine.locator("[data-slot='cart-line-price']")).toHaveText("$50.00");
 
-    // The Charge button label now reads the priced total. With the
-    // seeded Classic manicure ($25) plus the saved Nail art ($50) the
-    // total is $75. Picking the cash payment tile enables it.
-    await expect(chargeBtn).toHaveText(/Take cash · \$75\.00/);
+    // The Charge button label now reads the priced total. Picking the cash
+    // payment tile (phase-2 gate) enables it.
+    await expect(chargeBtn).toHaveText(/Take cash · \$50\.00/);
     await page.locator("[data-slot='payment-tile'][data-method='cash']").click();
     await expect(chargeBtn).toBeEnabled();
 
-    // DB-level assertions — find the Nail art row among the two seeded
-    // (Classic manicure noise) + tile-added (Nail art) lines.
+    // DB-level assertions.
+    const admin = adminClient();
     const { data: items, error: itErr } = await admin
       .from("ticket_items")
       .select("id, kind, unit_price_cents, price_unconfirmed, ref_id")
       .eq("ticket_id", ticketId);
     expect(itErr).toBeNull();
-    expect(items).toHaveLength(2);
-    const nailArtRow = items!.find((i) => i.ref_id === NAIL_ART_SERVICE_ID);
-    expect(nailArtRow).toBeDefined();
-    expect(nailArtRow).toMatchObject({
+    expect(items).toHaveLength(1);
+    expect(items![0]).toMatchObject({
       kind: "service",
       unit_price_cents: 5000,
       price_unconfirmed: false,
       ref_id: NAIL_ART_SERVICE_ID,
     });
 
-    // Audit: a `line.price_set` row for the Nail art line with the
-    // expected payload exists. Scope to this ticket because parallel
-    // workers running other 013 specs also write line.price_set rows.
-    const auditRows = (await getAuditLogRowsSince(cursor, "line.price_set")).filter(
-      (r) => (r.payload as { ticket_id?: string } | null)?.ticket_id === ticketId
-    );
+    // Audit: a `line.price_set` row with the expected payload exists.
+    const auditRows = await getAuditLogRowsSince(cursor, "line.price_set");
     expect(auditRows.length).toBeGreaterThanOrEqual(1);
     const lastSet = auditRows[auditRows.length - 1];
-    expect(lastSet.entity_id).toBe(nailArtRow!.id);
+    expect(lastSet.entity_id).toBe(items![0].id);
     expect(lastSet.payload).toMatchObject({
       ticket_id: ticketId,
       new_unit_price_cents: 5000,

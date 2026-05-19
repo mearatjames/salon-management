@@ -25,7 +25,6 @@ import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
-import { createOpenTicket, SEEDED_SERVICE_IDS, SEEDED_STAFF_IDS } from "./_open-ticket";
 
 test.use({
   storageState: async ({ authState }, provide) => {
@@ -61,35 +60,17 @@ const CLASSIC_MANI_SERVICE_ID = "20000000-0000-0000-0000-000000000001";
 // Nail art — variable-priced, no assignments (so any tech can add it).
 const NAIL_ART_SERVICE_ID = "20000000-0000-0000-0000-000000000005";
 
-// 042-ephemeral-cart: the dashboard CTA no longer eager-creates a ticket.
-// Specs in this file exercise mid-build affordances on an OPEN ticket;
-// setup direct-inserts a ticket with the requested tech assigned and
-// pre-seeds a fixed-price Classic manicure line ($25) so the spec lands
-// on /checkout/<id> with a confirmed row that the price-override tests
-// can act on directly. For variable-price tests (e), the spec keeps
-// adding Nail art via the catalog tile on top — the seeded Classic
-// manicure line is incidental and never asserted.
 async function openFreshTicket(
   page: import("@playwright/test").Page,
-  admin: SupabaseClient,
-  techName: "Jordan Lee" | "Sam Chen"
+  techName: string
 ): Promise<string> {
-  const techId = techName === "Jordan Lee" ? SEEDED_STAFF_IDS.jordan : SEEDED_STAFF_IDS.sam;
-  const ticketId = await createOpenTicket(admin, {
-    techId,
-    openedByStaffId: SEEDED_STAFF_IDS.maya,
-    items: [
-      {
-        serviceId: SEEDED_SERVICE_IDS.classicManicure,
-        displayName: "Classic manicure",
-        unitPriceCents: 2500,
-      },
-    ],
-  });
-  await page.goto(`/checkout/${ticketId}`);
-  await expect(page.locator("[data-slot='checkout-tech-chip']")).toBeVisible({
-    timeout: 10_000,
-  });
+  await page.locator("[data-slot='new-transaction-cta']").click();
+  await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+  const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+  const techRow = page.locator("[data-slot='checkout-tech-row']");
+  await expect(techRow).toBeVisible();
+  await techRow.locator(`[data-staff-name='${techName}']`).click();
+  await expect(page.locator("[data-slot='checkout-tech-chip']")).toBeVisible();
   return ticketId;
 }
 
@@ -133,19 +114,38 @@ test.describe("US2: Row-level price override", () => {
     expect(svcBefore).toBeDefined();
     const catalogPriceBefore = svcBefore!.price_cents as number;
 
-    const ticketId = await openFreshTicket(page, admin, "Jordan Lee");
+    await page.goto("/dashboard");
+    const ticketId = await openFreshTicket(page, "Jordan Lee");
 
-    // Pre-seeded confirmed Classic manicure row — visible at the catalog
-    // price with no needs-price highlight and a real UUID (no temp-id
-    // wait needed because the row never came from an optimistic insert).
+    // Tap the fixed-price tile — confirmed row lands immediately.
+    const tile = page.locator(
+      `[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`
+    );
+    await expect(tile).toBeEnabled();
+    await tile.click();
+
     const cartLine = page
       .locator("[data-slot='cart-line']")
       .filter({ hasText: "Classic manicure" })
       .first();
+    // Confirmed = no needs-price highlight.
     await expect(cartLine).toHaveAttribute("data-needs-price", "false");
     await expect(cartLine.locator("[data-slot='cart-line-price']")).toHaveText(
       `$${(catalogPriceBefore / 100).toFixed(2)}`
     );
+
+    // Wait for the optimistic insert to be replaced with the server-side
+    // row id (the override path skips temp-ids — handleEditPrice no-ops on
+    // `tmp-*` ids). The line id flips from `tmp-…` to a real UUID.
+    await expect
+      .poll(
+        async () => {
+          const lineId = await cartLine.getAttribute("data-line-id");
+          return lineId && !lineId.startsWith("tmp-") ? "ready" : "wait";
+        },
+        { timeout: 5_000 }
+      )
+      .toBe("ready");
 
     // (a) Tap the price button → PriceSheet opens in override mode.
     await cartLine.locator("[data-slot='cart-line-price']").click();
@@ -222,13 +222,29 @@ test.describe("US2: Row-level price override", () => {
   test("(d) Cancel leaves the confirmed row unchanged", async ({ page }) => {
     const admin = adminClient();
 
-    const ticketId = await openFreshTicket(page, admin, "Jordan Lee");
+    await page.goto("/dashboard");
+    const ticketId = await openFreshTicket(page, "Jordan Lee");
 
+    const tile = page.locator(
+      `[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`
+    );
+    await tile.click();
     const cartLine = page
       .locator("[data-slot='cart-line']")
       .filter({ hasText: "Classic manicure" })
       .first();
     await expect(cartLine).toHaveAttribute("data-needs-price", "false");
+
+    // Wait for the optimistic insert to be confirmed (real UUID).
+    await expect
+      .poll(
+        async () => {
+          const lineId = await cartLine.getAttribute("data-line-id");
+          return lineId && !lineId.startsWith("tmp-") ? "ready" : "wait";
+        },
+        { timeout: 5_000 }
+      )
+      .toBe("ready");
 
     // Open the override sheet.
     await cartLine.locator("[data-slot='cart-line-price']").click();
@@ -263,11 +279,8 @@ test.describe("US2: Row-level price override", () => {
   }) => {
     const admin = adminClient();
 
-    // Seed with Jordan + Classic manicure (the incidental seeded line)
-    // so the spec can land on /checkout/<id> with a tech already chosen.
-    // The assertions below all filter cart-lines by the "Nail art" text
-    // and ignore the seeded line.
-    const ticketId = await openFreshTicket(page, admin, "Jordan Lee");
+    await page.goto("/dashboard");
+    const ticketId = await openFreshTicket(page, "Maya Patel");
 
     // Add the variable Nail art service → auto-opens sheet in US1 mode
     // (isOverride=false, Remove rendered).
