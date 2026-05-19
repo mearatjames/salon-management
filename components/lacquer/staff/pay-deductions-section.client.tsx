@@ -29,8 +29,12 @@ import { CreditCard, Info, Package } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { formatDefaultCardFeeLabel } from "@/lib/services/card-fee-default";
-import { formatFrontDeskHint, formatSummary } from "@/app/(studio)/settings/staff/_summary";
+import {
+  formatCardFeeSubtitle,
+  formatFrontDeskHint,
+  formatSummary,
+  formatSupplyModeSubtitle,
+} from "@/app/(studio)/settings/staff/_summary";
 
 import type { RosterStaff, StaffSupplyMode } from "@/app/(studio)/settings/staff/_types";
 import type { SupplyCatalogForStaff } from "@/app/(studio)/settings/staff/_supply-catalog";
@@ -61,17 +65,6 @@ export type PayDeductionsSectionProps = {
   disabled?: boolean;
 };
 
-function supplyModeSubtitle(mode: StaffSupplyMode, firstName: string): string {
-  switch (mode) {
-    case "apply":
-      return "Per-service supply cost deducted from payout when configured.";
-    case "partial":
-      return `Apply most supply costs, but exempt ${firstName} from specific types.`;
-    case "exempt":
-      return "Exempt — no supply costs ever deducted, on any service.";
-  }
-}
-
 export function PayDeductionsSection({
   target,
   supplyCatalog,
@@ -80,10 +73,8 @@ export function PayDeductionsSection({
   disabled,
 }: PayDeductionsSectionProps) {
   const firstName = target.display_name.split(" ")[0] ?? target.display_name;
-  const cardFeeSubtitle = draft.cardFeeExempt
-    ? "Exempt — card fee never deducted from payout."
-    : `Standard ${formatDefaultCardFeeLabel()} deducted on card-paid services.`;
-  const supplyRowSubtitle = supplyModeSubtitle(draft.supplyMode, firstName);
+  const cardFeeSubtitle = formatCardFeeSubtitle(draft.cardFeeExempt);
+  const supplyRowSubtitle = formatSupplyModeSubtitle(draft.supplyMode, firstName);
 
   return (
     <section className="pay-deductions-section" data-slot="pay-deductions-section">

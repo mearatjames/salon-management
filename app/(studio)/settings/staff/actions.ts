@@ -34,6 +34,7 @@ import {
   validateDisplayName,
   validatePinShape,
   validateRole,
+  clearSupplyExceptIfWiped,
   validateSupplyExcept,
   validateSupplyMode,
 } from "./_validation";
@@ -301,13 +302,10 @@ export async function updateStaff(formData: FormData): Promise<void> {
     // 5b: parse + validate all 7 fields.
     const rawSupplyExcept = formData.getAll("supply_except").map((v) => String(v));
     const proposedSupplyMode = validateSupplyMode(String(formData.get("supply_mode") ?? ""));
-    let proposedSupplyExcept = validateSupplyExcept(rawSupplyExcept, allowedIds);
-    // App-layer wipe (matches the DB CHECK constraint): when saved mode is
-    // not 'partial' the persisted set MUST be empty. We wipe here so the
-    // audit-diff reflects what actually gets written.
-    if (proposedSupplyMode !== "partial") {
-      proposedSupplyExcept = [];
-    }
+    const proposedSupplyExcept = clearSupplyExceptIfWiped(
+      proposedSupplyMode,
+      validateSupplyExcept(rawSupplyExcept, allowedIds)
+    );
 
     const proposed: StaffDiffSnapshot = {
       display_name: validateDisplayName(String(formData.get("display_name") ?? "")),

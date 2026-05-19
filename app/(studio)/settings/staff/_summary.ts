@@ -10,6 +10,8 @@
 // client component (`pay-deductions-section.client.tsx`) which decides
 // between the summary, the front-desk hint, and nothing based on draft state.
 
+import { formatDefaultCardFeeLabel } from "@/lib/services/card-fee-default";
+
 import type { StaffSupplyMode } from "./_types";
 
 export type SummaryInput = {
@@ -83,6 +85,32 @@ export function formatSummary({
 
   // No exemptions in effect.
   return null;
+}
+
+/**
+ * Render the Card processing fee row subtitle. The "Standard $X deducted…"
+ * variant uses the shared `formatDefaultCardFeeLabel()` so the currency copy
+ * stays in lockstep with the services catalog.
+ */
+export function formatCardFeeSubtitle(cardExempt: boolean): string {
+  return cardExempt
+    ? "Exempt — card fee never deducted from payout."
+    : `Standard ${formatDefaultCardFeeLabel()} deducted on card-paid services.`;
+}
+
+/**
+ * Render the Supply deductions row subtitle for the given mode. The `partial`
+ * variant names the operator's first name so the copy reads naturally inline.
+ */
+export function formatSupplyModeSubtitle(mode: StaffSupplyMode, firstName: string): string {
+  switch (mode) {
+    case "apply":
+      return "Per-service supply cost deducted from payout when configured.";
+    case "partial":
+      return `Apply most supply costs, but exempt ${firstName} from specific types.`;
+    case "exempt":
+      return "Exempt — no supply costs ever deducted, on any service.";
+  }
 }
 
 /**
