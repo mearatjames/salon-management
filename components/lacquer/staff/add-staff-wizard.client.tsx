@@ -43,6 +43,11 @@ import {
 import { StaffAvatar } from "@/components/lacquer/staff/staff-avatar";
 import { roleOptionsFor, type StudioRole } from "@/app/(studio)/settings/staff/permissions";
 import { addStaff } from "@/app/(studio)/settings/staff/actions";
+import {
+  pinKeypadInit,
+  pinKeypadSubmit,
+  type PinKeypadState,
+} from "@/app/(studio)/settings/staff/_pin-keypad-state";
 
 const ROLE_LABEL: Record<StudioRole, string> = {
   owner: "Owner",
@@ -67,7 +72,6 @@ const PRIMARY_CTA_LABEL: Record<1 | 2 | 3, string> = {
 };
 
 type WizardStep = 1 | 2 | 3;
-type PinPhase = "enter" | "confirm";
 
 export type AddStaffWizardProps = {
   /** Operator's role — drives `roleOptionsFor`. */
@@ -93,10 +97,9 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
   const [role, setRole] = useState<StudioRole>(defaultRole);
   const [colorToken, setColorToken] = useState<string>(DEFAULT_COLOR_TOKEN);
 
-  // PIN state — buffers, phase, error
-  const [pinPhase, setPinPhase] = useState<PinPhase>("enter");
-  const [enterBuf, setEnterBuf] = useState("");
-  const [pinError, setPinError] = useState<string | null>(null);
+  // PIN state — pure reducer in `_pin-keypad-state.ts` drives `phase`, the
+  // entered-buffer, and the mismatch-error string.
+  const [pinState, setPinState] = useState<PinKeypadState>(() => pinKeypadInit());
 
   const formRef = useRef<HTMLFormElement | null>(null);
   const submittingRef = useRef(false);
@@ -113,9 +116,7 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
         setDisplayName("");
         setRole(defaultRole);
         setColorToken(DEFAULT_COLOR_TOKEN);
-        setPinPhase("enter");
-        setEnterBuf("");
-        setPinError(null);
+        setPinState(pinKeypadInit());
         submittingRef.current = false;
       }
       onOpenChange(next);
@@ -128,35 +129,24 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
 
   const handleKeypadSubmit = useCallback(
     (digits: string) => {
-      if (pinPhase === "enter") {
-        // Stash and advance to confirm. The keypad resets its buffer when
-        // `step` (its prop) flips.
-        setEnterBuf(digits);
-        setPinError(null);
-        setPinPhase("confirm");
-        return;
+      const { state: next, effect } = pinKeypadSubmit(pinState, digits);
+      setPinState(next);
+      if (effect?.kind === "submit") {
+        // Match — fire the Server Action. Render-pass success step
+        // immediately so the user sees feedback while the action runs (the
+        // redirect will replace this view). The NumericKeypad internally
+        // refs the latest `onSubmit`, so re-binding this callback per
+        // `pinState` change is safe (no listener churn).
+        if (submittingRef.current) return;
+        submittingRef.current = true;
+        setStep(3);
+        // Microtask submit so React commits the new step first.
+        queueMicrotask(() => {
+          formRef.current?.requestSubmit();
+        });
       }
-
-      // Confirm phase.
-      if (digits !== enterBuf) {
-        setPinError("PINs didn't match. Try again.");
-        setEnterBuf("");
-        setPinPhase("enter");
-        return;
-      }
-
-      // Match — fire the Server Action. Render-pass success step
-      // immediately so the user sees feedback while the action runs (the
-      // redirect will replace this view).
-      if (submittingRef.current) return;
-      submittingRef.current = true;
-      setStep(3);
-      // Microtask submit so React commits the new step first.
-      queueMicrotask(() => {
-        formRef.current?.requestSubmit();
-      });
     },
-    [pinPhase, enterBuf]
+    [pinState]
   );
 
   const handleClose = useCallback(() => {
@@ -244,8 +234,8 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
           {step === 2 ? (
             <Step2Pin
               name={trimmedName}
-              pinPhase={pinPhase}
-              pinError={pinError}
+              pinPhase={pinState.phase}
+              pinError={pinState.error}
               onSubmit={handleKeypadSubmit}
               onCancel={handleClose}
             />
@@ -330,7 +320,7 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
           <input type="hidden" name="display_name" value={trimmedName} />
           <input type="hidden" name="role" value={role} />
           <input type="hidden" name="color_token" value={colorToken} />
-          <input type="hidden" name="pin" value={enterBuf} />
+          <input type="hidden" name="pin" value={pinState.enterBuf} />
         </form>
       </SheetContent>
     </Sheet>
@@ -416,7 +406,7 @@ function Step2Pin({
   onCancel,
 }: {
   name: string;
-  pinPhase: PinPhase;
+  pinPhase: PinKeypadState["phase"];
   pinError: string | null;
   onSubmit: (digits: string) => void;
   onCancel: () => void;

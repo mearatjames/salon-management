@@ -17,11 +17,18 @@
 //      CTA reappears. `select count(*) from square_oauth` returns 0.
 //   8. The audit log shows the four expected verbs in order.
 
-import { expect, test, type Page } from "@playwright/test";
-
+import { type Page } from "@playwright/test";
+import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+
+test.use({
+  storageState: async ({ authState }, provide) => {
+    await provide(authState.owner);
+  },
+});
+
 import {
   acquireStubLock,
   getStubControls,
@@ -55,21 +62,6 @@ async function clearSquareTables(): Promise<void> {
   const c = serviceClient();
   await c.from("square_devices").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   await c.from("square_oauth").delete().eq("id", true);
-}
-
-async function signInAsMaya(page: Page): Promise<void> {
-  await page.goto("/login?next=%2Fsettings%2Fsquare");
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  await page.waitForURL(/\/settings\/square(\?|$)/, { timeout: 10_000 });
 }
 
 test.describe.configure({ mode: "serial" });
@@ -134,7 +126,7 @@ test.describe("US1: Connect Square", () => {
       }
     );
 
-    await signInAsMaya(page);
+    await page.goto("/settings/square");
 
     // 1) Unconnected CTA visible.
     await expect(page.getByTestId("square-connect-button")).toBeVisible();

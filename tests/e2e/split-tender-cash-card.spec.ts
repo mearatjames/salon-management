@@ -14,11 +14,19 @@
 //        payment.captured     (cash activation)
 //        payment.captured     (card activation via webhook)
 
-import { expect, test, type Page, type BrowserContext } from "@playwright/test";
+import { type Page, type BrowserContext } from "@playwright/test";
+import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 import { squareStub, type SquareStub } from "./_square-stub";
+
+test.use({
+  storageState: async ({ authState }, provide) => {
+    await provide(authState.owner);
+  },
+});
+
 import {
   acquireStubLock,
   getStubControls,
@@ -52,23 +60,6 @@ async function clearSquareTables(): Promise<void> {
   const c = serviceClient();
   await c.from("square_devices").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   await c.from("square_oauth").delete().eq("id", true);
-}
-
-async function signInAsMaya(page: Page, next: string): Promise<void> {
-  const encodedNext = encodeURIComponent(next);
-  await page.goto(`/login?next=${encodedNext}`);
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  const re = new RegExp(`${next.replace(/[/\-]/g, "\\$&")}(\\?|$)`);
-  await page.waitForURL(re, { timeout: 10_000 });
 }
 
 async function connectSquareViaStub(
@@ -160,7 +151,7 @@ test.describe("US2: split tender — cash + card", () => {
     const supabase = serviceClient();
 
     // 1) Sign in + connect Square.
-    await signInAsMaya(page, "/settings/square");
+    await page.goto("/settings/square");
     await connectSquareViaStub(page, context, baseURL!);
 
     // 2) Browser-side stub: defensive for any in-page Square calls.

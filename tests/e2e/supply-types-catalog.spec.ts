@@ -14,10 +14,16 @@
 // services at the new FK. `afterEach` clears both fixture rows so re-runs
 // stay deterministic.
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_fixtures";
 import { createClient } from "@supabase/supabase-js";
 
 import { canonicalizeName } from "@/lib/policy/canonicalize-name";
+
+test.use({
+  storageState: async ({ authState }, provide) => {
+    await provide(authState.owner);
+  },
+});
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -48,21 +54,6 @@ function admin() {
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-}
-
-async function signInAsMaya(page: import("@playwright/test").Page) {
-  await page.goto("/login?next=%2Fservices");
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  await page.waitForURL(/\/services(\?|$)/, { timeout: 10_000 });
 }
 
 /**
@@ -171,7 +162,7 @@ test.describe("022 supply types catalog", () => {
     test("(a) picker is pre-populated with the migrated type for a backfilled service", async ({
       page,
     }) => {
-      await signInAsMaya(page);
+      await page.goto("/services");
 
       // Open the backfilled service.
       const row = page.locator(
@@ -389,7 +380,7 @@ test.describe("022 supply types catalog", () => {
     test("(d) the picker on a migrated service shows the canonicalized name from the catalog", async ({
       page,
     }) => {
-      await signInAsMaya(page);
+      await page.goto("/services");
 
       const sharedCanonical = canonicalizeName("Backfilled gel");
       const expectedTypeId = canonicalToTypeId.get(sharedCanonical);
@@ -499,7 +490,7 @@ test.describe("022 supply types catalog", () => {
     test("(a) archive button is disabled with a count-aware tooltip when usage > 0", async ({
       page,
     }) => {
-      await signInAsMaya(page);
+      await page.goto("/services");
 
       await page.locator("[data-slot='services-edit-policy-button']").click();
       const sheet = page.locator("[data-slot='edit-policy-sheet']");
@@ -538,7 +529,7 @@ test.describe("022 supply types catalog", () => {
         .eq("id", CLASSIC_MANICURE_ID);
       await c.from("supply_types").update({ archived: true }).eq("id", targetTypeId!);
 
-      await signInAsMaya(page);
+      await page.goto("/services");
 
       // Open Gel polish, turn Supply on, open the picker.
       await page.goto(`/services?selected=${GEL_POLISH_ID}`);
@@ -604,7 +595,7 @@ test.describe("022 supply types catalog", () => {
     test("(a) row shows 'N services' badge for a 2-service type and 'Unused' for a 0-service type", async ({
       page,
     }) => {
-      await signInAsMaya(page);
+      await page.goto("/services");
       await page.locator("[data-slot='services-edit-policy-button']").click();
       const sheet = page.locator("[data-slot='edit-policy-sheet']");
       await expect(sheet).toBeVisible();
@@ -627,7 +618,7 @@ test.describe("022 supply types catalog", () => {
     test("(b) expanding a populated row reveals one sub-row per referencing service", async ({
       page,
     }) => {
-      await signInAsMaya(page);
+      await page.goto("/services");
       await page.locator("[data-slot='services-edit-policy-button']").click();
       const sheet = page.locator("[data-slot='edit-policy-sheet']");
       await expect(sheet).toBeVisible();
@@ -666,7 +657,7 @@ test.describe("022 supply types catalog", () => {
     test("(c) clicking a sub-row closes the sheet and navigates to ?selected=<service-id>", async ({
       page,
     }) => {
-      await signInAsMaya(page);
+      await page.goto("/services");
       await page.locator("[data-slot='services-edit-policy-button']").click();
       const sheet = page.locator("[data-slot='edit-policy-sheet']");
       await expect(sheet).toBeVisible();
@@ -704,7 +695,7 @@ test.describe("022 supply types catalog", () => {
     });
 
     test("(d) usage_count reflects DB state on each sheet open", async ({ page }) => {
-      await signInAsMaya(page);
+      await page.goto("/services");
 
       // First open: badge shows "2 services".
       await page.locator("[data-slot='services-edit-policy-button']").click();
