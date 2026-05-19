@@ -20,6 +20,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 import { squareStub, type SquareStub } from "./_square-stub";
+import { createOpenTicket, SEEDED_SERVICE_IDS, SEEDED_STAFF_IDS } from "./_open-ticket";
 
 test.use({
   storageState: async ({ authState }, provide) => {
@@ -103,14 +104,21 @@ async function typeGanIntoNumpad(page: Page, ganChars: string): Promise<void> {
 }
 
 async function openCheckoutWithFortyDollarService(page: Page): Promise<string> {
-  await page.goto("/dashboard");
-  await page.locator("[data-slot='new-transaction-cta']").click();
-  await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-  const ticketId = new URL(page.url()).pathname.split("/").pop()!;
-  await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Sam Chen']").click();
-  await page
-    .locator("[data-slot='service-tile'][data-service-id='20000000-0000-0000-0000-000000000003']")
-    .click();
+  // 042-ephemeral-cart: direct-insert open ticket (Sam + Classic
+  // pedicure $40) and navigate to the cart-edit route.
+  const admin = serviceClient();
+  const ticketId = await createOpenTicket(admin, {
+    techId: SEEDED_STAFF_IDS.sam,
+    openedByStaffId: SEEDED_STAFF_IDS.maya,
+    items: [
+      {
+        serviceId: SEEDED_SERVICE_IDS.classicPedicure,
+        displayName: "Classic pedicure",
+        unitPriceCents: 4000,
+      },
+    ],
+  });
+  await page.goto(`/checkout/${ticketId}`);
   await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$40.00");
   return ticketId;
 }

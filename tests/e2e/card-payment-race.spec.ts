@@ -21,6 +21,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 import { squareStub, type SquareStub } from "./_square-stub";
+import { createOpenTicket, SEEDED_SERVICE_IDS, SEEDED_STAFF_IDS } from "./_open-ticket";
 
 test.use({
   storageState: async ({ authState }, provide) => {
@@ -143,15 +144,22 @@ test.describe("US3: Cancel and recover — race", () => {
     const stub: SquareStub = await squareStub(context, baseURL!);
     stub.stubListDevices([{ id: deviceId, name: "Lobby Terminal", status: "PAIRED" }]);
 
-    await page.goto("/dashboard");
-    await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
-
-    await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Jordan Lee']").click();
-    await page
-      .locator("[data-slot='service-tile'][data-service-id='20000000-0000-0000-0000-000000000001']")
-      .click();
+    // 042-ephemeral-cart: direct-insert open ticket (Jordan + Classic
+    // manicure $25) and land on the cart-edit route ready for the
+    // race-condition assertions below.
+    const supabaseSeed = serviceClient();
+    const ticketId = await createOpenTicket(supabaseSeed, {
+      techId: SEEDED_STAFF_IDS.jordan,
+      openedByStaffId: SEEDED_STAFF_IDS.maya,
+      items: [
+        {
+          serviceId: SEEDED_SERVICE_IDS.classicManicure,
+          displayName: "Classic manicure",
+          unitPriceCents: 2500,
+        },
+      ],
+    });
+    await page.goto(`/checkout/${ticketId}`);
     await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$25.00");
 
     await page.locator("[data-slot='payment-tile'][data-method='card']").click();

@@ -1,15 +1,23 @@
 // tests/e2e/gift-card-full-balance.spec.ts
 //
-// US1 happy path — front desk redeems a full-balance gift card:
+// US1 happy path — front desk redeems a full-balance gift card. UPDATED
+// for 042 ephemeral cart:
 //   1. Sign in, connect Square via stub.
-//   2. Open a fresh ticket, pick a tech + a $40 service.
-//   3. Tap Gift tile → GanNumpadSheet opens.
+//   2. Navigate to /checkout (cart-build), pick a tech + a $40 service.
+//   3. Tap Gift tile → GanNumpadSheet opens (cart-build surface).
 //   4. Enter GAN `6000 1234 5678 0001` (stub fixture: ACTIVE $60).
-//   5. Balance sheet shows "$60.00 available · Card ending in 0001 · Redeem".
-//   6. Tap Redeem → waiting micro-state → stub auto-fires the
-//      payment.updated webhook → ticket flips paid → DoneScreen.
-//   7. Audit cursor asserts the three verbs in order:
-//        gift_card.balance_looked_up
+//   5. Submit the GAN → submitGiftFromCart materializes the ticket,
+//      runs the Square lookup + balance check server-side, composes the
+//      gift draft, and activates the gift payment; then redirects to
+//      /checkout/<ticketId>.
+//   6. Stub auto-fires the payment.updated webhook → ticket flips paid.
+//      Reload so the [ticketId] page re-renders DoneScreen (the in-page
+//      gift-waiting realtime/polling is gated on `giftStage:"waiting"`,
+//      which isn't set after cart-build redirect — see ephemeral-cart
+//      spec line ~462 future-enhancement note).
+//   7. Audit cursor asserts the verbs (no standalone
+//      `gift_card.balance_looked_up` — the from-cart action does the
+//      lookup implicitly):
 //        payment.draft_created
 //        gift_card.redeemed
 //
@@ -154,11 +162,11 @@ test.describe("US1: redeem full-balance gift card", () => {
     const stub: SquareStub = await squareStub(context, baseURL!);
     stub.stubListDevices([{ id: "device:STUB_GIFT_US1", name: "Lobby", status: "PAIRED" }]);
 
-    // 3) Start a fresh ticket through the dashboard.
+    // 3) Open the cart-build entry via the dashboard CTA. 042 ephemeral
+    //    cart: lands on /checkout, no ticket row yet.
     await page.goto("/dashboard");
     await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
 
     // 4) Pick Sam (technician) + Classic pedicure ($40).
     await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Sam Chen']").click();
@@ -167,28 +175,48 @@ test.describe("US1: redeem full-balance gift card", () => {
       .click();
     await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$40.00");
 
-    // 5) Tap Gift tile → GanNumpadSheet opens.
+    // 5) Tap Gift tile → GanNumpadSheet opens (cart-build screen surface).
     await page.locator("[data-slot='payment-tile'][data-method='gift']").click();
     await expect(page.locator("[data-slot='gan-numpad-sheet']")).toBeVisible({ timeout: 5_000 });
 
     // 6) Enter 6000123456780001 (stub fixture: ACTIVE $60).
     await typeGanIntoNumpad(page, "6000123456780001");
+    // 7) Submit the GAN — `submitGiftFromCart` resolves the Square lookup,
+    //    materializes the ticket + draft → activates the gift payment, then
+    //    redirects to /checkout/<ticketId>. The cart-build GAN sheet
+    //    skips the in-screen balance-confirmation step (the action does
+    //    the balance check server-side and returns GIFT_INSUFFICIENT_BALANCE
+    //    if it fails).
     await page.locator("[data-slot='gan-numpad-submit']").click();
 
-    // 7) Balance sheet renders with $60.00 + last-4 mask.
-    await expect(page.locator("[data-slot='gift-card-balance-found']")).toBeVisible({
-      timeout: 5_000,
-    });
-    await expect(page.locator("[data-slot='gift-card-balance-amount']")).toContainText("$60.00");
+    // 8) Wait for redirect.
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 15_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
 
-    // 8) Tap Redeem.
-    await page.locator("[data-slot='gift-card-balance-redeem']").click();
-
-    // 9) Waiting micro-state appears.
-    await expect(page.locator("[data-slot='gift-card-waiting']")).toBeVisible({ timeout: 5_000 });
-
-    // 10) Within ~10s the auto-fired webhook lands → ticket flips paid → DoneScreen.
-    await expect(page.locator("[data-slot='done-screen']")).toBeVisible({ timeout: 15_000 });
+    // 9) The pending gift payment settles via Square's webhook in ~few
+    //    seconds. Realtime / polling on the [ticketId] screen is gated
+    //    by `giftStage === "waiting"`, which is NOT set after cart-build
+    //    redirect (see `checkout-ephemeral-cart.spec.ts` future-enhancement
+    //    note). Poll the ticket directly until status='paid', then reload
+    //    so the server component re-renders DoneScreen.
+    {
+      let paid = false;
+      for (let i = 0; i < 30 && !paid; i++) {
+        const { data } = await supabase
+          .from("tickets")
+          .select("status")
+          .eq("id", ticketId)
+          .single();
+        if (data?.status === "paid") {
+          paid = true;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      expect(paid).toBe(true);
+    }
+    await page.reload();
+    await expect(page.locator("[data-slot='done-screen']")).toBeVisible({ timeout: 8_000 });
 
     // 11) DB asserts: succeeded payment of $40, ticket paid.
     const { data: paymentRow } = await supabase
@@ -208,10 +236,13 @@ test.describe("US1: redeem full-balance gift card", () => {
       .single();
     expect(ticketRow?.status).toBe("paid");
 
-    // 12) Audit cursor — three verbs landed in order.
+    // 12) Audit cursor — verbs landed. 042 cart-build path skips the
+    //     standalone balance-lookup step (submitGiftFromCart does the
+    //     Square lookup server-side and does not emit
+    //     `gift_card.balance_looked_up`); the draft + redeem verbs still
+    //     surface.
     const rows = await getAuditLogRowsSince(cursor);
     const actions = rows.map((r) => r.action);
-    expect(actions).toContain("gift_card.balance_looked_up");
     expect(actions).toContain("payment.draft_created");
     expect(actions).toContain("gift_card.redeemed");
 

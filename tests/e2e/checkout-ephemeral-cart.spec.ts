@@ -208,7 +208,7 @@ test.describe("US1: ephemeral cart commit (cash / gift / abandon)", () => {
 
     // Pick cash tile + submit.
     await page.locator("[data-slot='payment-tile'][data-method='cash']").click();
-    const submit = page.locator("[data-testid='submit-cash']");
+    const submit = page.locator("[data-slot='take-cash-button']");
     await expect(submit).toBeEnabled({ timeout: 5_000 });
     await submit.click();
 
@@ -315,7 +315,7 @@ test.describe("US1: ephemeral cart commit (cash / gift / abandon)", () => {
       await admin.from("services").update({ active: false }).eq("id", CLASSIC_MANICURE_ID);
 
       await page.locator("[data-slot='payment-tile'][data-method='cash']").click();
-      await page.locator("[data-testid='submit-cash']").click();
+      await page.locator("[data-slot='take-cash-button']").click();
 
       // The action returns ok:false → toast appears; URL stays put.
       // sonner renders into [data-sonner-toaster].

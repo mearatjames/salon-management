@@ -43,11 +43,17 @@ import {
   removeDraftLeg,
   removeLine,
   sendCardToTerminal,
+  sendCardToTerminalFromCart,
   setLinePrice,
   setLineTech,
+  splitTenderFromCart,
+  submitCashFromCart,
+  submitGiftFromCart,
   takeCash,
+  type CommitResult,
   type LookupGiftCardResult,
 } from "@/app/(studio)/checkout/actions";
+import type { EphemeralCartInput } from "@/app/(studio)/checkout/_commit-from-cart";
 import {
   CashPaymentFailedError,
   DiscountInvalidError,
@@ -107,12 +113,29 @@ export type TerminalDevicePropView = {
 };
 
 export type CheckoutScreenProps = {
-  ticketId: string;
-  initialItems: CartLineView[];
+  /**
+   * Feature 042 — `null`/`undefined` puts the screen in **cart mode**:
+   *   - No ticket exists yet.
+   *   - Every cart-edit handler mutates local React state only.
+   *   - Commit handlers (Take cash / Send to terminal / GAN submit /
+   *     Split tender) call the `submitXxxFromCart` Server Actions,
+   *     which create the ticket + items + first payment atomically,
+   *     then redirect to `/checkout/<new-id>` (this screen again, in
+   *     ticket mode).
+   *   - Cancel + Discard chrome is hidden (FR-006); there's nothing
+   *     on the server to discard.
+   * Otherwise the screen behaves exactly like today (ticket mode).
+   */
+  ticketId?: string;
+  /** Initial cart contents. Empty in cart mode; server-loaded in ticket mode. */
+  initialItems?: CartLineView[];
   staff: Staff[];
   services: ServiceTileService[];
-  /** Salon-info settings for the BillSheet masthead (US4 / T040). */
-  salonInfo: { name: string; address: string; phone: string };
+  /**
+   * Salon-info for the BillSheet masthead (US4 / T040). Optional in
+   * cart mode where Bill is hidden (no real ticket to capture).
+   */
+  salonInfo?: { name: string; address: string; phone: string };
   /** US2: presence of singleton `square_oauth` row. */
   squareConnected?: boolean;
   /** US2: the salon's `is_default = true` device, or null. */
@@ -140,6 +163,55 @@ type SplitLeg = PaymentLegRowView & {
 
 function tempId(): string {
   return `tmp-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
+}
+
+/**
+ * Cart-mode local id. Distinct prefix from `tmp-` so the existing
+ * `id.startsWith("tmp-")` skip guards (which mean "optimistic insert
+ * not yet server-confirmed" in ticket mode) don't trip in cart mode.
+ * Cart-mode rows never get reconciled with server ids — they're
+ * thrown away when the cart commits and the screen remounts in
+ * ticket mode against the new ticket.
+ */
+function cartLocalId(): string {
+  return `cart-${Math.random().toString(36).slice(2, 10)}-${Date.now()}`;
+}
+
+/**
+ * Build the wire payload for the submitXxxFromCart Server Actions
+ * from the in-memory `lines`. Service rows become `items[]`; the
+ * lone discount row (if any) becomes the cart-level `discount`.
+ * customerId is left null (the cart-build screen has no customer
+ * picker today; can be added later without a wire change).
+ */
+function linesToWirePayload(
+  lines: CartLineView[],
+  primaryTechId: string | null
+): EphemeralCartInput {
+  const items = lines
+    .filter((l) => l.kind === "service" && l.assignedStaffId != null && l.serviceId != null)
+    .map((l) => ({
+      serviceId: l.serviceId as string,
+      techId: l.assignedStaffId as string,
+      note: l.note,
+      unitPriceCents: l.unitPriceCents > 0 || l.priceUnconfirmed ? l.unitPriceCents : null,
+    }));
+  const discountLine = lines.find((l) => l.kind === "discount");
+  let discount: EphemeralCartInput["discount"] = null;
+  if (discountLine) {
+    if (discountLine.discountPct != null) {
+      discount = { kind: "percent", percent: discountLine.discountPct };
+    } else {
+      discount = { kind: "amount", amountCents: Math.abs(discountLine.unitPriceCents) };
+    }
+  }
+  return {
+    customerId: null,
+    techId: primaryTechId,
+    items,
+    discount,
+    notes: null,
+  };
 }
 
 function fmt(cents: number): string {
@@ -177,7 +249,7 @@ function isTicketAlreadyBeingCharged(err: unknown): boolean {
 
 export function CheckoutScreen({
   ticketId,
-  initialItems,
+  initialItems = [],
   staff,
   services,
   salonInfo,
@@ -313,8 +385,88 @@ export function CheckoutScreen({
     setSelectedStaffId(null);
   }
 
+  // ── Feature 042 — shared helper for cart-mode commit toasts. ─────
+  // The submitXxxFromCart actions return CommitResult; map the
+  // discriminated error codes to the same calm, second-person copy
+  // family the ticket-mode handlers use. Kept inside the component so
+  // closures over `toast` and `setErrorBanner` stay simple.
+  function toastCommitError(result: Extract<CommitResult, { ok: false }>) {
+    switch (result.code) {
+      case "INVALID_CART":
+        toast.error("Cart isn't valid. Refresh and try again.");
+        break;
+      case "STALE_SERVICE":
+        toast.error("A service in the cart was deactivated. Remove it and try again.");
+        break;
+      case "INACTIVE_TECH":
+        toast.error("A tech in the cart is no longer active. Pick someone else.");
+        break;
+      case "STALE_CUSTOMER":
+        toast.error("The selected customer no longer exists.");
+        break;
+      case "PRICE_REQUIRED":
+        toast.error("Set a price on every variable-priced line before charging.");
+        break;
+      case "PRICE_OUT_OF_BOUNDS":
+        toast.error("A line price is outside the service's allowed range.");
+        break;
+      case "INSUFFICIENT_CASH":
+        toast.error("Cash tendered is less than the total.");
+        break;
+      case "GIFT_NOT_FOUND":
+        toast.error("Gift card not found. Re-enter the number.");
+        break;
+      case "GIFT_INSUFFICIENT_BALANCE":
+        toast.error("Gift card balance is less than the total.");
+        break;
+      case "GIFT_NOT_REDEEMABLE":
+        toast.error("That gift card can't be redeemed.");
+        break;
+      case "TERMINAL_HANDOFF_FAILED":
+        toast.error("Couldn't reach the card terminal. Try again.");
+        break;
+      case "INTERNAL":
+      default:
+        toast.error("Something went wrong. Try again.");
+        break;
+    }
+  }
+
   function handlePickService(svc: ServiceTileService) {
     if (!selectedStaffId) return;
+
+    // CART MODE — synthesize a CartLineView with a local id and append.
+    // No server round-trip; the price sheet still auto-opens for variable
+    // services so the operator must set a price before commit.
+    if (!ticketId) {
+      const localId = cartLocalId();
+      const newLine: CartLineView = {
+        id: localId,
+        serviceId: svc.id,
+        name: svc.name,
+        unitPriceCents: svc.variable_price ? 0 : svc.price_cents,
+        qty: 1,
+        priceUnconfirmed: svc.variable_price,
+        assignedStaffId: selectedStaffId,
+        serviceMeta: {
+          variable: svc.variable_price,
+          priceFromCents: svc.price_from_cents ?? null,
+          priceToCents: svc.price_to_cents ?? null,
+          variableNote: svc.variable_price_note ?? null,
+          presets: svc.presets ?? null,
+        },
+        kind: "service",
+        note: null,
+        discountPct: null,
+      };
+      setLines((prev) => [...prev, newLine]);
+      setErrorBanner(null);
+      if (svc.variable_price) {
+        setPriceSheet({ lineId: localId, isOverride: false });
+      }
+      return;
+    }
+
     const tmp = tempId();
     const optimisticLine: CartLineView = {
       id: tmp,
@@ -401,6 +553,9 @@ export function CheckoutScreen({
     setLines((prev) => prev.filter((l) => l.id !== line.id));
     setErrorBanner(null);
 
+    // CART MODE — purely local; no server row to delete.
+    if (!ticketId) return;
+
     // Skip the round-trip for optimistic-only temp lines (the server
     // never saw them).
     if (line.id.startsWith("tmp-")) return;
@@ -436,6 +591,32 @@ export function CheckoutScreen({
     note: string | undefined;
   }): Promise<void> {
     setErrorBanner(null);
+
+    // CART MODE — synthesize the discount row locally; no server row.
+    // The single-discount invariant (only one discount per ticket) is
+    // enforced by collapsing any prior discount row before appending.
+    if (!ticketId) {
+      const localId = cartLocalId();
+      setLines((prev) => [
+        ...prev.filter((l) => l.kind !== "discount"),
+        {
+          id: localId,
+          serviceId: null,
+          name: payload.shape === "percent" ? `Discount · ${payload.value}%` : "Discount",
+          unitPriceCents: payload.shape === "flat" ? -payload.value : 0,
+          qty: 1,
+          priceUnconfirmed: false,
+          assignedStaffId: null,
+          kind: "discount",
+          note: payload.note ?? null,
+          discountPct: payload.shape === "percent" ? payload.value : null,
+          serviceMeta: null,
+        },
+      ]);
+      setDiscountSheetOpen(false);
+      return;
+    }
+
     try {
       const result = await addDiscountLine({
         ticketId,
@@ -494,6 +675,9 @@ export function CheckoutScreen({
     );
     setErrorBanner(null);
 
+    // CART MODE — purely local; no server row to update.
+    if (!ticketId) return;
+
     // Skip the round-trip for optimistic-only temp lines (the server has
     // not yet seen the row; the eventual addServiceLine insert will carry
     // the latest selectedStaffId, not this override).
@@ -526,11 +710,12 @@ export function CheckoutScreen({
     // FR-001 / FR-009: tapping the price button opens the price sheet.
     // Unconfirmed rows land in US1's auto-open mode (Remove rendered);
     // confirmed rows land in US2's override mode (Remove hidden).
-    // Skip temp-id rows — the server hasn't confirmed them yet, so a
-    // setLinePrice call would 404. The auto-open via handlePickService
-    // already covered the variable-price case for fresh inserts; the
-    // user can re-open after the temp id swaps.
-    if (line.id.startsWith("tmp-")) return;
+    // The tmp-id guard is ticket-mode-only: it skips opening the sheet
+    // for a row whose server insert hasn't returned yet (setLinePrice
+    // would 404 against the temp id). In cart mode every row uses a
+    // `cart-` id and never round-trips to the server, so the sheet is
+    // always editable.
+    if (ticketId && line.id.startsWith("tmp-")) return;
     // US3: discount rows have no price-edit affordance (setLinePrice throws
     // InvalidPriceError on kind='discount'). Defensive guard.
     if (line.kind === "discount") return;
@@ -541,6 +726,16 @@ export function CheckoutScreen({
     if (!priceSheet) return;
     const { lineId } = priceSheet;
     setErrorBanner(null);
+
+    // CART MODE — purely local; no server row to update.
+    if (!ticketId) {
+      setLines((prev) =>
+        prev.map((l) => (l.id === lineId ? { ...l, unitPriceCents, priceUnconfirmed: false } : l))
+      );
+      setPriceSheet(null);
+      return;
+    }
+
     try {
       await setLinePrice({ ticketId, lineId, unitPriceCents });
       // Local update: clear the unconfirmed flag and reflect the new
@@ -570,6 +765,28 @@ export function CheckoutScreen({
 
   async function handleTakeCash() {
     if (!takeCashEnabled || inflight) return;
+
+    // CART MODE — call submitCashFromCart; on success, redirect to the
+    // new ticket's URL (this screen remounts in ticket mode against
+    // status='paid' → renders DoneScreen). Cart preserved on failure
+    // (FR-013).
+    if (!ticketId) {
+      setInflight(true);
+      setErrorBanner(null);
+      try {
+        const wire = linesToWirePayload(lines, selectedStaffId);
+        const result = await submitCashFromCart(wire, totals.totalCents);
+        if (result.ok) {
+          router.push("/checkout/" + result.ticketId);
+        } else {
+          toastCommitError(result);
+        }
+      } finally {
+        setInflight(false);
+      }
+      return;
+    }
+
     setInflight(true);
     setErrorBanner(null);
     try {
@@ -594,6 +811,16 @@ export function CheckoutScreen({
 
   async function handleDiscard() {
     if (inflight) return;
+
+    // CART MODE — no server row to discard. TxHeader hides Discard in
+    // cart mode anyway (FR-006); this guard protects against any future
+    // wiring that re-exposes the button.
+    if (!ticketId) {
+      setLines([]);
+      router.push("/dashboard");
+      return;
+    }
+
     setInflight(true);
     setErrorBanner(null);
     try {
@@ -681,6 +908,26 @@ export function CheckoutScreen({
   async function handleSendCard() {
     if (cardStage !== "cart" || inflight) return;
     if (paymentMethod !== "card") return;
+
+    // CART MODE — atomic ticket+items+pending-card-payment + Square
+    // createTerminalCheckout. On Square failure the action rolls back
+    // (FR-008) and the cart is preserved (FR-013).
+    if (!ticketId) {
+      setInflight(true);
+      setErrorBanner(null);
+      try {
+        const wire = linesToWirePayload(lines, selectedStaffId);
+        const result = await sendCardToTerminalFromCart(wire, defaultDeviceId ?? undefined);
+        if (result.ok) {
+          router.push("/checkout/" + result.ticketId);
+        } else {
+          toastCommitError(result);
+        }
+      } finally {
+        setInflight(false);
+      }
+      return;
+    }
 
     setInflight(true);
     setErrorBanner(null);
@@ -796,6 +1043,7 @@ export function CheckoutScreen({
   }
 
   useEffect(() => {
+    if (!ticketId) return; // cart mode never enters waiting
     if (cardStage !== "waiting" || !activeCardPaymentId) return;
 
     // Realtime channel — fires on UPDATE events for this ticket's
@@ -825,6 +1073,7 @@ export function CheckoutScreen({
     // `handleSendCard`'s `cardStage !== 'cart'` guard because React state
     // updates are async and the cart-stage reset wouldn't be visible to
     // the next call yet. Inline the same body here, then move to waiting.
+    if (!ticketId) return; // cart mode never enters card-failed
     if (inflight) return;
     setCardFailureReason(null);
     setInflight(true);
@@ -903,6 +1152,12 @@ export function CheckoutScreen({
   // surface. The dialog itself owns the in-flight + inline-error state;
   // we just dispatch the action and let the result propagate.
   async function handleEmailBill(address: string): Promise<void> {
+    if (!ticketId) {
+      // Bill is hidden in cart mode (no real ticket to snapshot); this
+      // branch is unreachable, but the guard satisfies TypeScript and
+      // protects against any future Bill-in-cart-mode wiring.
+      throw new Error("emailBill requires a real ticket id");
+    }
     if (!billSnapshot) {
       throw new Error("billSnapshot is null — should not happen");
     }
@@ -946,6 +1201,31 @@ export function CheckoutScreen({
 
   async function handleGanSubmit(gan: string) {
     if (giftBusy) return;
+
+    // CART MODE — skip the 2-step lookup-then-redeem (no ticket exists
+    // yet to attach a lookup result to). submitGiftFromCart does its
+    // own server-side lookup + balance check + atomic create-and-charge.
+    if (!ticketId) {
+      setGiftBusy(true);
+      setErrorBanner(null);
+      try {
+        const wire = linesToWirePayload(lines, selectedStaffId);
+        const displayLabel = gan.replace(/\s/g, "").slice(-4);
+        const result = await submitGiftFromCart(wire, displayLabel, gan);
+        if (result.ok) {
+          closeGiftFlow();
+          router.push("/checkout/" + result.ticketId);
+        } else {
+          toastCommitError(result);
+          // Stay on the numpad so the operator can re-enter or cancel.
+          if (result.code === "GIFT_NOT_FOUND") setGiftStage("numpad");
+        }
+      } finally {
+        setGiftBusy(false);
+      }
+      return;
+    }
+
     setGiftBusy(true);
     setErrorBanner(null);
     try {
@@ -971,6 +1251,7 @@ export function CheckoutScreen({
   }
 
   async function handleGiftRedeem() {
+    if (!ticketId) return; // cart mode goes through handleGanSubmit's cart branch instead
     if (giftBusy || !giftGan || !giftLookup) return;
     if (giftLookup.kind !== "found") return;
     setGiftBusy(true);
@@ -1052,6 +1333,7 @@ export function CheckoutScreen({
   // terminal CardWaiting flow; gift opens the GAN numpad sheet against
   // the new draft id.
   async function handleMethodPickerPick(method: "cash" | "card" | "gift") {
+    if (!ticketId) return; // cart mode never enters the method picker
     const picker = methodPicker;
     if (!picker || methodPickerBusy) return;
     setMethodPickerBusy(true);
@@ -1131,6 +1413,7 @@ export function CheckoutScreen({
   }
 
   useEffect(() => {
+    if (!ticketId) return; // cart mode never enters gift waiting
     if (giftStage !== "waiting" || !activeGiftPaymentId) return;
     const unsubscribe = subscribePaymentChanges(ticketId, () => {
       void pollGiftPaymentOnce();
@@ -1173,6 +1456,7 @@ export function CheckoutScreen({
   // (calling navigation methods inside a state-setter return value is a
   // React no-no and can fault the error boundary in production).
   useEffect(() => {
+    if (!ticketId) return; // cart mode never enters split mode
     if (!splitMode) return;
     const unsubscribe = subscribePaymentChanges(ticketId, (payload) => {
       const row = payload.new;
@@ -1257,6 +1541,30 @@ export function CheckoutScreen({
       toast.error("Set a price on every line before charging.");
       return;
     }
+
+    // CART MODE — splitTenderFromCart creates ticket+items (no payment
+    // row yet) and returns the ticket id. Redirect into ticket mode
+    // where the operator composes legs against the real ticket using
+    // the existing mid-split UI.
+    if (!ticketId) {
+      setSplitBusy(true);
+      setErrorBanner(null);
+      void (async () => {
+        try {
+          const wire = linesToWirePayload(lines, selectedStaffId);
+          const result = await splitTenderFromCart(wire);
+          if (result.ok) {
+            router.push("/checkout/" + result.ticketId);
+          } else {
+            toastCommitError(result);
+          }
+        } finally {
+          setSplitBusy(false);
+        }
+      })();
+      return;
+    }
+
     setSplitModeManuallyOpened(true);
     setPaymentMethod(null);
   }
@@ -1290,6 +1598,7 @@ export function CheckoutScreen({
   }
 
   async function handleComposeLeg(method: "cash" | "card" | "gift", amountCents: number) {
+    if (!ticketId) return; // cart mode never enters split mode
     if (splitBusy) return;
     setSplitBusy(true);
     setErrorBanner(null);
@@ -1368,6 +1677,7 @@ export function CheckoutScreen({
   }
 
   async function handleActivateCardLeg(paymentId: string) {
+    if (!ticketId) return; // cart mode never enters split mode
     if (splitBusy || cardStage !== "cart") return;
     setSplitBusy(true);
     setErrorBanner(null);
@@ -1452,6 +1762,7 @@ export function CheckoutScreen({
       <div className="checkout-shell" data-slot="checkout-shell" data-ticket-id={ticketId}>
         <TxHeader
           subtitle="Walk-in"
+          ticketId={ticketId}
           onCancel={() => void handleCancelTerminalPayment()}
           onDiscard={handleDiscard}
           disabled={inflight}
@@ -1505,6 +1816,7 @@ export function CheckoutScreen({
       <div className="checkout-shell" data-slot="checkout-shell" data-ticket-id={ticketId}>
         <TxHeader
           subtitle="Walk-in"
+          ticketId={ticketId}
           onCancel={returnToPickerFromWaiting}
           onDiscard={handleDiscard}
           disabled={inflight}
@@ -1578,9 +1890,15 @@ export function CheckoutScreen({
   }
 
   return (
-    <div className="checkout-shell" data-slot="checkout-shell" data-ticket-id={ticketId}>
+    <div
+      className="checkout-shell"
+      data-slot="checkout-shell"
+      data-ticket-id={ticketId}
+      data-cart-building={!ticketId ? "true" : undefined}
+    >
       <TxHeader
         subtitle="Walk-in"
+        ticketId={ticketId}
         onCancel={handleCancel}
         onDiscard={handleDiscard}
         disabled={inflight}
@@ -1756,18 +2074,20 @@ export function CheckoutScreen({
                   alignItems: "stretch",
                 }}
               >
-                <button
-                  type="button"
-                  onClick={handleOpenBill}
-                  data-slot="bill-button"
-                  className="tx-btn secondary"
-                  disabled={inflight || lines.length === 0}
-                  style={{
-                    height: "var(--space-10)",
-                  }}
-                >
-                  <Printer size={16} strokeWidth={1.5} aria-hidden="true" /> Bill
-                </button>
+                {ticketId ? (
+                  <button
+                    type="button"
+                    onClick={handleOpenBill}
+                    data-slot="bill-button"
+                    className="tx-btn secondary"
+                    disabled={inflight || lines.length === 0}
+                    style={{
+                      height: "var(--space-10)",
+                    }}
+                  >
+                    <Printer size={16} strokeWidth={1.5} aria-hidden="true" /> Bill
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={handleTakeCash}
@@ -1844,8 +2164,10 @@ export function CheckoutScreen({
       {/* US4 (T041): Bill preview sheet. The snapshot is a frozen JS object —
           cart edits underneath the sheet do not mutate it. Closing + re-
           opening calls `handleOpenBill` again, which captures a fresh
-          snapshot from the live cart state. */}
-      {billSnapshot ? (
+          snapshot from the live cart state. Bill is hidden in cart mode
+          (no real ticket to snapshot) so salonInfo is guaranteed present
+          here in practice; the conditional below satisfies TypeScript. */}
+      {billSnapshot && salonInfo ? (
         <BillSheet
           snapshot={billSnapshot}
           salonInfo={salonInfo}

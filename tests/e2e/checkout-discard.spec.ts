@@ -9,6 +9,7 @@ import { expect, test } from "./_fixtures";
 import { createClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+import { createOpenTicket, SEEDED_SERVICE_IDS, SEEDED_STAFF_IDS } from "./_open-ticket";
 
 test.use({
   storageState: async ({ authState }, provide) => {
@@ -57,19 +58,23 @@ test.describe("US1: discard control marks ticket discarded and returns to dashbo
     page,
   }) => {
     const cursor = newAuditCursor();
+    const admin = adminClient();
 
-    await page.goto("/dashboard");
-
-    // Open a fresh ticket from the dashboard CTA.
-    await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
-
-    // Pick Jordan + add Classic manicure so the cart is non-empty.
-    await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Jordan Lee']").click();
-    await page
-      .locator("[data-slot='service-tile'][data-service-id='20000000-0000-0000-0000-000000000001']")
-      .click();
+    // 042-ephemeral-cart: direct-insert an open ticket with Jordan +
+    // Classic manicure ($25) pre-seeded so the cart is non-empty when
+    // the spec hits the Discard button.
+    const ticketId = await createOpenTicket(admin, {
+      techId: SEEDED_STAFF_IDS.jordan,
+      openedByStaffId: SEEDED_STAFF_IDS.maya,
+      items: [
+        {
+          serviceId: SEEDED_SERVICE_IDS.classicManicure,
+          displayName: "Classic manicure",
+          unitPriceCents: 2500,
+        },
+      ],
+    });
+    await page.goto(`/checkout/${ticketId}`);
     await expect(page.locator("[data-slot='cart-line']").first()).toContainText("Classic manicure");
 
     // Click Discard in the TxHeader. It calls `discardTicket()` then routes
@@ -78,7 +83,6 @@ test.describe("US1: discard control marks ticket discarded and returns to dashbo
     await page.waitForURL(/\/dashboard(\?|$)/, { timeout: 10_000 });
 
     // DB-level: ticket is discarded, closed_at + closed_by set.
-    const admin = adminClient();
     const { data: row, error } = await admin
       .from("tickets")
       .select("status, closed_at, closed_by_staff_id")
@@ -100,21 +104,12 @@ test.describe("US1: discard control marks ticket discarded and returns to dashbo
     expect(payload.line_count_at_discard).toBe(1);
     expect(payload.subtotal_cents_at_discard).toBe(2500);
 
-    // Tapping "New transaction" again creates a fresh ticket (the discarded
-    // one is terminal — sidebar resume rule lands in US2 / T032).
+    // 042-ephemeral-cart: tapping "New transaction" lands on /checkout
+    // (cart-build, in-memory) — NOT on /checkout/<discardedId>. No new
+    // ticket row is created until the operator commits a payment, so
+    // there's nothing to clean up post-navigation.
     await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const nextTicketId = new URL(page.url()).pathname.split("/").pop()!;
-    expect(nextTicketId).not.toBe(ticketId);
-
-    // Cleanup: discard the new ticket so re-runs start clean.
-    await admin
-      .from("tickets")
-      .update({
-        status: "discarded",
-        closed_at: new Date().toISOString(),
-        closed_by_staff_id: "10000000-0000-0000-0000-000000000001",
-      })
-      .eq("id", nextTicketId);
+    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
+    expect(page.url()).not.toContain(ticketId);
   });
 });

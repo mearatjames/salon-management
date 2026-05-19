@@ -157,6 +157,16 @@ export default async function CheckoutTicketPage({
   if (servicesRes.error) throw new Error(`services load failed: ${servicesRes.error.message}`);
 
   const ticket = ticketRes.data;
+  const itemsCount = (itemsRes.data ?? []).length;
+
+  // Feature 042 — defensive guard for SC-003: after the cart-build phase
+  // moved off `createEmptyTicket`/`resumeOrCreateTicket`, no `status='open'`
+  // ticket should exist with zero items. If one shows up anyway (manual
+  // INSERT, recovery from a bug, dev fixture), refuse to render the cart
+  // UI against it so the operator can't continue building on an orphan.
+  if (ticket.status === "open" && itemsCount === 0) {
+    notFound();
+  }
 
   if (ticket.status === "paid") {
     const paidByMethod: "cash" | "card" =
