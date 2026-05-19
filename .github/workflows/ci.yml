@@ -148,13 +148,18 @@ jobs:
       # finds them locally and skips its ~80s ghcr.io pull. Tarball lives
       # on /mnt (~84 GB free) — the May 2026 attempt put it on / (~14 GB
       # free) and hit "no space left on device" during `docker save`.
+      #
+      # Split into restore (all shards) + explicit save (shard 1 only) to
+      # eliminate the actions/cache matrix race: 4 shards saving the same
+      # key concurrently left the cache in a phantom-hit state where the
+      # metadata API reported hit but the blob download 404'd.
       - name: Resolve Supabase CLI version
         id: supabase-cli-version
         run: echo "version=$(supabase --version)" >> "$GITHUB_OUTPUT"
 
-      - name: Cache Supabase Docker images
+      - name: Restore cached Supabase Docker images
         id: supabase-image-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: /mnt/supabase-images.tar
           key: supabase-images-v1-${{ runner.os }}-${{ steps.supabase-cli-version.outputs.version }}-${{ hashFiles('supabase/config.toml') }}
@@ -179,23 +184,36 @@ jobs:
           supabase start --exclude studio,postgres-meta,edge-runtime,imgproxy,storage-api,realtime,vector,logflare
           supabase db reset
 
-      # On a cache miss, save the pulled images for the next run. setup-cli
-      # uses ghcr.io in CI vs public.ecr.aws locally, hence the broad
-      # `/supabase/` match. The empty-grep guard from commit `0990caf`
-      # surfaces a registry-path drift loudly rather than silently
-      # producing an empty tarball.
-      - name: Save Supabase images on cache miss
-        if: steps.supabase-image-cache.outputs.cache-hit != 'true'
+      # On a cache miss, save the pulled images for the next run. Only
+      # shard 1 saves (see split-restore-from-save rationale above);
+      # other shards skip both this step and the upload below.
+      #
+      # setup-cli uses ghcr.io in CI vs public.ecr.aws locally, hence
+      # the broad `/supabase/` match. The empty-grep guard from commit
+      # `0990caf` surfaces a registry-path drift loudly rather than
+      # silently producing an empty tarball.
+      - name: Save Supabase images to disk (shard 1 only)
+        id: supabase-image-save
+        if: steps.supabase-image-cache.outputs.cache-hit != 'true' && matrix.shard == 1
         run: |
           images=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -E "/supabase/" | tr '\n' ' ')
           if [ -z "$images" ]; then
             echo "No Supabase images found to cache — skipping save."
             docker images
+            echo "tarball-saved=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           sudo docker save $images -o /mnt/supabase-images.tar
           sudo chown $USER:$USER /mnt/supabase-images.tar
           ls -lh /mnt/supabase-images.tar
+          echo "tarball-saved=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Supabase image tarball to Actions cache (shard 1 only)
+        if: steps.supabase-image-save.outputs.tarball-saved == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /mnt/supabase-images.tar
+          key: ${{ steps.supabase-image-cache.outputs.cache-primary-key }}
 
       - name: Export Supabase env for tests
         run: |
