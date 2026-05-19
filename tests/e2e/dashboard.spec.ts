@@ -1,26 +1,32 @@
-// E2E for feature 016-dashboard-data-wiring, User Story 1.
+// E2E for feature 016-dashboard-data-wiring, User Story 3.
 //
-// Covers Acceptance Scenarios from `spec.md § US1`:
-//   (a) Live tile values from the seeded paid tickets; Payment-mix legend
-//       rows for Card/Cash/Gift; subtitle "{Weekday}, {Month day} · Last
-//       sale {h:mm AM/PM}"; no comparison badges; no Techs-on-shift tile;
-//       feed rows have no client cell; exactly one Split pill.
-//   (b) Truncate today's paid tickets → empty-state path: tiles 0/$0,
-//       payment-mix bar neutral single segment, feed "No sales yet today.",
-//       subtitle collapses to "{Weekday}, {Month day}".
+// US1 and US2 from the original spec were retired in PR #6 of the e2e
+// pruning audit (see `docs/e2e-pruning-audit.md` → dashboard section):
+//   - US1 (a) live tile values + payment-mix legend + Split pill: covered
+//     by `tests/unit/dashboard/queries.test.ts`, `aggregate.test.ts`,
+//     `format.test.ts` — pure-function aggregation + projection.
+//   - US1 (b) empty-state path: covered by `aggregate.test.ts` (empty
+//     summarize) and `format.test.ts` (neutral payment-mix branch).
+//   - US2 period toggle Today / Week / Month: covered by
+//     `tests/unit/time/period-windows.test.ts` (window math) and
+//     `queries.test.ts` (today/week/month query bounds).
 //
-// The seed fixture (supabase/seed.sql T004 block — 5 paid tickets dated
-// today) is the source of truth for the expected aggregates. The spec
-// reads back from the DB via the service-role admin client rather than
-// hardcoding dollar amounts so a future seed-fixture tweak doesn't break
-// the spec by accident.
+// What remains: the 15-row feed scroll + "feed always shows today
+// regardless of period" invariant. That's an RSC + layout contract that
+// only the browser can exercise — internal scroll vs page scroll, and
+// the dashboard's pinned-to-today feed irrespective of the period
+// toggle.
+//
+// The shared TZ-aware fixture helpers used by this spec (and reusable by
+// other specs that need to seed paid tickets at LA-local instants) live
+// in `./_la-time.ts`.
 
 import { expect, test } from "./_fixtures";
 import { createClient } from "@supabase/supabase-js";
 
-import { formatSubtitle, formatTime } from "@/lib/time/format";
 import { todayWindow } from "@/lib/time/period-windows";
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+import { laTodayMidnightUtcMs, SALON_TZ } from "./_la-time";
 import { acquireTicketStateLock, releaseTicketStateLock } from "./_square-server-stub";
 
 test.use({
@@ -30,29 +36,10 @@ test.use({
 });
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
-const SALON_TZ = "America/Los_Angeles";
-
-// LA-today-midnight as a UTC instant. Used by the seed helpers below to
-// keep generated `closed_at`/`processed_at` timestamps inside today's LA
-// window even when the test runs within an hour of midnight LA (CI on
-// us-east hosts crosses LA midnight at ~07:00–08:00 UTC).
-function laTodayMidnightUtcMs(): number {
-  const now = new Date();
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: SALON_TZ,
-    hourCycle: "h23",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  const parts = fmt.formatToParts(now);
-  const partVal = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
-  const elapsed =
-    partVal("hour") * 3_600_000 + partVal("minute") * 60_000 + partVal("second") * 1000;
-  return now.getTime() - elapsed;
-}
 
 // Stable seed UUIDs (from supabase/seed.sql § paid-tickets-today block).
+// We restore these in `afterAll` so downstream specs see the canonical
+// 5-ticket fixture after this spec wipes today's tickets.
 const SEED_TICKET_IDS = [
   "30000000-0000-0000-0000-000000000001",
   "30000000-0000-0000-0000-000000000002",
@@ -81,114 +68,26 @@ function adminClient() {
   });
 }
 
-type SeededAggregates = {
-  count: number;
-  services: number;
-  // tiles render currency rounded to no decimals; assert against the
-  // page's en-US currency formatter output.
-  revenue: number;
-  tips: number;
-  byMethod: { card: number; cash: number; gift: number };
-  lastSale: Date;
-};
-
-async function readSeededAggregates(): Promise<SeededAggregates> {
-  const admin = adminClient();
-
-  const { data: tickets, error: tkErr } = await admin
-    .from("tickets")
-    .select("id, total_cents, closed_at")
-    .in("id", SEED_TICKET_IDS as readonly string[])
-    .eq("status", "paid");
-  if (tkErr) throw new Error(`tickets read failed: ${tkErr.message}`);
-  expect(tickets?.length ?? 0).toBe(5);
-
-  const { data: items, error: itErr } = await admin
-    .from("ticket_items")
-    .select("ticket_id, kind, qty")
-    .in("ticket_id", SEED_TICKET_IDS as readonly string[]);
-  if (itErr) throw new Error(`ticket_items read failed: ${itErr.message}`);
-
-  const { data: payments, error: pmErr } = await admin
-    .from("payments")
-    .select("ticket_id, method, status, amount_cents, tip_cents, processed_at")
-    .in("ticket_id", SEED_TICKET_IDS as readonly string[]);
-  if (pmErr) throw new Error(`payments read failed: ${pmErr.message}`);
-
-  let services = 0;
-  for (const item of items ?? []) {
-    if (item.kind === "discount") continue;
-    services += item.qty ?? 0;
-  }
-
-  let revenueC = 0;
-  let tipsC = 0;
-  const byMethodC = { card: 0, cash: 0, gift: 0 };
-  let lastSaleIso = "";
-  for (const p of payments ?? []) {
-    if (p.status !== "succeeded") continue;
-    revenueC += (p.amount_cents ?? 0) + (p.tip_cents ?? 0);
-    tipsC += p.tip_cents ?? 0;
-    if (p.method === "card" || p.method === "cash" || p.method === "gift") {
-      const m = p.method as "card" | "cash" | "gift";
-      byMethodC[m] += (p.amount_cents ?? 0) + (p.tip_cents ?? 0);
-    }
-    if (p.processed_at && p.processed_at > lastSaleIso) {
-      lastSaleIso = p.processed_at;
-    }
-  }
-
-  return {
-    count: tickets!.length,
-    services,
-    revenue: revenueC / 100,
-    tips: tipsC / 100,
-    byMethod: {
-      card: byMethodC.card / 100,
-      cash: byMethodC.cash / 100,
-      gift: byMethodC.gift / 100,
-    },
-    lastSale: new Date(lastSaleIso),
-  };
-}
-
-const CURRENCY_FMT = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
-function fmtCurrency(amount: number): string {
-  return CURRENCY_FMT.format(amount);
-}
-
-// Re-insert the seed paid-tickets block. Mirrors supabase/seed.sql § T004
-// shape (5 tickets across card/cash/gift/split + a discount line) but
-// places `closed_at` / `processed_at` in the recent past relative to now,
-// so the dashboard's `closed_at <= now` filter never excludes them
-// regardless of what time of day the suite runs.
+// Re-insert the canonical 5-ticket seed paid-tickets block. Mirrors
+// supabase/seed.sql § T004 shape (5 tickets across card/cash/gift/split + a
+// discount line) but places `closed_at` / `processed_at` in the recent
+// past relative to now, so the dashboard's `closed_at <= now` filter
+// never excludes them regardless of what time of day the suite runs.
 async function restoreSeededPaidTickets(): Promise<void> {
   const admin = adminClient();
 
-  // Place the five tickets at staggered times that are guaranteed to fall
-  // inside today's LA window AND in the past. The earlier `now - 60min`
-  // form silently broke when CI ran within 60 min of LA midnight: the
-  // oldest slots crossed the date line and the dashboard's "today in LA"
-  // filter dropped them. We now compute the LA-today-midnight UTC anchor
-  // and pin the spread to `[laMidnight + 1min, now - 30s]`, compressing
-  // the span when the wall clock is close to midnight.
+  // Pin the spread to `[laMidnight + 1min, now - 30s]`, compressing when
+  // the wall clock is close to LA midnight.
   const laMidnightUtcMs = laTodayMidnightUtcMs();
   const nowMs = Date.now();
   const earliest = Math.max(laMidnightUtcMs + 60_000, nowMs - 60 * 60_000);
   const latest = nowMs - 30_000;
   const step = Math.max(0, (latest - earliest) / 4);
 
-  // Slot 1 — earliest (today)
-  // Slot 2 / 3 / 4 / 5 — evenly spread up to slot 5 (most recent, ≤ now)
   const at = (slot: 1 | 2 | 3 | 4 | 5, extraSec = 0): string => {
     return new Date(earliest + step * (slot - 1) + extraSec * 1000).toISOString();
   };
 
-  // Owner / Jordan / Sam from staff seed
   const owner = "10000000-0000-0000-0000-000000000001";
   const jordan = "10000000-0000-0000-0000-000000000002";
   const sam = "10000000-0000-0000-0000-000000000003";
@@ -200,7 +99,6 @@ async function restoreSeededPaidTickets(): Promise<void> {
     nailArt: "20000000-0000-0000-0000-000000000005",
   };
 
-  // Insert tickets
   await admin.from("tickets").upsert(
     [
       {
@@ -257,7 +155,6 @@ async function restoreSeededPaidTickets(): Promise<void> {
     { onConflict: "id" }
   );
 
-  // Insert items
   await admin.from("ticket_items").insert([
     {
       ticket_id: SEED_TICKET_IDS[0],
@@ -361,7 +258,6 @@ async function restoreSeededPaidTickets(): Promise<void> {
     },
   ]);
 
-  // Insert payments
   await admin.from("payments").insert([
     {
       ticket_id: SEED_TICKET_IDS[0],
@@ -426,30 +322,10 @@ async function restoreSeededPaidTickets(): Promise<void> {
   ]);
 }
 
-// Truncate today's paid tickets via the SQL pattern from quickstart.md § 5.
-// Removes only the seeded test rows so other tests' data isn't disturbed.
-async function clearSeededPaidTickets(): Promise<void> {
-  const admin = adminClient();
-  await admin
-    .from("ticket_items")
-    .delete()
-    .in("ticket_id", SEED_TICKET_IDS as readonly string[]);
-  await admin
-    .from("payments")
-    .delete()
-    .in("ticket_id", SEED_TICKET_IDS as readonly string[]);
-  await admin
-    .from("tickets")
-    .delete()
-    .in("id", SEED_TICKET_IDS as readonly string[]);
-}
-
 // Wipes EVERY paid ticket dated today (salon TZ), regardless of source.
-// Why: the dashboard read aggregates all today's paid tickets, so leftover
-// rows from earlier checkout-* specs (cash-sale, bill, discount, etc.) bleed
-// into US1's "expect 5" / "expect 0" assertions on CI's single-worker runs
-// where those specs always sort before dashboard.spec.ts. audit_log is left
-// untouched; only tickets/items/payments tied to today's window are removed.
+// The dashboard aggregates all today's paid tickets, so leftover rows
+// from earlier checkout-* specs would inflate US3's "expect 15" assertion
+// on single-worker runs where those specs sort before dashboard.spec.ts.
 async function clearAllTodayPaidTickets(): Promise<void> {
   const admin = adminClient();
   const [todayStart] = todayWindow(SALON_TZ, new Date());
@@ -467,568 +343,14 @@ async function clearAllTodayPaidTickets(): Promise<void> {
 
 test.describe.configure({ mode: "serial" });
 
-// Cross-worker serialization (issue #41). This spec and end-of-day-cash both
-// wipe + restore today's paid-tickets seed; if they run concurrently under
+// Cross-worker serialization (issue #41). end-of-day-cash also wipes +
+// restores today's paid-tickets seed; if they run concurrently under
 // workers > 1 the wipes race and dashboard reads see a sub-seed count.
 test.beforeAll(async () => {
   await acquireTicketStateLock();
 });
 test.afterAll(() => {
   releaseTicketStateLock();
-});
-
-test.describe("US1: today's real numbers", () => {
-  let supabaseUp = false;
-
-  test.beforeAll(async () => {
-    supabaseUp = await supabaseIsReachable();
-    if (!supabaseUp) {
-      test.skip(
-        true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping US1 dashboard specs (Docker unavailable)."
-      );
-    }
-    // The seed loaded by `supabase db reset` pins ticket times at LA-local
-    // 9:12 AM through 3:22 PM today. When the suite runs in the early
-    // morning local time those instants are FUTURE relative to `now`, and
-    // the dashboard's `closed_at <= now()` filter excludes them. Replace
-    // the rows with timestamps in the recent past so the queries always
-    // see them regardless of wall-clock time.
-    //
-    // Also: earlier checkout-* specs (cash-sale, bill, discount, …) all
-    // create real paid tickets via the POS RPC and don't clean up after
-    // themselves. The dashboard aggregates EVERY today paid ticket, so
-    // those would inflate our "expect 5" assertion. Wipe today's paid
-    // tickets entirely before restoring the canonical seed.
-    await clearAllTodayPaidTickets();
-    await restoreSeededPaidTickets();
-  });
-
-  test.afterAll(async () => {
-    if (!supabaseUp) return;
-    // Leave the DB with the seed intact so downstream specs can rely on it.
-    await clearAllTodayPaidTickets();
-    await restoreSeededPaidTickets();
-  });
-
-  test("(a) live tile values, payment-mix legend, subtitle, no comparison badges, no techs tile, no client column, one Split pill", async ({
-    page,
-  }) => {
-    // Make sure the seed is applied at the start of this test, with no
-    // residue from other specs that may have created today paid tickets.
-    await clearAllTodayPaidTickets();
-    await restoreSeededPaidTickets();
-
-    const expected = await readSeededAggregates();
-
-    await page.goto("/dashboard");
-    // Set the audit cursor AFTER sign-in so the device.signed_in /
-    // staff.signed_in rows don't pollute the dashboard-read assertion.
-    const cursor = newAuditCursor();
-    // Reload so the dashboard fetch happens after the cursor is taken.
-    await page.reload();
-
-    // Tiles.
-    const transactionsTile = page
-      .locator(".tx-stat-card")
-      .filter({ has: page.locator(".lbl", { hasText: "Transactions" }) });
-    await expect(transactionsTile.locator(".val")).toHaveText(String(expected.count));
-
-    const servicesTile = page
-      .locator(".tx-stat-card")
-      .filter({ has: page.locator(".lbl", { hasText: "Services" }) });
-    await expect(servicesTile.locator(".val")).toHaveText(String(expected.services));
-
-    const revenueTile = page
-      .locator(".tx-stat-card")
-      .filter({ has: page.locator(".lbl", { hasText: "Revenue" }) });
-    await expect(revenueTile.locator(".val")).toHaveText(fmtCurrency(expected.revenue));
-
-    const tipsTile = page
-      .locator(".tx-stat-card")
-      .filter({ has: page.locator(".lbl", { hasText: "Tips" }) });
-    await expect(tipsTile.locator(".val")).toHaveText(fmtCurrency(expected.tips));
-
-    // Payment-mix legend — Card / Cash / Gift card rows with currency.
-    // Use the `.dot.{method}` selector to disambiguate (the "Card" / "Cash"
-    // labels share the "Gift card" substring otherwise).
-    const mix = page.locator("[data-slot='payment-mix-card']");
-    const cardRow = mix.locator(".tx-method-row").filter({ has: page.locator(".dot.card") });
-    await expect(cardRow.locator(".num")).toHaveText(fmtCurrency(expected.byMethod.card));
-    const cashRow = mix.locator(".tx-method-row").filter({ has: page.locator(".dot.cash") });
-    await expect(cashRow.locator(".num")).toHaveText(fmtCurrency(expected.byMethod.cash));
-    const giftRow = mix.locator(".tx-method-row").filter({ has: page.locator(".dot.gift") });
-    await expect(giftRow.locator(".num")).toHaveText(fmtCurrency(expected.byMethod.gift));
-    // The seeded gift ticket is $40 → non-zero
-    expect(expected.byMethod.gift).toBeGreaterThan(0);
-
-    // Subtitle: "{Weekday}, {Month day} · Last sale {h:mm AM/PM}"
-    const expectedSubtitle = `${formatSubtitle(new Date(), SALON_TZ)} · Last sale ${formatTime(
-      expected.lastSale,
-      SALON_TZ
-    )}`;
-    // `.first()` because the New-transaction CTA also has a `.sub` element.
-    await expect(page.locator(".tx-landing-top > div .sub").first()).toHaveText(expectedSubtitle);
-
-    // No comparison badges.
-    await expect(page.locator(".tx-stat-card").getByText(/\+\d+ vs avg/)).toHaveCount(0);
-    await expect(page.locator(".tx-stat-card").getByText(/\+\d+%/)).toHaveCount(0);
-
-    // No techs-on-shift tile or label.
-    await expect(page.locator("[data-slot='techs-on-shift-tile']")).toHaveCount(0);
-    await expect(page.getByText("Techs on shift")).toHaveCount(0);
-
-    // Feed rows have no `.client` cell.
-    const rows = page.locator(".tx-feed-row");
-    await expect(rows).toHaveCount(expected.count);
-    await expect(rows.locator(".client")).toHaveCount(0);
-
-    // Exactly one Split pill.
-    await expect(page.locator(".tx-meth-pill.split")).toHaveCount(1);
-
-    // Audit-log: no rows emitted by the dashboard read.
-    const audit = await getAuditLogRowsSince(cursor);
-    expect(audit).toEqual([]);
-  });
-
-  test("(b) empty-state path — truncate today's paid tickets and verify zero tiles, neutral payment-mix segment, empty feed copy, collapsed subtitle", async ({
-    page,
-  }) => {
-    // Wipe ALL today's paid tickets (the seeded 5 + any residue from
-    // earlier checkout-* specs) so the dashboard renders the true
-    // empty-state path.
-    await clearAllTodayPaidTickets();
-
-    await page.goto("/dashboard");
-    // Cursor AFTER sign-in so device.signed_in / staff.signed_in audit rows
-    // don't pollute the read-only dashboard assertion.
-    const cursor = newAuditCursor();
-    await page.reload();
-
-    // Tiles all 0 / $0.
-    for (const label of ["Transactions", "Services"]) {
-      const tile = page
-        .locator(".tx-stat-card")
-        .filter({ has: page.locator(".lbl", { hasText: label }) });
-      await expect(tile.locator(".val")).toHaveText("0");
-    }
-    for (const label of ["Revenue", "Tips"]) {
-      const tile = page
-        .locator(".tx-stat-card")
-        .filter({ has: page.locator(".lbl", { hasText: label }) });
-      await expect(tile.locator(".val")).toHaveText("$0");
-    }
-
-    // Payment-mix bar — exactly one segment with neutral style (var(--muted)).
-    const mixBar = page.locator("[data-slot='payment-mix-card'] .tx-method-bar > span");
-    await expect(mixBar).toHaveCount(1);
-    await expect(mixBar).toHaveCSS("width", /.+/);
-
-    // Feed shows the empty copy.
-    await expect(page.locator("[data-slot='empty-feed-state']")).toBeVisible();
-    await expect(page.locator("[data-slot='empty-feed-state']")).toHaveText("No sales yet today.");
-
-    // Subtitle collapses to "{Weekday}, {Month day}" — no `· Last sale`.
-    const subtitle = page.locator(".tx-landing-top > div .sub").first();
-    await expect(subtitle).toHaveText(formatSubtitle(new Date(), SALON_TZ));
-
-    // Audit-log untouched.
-    const audit = await getAuditLogRowsSince(cursor);
-    expect(audit).toEqual([]);
-
-    // Restore the seed so the next test (or downstream specs) see the
-    // canonical 5-ticket fixture.
-    await restoreSeededPaidTickets();
-  });
-});
-
-// ─── US2: period switching across calendar windows ───────────────────────────
-//
-// Covers Acceptance Scenarios from `spec.md § US2`: toggling between
-// Today / Week / Month must re-render the four tile values to reflect the
-// in-window subset of paid tickets, with no extra Supabase roundtrip and no
-// audit-log writes. Validates the math of `todayWindow`, `weekWindow`, and
-// `monthWindow` against real calendar boundaries (Monday week-start in LA,
-// first-of-month, last-week/last-month negative controls).
-//
-// Seeding strategy: insert paid tickets at instants pinned relative to "now"
-// in America/Los_Angeles — today-noon, in-this-week (when today is not
-// Monday), in-this-month-not-this-week (when today is past the first calendar
-// week), last-week negative control, and last-month negative control. Each
-// branch may yield null when the calendar doesn't support it (e.g. today IS
-// Monday, or today is in the first week of the month) — assertions are then
-// derived from the actually-seeded subset, not hardcoded.
-
-// Distinct UUID prefix so US2 fixtures never collide with the canonical
-// seed (30000000-…) used by US1.
-const US2_TICKET_IDS = {
-  today: "40000000-0000-0000-0000-000000000001",
-  thisWeek: "40000000-0000-0000-0000-000000000002",
-  thisMonth: "40000000-0000-0000-0000-000000000003",
-  lastWeek: "40000000-0000-0000-0000-000000000004",
-  lastMonth: "40000000-0000-0000-0000-000000000005",
-} as const;
-
-type Slot = keyof typeof US2_TICKET_IDS;
-
-// Read the local LA wall-clock parts of a UTC instant. Identical helper to
-// the one inside `lib/time/period-windows.ts` but inlined here so the spec
-// stays self-contained.
-function laParts(now: Date): { year: number; month: number; day: number; weekday: number } {
-  const fmt = new Intl.DateTimeFormat("en-US", {
-    timeZone: SALON_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    weekday: "short",
-  });
-  const parts = fmt.formatToParts(now);
-  const get = (t: string): string => parts.find((p) => p.type === t)?.value ?? "";
-  const weekdayOrder: Record<string, number> = {
-    Mon: 0,
-    Tue: 1,
-    Wed: 2,
-    Thu: 3,
-    Fri: 4,
-    Sat: 5,
-    Sun: 6,
-  };
-  return {
-    year: Number(get("year")),
-    month: Number(get("month")),
-    day: Number(get("day")),
-    weekday: weekdayOrder[get("weekday")] ?? 0,
-  };
-}
-
-// Build a UTC instant from local-wall-clock parts in `America/Los_Angeles`.
-// Two-pass DST-correction technique mirrors `utcFromLocalParts` in
-// `lib/time/period-windows.ts`.
-function utcFromLaWall(year: number, month: number, day: number, hour: number): Date {
-  const candidateMs = Date.UTC(year, month - 1, day, hour, 0, 0);
-  const off = (instant: Date): number => {
-    const fmt = new Intl.DateTimeFormat("en-US", {
-      timeZone: SALON_TZ,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-    const parts = fmt.formatToParts(instant);
-    const get = (t: string): string => parts.find((p) => p.type === t)?.value ?? "00";
-    const h = get("hour") === "24" ? "00" : get("hour");
-    const local = Date.UTC(
-      Number(get("year")),
-      Number(get("month")) - 1,
-      Number(get("day")),
-      Number(h),
-      Number(get("minute")),
-      Number(get("second"))
-    );
-    return local - instant.getTime();
-  };
-  const o1 = off(new Date(candidateMs));
-  const correctedMs = candidateMs - o1;
-  const o2 = off(new Date(correctedMs));
-  return new Date(candidateMs - o2);
-}
-
-// Add `days` to an LA-local Y/M/D and return the new tuple. Treats the local
-// date as UTC for the shift — safe because we only need a stable Y/M/D, not
-// a particular wall-clock hour.
-function shiftDays(
-  year: number,
-  month: number,
-  day: number,
-  days: number
-): { year: number; month: number; day: number } {
-  const d = new Date(Date.UTC(year, month - 1, day));
-  d.setUTCDate(d.getUTCDate() + days);
-  return {
-    year: d.getUTCFullYear(),
-    month: d.getUTCMonth() + 1,
-    day: d.getUTCDate(),
-  };
-}
-
-type SeedPlan = {
-  // Map from slot → UTC instant when that ticket should be `closed_at`.
-  // A null value means "skip this slot in the current calendar branch".
-  instants: Record<Slot, Date | null>;
-  // Which slots end up inside each window. Derived from `instants` against
-  // the same window boundaries the page uses.
-  inToday: Slot[];
-  inWeek: Slot[];
-  inMonth: Slot[];
-};
-
-function buildSeedPlan(now: Date): SeedPlan {
-  const t = laParts(now);
-
-  // Slot 1 — today. Pick an instant safely in the past today: noon LA, or
-  // if local time is already past noon, fall back to "now minus 30 minutes"
-  // so the instant is guaranteed to be `<= now()` AND inside today's window.
-  const todayNoonUtc = utcFromLaWall(t.year, t.month, t.day, 12);
-  const todayInstant =
-    todayNoonUtc.getTime() <= now.getTime() ? todayNoonUtc : new Date(now.getTime() - 30 * 60_000);
-
-  // Slot 2 — in-this-week-not-today. Only valid when today's weekday > Mon,
-  // because the week starts Monday in LA. Pin to Tuesday-of-this-week 14:00
-  // when today is mid-or-late week; pin to Monday-of-this-week 14:00 when
-  // today IS Tuesday (so the in-week ticket is strictly before today).
-  // Returns null when today is Monday.
-  let thisWeekInstant: Date | null = null;
-  if (t.weekday >= 2) {
-    // today is Wed–Sun → use Tuesday of this week
-    const tueOff = t.weekday - 1; // weekday: Mon=0, Tue=1, … so Tue is offset (weekday - 1)
-    const tue = shiftDays(t.year, t.month, t.day, -tueOff);
-    thisWeekInstant = utcFromLaWall(tue.year, tue.month, tue.day, 14);
-  } else if (t.weekday === 1) {
-    // today is Tuesday → use Monday of this week
-    const mon = shiftDays(t.year, t.month, t.day, -1);
-    thisWeekInstant = utcFromLaWall(mon.year, mon.month, mon.day, 14);
-  }
-  // weekday === 0 (Monday): leave null — no "in-week-but-not-today" exists.
-
-  // Slot 3 — in-this-month-not-this-week. Pick the 5th of the current month
-  // at 14:00 LA. Valid only when (a) today's day-of-month is past the 7th
-  // AND (b) the 5th is strictly before this week's Monday in LA. When the
-  // 5th IS inside this week (rare: e.g. it's the first week of the month),
-  // fall back to null — the test must derive expectations from what was
-  // actually seeded.
-  let thisMonthInstant: Date | null = null;
-  if (t.day > 7) {
-    // 5th of this month is at least 3 days before today, and given Monday
-    // week-start, also strictly before this week's Monday in all cases
-    // where today's day-of-month > 7 (week is at most 7 days long).
-    const fifth = utcFromLaWall(t.year, t.month, 5, 14);
-    thisMonthInstant = fifth;
-  }
-
-  // Slot 4 — last-week negative control. last Tuesday at 14:00 LA. Always
-  // valid (last week always existed); always strictly before this week's
-  // Monday, hence outside the Week and Today windows.
-  // "Last Tuesday" = today - (weekday + 6 days). weekday: Mon=0→last Tue is
-  // 6 days ago; Tue=1→last Tue is 7 days ago; Wed=2→8 days ago; etc.
-  const lastTueOffset = t.weekday + 6;
-  const lastTue = shiftDays(t.year, t.month, t.day, -lastTueOffset);
-  const lastWeekInstant = utcFromLaWall(lastTue.year, lastTue.month, lastTue.day, 14);
-
-  // Slot 5 — last-month negative control. Use the 5th of last month at 14:00
-  // LA when today is past mid-month; when today is in the first week of the
-  // month, the 5th of last month is still strictly before this month's
-  // first, so always valid. Computed by stepping back to (current month - 1).
-  // shiftDays via the 1st handles wrap-around.
-  const firstOfThisMonth = shiftDays(t.year, t.month, 1, 0);
-  const dayInLastMonth = shiftDays(firstOfThisMonth.year, firstOfThisMonth.month, 1, -25); // ~25 days before first-of-this is mid-last-month
-  // Use that as a reference to find last month's year+month, then pick day=5
-  const lastMonthInstant = utcFromLaWall(dayInLastMonth.year, dayInLastMonth.month, 5, 14);
-
-  const instants: Record<Slot, Date | null> = {
-    today: todayInstant,
-    thisWeek: thisWeekInstant,
-    thisMonth: thisMonthInstant,
-    lastWeek: lastWeekInstant,
-    lastMonth: lastMonthInstant,
-  };
-
-  // Derive window membership from the actual seeded instants and current `now`.
-  // Re-implementing window boundaries here in Node so the test is
-  // independent of the Postgres query — if the helper's math is wrong the
-  // assertion below will diverge from the page output.
-  // Today: [LA midnight today, now]
-  const todayStart = utcFromLaWall(t.year, t.month, t.day, 0);
-  // Week: [LA midnight on most recent Monday, now]
-  const mondayOffset = t.weekday; // 0 if Mon, 6 if Sun
-  const mon = shiftDays(t.year, t.month, t.day, -mondayOffset);
-  const weekStart = utcFromLaWall(mon.year, mon.month, mon.day, 0);
-  // Month: [LA midnight on day 1 of current month, now]
-  const monthStart = utcFromLaWall(t.year, t.month, 1, 0);
-
-  const inWindow = (instant: Date | null, start: Date): boolean =>
-    instant !== null && instant.getTime() >= start.getTime() && instant.getTime() <= now.getTime();
-
-  const slots: Slot[] = ["today", "thisWeek", "thisMonth", "lastWeek", "lastMonth"];
-  const inToday = slots.filter((s) => inWindow(instants[s], todayStart));
-  const inWeek = slots.filter((s) => inWindow(instants[s], weekStart));
-  const inMonth = slots.filter((s) => inWindow(instants[s], monthStart));
-
-  return { instants, inToday, inWeek, inMonth };
-}
-
-// Per-slot pricing — chosen so each window total is unique and easy to
-// reason about. Card payment, single service line, zero tip for simplicity
-// (tip math is exercised by US1).
-const SLOT_PRICE_CENTS: Record<Slot, number> = {
-  today: 5000, // $50
-  thisWeek: 7000, // $70
-  thisMonth: 11000, // $110
-  lastWeek: 13000, // $130
-  lastMonth: 17000, // $170
-};
-
-async function insertUs2Fixture(plan: SeedPlan): Promise<void> {
-  const admin = adminClient();
-  const owner = "10000000-0000-0000-0000-000000000001";
-  const svcClassicMani = "20000000-0000-0000-0000-000000000001";
-
-  const slots: Slot[] = ["today", "thisWeek", "thisMonth", "lastWeek", "lastMonth"];
-  const present = slots.filter((s) => plan.instants[s] !== null);
-
-  const tickets = present.map((s) => {
-    const cents = SLOT_PRICE_CENTS[s];
-    const iso = plan.instants[s]!.toISOString();
-    return {
-      id: US2_TICKET_IDS[s],
-      status: "paid",
-      subtotal_cents: cents,
-      tax_cents: 0,
-      total_cents: cents,
-      opened_by_staff_id: owner,
-      closed_by_staff_id: owner,
-      closed_at: iso,
-    };
-  });
-  const items = present.map((s) => ({
-    ticket_id: US2_TICKET_IDS[s],
-    kind: "service",
-    ref_id: svcClassicMani,
-    name_snapshot: "Classic manicure",
-    unit_price_cents: SLOT_PRICE_CENTS[s],
-    qty: 1,
-    assigned_staff_id: owner,
-    price_unconfirmed: false,
-  }));
-  const payments = present.map((s) => ({
-    ticket_id: US2_TICKET_IDS[s],
-    method: "card",
-    kind: "payment",
-    amount_cents: SLOT_PRICE_CENTS[s],
-    tip_cents: 0,
-    status: "succeeded",
-    taken_by_staff_id: owner,
-    processed_at: plan.instants[s]!.toISOString(),
-  }));
-
-  const { error: tkErr } = await admin.from("tickets").upsert(tickets, { onConflict: "id" });
-  if (tkErr) throw new Error(`US2 tickets insert failed: ${tkErr.message}`);
-  const { error: itErr } = await admin.from("ticket_items").insert(items);
-  if (itErr) throw new Error(`US2 ticket_items insert failed: ${itErr.message}`);
-  const { error: pmErr } = await admin.from("payments").insert(payments);
-  if (pmErr) throw new Error(`US2 payments insert failed: ${pmErr.message}`);
-}
-
-async function clearUs2Fixture(): Promise<void> {
-  const admin = adminClient();
-  const ids = Object.values(US2_TICKET_IDS);
-  await admin.from("ticket_items").delete().in("ticket_id", ids);
-  await admin.from("payments").delete().in("ticket_id", ids);
-  await admin.from("tickets").delete().in("id", ids);
-}
-
-function sumCount(slots: Slot[]): number {
-  return slots.length;
-}
-function sumServices(slots: Slot[]): number {
-  // Each US2 ticket has exactly one service line, qty=1.
-  return slots.length;
-}
-function sumRevenueDollars(slots: Slot[]): number {
-  return slots.reduce((acc, s) => acc + SLOT_PRICE_CENTS[s], 0) / 100;
-}
-
-test.describe("US2: period switching across calendar windows", () => {
-  let supabaseUp = false;
-  let plan: SeedPlan;
-
-  test.beforeAll(async () => {
-    supabaseUp = await supabaseIsReachable();
-    if (!supabaseUp) {
-      test.skip(
-        true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping US2 dashboard specs (Docker unavailable)."
-      );
-    }
-    // Today's window must contain only US2's own seeded plan: clear the
-    // canonical seed AND any residue from upstream checkout-* specs.
-    await clearAllTodayPaidTickets();
-    await clearUs2Fixture();
-    plan = buildSeedPlan(new Date());
-    await insertUs2Fixture(plan);
-  });
-
-  test.afterAll(async () => {
-    if (!supabaseUp) return;
-    await clearUs2Fixture();
-    // Leave the canonical seed restored for downstream specs.
-    await restoreSeededPaidTickets();
-  });
-
-  test("(a) toggling Today / Week / Month re-renders tiles from in-window tickets only; negative controls never contribute; no audit writes", async ({
-    page,
-  }) => {
-    await page.goto("/dashboard");
-    const cursor = newAuditCursor();
-    await page.reload();
-
-    const transactionsTile = page
-      .locator(".tx-stat-card")
-      .filter({ has: page.locator(".lbl", { hasText: "Transactions" }) });
-    const servicesTile = page
-      .locator(".tx-stat-card")
-      .filter({ has: page.locator(".lbl", { hasText: "Services" }) });
-    const revenueTile = page
-      .locator(".tx-stat-card")
-      .filter({ has: page.locator(".lbl", { hasText: "Revenue" }) });
-
-    const periodGroup = page.getByRole("group", { name: "Period" });
-    const todayBtn = periodGroup.getByRole("button", { name: "Today" });
-    const weekBtn = periodGroup.getByRole("button", { name: "Week" });
-    const monthBtn = periodGroup.getByRole("button", { name: "Month" });
-
-    // ── Today ────────────────────────────────────────────────────────────
-    await todayBtn.click();
-    await expect(transactionsTile.locator(".val")).toHaveText(String(sumCount(plan.inToday)));
-    await expect(servicesTile.locator(".val")).toHaveText(String(sumServices(plan.inToday)));
-    await expect(revenueTile.locator(".val")).toHaveText(
-      fmtCurrency(sumRevenueDollars(plan.inToday))
-    );
-
-    // ── Week ─────────────────────────────────────────────────────────────
-    await weekBtn.click();
-    await expect(transactionsTile.locator(".val")).toHaveText(String(sumCount(plan.inWeek)));
-    await expect(servicesTile.locator(".val")).toHaveText(String(sumServices(plan.inWeek)));
-    await expect(revenueTile.locator(".val")).toHaveText(
-      fmtCurrency(sumRevenueDollars(plan.inWeek))
-    );
-
-    // ── Month ────────────────────────────────────────────────────────────
-    await monthBtn.click();
-    await expect(transactionsTile.locator(".val")).toHaveText(String(sumCount(plan.inMonth)));
-    await expect(servicesTile.locator(".val")).toHaveText(String(sumServices(plan.inMonth)));
-    await expect(revenueTile.locator(".val")).toHaveText(
-      fmtCurrency(sumRevenueDollars(plan.inMonth))
-    );
-
-    // Negative-control invariants:
-    //  - `lastWeek` (last Tuesday 14:00 LA) is before this week's Monday →
-    //    never in Today or Week. May be in Month when last Tuesday's local
-    //    date is still in the current month (e.g. mid-month Sundays).
-    //  - `lastMonth` (5th of last month 14:00 LA) is before this month's 1st
-    //    → never in Today, Week, or Month.
-    expect(plan.inToday).not.toContain("lastWeek");
-    expect(plan.inToday).not.toContain("lastMonth");
-    expect(plan.inWeek).not.toContain("lastWeek");
-    expect(plan.inWeek).not.toContain("lastMonth");
-    expect(plan.inMonth).not.toContain("lastMonth");
-
-    // Audit-log: toggling and the initial dashboard read emit no rows.
-    const audit = await getAuditLogRowsSince(cursor);
-    expect(audit).toEqual([]);
-  });
 });
 
 // ─── US3: scrollable today feed ──────────────────────────────────────────────
@@ -1045,15 +367,14 @@ test.describe("US2: period switching across calendar windows", () => {
 //
 // Seeding strategy: insert 15 paid tickets pinned to staggered past-relative
 // minutes (75…5 min ago, every 5 min). Each is a single-line, card payment,
-// zero tip — keeps the fixture focused on the row-count + ordering contract
-// without re-exercising tip / split-tender math (those live in US1).
+// zero tip — keeps the fixture focused on the row-count + ordering contract.
 
 const US3_TICKET_COUNT = 15;
 const US3_TICKET_IDS: readonly string[] = Array.from(
   { length: US3_TICKET_COUNT },
   (_, i) =>
     // Distinct UUID prefix `50000000-…` so US3 fixtures never collide with
-    // US1 (30000000-…) or US2 (40000000-…).
+    // the canonical seed (30000000-…).
     `50000000-0000-0000-0000-${String(i + 1).padStart(12, "0")}`
 );
 
@@ -1078,8 +399,6 @@ async function insertUs3Fixture(): Promise<void> {
   const svcClassicMani = "20000000-0000-0000-0000-000000000001";
 
   const tickets = US3_TICKET_IDS.map((id, i) => {
-    // slot 0 = oldest, slot US3_TICKET_COUNT-1 = newest. All inside
-    // today's LA window (see us3SlotTimestamp).
     const iso = us3SlotTimestamp(i);
     return {
       id,
@@ -1130,8 +449,8 @@ async function clearUs3Fixture(): Promise<void> {
   await admin.from("tickets").delete().in("id", US3_TICKET_IDS);
 }
 
-// Parse an `h:mm AM/PM` (or `h:mm AM/PM`) cell into a comparable minutes-
-// past-midnight number. Returns null if it can't parse.
+// Parse an `h:mm AM/PM` cell into minutes-past-midnight. Returns null if
+// it can't parse.
 function parseFeedTimeToMinutes(s: string): number | null {
   const m = s.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
   if (!m) return null;
@@ -1155,10 +474,9 @@ test.describe("US3: scrollable today feed", () => {
       );
     }
     // US3 asserts exactly 15 rows in the feed. Wipe every paid ticket
-    // dated today — the canonical seed, US2 leftovers, AND any residue
-    // from upstream checkout-* specs — so the count assertion holds.
+    // dated today — the canonical seed AND any residue from upstream
+    // checkout-* specs — so the count assertion holds.
     await clearAllTodayPaidTickets();
-    await clearUs2Fixture();
     await clearUs3Fixture();
     await insertUs3Fixture();
   });
@@ -1167,8 +485,7 @@ test.describe("US3: scrollable today feed", () => {
     if (!supabaseUp) return;
     await clearUs3Fixture();
     // Leave the canonical seed restored so downstream specs see the
-    // 5-ticket baseline. US2's fixture is owned by US2 and doesn't need
-    // re-seeding here.
+    // 5-ticket baseline.
     await restoreSeededPaidTickets();
   });
 
