@@ -46,14 +46,26 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  // Two-worker mode (CI). The Category A specs that previously raced on the
-  // shared seeded staff (Maya/Jordan/Sam) now provision their own per-worker
-  // trio via `tests/e2e/_fixtures.ts` (see issues #33 + #39). The fixture's
-  // distinctive `[wN]` suffix on display_name means Category B specs (which
-  // log in via the seeded Maya tile) stay unmodified. Local runs default to
-  // Playwright's auto-detected worker count; CI pins workers=2 so the
-  // reduction in wall time is deterministic.
-  workers: process.env.CI ? 2 : undefined,
+  // Single-worker mode (still). The Category A staff-mutation race that
+  // forced workers=1 was the original blocker; issue #39 ships the
+  // worker-scoped staff fixture (`tests/e2e/_fixtures.ts`) that resolves
+  // it, so flipping the workers cap is now safe for Category A specs.
+  //
+  // Two Category B subsystems still rely on shared resources that
+  // collide under `workers > 1`, so the flip is deferred until they get
+  // fixture-equivalent isolation:
+  //
+  //  - **Square stub server** (`tests/e2e/_square-server-stub.ts`) listens
+  //    on a fixed `127.0.0.1:4567` matching the Next.js
+  //    `SQUARE_API_BASE_URL` env. Two workers running Square-stub specs
+  //    in parallel hit `EADDRINUSE`. Needs a per-shard singleton stub
+  //    (globalSetup) plus cross-worker state coordination.
+  //  - Other pre-existing Category B races (gift-card sandbox state,
+  //    Square OAuth state) need parallel-safe seeding before workers>1
+  //    is reliable.
+  //
+  // Follow-up issue: #41 (do not unpin without resolving the stubs first).
+  workers: 1,
   reporter: "html",
   // Per-test budget. Local timeout is generous (60s) because parallel
   // workers contending on the Next.js prod server can stretch a single
