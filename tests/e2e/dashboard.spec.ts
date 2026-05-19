@@ -15,14 +15,19 @@
 // hardcoding dollar amounts so a future seed-fixture tweak doesn't break
 // the spec by accident.
 
-import { expect, test } from "@playwright/test";
-
+import { expect, test } from "./_fixtures";
 import { createClient } from "@supabase/supabase-js";
 
 import { formatSubtitle, formatTime } from "@/lib/time/format";
 import { todayWindow } from "@/lib/time/period-windows";
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 import { acquireTicketStateLock, releaseTicketStateLock } from "./_square-server-stub";
+
+test.use({
+  storageState: async ({ authState }, provide) => {
+    await provide(authState.owner);
+  },
+});
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 const SALON_TZ = "America/Los_Angeles";
@@ -74,26 +79,6 @@ function adminClient() {
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-}
-
-async function signInAsMaya(
-  page: import("@playwright/test").Page,
-  next = "/dashboard"
-): Promise<void> {
-  const encodedNext = encodeURIComponent(next);
-  await page.goto(`/login?next=${encodedNext}`);
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  const nextRegex = new RegExp(`${next.replace(/[/\-]/g, "\\$&")}(\\?|$)`);
-  await page.waitForURL(nextRegex, { timeout: 10_000 });
 }
 
 type SeededAggregates = {
@@ -536,7 +521,7 @@ test.describe("US1: today's real numbers", () => {
 
     const expected = await readSeededAggregates();
 
-    await signInAsMaya(page, "/dashboard");
+    await page.goto("/dashboard");
     // Set the audit cursor AFTER sign-in so the device.signed_in /
     // staff.signed_in rows don't pollute the dashboard-read assertion.
     const cursor = newAuditCursor();
@@ -614,7 +599,7 @@ test.describe("US1: today's real numbers", () => {
     // empty-state path.
     await clearAllTodayPaidTickets();
 
-    await signInAsMaya(page, "/dashboard");
+    await page.goto("/dashboard");
     // Cursor AFTER sign-in so device.signed_in / staff.signed_in audit rows
     // don't pollute the read-only dashboard assertion.
     const cursor = newAuditCursor();
@@ -985,7 +970,7 @@ test.describe("US2: period switching across calendar windows", () => {
   test("(a) toggling Today / Week / Month re-renders tiles from in-window tickets only; negative controls never contribute; no audit writes", async ({
     page,
   }) => {
-    await signInAsMaya(page, "/dashboard");
+    await page.goto("/dashboard");
     const cursor = newAuditCursor();
     await page.reload();
 
@@ -1190,7 +1175,7 @@ test.describe("US3: scrollable today feed", () => {
   test("(a–f) 15 rows in closed_at desc order, inner scroll, no page horizontal scroll, feed pinned to today, no audit writes", async ({
     page,
   }) => {
-    await signInAsMaya(page, "/dashboard");
+    await page.goto("/dashboard");
     const cursor = newAuditCursor();
     await page.reload();
 

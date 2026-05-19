@@ -1,55 +1,19 @@
 // E2E for the studio left navigation panel (specs/007-left-panel-nav).
 //
-// Docker / Supabase availability: same probe pattern as the rest of the suite
-// (auth.spec.ts, staff.spec.ts). Without Docker the local Supabase is
-// offline, so each describe block skips itself rather than failing.
-//
-// Reuses the seeded `owner@tangnails.dev` device login + Maya Patel (PIN
-// 1234) operator pattern; same as `tests/e2e/staff.spec.ts`. The sidebar
-// renders on every (studio) page so any signed-in route works as the landing
-// pad.
+// Uses the worker-scoped `authState` fixture (issue #42) — sign-in
+// happens once per worker (in the fixture), tests land already
+// authenticated on first `page.goto(...)`.
 //
 // DOM contract under test:
 //   specs/007-left-panel-nav/contracts/nav-items.contract.md § 4.
 
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./_fixtures";
 
-const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
-
-async function supabaseIsReachable(): Promise<boolean> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1500);
-    const res = await fetch(SUPABASE_HEALTH_URL, { signal: controller.signal });
-    clearTimeout(timeout);
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
-// Reuses the seeded `owner@tangnails.dev` / `tang-nails-dev` device login,
-// then pins in as Maya Patel (PIN 1234) — identical to `tests/e2e/staff.spec.ts`.
-async function signInAsMaya(
-  page: import("@playwright/test").Page,
-  next = "/dashboard"
-): Promise<void> {
-  const encodedNext = encodeURIComponent(next);
-  await page.goto(`/login?next=${encodedNext}`);
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  // After PIN entry the redirect carries us to the `next` URL.
-  const nextRegex = new RegExp(`${next.replace(/[/\-]/g, "\\$&")}(\\?|$)`);
-  await page.waitForURL(nextRegex, { timeout: 10_000 });
-}
+test.use({
+  storageState: async ({ authState }, provide) => {
+    await provide(authState.owner);
+  },
+});
 
 // The 9 nav items in render order — matches `NAV_CONFIG` in
 // `components/lacquer/sidebar/nav-items.ts` and the table in
@@ -69,23 +33,10 @@ const EXPECTED_NAV_IDS = [
 test.describe.configure({ mode: "serial" });
 
 test.describe("Studio left navigation panel", () => {
-  let supabaseUp = false;
-
-  test.beforeAll(async () => {
-    supabaseUp = await supabaseIsReachable();
-    if (!supabaseUp) {
-      test.skip(
-        true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping sidebar specs (Docker unavailable)."
-      );
-      return;
-    }
-  });
-
   test("(1) sidebar landmark + 9 items render in expected order on /dashboard", async ({
     page,
   }) => {
-    await signInAsMaya(page, "/dashboard");
+    await page.goto("/dashboard");
 
     const aside = page.locator('aside[aria-label="Studio navigation"]');
     await expect(aside).toBeVisible();
@@ -106,7 +57,7 @@ test.describe("Studio left navigation panel", () => {
   test("(2) clicking Schedule navigates to /calendar; URL-driven active state highlights one item", async ({
     page,
   }) => {
-    await signInAsMaya(page, "/dashboard");
+    await page.goto("/dashboard");
 
     // Click "Schedule" — the link must fire navigation to /calendar.
     await page.locator('[data-nav-id="schedule"]').click();
@@ -133,7 +84,7 @@ test.describe("Studio left navigation panel", () => {
   test("(3) visiting /settings/staff directly marks settings active (nested route)", async ({
     page,
   }) => {
-    await signInAsMaya(page, "/settings/staff");
+    await page.goto("/settings/staff");
 
     await expect(page.locator('[data-nav-id="settings"]')).toHaveAttribute("data-active", "true");
 
@@ -144,7 +95,7 @@ test.describe("Studio left navigation panel", () => {
   });
 
   test("(4) services nav item routes to /services and marks itself active", async ({ page }) => {
-    await signInAsMaya(page, "/dashboard");
+    await page.goto("/dashboard");
 
     const services = page.locator('[data-nav-id="services"]');
     // Wired entry — not disabled.
@@ -164,7 +115,7 @@ test.describe("Studio left navigation panel", () => {
   });
 
   test("(5) collapse toggle resizes the sidebar and persists across reloads", async ({ page }) => {
-    await signInAsMaya(page, "/dashboard");
+    await page.goto("/dashboard");
 
     // Ensure we start expanded — the previous test in this serial run might
     // have left the panel collapsed via localStorage. Force the known state
