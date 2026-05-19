@@ -42,9 +42,12 @@ Run them in this order so the cheapest checks fail fast:
 3. `npm run typecheck` — `tsc --noEmit`.
 4. `npm test` — Vitest unit suite.
 5. `npm run test:e2e` — Playwright against a local Supabase. Defaults to
-   parallel workers; set `PLAYWRIGHT_PROD=1` to opt into the same prebuilt
-   `npm run start` server CI uses (avoids next-dev JIT compile flake under
-   load). The script is wrapped in `flock /tmp/tang-nails-e2e.lock` so
+   parallel workers and to the same prebuilt `npm run start` server CI uses
+   (sets `PLAYWRIGHT_PROD=1` internally), so cold paths don't pay the
+   next-dev JIT compile tax under load. For iterating on a single failing
+   spec, use `npm run test:e2e:dev` instead — it leaves `PLAYWRIGHT_PROD`
+   unset so `npm run dev` hot-reloads edits between runs. The script is
+   wrapped in `flock /tmp/tang-nails-e2e.lock` so
    parallel Claude Code sessions (each in its own worktree) sharing the
    local Supabase stack serialize their e2e runs — see "Parallel sessions"
    below. Two state-scoping patterns let the suite run with `workers > 1`:
