@@ -33,8 +33,15 @@ import { PayDeductionsSection } from "@/components/lacquer/staff/pay-deductions-
 import { StaffAvatar } from "@/components/lacquer/staff/staff-avatar";
 import { StatusBadges } from "@/components/lacquer/staff/status-badges";
 
-import type { RosterStaff, StaffSupplyMode } from "@/app/(studio)/settings/staff/_types";
+import type { RosterStaff } from "@/app/(studio)/settings/staff/_types";
 import type { SupplyCatalogForStaff } from "@/app/(studio)/settings/staff/_supply-catalog";
+import {
+  canSaveDraft as canSaveDraftGate,
+  draftFromTarget,
+  isNameValid,
+  previewName,
+  type EditDraft,
+} from "@/app/(studio)/settings/staff/_save-gate";
 import {
   computeTargetPermissions,
   roleOptionsFor,
@@ -105,23 +112,6 @@ export type EditPanelProps = {
   supplyCatalog?: SupplyCatalogForStaff;
 };
 
-type Draft = {
-  display_name: string;
-  role: StudioRole;
-  color_token: string;
-  active: boolean;
-  // 023-staff-payout-exemptions § US1 — `card_fee_exempt` is submitted via a
-  // hidden input rendered by <PayDeductionsSection>; we mirror the snake_case
-  // field name in the FormData to keep `updateStaff` simple.
-  card_fee_exempt: boolean;
-  // 023-staff-payout-exemptions § US2 — supply_mode + supply_except submitted
-  // as hidden inputs from <PayDeductionsSection>. Per Clarify Q4 the picker's
-  // ticks live independently of the active mode in draft state; switching
-  // Some → Apply all → Some restores ticks without a save round-trip.
-  supply_mode: StaffSupplyMode;
-  supply_except: readonly string[];
-};
-
 // Empty fallback so the panel still renders (without the per-type picker)
 // when the page omits `supplyCatalog` — e.g. while transitioning between
 // rows before the Server Component returns the new catalog.
@@ -129,15 +119,7 @@ const EMPTY_SUPPLY_CATALOG: SupplyCatalogForStaff = { types: [] };
 
 export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPanelProps) {
   const supplyCatalogResolved = supplyCatalog ?? EMPTY_SUPPLY_CATALOG;
-  const [draft, setDraft] = useState<Draft>({
-    display_name: target.display_name,
-    role: target.role,
-    color_token: target.color_token,
-    active: target.active,
-    card_fee_exempt: target.card_fee_exempt,
-    supply_mode: target.supply_mode,
-    supply_except: target.supply_except,
-  });
+  const [draft, setDraft] = useState<EditDraft>(() => draftFromTarget(target));
 
   // PIN modal open state (US4). Modal owns its own phase/buffer state and
   // posts to the `setStaffPin` Server Action on confirm-match.
@@ -172,28 +154,11 @@ export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPa
     return fallback;
   };
 
-  // Dirty + name-validity gates for Save.
-  const trimmedName = draft.display_name.trim();
-  // 023-staff-payout-exemptions § US2 — compare the supply_except set with
-  // set-equality (order-insensitive). The server uses the same comparison
-  // via `_audit-diff.ts § buildChanges` to compute the audit diff, so the
-  // UI's dirty gate matches what the audit row will record.
-  const supplyExceptSame =
-    draft.supply_except.length === target.supply_except.length &&
-    [...draft.supply_except].sort().join(",") === [...target.supply_except].sort().join(",");
-  const isDirty =
-    draft.display_name !== target.display_name ||
-    draft.role !== target.role ||
-    draft.color_token !== target.color_token ||
-    draft.active !== target.active ||
-    // 023-staff-payout-exemptions § US1 — include the new pay-deductions
-    // field so a save with ONLY the toggle flipped enables the Save button.
-    draft.card_fee_exempt !== target.card_fee_exempt ||
-    // 023-staff-payout-exemptions § US2 — same for supply_mode + supply_except.
-    draft.supply_mode !== target.supply_mode ||
-    (draft.supply_mode === "partial" && !supplyExceptSame);
-  const hasValidName = trimmedName.length >= 2;
-  const canSave = isDirty && hasValidName && perms.canEditAnyField;
+  // Dirty + name-validity gates for Save. The pure helpers in `_save-gate.ts`
+  // back this — extracted so US3(b/c) drop out of the e2e suite per the
+  // pruning audit (docs/e2e-pruning-audit.md § staff.spec.ts).
+  const hasValidName = isNameValid(draft.display_name);
+  const canSave = canSaveDraftGate({ draft, target, canEditAnyField: perms.canEditAnyField });
 
   // 023 § US6 — "Added MMM YYYY" subtitle in the new panel-profile header.
   // Locale-aware via Intl.DateTimeFormat with year + short-month parts so
@@ -229,13 +194,13 @@ export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPa
         their own surface; the form below carries the editable sections. */}
       <header className="staff-panel-profile-header" data-slot="staff-panel-profile-header">
         <StaffAvatar
-          name={trimmedName || target.display_name}
+          name={previewName(draft.display_name, target.display_name)}
           colorToken={draft.color_token}
           size={64}
         />
         <div className="staff-panel-profile-header-body">
           <span data-slot="staff-panel-profile-name" className="staff-panel-profile-name">
-            {trimmedName || target.display_name}
+            {previewName(draft.display_name, target.display_name)}
           </span>
           <span data-slot="staff-panel-profile-subtitle" className="staff-panel-profile-subtitle">
             {ROLE_LABEL[draft.role]}

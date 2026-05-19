@@ -36,6 +36,11 @@ import {
 } from "@/components/ui/dialog";
 import { NumericKeypad } from "@/components/lacquer/numeric-keypad.client";
 import { setStaffPin } from "@/app/(studio)/settings/staff/actions";
+import {
+  pinKeypadInit,
+  pinKeypadSubmit,
+  type PinKeypadState,
+} from "@/app/(studio)/settings/staff/_pin-keypad-state";
 
 export type ChangePinModalMode = "set" | "change";
 
@@ -48,8 +53,6 @@ export type ChangePinModalProps = {
   mode: ChangePinModalMode;
 };
 
-type PinPhase = "enter" | "confirm";
-
 export function ChangePinModal({
   open,
   onOpenChange,
@@ -57,9 +60,7 @@ export function ChangePinModal({
   staffName,
   mode,
 }: ChangePinModalProps) {
-  const [phase, setPhase] = useState<PinPhase>("enter");
-  const [enterBuf, setEnterBuf] = useState("");
-  const [pinError, setPinError] = useState<string | null>(null);
+  const [pinState, setPinState] = useState<PinKeypadState>(() => pinKeypadInit());
 
   const formRef = useRef<HTMLFormElement | null>(null);
   const submittingRef = useRef(false);
@@ -71,9 +72,7 @@ export function ChangePinModal({
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (!next) {
-        setPhase("enter");
-        setEnterBuf("");
-        setPinError(null);
+        setPinState(pinKeypadInit());
         submittingRef.current = false;
       }
       onOpenChange(next);
@@ -87,44 +86,33 @@ export function ChangePinModal({
 
   const handleKeypadSubmit = useCallback(
     (digits: string) => {
-      if (phase === "enter") {
-        // Stash and advance. The keypad's own useEffect resets its buffer
-        // when `step` (its prop) flips.
-        setEnterBuf(digits);
-        setPinError(null);
-        setPhase("confirm");
-        return;
+      const { state: next, effect } = pinKeypadSubmit(pinState, digits);
+      setPinState(next);
+      if (effect?.kind === "submit") {
+        // Match — fire the Server Action. Guard against double-submit while
+        // the keypad's microtask callback drains. The NumericKeypad refs
+        // the latest `onSubmit` internally, so re-binding this callback per
+        // `pinState` change is safe (no listener churn).
+        if (submittingRef.current) return;
+        submittingRef.current = true;
+        queueMicrotask(() => {
+          formRef.current?.requestSubmit();
+        });
       }
-
-      // Confirm phase.
-      if (digits !== enterBuf) {
-        setPinError("PINs didn't match. Try again.");
-        setEnterBuf("");
-        setPhase("enter");
-        return;
-      }
-
-      // Match — fire the Server Action. Guard against double-submit while
-      // the keypad's microtask callback drains.
-      if (submittingRef.current) return;
-      submittingRef.current = true;
-      queueMicrotask(() => {
-        formRef.current?.requestSubmit();
-      });
     },
-    [phase, enterBuf]
+    [pinState]
   );
 
   const titleLabel = mode === "change" ? "Change PIN" : "Set PIN";
   const title = `${titleLabel} — ${staffName}`;
   const description =
-    phase === "enter"
+    pinState.phase === "enter"
       ? `Enter a new 4-digit PIN for ${staffName}.`
       : "Enter the same PIN again to confirm.";
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent data-slot="change-pin-modal" data-mode={mode} data-phase={phase}>
+      <DialogContent data-slot="change-pin-modal" data-mode={mode} data-phase={pinState.phase}>
         <DialogHeader>
           <DialogTitle data-slot="change-pin-title">{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>
@@ -141,8 +129,8 @@ export function ChangePinModal({
           }}
         >
           <NumericKeypad
-            step={phase}
-            errorMessage={pinError}
+            step={pinState.phase}
+            errorMessage={pinState.error}
             onSubmit={handleKeypadSubmit}
             onCancel={handleClose}
           />
@@ -179,7 +167,7 @@ export function ChangePinModal({
           style={{ display: "none" }}
         >
           <input type="hidden" name="staff_id" value={staffId} />
-          <input type="hidden" name="pin" value={enterBuf} />
+          <input type="hidden" name="pin" value={pinState.enterBuf} />
         </form>
       </DialogContent>
     </Dialog>

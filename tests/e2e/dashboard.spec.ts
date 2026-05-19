@@ -21,14 +21,19 @@
 // other specs that need to seed paid tickets at LA-local instants) live
 // in `./_la-time.ts`.
 
-import { expect, test } from "@playwright/test";
-
+import { expect, test } from "./_fixtures";
 import { createClient } from "@supabase/supabase-js";
 
 import { todayWindow } from "@/lib/time/period-windows";
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 import { laTodayMidnightUtcMs, SALON_TZ } from "./_la-time";
 import { acquireTicketStateLock, releaseTicketStateLock } from "./_square-server-stub";
+
+test.use({
+  storageState: async ({ authState }, provide) => {
+    await provide(authState.owner);
+  },
+});
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -61,26 +66,6 @@ function adminClient() {
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-}
-
-async function signInAsMaya(
-  page: import("@playwright/test").Page,
-  next = "/dashboard"
-): Promise<void> {
-  const encodedNext = encodeURIComponent(next);
-  await page.goto(`/login?next=${encodedNext}`);
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  const nextRegex = new RegExp(`${next.replace(/[/\-]/g, "\\$&")}(\\?|$)`);
-  await page.waitForURL(nextRegex, { timeout: 10_000 });
 }
 
 // Re-insert the canonical 5-ticket seed paid-tickets block. Mirrors
@@ -507,7 +492,7 @@ test.describe("US3: scrollable today feed", () => {
   test("(a–f) 15 rows in closed_at desc order, inner scroll, no page horizontal scroll, feed pinned to today, no audit writes", async ({
     page,
   }) => {
-    await signInAsMaya(page, "/dashboard");
+    await page.goto("/dashboard");
     const cursor = newAuditCursor();
     await page.reload();
 

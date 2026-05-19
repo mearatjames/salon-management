@@ -29,6 +29,8 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { test as base, expect, type Page } from "@playwright/test";
 
+import { provisionAuthState, type AuthStatePaths } from "./_auth-state";
+
 // --------------------------------------------------------------------------
 // Service-role client. Same pattern as `_db.ts`'s internal client(): cached
 // per worker so we don't open a new connection per fixture call.
@@ -243,8 +245,106 @@ async function deleteExtras(workerIndex: number, trioIds: ReadonlyArray<string>)
   }
 }
 
+// Tables with `NOT NULL references public.staff(id)` and no `ON DELETE`
+// behavior — they would block staff teardown if we didn't clear their
+// trio-referencing rows first. Issue #42 surfaced this: once specs
+// (checkout/dashboard/etc.) start running as the fixture owner instead
+// of seeded Maya, any ticket they leave behind has `opened_by_staff_id`
+// = trio member, and the prior teardown's bare `DELETE FROM staff`
+// failed the FK. The order below is FK-aware:
+//   1. payments (NOT NULL FK to tickets, no cascade) — clear before
+//      tickets so the cascading ticket delete doesn't trip the payment
+//      FK.
+//   2. tickets (cascades to ticket_items, which has the assigned-tech
+//      FK back to staff).
+//   3. cash_sessions (NOT NULL opened_by_staff_id).
+//   4. square_connection (NOT NULL connected_by_staff_id).
+//   5. staff itself. Other refs (audit_log.acting_as_staff_id,
+//      staff.invited_by/offboarded_by, service_assignments) are
+//      already ON DELETE SET NULL or CASCADE.
+async function deleteStaffDependents(
+  c: SupabaseClient,
+  trioIds: ReadonlyArray<string>
+): Promise<void> {
+  // 1. Find ticket ids whose any-staff column references the trio so
+  //    we can clean their payments first. PostgREST doesn't let us
+  //    union queries across columns, so issue one select per FK
+  //    column and merge the ids.
+  const ticketIdSet = new Set<string>();
+  // `tickets` only has two staff columns: opened_by (NOT NULL) and
+  // closed_by (nullable). `staff_id` / `created_by_staff_id` live on
+  // `appointments`, which the e2e suite doesn't seed.
+  for (const col of ["opened_by_staff_id", "closed_by_staff_id"] as const) {
+    const { data, error } = await c.from("tickets").select("id").in(col, trioIds);
+    if (error) {
+      throw new Error(`fixture teardown: tickets.${col} scan failed: ${error.message}`);
+    }
+    for (const row of data ?? []) ticketIdSet.add(row.id as string);
+  }
+  // Tickets reachable via ticket_items.assigned_staff_id (the line was
+  // assigned to a trio tech even though the ticket header points at
+  // someone else).
+  {
+    const { data, error } = await c
+      .from("ticket_items")
+      .select("ticket_id")
+      .in("assigned_staff_id", trioIds);
+    if (error) {
+      throw new Error(`fixture teardown: ticket_items scan failed: ${error.message}`);
+    }
+    for (const row of data ?? []) ticketIdSet.add(row.ticket_id as string);
+  }
+  const trioTicketIds = Array.from(ticketIdSet);
+
+  // 2. Delete payments for those tickets (no cascade from tickets).
+  if (trioTicketIds.length > 0) {
+    const { error } = await c.from("payments").delete().in("ticket_id", trioTicketIds);
+    if (error) {
+      throw new Error(`fixture teardown: payments delete failed: ${error.message}`);
+    }
+  }
+  // Also payments whose taken_by_staff_id is a trio member but whose
+  // ticket survived (different opener) — rare but possible.
+  {
+    const { error } = await c.from("payments").delete().in("taken_by_staff_id", trioIds);
+    if (error) {
+      throw new Error(`fixture teardown: payments.taken_by delete failed: ${error.message}`);
+    }
+  }
+
+  // 3. Delete the trio-touched tickets (cascades to ticket_items).
+  if (trioTicketIds.length > 0) {
+    const { error } = await c.from("tickets").delete().in("id", trioTicketIds);
+    if (error) {
+      throw new Error(`fixture teardown: tickets delete failed: ${error.message}`);
+    }
+  }
+
+  // 4. cash_drawer_sessions opened_by / closed_by trio.
+  for (const col of ["opened_by_staff_id", "closed_by_staff_id"] as const) {
+    const { error } = await c.from("cash_drawer_sessions").delete().in(col, trioIds);
+    if (error) {
+      throw new Error(
+        `fixture teardown: cash_drawer_sessions.${col} delete failed: ${error.message}`
+      );
+    }
+  }
+
+  // 5. square_oauth connected_by trio.
+  {
+    const { error } = await c.from("square_oauth").delete().in("connected_by_staff_id", trioIds);
+    if (error) {
+      throw new Error(`fixture teardown: square_oauth delete failed: ${error.message}`);
+    }
+  }
+}
+
 async function teardownWorker(workerIndex: number, trioIds: ReadonlyArray<string>): Promise<void> {
   const c = client();
+
+  // Clear FK-dependent rows before deleting staff (see comment above).
+  await deleteStaffDependents(c, trioIds);
+
   // Delete the trio by id (small, deterministic) plus any extras still
   // matching the worker's display_name suffix.
   const { error: extrasErr } = await c
@@ -277,9 +377,17 @@ async function teardownWorker(workerIndex: number, trioIds: ReadonlyArray<string
 // Playwright fixture export — worker-scoped so provisioning happens once
 // per worker, not per test. Spec files import `test` from this module
 // instead of `@playwright/test` to opt into the fixture.
+//
+// The `authState` worker fixture (issue #42) builds on `staffFixture`:
+// it runs the full sign-in flow once per worker per role and writes the
+// resulting cookies to `playwright/.auth/worker-<N>-<role>.json`. Specs
+// that don't need to exercise the sign-in UI override the built-in
+// `storageState` option via `test.use({ storageState: async
+// ({ authState }, use) => use(authState.owner) })` and land directly
+// on the post-auth page on their first `page.goto(...)`.
 // --------------------------------------------------------------------------
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export const test = base.extend<{}, { staffFixture: StaffFixture }>({
+export const test = base.extend<{}, { staffFixture: StaffFixture; authState: AuthStatePaths }>({
   staffFixture: [
     async ({}, use, workerInfo) => {
       const members = buildMembers(workerInfo.workerIndex);
@@ -296,6 +404,13 @@ export const test = base.extend<{}, { staffFixture: StaffFixture }>({
       };
       await use(fixture);
       await teardownWorker(workerInfo.workerIndex, trioIds);
+    },
+    { scope: "worker" },
+  ],
+  authState: [
+    async ({ browser, staffFixture }, use) => {
+      const paths = await provisionAuthState(browser, staffFixture);
+      await use(paths);
     },
     { scope: "worker" },
   ],
