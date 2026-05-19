@@ -268,6 +268,35 @@ describe("inviteUser (mode='thorough')", () => {
     expect(auditPayload.pin_set).toBe(true);
   });
 
+  // ── Combined: method='password' + pin → both branches engaged ─────────
+
+  it("method='password' + 4-digit pin → sendPasswordInvite called, INSERT carries pin_hash + invite_method='password', audit method='password' AND pin_set=true", async () => {
+    const { lastInsertRow } = mockAdminClient();
+
+    try {
+      await inviteUser(thoroughForm({ method: "password", pin: "8821" }));
+    } catch {
+      // redirect — ignore
+    }
+
+    expect(sendPasswordInvite).toHaveBeenCalledTimes(1);
+    expect(generateMagicLinkInvite).not.toHaveBeenCalled();
+
+    expect(hashPin).toHaveBeenCalledTimes(1);
+    expect(hashPin).toHaveBeenCalledWith("8821");
+
+    expect(lastInsertRow.current).toMatchObject({
+      user_id: "auth-user-pw",
+      invite_method: "password",
+      pin_hash: "bcrypt-hash-of-8821",
+    });
+
+    const auditPayload = (recordAudit as unknown as Mocked<() => unknown>).mock
+      .calls[0][3] as Record<string, unknown>;
+    expect(auditPayload.method).toBe("password");
+    expect(auditPayload.pin_set).toBe(true);
+  });
+
   // ── PIN-skipped branch ─────────────────────────────────────────────────
 
   it("without pin → INSERT has pin_hash=null, audit pin_set=false, hashPin not called", async () => {
