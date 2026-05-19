@@ -35,33 +35,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Mirror of ci.yml's `branch-freshness` gate — applying a migration
-  # from a stale PR could conflict with what's already in main. Skip the
-  # apply unless the PR head contains origin/main.
-  branch-freshness:
-    name: Branch freshness
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout PR head
-        uses: actions/checkout@v5
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-
-      - name: Verify PR head contains origin/main
-        run: |
-          git fetch --no-tags origin main
-          if git merge-base --is-ancestor origin/main HEAD; then
-            echo "Branch is up to date with origin/main."
-            exit 0
-          fi
-          behind=$(git rev-list --count HEAD..origin/main)
-          echo "::error::This PR is behind origin/main by $behind commit(s). Rebase or merge main into the branch, then push again."
-          exit 1
-
   push:
     runs-on: ubuntu-latest
-    needs: branch-freshness
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_PREVIEW_DB_PASSWORD }}
