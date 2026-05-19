@@ -18,11 +18,16 @@
 // waiting real time. Audit-log assertions use the per-test cursor pattern
 // (`newAuditCursor()`) per CLAUDE.md.
 
-import { expect, test } from "@playwright/test";
-
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { expect, test } from "./_fixtures";
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+
+test.use({
+  storageState: async ({ authState }, provide) => {
+    await provide(authState.tech);
+  },
+});
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -46,36 +51,12 @@ function adminClient(): SupabaseClient {
   });
 }
 
-// Sam Chen — technician — is used as the operator for this spec specifically
-// to keep the destructive beforeEach reset (which discards all of the
-// operator's open tickets) from racing against the other 011 checkout specs
-// running in parallel under CI's 2-worker setup. No other 011 spec signs in
-// as Sam, so this spec owns Sam's ticket history. Sam's staff id is
-// deterministic (see supabase/seed.sql); Sam has no linked auth user, but the
-// select-staff page lists every active staff with a pin_hash, so signing in
-// via owner@tangnails.dev and picking Sam at the picker is the standard path.
-const SAM_STAFF_ID = "10000000-0000-0000-0000-000000000003";
-
-async function signInAsSam(
-  page: import("@playwright/test").Page,
-  next = "/dashboard"
-): Promise<void> {
-  const encodedNext = encodeURIComponent(next);
-  await page.goto(`/login?next=${encodedNext}`);
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Sam Chen/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  // Sam's PIN is 9999.
-  await page.getByRole("button", { name: "Digit 9" }).click();
-  await page.getByRole("button", { name: "Digit 9" }).click();
-  await page.getByRole("button", { name: "Digit 9" }).click();
-  await page.getByRole("button", { name: "Digit 9" }).click();
-  const nextRegex = new RegExp(`${next.replace(/[/\-]/g, "\\$&")}(\\?|$)`);
-  await page.waitForURL(nextRegex, { timeout: 10_000 });
-}
+// The operator for this spec is the worker fixture's `Test Tech [w<N>]`.
+// Per CLAUDE.md, the fixture provisions per-worker staff trios so the
+// destructive beforeEach reset (which discards all of the operator's
+// open tickets) can't race against parallel workers — each worker has
+// its own tech with a unique UUID. The seeded Sam Chen is no longer
+// touched by this spec.
 
 /**
  * Click the sidebar "Checkout" nav item — the entry point this story is
@@ -124,6 +105,7 @@ async function discardAllOpenTicketsForOperator(
  */
 async function cleanupTickets(
   admin: SupabaseClient,
+  operatorId: string,
   ticketIds: ReadonlyArray<string>
 ): Promise<void> {
   const ids = ticketIds.filter((id) => /^[0-9a-f-]{36}$/i.test(id));
@@ -133,7 +115,7 @@ async function cleanupTickets(
     .update({
       status: "discarded",
       closed_at: new Date().toISOString(),
-      closed_by_staff_id: SAM_STAFF_ID,
+      closed_by_staff_id: operatorId,
     })
     .in("id", ids);
 }
@@ -153,20 +135,20 @@ test.describe("US2: sidebar resume vs fresh dispatch", () => {
     }
   });
 
-  test.beforeEach(async () => {
-    // Start each test with no resumable tickets for Sam so the cases under
-    // test see a controlled starting roster. Sam is unique to this spec (no
-    // other 011 spec signs in as Sam), so this reset is race-free under
-    // parallel workers.
+  test.beforeEach(async ({ staffFixture }) => {
+    // Start each test with no resumable tickets for the worker's tech so
+    // the cases under test see a controlled starting roster. Each worker
+    // has its own tech (per _fixtures.ts), so this reset is race-free
+    // under parallel workers.
     const admin = adminClient();
-    await discardAllOpenTicketsForOperator(admin, SAM_STAFF_ID);
+    await discardAllOpenTicketsForOperator(admin, staffFixture.tech.id);
   });
 
-  test("(a) one same-day open ticket → resumed", async ({ page }) => {
+  test("(a) one same-day open ticket → resumed", async ({ page, staffFixture }) => {
     const admin = adminClient();
     const created: string[] = [];
 
-    await signInAsSam(page, "/dashboard");
+    await page.goto("/dashboard");
 
     // Open a fresh ticket via the dashboard CTA (?fresh=1 path).
     await page.locator("[data-slot='new-transaction-cta']").click();
@@ -183,21 +165,22 @@ test.describe("US2: sidebar resume vs fresh dispatch", () => {
     const resumedTicketId = new URL(page.url()).pathname.split("/").pop()!;
     expect(resumedTicketId).toBe(expectedTicketId);
 
-    await cleanupTickets(admin, created);
+    await cleanupTickets(admin, staffFixture.tech.id, created);
   });
 
-  test("(b) no same-day open ticket → fresh created", async ({ page }) => {
+  test("(b) no same-day open ticket → fresh created", async ({ page, staffFixture }) => {
     const admin = adminClient();
     const cursor = newAuditCursor();
 
-    await signInAsSam(page, "/dashboard");
+    await page.goto("/dashboard");
 
     // Pre-condition is already enforced by beforeEach (no open tickets).
     await navigateSidebarCheckout(page);
     const freshTicketId = new URL(page.url()).pathname.split("/").pop()!;
 
-    // The DB row should exist, status=open, opened by Sam, and the audit
-    // row should carry `created_by_entry_point = 'sidebar_resume_or_create'`.
+    // The DB row should exist, status=open, opened by the worker's tech,
+    // and the audit row should carry
+    // `created_by_entry_point = 'sidebar_resume_or_create'`.
     const { data: row, error } = await admin
       .from("tickets")
       .select("id, status, opened_by_staff_id")
@@ -205,21 +188,24 @@ test.describe("US2: sidebar resume vs fresh dispatch", () => {
       .single();
     expect(error).toBeNull();
     expect(row!.status).toBe("open");
-    expect(row!.opened_by_staff_id).toBe(SAM_STAFF_ID);
+    expect(row!.opened_by_staff_id).toBe(staffFixture.tech.id);
 
     const auditRows = await getAuditLogRowsSince(cursor, "ticket.created");
     const matching = auditRows.filter((r) => r.entity_id === freshTicketId);
     expect(matching).toHaveLength(1);
     expect((matching[0].payload ?? {}).created_by_entry_point).toBe("sidebar_resume_or_create");
 
-    await cleanupTickets(admin, [freshTicketId]);
+    await cleanupTickets(admin, staffFixture.tech.id, [freshTicketId]);
   });
 
-  test("(c) multiple same-day open tickets → most-recently-updated wins", async ({ page }) => {
+  test("(c) multiple same-day open tickets → most-recently-updated wins", async ({
+    page,
+    staffFixture,
+  }) => {
     const admin = adminClient();
     const created: string[] = [];
 
-    await signInAsSam(page, "/dashboard");
+    await page.goto("/dashboard");
 
     // Open ticket A via dashboard CTA.
     await page.locator("[data-slot='new-transaction-cta']").click();
@@ -258,14 +244,17 @@ test.describe("US2: sidebar resume vs fresh dispatch", () => {
     const resumedTicketId = new URL(page.url()).pathname.split("/").pop()!;
     expect(resumedTicketId).toBe(ticketA);
 
-    await cleanupTickets(admin, created);
+    await cleanupTickets(admin, staffFixture.tech.id, created);
   });
 
-  test("(d) prior-day open exists but no same-day → fresh created", async ({ page }) => {
+  test("(d) prior-day open exists but no same-day → fresh created", async ({
+    page,
+    staffFixture,
+  }) => {
     const admin = adminClient();
     const created: string[] = [];
 
-    await signInAsSam(page, "/dashboard");
+    await page.goto("/dashboard");
 
     // Open a ticket today, then mutate its created_at to yesterday so the
     // resume query's date-window predicate excludes it.
@@ -294,14 +283,14 @@ test.describe("US2: sidebar resume vs fresh dispatch", () => {
     expect(error).toBeNull();
     expect(priorRow!.status).toBe("open");
 
-    await cleanupTickets(admin, created);
+    await cleanupTickets(admin, staffFixture.tech.id, created);
   });
 
-  test("(e) discarded earlier today → fresh created", async ({ page }) => {
+  test("(e) discarded earlier today → fresh created", async ({ page, staffFixture }) => {
     const admin = adminClient();
     const created: string[] = [];
 
-    await signInAsSam(page, "/dashboard");
+    await page.goto("/dashboard");
 
     // Open a ticket via dashboard CTA, then discard it directly.
     await page.locator("[data-slot='new-transaction-cta']").click();
@@ -314,7 +303,7 @@ test.describe("US2: sidebar resume vs fresh dispatch", () => {
       .update({
         status: "discarded",
         closed_at: new Date().toISOString(),
-        closed_by_staff_id: SAM_STAFF_ID,
+        closed_by_staff_id: staffFixture.tech.id,
       })
       .eq("id", discardedTicketId);
 
@@ -326,6 +315,6 @@ test.describe("US2: sidebar resume vs fresh dispatch", () => {
     expect(newTicketId).not.toBe(discardedTicketId);
     created.push(newTicketId);
 
-    await cleanupTickets(admin, created);
+    await cleanupTickets(admin, staffFixture.tech.id, created);
   });
 });

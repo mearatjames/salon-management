@@ -5,11 +5,16 @@
 // terminal — sidebar resume in US2 will additionally skip it; that's
 // tested in T032).
 
-import { expect, test } from "@playwright/test";
-
+import { expect, test } from "./_fixtures";
 import { createClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+
+test.use({
+  storageState: async ({ authState }, provide) => {
+    await provide(authState.owner);
+  },
+});
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -33,26 +38,6 @@ function adminClient() {
   });
 }
 
-async function signInAsMaya(
-  page: import("@playwright/test").Page,
-  next = "/dashboard"
-): Promise<void> {
-  const encodedNext = encodeURIComponent(next);
-  await page.goto(`/login?next=${encodedNext}`);
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  const nextRegex = new RegExp(`${next.replace(/[/\-]/g, "\\$&")}(\\?|$)`);
-  await page.waitForURL(nextRegex, { timeout: 10_000 });
-}
-
 test.describe.configure({ mode: "serial" });
 
 test.describe("US1: discard control marks ticket discarded and returns to dashboard", () => {
@@ -73,7 +58,7 @@ test.describe("US1: discard control marks ticket discarded and returns to dashbo
   }) => {
     const cursor = newAuditCursor();
 
-    await signInAsMaya(page, "/dashboard");
+    await page.goto("/dashboard");
 
     // Open a fresh ticket from the dashboard CTA.
     await page.locator("[data-slot='new-transaction-cta']").click();

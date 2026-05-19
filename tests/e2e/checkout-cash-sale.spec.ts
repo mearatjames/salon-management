@@ -11,11 +11,16 @@
 // Docker / Supabase availability: same probe pattern as the rest of the
 // suite — skip when the local Supabase is unreachable.
 
-import { expect, test } from "@playwright/test";
-
+import { expect, test } from "./_fixtures";
 import { createClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+
+test.use({
+  storageState: async ({ authState }, provide) => {
+    await provide(authState.owner);
+  },
+});
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -39,28 +44,6 @@ function adminClient() {
   });
 }
 
-// Reuses the standard sign-in flow: Maya Patel (owner; PIN 1234). Mirrors
-// the helpers in staff.spec.ts / services.spec.ts.
-async function signInAsMaya(
-  page: import("@playwright/test").Page,
-  next = "/dashboard"
-): Promise<void> {
-  const encodedNext = encodeURIComponent(next);
-  await page.goto(`/login?next=${encodedNext}`);
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  const nextRegex = new RegExp(`${next.replace(/[/\-]/g, "\\$&")}(\\?|$)`);
-  await page.waitForURL(nextRegex, { timeout: 10_000 });
-}
-
 test.describe.configure({ mode: "serial" });
 
 test.describe("US1: process a cash-only walk-in sale end-to-end", () => {
@@ -79,7 +62,7 @@ test.describe("US1: process a cash-only walk-in sale end-to-end", () => {
   test("(a–e) dashboard → cart → take cash → DoneScreen → New sale", async ({ page }) => {
     const cursor = newAuditCursor();
 
-    await signInAsMaya(page, "/dashboard");
+    await page.goto("/dashboard");
 
     // (a) Click "New transaction" CTA from the dashboard.
     await page.locator("[data-slot='new-transaction-cta']").click();

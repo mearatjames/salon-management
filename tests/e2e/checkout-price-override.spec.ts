@@ -21,11 +21,16 @@
 // `line.price_set` row with `payload.was_unconfirmed=false`, scoped via
 // `newAuditCursor()` / `getAuditLogRowsSince()`.
 
-import { expect, test } from "@playwright/test";
-
+import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+
+test.use({
+  storageState: async ({ authState }, provide) => {
+    await provide(authState.owner);
+  },
+});
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -54,26 +59,6 @@ function adminClient(): SupabaseClient {
 const CLASSIC_MANI_SERVICE_ID = "20000000-0000-0000-0000-000000000001";
 // Nail art — variable-priced, no assignments (so any tech can add it).
 const NAIL_ART_SERVICE_ID = "20000000-0000-0000-0000-000000000005";
-
-async function signInAsMaya(
-  page: import("@playwright/test").Page,
-  next = "/dashboard"
-): Promise<void> {
-  const encodedNext = encodeURIComponent(next);
-  await page.goto(`/login?next=${encodedNext}`);
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  const nextRegex = new RegExp(`${next.replace(/[/\-]/g, "\\$&")}(\\?|$)`);
-  await page.waitForURL(nextRegex, { timeout: 10_000 });
-}
 
 async function openFreshTicket(
   page: import("@playwright/test").Page,
@@ -129,7 +114,7 @@ test.describe("US2: Row-level price override", () => {
     expect(svcBefore).toBeDefined();
     const catalogPriceBefore = svcBefore!.price_cents as number;
 
-    await signInAsMaya(page, "/dashboard");
+    await page.goto("/dashboard");
     const ticketId = await openFreshTicket(page, "Jordan Lee");
 
     // Tap the fixed-price tile — confirmed row lands immediately.
@@ -237,7 +222,7 @@ test.describe("US2: Row-level price override", () => {
   test("(d) Cancel leaves the confirmed row unchanged", async ({ page }) => {
     const admin = adminClient();
 
-    await signInAsMaya(page, "/dashboard");
+    await page.goto("/dashboard");
     const ticketId = await openFreshTicket(page, "Jordan Lee");
 
     const tile = page.locator(
@@ -294,7 +279,7 @@ test.describe("US2: Row-level price override", () => {
   }) => {
     const admin = adminClient();
 
-    await signInAsMaya(page, "/dashboard");
+    await page.goto("/dashboard");
     const ticketId = await openFreshTicket(page, "Maya Patel");
 
     // Add the variable Nail art service → auto-opens sheet in US1 mode

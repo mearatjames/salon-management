@@ -17,12 +17,17 @@
 // Docker / Supabase availability: same probe pattern as the rest of the
 // suite — skip when the local Supabase is unreachable.
 
-import { expect, test } from "@playwright/test";
-
+import { expect, test } from "./_fixtures";
 import { createClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 import { acquireTicketStateLock, releaseTicketStateLock } from "./_square-server-stub";
+
+test.use({
+  storageState: async ({ authState }, provide) => {
+    await provide(authState.owner);
+  },
+});
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -44,27 +49,6 @@ function adminClient() {
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-}
-
-// Reuses the standard sign-in flow: Maya Patel (owner; PIN 1234).
-async function signInAsMaya(
-  page: import("@playwright/test").Page,
-  next = "/end-of-day"
-): Promise<void> {
-  const encodedNext = encodeURIComponent(next);
-  await page.goto(`/login?next=${encodedNext}`);
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  const nextRegex = new RegExp(`${next.replace(/[/\-]/g, "\\$&")}(\\?|$)`);
-  await page.waitForURL(nextRegex, { timeout: 10_000 });
 }
 
 // Stable seed UUIDs (from supabase/seed.sql § paid-tickets-today block).
@@ -368,7 +352,7 @@ test.describe("US1: count + close exact match", () => {
   test("type expected total → Exact match → Close Out Day → done screen persists → audit row", async ({
     page,
   }) => {
-    await signInAsMaya(page, "/end-of-day");
+    await page.goto("/end-of-day");
     // Cursor AFTER sign-in so the device.signed_in / staff.signed_in rows
     // don't bleed into the cash_drawer.closed audit assertion.
     const cursor = newAuditCursor();
@@ -467,7 +451,7 @@ test.describe("US2: variance + note required + close", () => {
   test("short variance with note → confirmation shows variance + italic note + audit row", async ({
     page,
   }) => {
-    await signInAsMaya(page, "/end-of-day");
+    await page.goto("/end-of-day");
     const cursor = newAuditCursor();
     await page.reload();
 
@@ -522,7 +506,7 @@ test.describe("US2: variance + note required + close", () => {
   });
 
   test("over variance with note → confirmation shows over + audit row", async ({ page }) => {
-    await signInAsMaya(page, "/end-of-day");
+    await page.goto("/end-of-day");
     const cursor = newAuditCursor();
     await page.reload();
 
@@ -566,7 +550,7 @@ test.describe("US2: variance + note required + close", () => {
   });
 
   test("stale rejection → recount banner + no audit row written", async ({ page }) => {
-    await signInAsMaya(page, "/end-of-day");
+    await page.goto("/end-of-day");
     const cursor = newAuditCursor();
     await page.reload();
 
@@ -631,7 +615,7 @@ test.describe("US3: numpad correction", () => {
   test("mistype → backspace → clear → retype exactly → caps + decimal-once enforced → submit", async ({
     page,
   }) => {
-    await signInAsMaya(page, "/end-of-day");
+    await page.goto("/end-of-day");
     const cursor = newAuditCursor();
     await page.reload();
 

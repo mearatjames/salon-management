@@ -12,8 +12,15 @@
 // attempting an activation from device B. Square is not involved in this
 // path — we exercise the DB-side guard directly.
 
-import { expect, test, type Page } from "@playwright/test";
+import { type Page } from "@playwright/test";
+import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+
+test.use({
+  storageState: async ({ authState }, provide) => {
+    await provide(authState.owner);
+  },
+});
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -37,23 +44,6 @@ function serviceClient(): SupabaseClient {
   );
 }
 
-async function signInAsMaya(page: Page, next: string): Promise<void> {
-  const encodedNext = encodeURIComponent(next);
-  await page.goto(`/login?next=${encodedNext}`);
-  await page.locator("#signin-email").fill("owner@tangnails.dev");
-  await page.locator("#signin-password").fill("tang-nails-dev");
-  await page.getByRole("button", { name: "Sign in" }).click();
-  await page.waitForURL(/\/select-staff\?next=/);
-  await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
-  const re = new RegExp(`${next.replace(/[/\-]/g, "\\$&")}(\\?|$)`);
-  await page.waitForURL(re, { timeout: 10_000 });
-}
-
 test.describe.configure({ mode: "serial" });
 
 test.describe("US2: concurrent charge blocked", () => {
@@ -69,8 +59,10 @@ test.describe("US2: concurrent charge blocked", () => {
 
   test("US2: a second device's compose attempt is refused while a leg is pending", async ({
     browser,
+    authState,
   }) => {
     if (!supabaseUp) test.skip();
+    const ownerStatePath = authState.owner;
     const supabase = serviceClient();
 
     // 1) Resolve Maya's staff id (used as the operator).
@@ -127,9 +119,12 @@ test.describe("US2: concurrent charge blocked", () => {
       //    cart-edit path (addServiceLine) because it surfaces
       //    `TicketAlreadyBeingChargedError` via the cart's error banner
       //    using copy "Ticket is already being charged on another device".
-      const ctxB = await browser.newContext();
+      // Second context loaded from the same worker's owner storageState —
+      // the spec is exercising two concurrent requests, not two distinct
+      // operators, so sharing the owner cookie is correct.
+      const ctxB = await browser.newContext({ storageState: ownerStatePath });
       const pageB = await ctxB.newPage();
-      await signInAsMaya(pageB, `/checkout/${ticketId}`);
+      await pageB.goto(`/checkout/${ticketId}`);
       await pageB.waitForURL(new RegExp(`/checkout/${ticketId}`), { timeout: 10_000 });
 
       // 6) Wait for the page to render (cart island ready).
