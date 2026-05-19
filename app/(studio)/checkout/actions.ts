@@ -33,6 +33,11 @@ import { getSetting } from "@/lib/settings/read";
 
 import { discardDraftLegs } from "./_drafts";
 import {
+  commitCartSchema,
+  resolveCartForCommit,
+  type EphemeralCartInput,
+} from "./_commit-from-cart";
+import {
   CashPaymentFailedError,
   DiscountInvalidError,
   DraftLegNotFoundError,
@@ -2338,4 +2343,723 @@ export async function activateCashDraft(
     status: "succeeded",
     ticketFlippedToPaid: Boolean(firstRow.ticket_flipped_to_paid),
   };
+}
+
+// ----------------------------------------------------------------------
+// Feature 042 — Ephemeral Cart commit Server Actions.
+//
+// These actions promote the in-memory cart (built client-side under
+// `/checkout`) into a fully-committed ticket + first payment row in one
+// shot. Until they run, the database is untouched (FR-001, FR-011).
+//
+// Atomicity pattern — Postgres functions (`pos_take_cash`,
+// `pos_compose_payment_draft`) own their own atomicity, but the
+// Supabase JS client cannot wrap multiple top-level statements in one
+// transaction over PostgREST. We sequence the writes in JS and on any
+// error after the ticket+items inserts, run compensating DELETEs so
+// the database surface matches the spec's "zero orphan rows on
+// failure" invariant. The deletes are ordered child→parent to satisfy
+// the ticket_items.ticket_id FK.
+//
+// Contract: specs/042-ephemeral-cart/contracts/server-actions.md.
+// ----------------------------------------------------------------------
+
+export type CommitErrorCode =
+  | "INVALID_CART"
+  | "STALE_SERVICE"
+  | "INACTIVE_TECH"
+  | "STALE_CUSTOMER"
+  | "INSUFFICIENT_CASH"
+  | "GIFT_NOT_FOUND"
+  | "GIFT_INSUFFICIENT_BALANCE"
+  | "GIFT_NOT_REDEEMABLE"
+  | "TERMINAL_HANDOFF_FAILED"
+  | "INTERNAL";
+
+export type CommitResult =
+  | { ok: true; ticketId: string }
+  | {
+      ok: false;
+      code: CommitErrorCode;
+      message: string;
+      serviceId?: string;
+      techId?: string;
+      customerId?: string;
+    };
+
+/**
+ * Insert the ticket + bulk-insert ticket_items rows from a resolved
+ * cart. Returns the new ticket id. Throws on DB error; the caller
+ * runs compensating deletes.
+ *
+ * The ticket goes in as `status='open'` so the
+ * `tickets_closed_consistency_chk` invariant holds (`closed_at` is
+ * still null at this point). The downstream RPC (`pos_take_cash`,
+ * `pos_compose_payment_draft`/`activateGiftDraft`) flips to 'paid'
+ * later if appropriate.
+ *
+ * `subtotal_cents` is stored as the POST-discount value (matching the
+ * `tickets_total_matches_subtotal_chk` constraint: `total = subtotal
+ * + tax`, with `tax = 0` in v1). Line-level discount rows carry the
+ * subtraction separately on `ticket_items`.
+ */
+async function insertTicketAndItems(
+  resolved: Awaited<ReturnType<typeof resolveCartForCommit>> extends infer R
+    ? R extends { ok: true; resolved: infer Inner }
+      ? Inner
+      : never
+    : never,
+  cart: EphemeralCartInput,
+  openerStaffId: string,
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>
+): Promise<string> {
+  const totalCents = resolved.totals.total_cents;
+
+  // 1) Insert the ticket. Use POST-discount totals so the schema's
+  //    `total = subtotal + tax` check passes.
+  const { data: tkRow, error: tkErr } = await supabase
+    .from("tickets")
+    .insert({
+      status: "open",
+      appointment_id: null,
+      opened_by_staff_id: openerStaffId,
+      subtotal_cents: totalCents,
+      tax_cents: 0,
+      total_cents: totalCents,
+    })
+    .select("id")
+    .single();
+  if (tkErr || !tkRow) {
+    throw new Error(`tickets insert failed: ${tkErr?.message ?? "no id"}`);
+  }
+  const ticketId = tkRow.id as string;
+
+  // 2) Bulk-insert ticket_items. Truncate the per-item note to 80
+  //    chars (the cart schema accepts up to 500 chars for the
+  //    client-side UI buffer; `ticket_items.note` is hard-capped at
+  //    80 by `ticket_items_note_length_chk`). Discount rows have
+  //    `assigned_staff_id = null` — allowed by the kind-conditional
+  //    check constraint added in migration 0007.
+  const itemRows = resolved.itemRows.map((r) => ({
+    ticket_id: ticketId,
+    kind: r.kind,
+    ref_id: r.ref_id,
+    name_snapshot: r.name_snapshot,
+    unit_price_cents: r.unit_price_cents,
+    qty: r.qty,
+    assigned_staff_id: r.assigned_staff_id,
+    price_unconfirmed: r.price_unconfirmed,
+    discount_pct: r.discount_pct,
+    note: r.note ? r.note.slice(0, 80) : null,
+  }));
+
+  if (itemRows.length > 0) {
+    const { error: itemsErr } = await supabase.from("ticket_items").insert(itemRows);
+    if (itemsErr) {
+      // Compensating delete on the just-inserted ticket. The items
+      // insert failed wholesale, so there's nothing to clean from
+      // ticket_items.
+      await supabase.from("tickets").delete().eq("id", ticketId);
+      throw new Error(`ticket_items insert failed: ${itemsErr.message}`);
+    }
+  }
+
+  // Silence unused-var lint — `cart` is reserved for future use
+  // (e.g. recording the cart hash on the ticket for audit).
+  void cart;
+
+  return ticketId;
+}
+
+/**
+ * Run compensating DELETEs to clean up an orphaned ticket + items
+ * pair created by `insertTicketAndItems` when a downstream step
+ * (RPC, Square charge) fails. Order: ticket_items (child rows) first,
+ * then the ticket. `ticket_items.ticket_id` has `on delete cascade`
+ * so the second delete would tidy up anyway, but doing it explicitly
+ * lets us surface specific row-count errors if needed.
+ */
+async function rollbackTicketRows(
+  ticketId: string,
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>
+): Promise<void> {
+  await supabase.from("ticket_items").delete().eq("ticket_id", ticketId);
+  await supabase.from("tickets").delete().eq("id", ticketId);
+}
+
+function mapResolveErrToCommitResult(
+  err: Exclude<Awaited<ReturnType<typeof resolveCartForCommit>>, { ok: true }>
+): Extract<CommitResult, { ok: false }> {
+  if (err.code === "STALE_SERVICE") {
+    return {
+      ok: false,
+      code: "STALE_SERVICE",
+      message: "A service in the cart is no longer available.",
+      serviceId: err.serviceId,
+    };
+  }
+  if (err.code === "INACTIVE_TECH") {
+    return {
+      ok: false,
+      code: "INACTIVE_TECH",
+      message: "A tech assigned to the cart is no longer active.",
+      techId: err.techId,
+    };
+  }
+  if (err.code === "STALE_CUSTOMER") {
+    return {
+      ok: false,
+      code: "STALE_CUSTOMER",
+      message: "The customer attached to the cart no longer exists.",
+      customerId: err.customerId,
+    };
+  }
+  return {
+    ok: false,
+    code: "INTERNAL",
+    message: `Cart resolve failed: ${err.message}`,
+  };
+}
+
+// ----------------------------------------------------------------------
+// 18. submitCashFromCart (T013 / contracts § Action 1) — feature 042.
+//
+//   Promote the ephemeral cart to a fully-paid cash ticket in one
+//   sequenced flow. Validates input, re-resolves prices/staff/customer
+//   server-side, short-circuits on insufficient cash, then:
+//     a. insert tickets (status='open' to satisfy the closed-
+//        consistency check; pos_take_cash flips it to 'paid'),
+//     b. bulk-insert ticket_items,
+//     c. call pos_take_cash(ticket_id, operator) — inserts the
+//        payments row + emits the payment.captured audit row.
+//
+//   On any error after step (a) we DELETE the just-inserted ticket
+//   (cascading to ticket_items) so the spec's "zero orphan rows on
+//   failure" invariant holds.
+// ----------------------------------------------------------------------
+
+export async function submitCashFromCart(
+  cart: EphemeralCartInput,
+  cashTenderedCents: number
+): Promise<CommitResult> {
+  // 1) Schema validation.
+  const parsed = commitCartSchema.safeParse(cart);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: "INVALID_CART",
+      message: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+    };
+  }
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  // 2) Re-resolve against the database (canonical totals + active checks).
+  const resolved = await resolveCartForCommit(parsed.data, supabase);
+  if (!resolved.ok) {
+    return mapResolveErrToCommitResult(resolved);
+  }
+
+  // 3) Insufficient-cash short-circuit BEFORE any insert.
+  if (cashTenderedCents < resolved.resolved.totals.total_cents) {
+    return {
+      ok: false,
+      code: "INSUFFICIENT_CASH",
+      message: `Cash tendered ($${(cashTenderedCents / 100).toFixed(
+        2
+      )}) is less than the total ($${(resolved.resolved.totals.total_cents / 100).toFixed(2)}).`,
+    };
+  }
+
+  // 4) Insert ticket + items.
+  let ticketId: string;
+  try {
+    ticketId = await insertTicketAndItems(
+      resolved.resolved,
+      parsed.data,
+      viewer.staff.id,
+      supabase
+    );
+  } catch (err) {
+    return {
+      ok: false,
+      code: "INTERNAL",
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // 5) Call pos_take_cash. On failure, compensating DELETE so we
+  //    don't leave an orphan open ticket + items behind.
+  const { error: rpcErr } = await supabase.rpc("pos_take_cash", {
+    p_ticket_id: ticketId,
+    p_operator: viewer.staff.id,
+  });
+
+  if (rpcErr) {
+    await rollbackTicketRows(ticketId, supabase);
+    return {
+      ok: false,
+      code: "INTERNAL",
+      message: `pos_take_cash failed: ${rpcErr.message}`,
+    };
+  }
+
+  return { ok: true, ticketId };
+}
+
+// ----------------------------------------------------------------------
+// 19. submitGiftFromCart (T014 / contracts § Action 2) — feature 042.
+//
+//   Promote the ephemeral cart to a fully-gift-paid ticket. Same
+//   shape as `submitCashFromCart` but the payment flow goes through
+//   the existing gift-card pipeline:
+//     a. resolve the GAN against Square (LOOKUP_FAILED → GIFT_NOT_FOUND),
+//     b. verify balance ≥ total (GIFT_INSUFFICIENT_BALANCE otherwise),
+//     c. insert ticket + items,
+//     d. compose a gift draft via pos_compose_payment_draft,
+//     e. call activateGiftDraft to charge the card via Square.
+//
+//   The Square webhook eventually settles the leg to 'succeeded'
+//   via `pos_record_gift_payment`, at which point the ticket flips
+//   to 'paid'. The client is expected to navigate to /checkout/<id>
+//   after this action returns ok — the existing waiting-for-gift
+//   sheet there handles the realtime/poll loop.
+//
+//   `giftCardNumber` is the masked display label (e.g. "•••• 0001")
+//   — currently informational only (audit is emitted by lookup /
+//   activate). `gan` is the full Square Gift Account Number.
+// ----------------------------------------------------------------------
+
+export async function submitGiftFromCart(
+  cart: EphemeralCartInput,
+  giftCardNumber: string,
+  gan: string
+): Promise<CommitResult> {
+  void giftCardNumber; // Reserved for future audit/display use.
+
+  // 1) Schema validation FIRST — must NEVER touch Square or the DB on
+  //    a malformed payload.
+  const parsed = commitCartSchema.safeParse(cart);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: "INVALID_CART",
+      message: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+    };
+  }
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  // 2) Re-resolve.
+  const resolved = await resolveCartForCommit(parsed.data, supabase);
+  if (!resolved.ok) {
+    return mapResolveErrToCommitResult(resolved);
+  }
+  const totalCents = resolved.resolved.totals.total_cents;
+
+  // 3) Insert ticket + items BEFORE the Square lookup so we have a
+  //    ticket id to compose the gift draft against. If lookup or
+  //    balance fails, run compensating deletes.
+  let ticketId: string;
+  try {
+    ticketId = await insertTicketAndItems(
+      resolved.resolved,
+      parsed.data,
+      viewer.staff.id,
+      supabase
+    );
+  } catch (err) {
+    return {
+      ok: false,
+      code: "INTERNAL",
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // 4) Look up the card via Square. Mirrors `redeemGiftCardWholeTicket`'s
+  //    handling of the four lookup branches.
+  let lookup: LookupResult;
+  try {
+    lookup = await retrieveGiftCardFromGAN(gan);
+  } catch (err) {
+    await rollbackTicketRows(ticketId, supabase);
+    return {
+      ok: false,
+      code: "INTERNAL",
+      message: `Gift card lookup failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
+  if (lookup.kind === "not_found") {
+    await rollbackTicketRows(ticketId, supabase);
+    return {
+      ok: false,
+      code: "GIFT_NOT_FOUND",
+      message: "Gift card not found for that number.",
+    };
+  }
+  if (lookup.kind === "zero_balance") {
+    await rollbackTicketRows(ticketId, supabase);
+    return {
+      ok: false,
+      code: "GIFT_INSUFFICIENT_BALANCE",
+      message: "Gift card has no balance to redeem.",
+    };
+  }
+  if (lookup.kind === "not_redeemable") {
+    await rollbackTicketRows(ticketId, supabase);
+    return {
+      ok: false,
+      code: "GIFT_NOT_REDEEMABLE",
+      message: `Gift card is ${lookup.state} and can't be redeemed.`,
+    };
+  }
+  // kind === 'found'
+  if (lookup.balanceCents < totalCents) {
+    await rollbackTicketRows(ticketId, supabase);
+    return {
+      ok: false,
+      code: "GIFT_INSUFFICIENT_BALANCE",
+      message: "Gift card balance is less than the ticket total.",
+    };
+  }
+
+  // 5) Compose the gift draft against the new ticket. The RPC owns
+  //    the legs-fit-remaining guard + the payment.draft_created audit
+  //    row; this Node layer just maps errors.
+  const { data: composedPaymentId, error: composeErr } = await supabase.rpc(
+    "pos_compose_payment_draft",
+    {
+      p_ticket_id: ticketId,
+      p_operator: viewer.staff.id,
+      p_method: "gift",
+      p_amount: totalCents,
+    } as unknown as Parameters<typeof supabase.rpc<"pos_compose_payment_draft">>[1]
+  );
+  if (composeErr || !composedPaymentId) {
+    await rollbackTicketRows(ticketId, supabase);
+    return {
+      ok: false,
+      code: "INTERNAL",
+      message: `pos_compose_payment_draft failed: ${composeErr?.message ?? "no payment id"}`,
+    };
+  }
+  const paymentId = composedPaymentId as unknown as string;
+
+  // 6) Activate the gift leg. This runs the Square charge + flips
+  //    the leg from 'draft' to 'pending'. On Square failure, the
+  //    helper marks the leg 'failed' and surfaces
+  //    SquareGiftCardPaymentFailedError; we additionally roll back
+  //    the ticket so the operator can retry from a clean slate.
+  try {
+    await activateGiftDraft(paymentId, gan);
+  } catch (err) {
+    // The draft / pending leg + the ticket itself need to go. The
+    // leg row was already updated to 'failed' inside
+    // activateGiftDraft's catch — but we still want to wipe the
+    // ticket so the operator's next attempt builds a fresh one.
+    await supabase.from("payments").delete().eq("ticket_id", ticketId);
+    await rollbackTicketRows(ticketId, supabase);
+    if (err instanceof GiftCardNotRedeemableError) {
+      return {
+        ok: false,
+        code: "GIFT_NOT_REDEEMABLE",
+        message: err.message,
+      };
+    }
+    if (err instanceof GiftCardInsufficientBalanceError) {
+      return {
+        ok: false,
+        code: "GIFT_INSUFFICIENT_BALANCE",
+        message: err.message,
+      };
+    }
+    if (err instanceof SquareGiftCardPaymentFailedError) {
+      return {
+        ok: false,
+        code: "INTERNAL",
+        message: `Square rejected the gift-card payment: ${err.message}`,
+      };
+    }
+    return {
+      ok: false,
+      code: "INTERNAL",
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  return { ok: true, ticketId };
+}
+
+// ----------------------------------------------------------------------
+// 20. sendCardToTerminalFromCart (T018 / contracts § Action 3) — feature 042.
+//
+//   Promote the ephemeral cart to a brand-new open ticket + pending
+//   card payment row, then push the checkout to a Square Terminal in
+//   one sequenced flow:
+//     a. resolve catalog + active staff (same shape as cash/gift),
+//     b. verify Square OAuth + resolve a device id,
+//     c. insert tickets (status='open') + bulk insert ticket_items,
+//     d. insert payments (method='card', kind='payment', status='pending')
+//        — square_terminal_checkout_id stays null until Square responds,
+//     e. call Square `createCheckout` with idempotency key
+//        `${ticketId}:${paymentId}`,
+//     f. on success: persist `square_terminal_checkout_id` on the
+//        payments row and return { ok: true, ticketId }. The /checkout/<id>
+//        waiting screen + Square's webhook drive the rest.
+//     g. on Square failure: DELETE payments → DELETE ticket_items →
+//        DELETE tickets (FK-safe order; child first), return
+//        TERMINAL_HANDOFF_FAILED so the cart-build UI can show a
+//        retry-friendly toast.
+//
+//   NO audit event is emitted at handoff time — the existing webhook
+//   handler emits `payment.captured` when capture completes.
+// ----------------------------------------------------------------------
+
+export async function sendCardToTerminalFromCart(
+  cart: EphemeralCartInput,
+  deviceId?: string
+): Promise<CommitResult> {
+  // 1) Schema validation FIRST — never touches the DB or Square on bad input.
+  const parsed = commitCartSchema.safeParse(cart);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: "INVALID_CART",
+      message: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+    };
+  }
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  // 2) Re-resolve cart (catalog prices, active tech, customer existence).
+  const resolved = await resolveCartForCommit(parsed.data, supabase);
+  if (!resolved.ok) {
+    return mapResolveErrToCommitResult(resolved);
+  }
+  const totalCents = resolved.resolved.totals.total_cents;
+
+  // 3) Square connection check — surfaced as INTERNAL because the
+  //    cart-build UI shouldn't be able to reach this code path with a
+  //    disconnected Square (the Card tile is gated on `squareConnected`
+  //    in PaymentTiles). If we hit it anyway, it's a state-drift bug
+  //    worth surfacing.
+  const { data: oauthRow, error: oauthErr } = await supabase
+    .from("square_oauth")
+    .select("id, refresh_failed_at")
+    .eq("id", true)
+    .maybeSingle();
+  if (oauthErr) {
+    return {
+      ok: false,
+      code: "INTERNAL",
+      message: `Square OAuth read failed: ${oauthErr.message}`,
+    };
+  }
+  if (!oauthRow) {
+    return {
+      ok: false,
+      code: "INTERNAL",
+      message: "Square is not connected — connect it in settings first.",
+    };
+  }
+  if ((oauthRow as { refresh_failed_at: string | null }).refresh_failed_at) {
+    return {
+      ok: false,
+      code: "INTERNAL",
+      message: "Square needs to be re-connected before charging a card.",
+    };
+  }
+
+  // 4) Resolve deviceId: arg > default > single-device fallback. Mirrors
+  //    sendCardToTerminal lines 1421-1442.
+  let resolvedDeviceId: string | null = deviceId ?? null;
+  if (!resolvedDeviceId) {
+    const { data: defaultDevice } = await supabase
+      .from("square_devices")
+      .select("square_device_id")
+      .eq("is_default", true)
+      .maybeSingle();
+    if (defaultDevice?.square_device_id) {
+      resolvedDeviceId = defaultDevice.square_device_id as string;
+    } else {
+      const { data: allDevices } = await supabase
+        .from("square_devices")
+        .select("square_device_id")
+        .limit(2);
+      if ((allDevices ?? []).length === 1) {
+        resolvedDeviceId = allDevices![0].square_device_id as string;
+      }
+    }
+  }
+  if (!resolvedDeviceId) {
+    return {
+      ok: false,
+      code: "INTERNAL",
+      message: "No Square Terminal device available — pair one in the Square Dashboard.",
+    };
+  }
+
+  // 5) Insert ticket + items.
+  let ticketId: string;
+  try {
+    ticketId = await insertTicketAndItems(
+      resolved.resolved,
+      parsed.data,
+      viewer.staff.id,
+      supabase
+    );
+  } catch (err) {
+    return {
+      ok: false,
+      code: "INTERNAL",
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // 6) Insert the pending card payment. `kind='payment'` matches the
+  //    live `payment_kind` enum (the contract spec's "kind='sale'" was
+  //    written against a hypothetical future enum; the schema only
+  //    knows 'payment' as of migration 0004).
+  const { data: insertedPayment, error: payInsErr } = await supabase
+    .from("payments")
+    .insert({
+      ticket_id: ticketId,
+      method: "card",
+      kind: "payment",
+      amount_cents: totalCents,
+      status: "pending",
+      taken_by_staff_id: viewer.staff.id,
+    })
+    .select("id")
+    .single();
+  if (payInsErr || !insertedPayment) {
+    // Roll back the ticket so we don't leave an orphan open row behind.
+    await rollbackTicketRows(ticketId, supabase);
+    return {
+      ok: false,
+      code: "INTERNAL",
+      message: `payment insert failed: ${payInsErr?.message ?? "no row"}`,
+    };
+  }
+  const paymentId = (insertedPayment as { id: string }).id;
+
+  // 7) Hand off to Square. Idempotency key is `${ticketId}:${paymentId}`
+  //    (built by lib/square/terminal.ts:buildIdempotencyKey).
+  let squareTerminalCheckoutId: string;
+  try {
+    const result = await squareCreateCheckout({
+      ticketId,
+      paymentId,
+      amountCents: totalCents,
+      deviceId: resolvedDeviceId,
+      referenceId: ticketId,
+    });
+    squareTerminalCheckoutId = result.squareTerminalCheckoutId;
+  } catch (err) {
+    // 7a) Square failure — full rollback (FK-safe order: payments → items → ticket).
+    const squareErrorMsg = err instanceof Error ? err.message : String(err);
+    await supabase.from("payments").delete().eq("ticket_id", ticketId);
+    await rollbackTicketRows(ticketId, supabase);
+    return {
+      ok: false,
+      code: "TERMINAL_HANDOFF_FAILED",
+      message: `Couldn't reach Square: ${squareErrorMsg}`,
+    };
+  }
+
+  // 8) Persist the checkout id on the payment row so the webhook can
+  //    find this row on settlement.
+  const { error: updPayErr } = await supabase
+    .from("payments")
+    .update({ square_terminal_checkout_id: squareTerminalCheckoutId })
+    .eq("id", paymentId);
+  if (updPayErr) {
+    // The Square checkout was created but we couldn't record its id.
+    // Best-effort rollback so the operator can retry from a clean slate.
+    await supabase.from("payments").delete().eq("ticket_id", ticketId);
+    await rollbackTicketRows(ticketId, supabase);
+    return {
+      ok: false,
+      code: "TERMINAL_HANDOFF_FAILED",
+      message: `Square accepted the checkout but our record didn't update: ${updPayErr.message}`,
+    };
+  }
+
+  return { ok: true, ticketId };
+}
+
+// ----------------------------------------------------------------------
+// 21. splitTenderFromCart (T022 / contracts § Action 4) — feature 042.
+//
+//   Promote the ephemeral cart to an `open` ticket + items so the
+//   existing mid-split-tender UI on `/checkout/<id>` takes over:
+//     a. validate the cart via commitCartSchema,
+//     b. re-resolve catalog + active staff + customer,
+//     c. insert tickets (status='open') + bulk insert ticket_items.
+//
+//   No payments row is written at split-init — the contract explicitly
+//   defers leg composition to the mid-split UI's `composeDraftLeg`
+//   calls (see `[ticketId]/checkout-screen.client.tsx:1254-1262` —
+//   `handlePickSplit` toggles UI state only; the operator chooses
+//   method + amount inside SplitCartFooter, which then drives the
+//   actual `pos_compose_payment_draft` round-trip).
+//
+//   Although Action 4 of the contract mentions calling
+//   `pos_compose_payment_draft` here, that RPC requires a *specific*
+//   method + amount per leg — there is no canonical "empty initial
+//   state" call. The existing mid-split UI handles empty open tickets
+//   without a pre-composed leg, so this action mirrors that pattern.
+//
+//   On any error after the ticket+items inserts, runs compensating
+//   DELETEs so the spec's "zero orphan rows on failure" invariant
+//   holds (matches cash / gift / card).
+// ----------------------------------------------------------------------
+
+export async function splitTenderFromCart(cart: EphemeralCartInput): Promise<CommitResult> {
+  // 1) Schema validation.
+  const parsed = commitCartSchema.safeParse(cart);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      code: "INVALID_CART",
+      message: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+    };
+  }
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  // 2) Re-resolve catalog + active staff + customer (canonical totals).
+  const resolved = await resolveCartForCommit(parsed.data, supabase);
+  if (!resolved.ok) {
+    return mapResolveErrToCommitResult(resolved);
+  }
+
+  // 3) Insert ticket + items. The ticket lands as `status='open'` so
+  //    the existing mid-split-tender UI's empty-state branch picks it
+  //    up on redirect. `insertTicketAndItems` runs its own
+  //    compensating delete on items-insert failure.
+  let ticketId: string;
+  try {
+    ticketId = await insertTicketAndItems(
+      resolved.resolved,
+      parsed.data,
+      viewer.staff.id,
+      supabase
+    );
+  } catch (err) {
+    return {
+      ok: false,
+      code: "INTERNAL",
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  // 4) Hand off. The operator composes leg drafts on the next screen
+  //    via the existing `composeDraftLeg` Server Action.
+  return { ok: true, ticketId };
 }

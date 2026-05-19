@@ -34,6 +34,7 @@ import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+import { createOpenTicket, SEEDED_SERVICE_IDS, SEEDED_STAFF_IDS } from "./_open-ticket";
 
 test.use({
   storageState: async ({ authState }, provide) => {
@@ -64,21 +65,39 @@ function adminClient(): SupabaseClient {
 }
 
 // Seeded ids (see supabase/seed.sql).
-const CLASSIC_MANI_SERVICE_ID = "20000000-0000-0000-0000-000000000001"; // $25 fixed
+// Classic manicure ($25, Jordan + Sam) is seeded by `openFreshTicket` via
+// the `_open-ticket` helper. Gel polish + Nail art are clicked directly
+// by the (c, d) and (j) tests so kept as local constants.
 const GEL_POLISH_SERVICE_ID = "20000000-0000-0000-0000-000000000002"; // assigned to Sam only
 const NAIL_ART_SERVICE_ID = "20000000-0000-0000-0000-000000000005"; // variable
 
+// 042-ephemeral-cart: the dashboard CTA no longer eager-creates a ticket.
+// Specs in this file exercise mid-build affordances (Discount sheet) on
+// an OPEN ticket, so the setup direct-inserts a ticket with the tech
+// assigned + a single $25 Classic manicure line and navigates to
+// /checkout/<id>. The cart-edit UI is unchanged.
 async function openFreshTicket(
   page: import("@playwright/test").Page,
-  techName: string
+  admin: SupabaseClient,
+  techName: "Jordan Lee" | "Sam Chen"
 ): Promise<string> {
-  await page.locator("[data-slot='new-transaction-cta']").click();
-  await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-  const ticketId = new URL(page.url()).pathname.split("/").pop()!;
-  const techRow = page.locator("[data-slot='checkout-tech-row']");
-  await expect(techRow).toBeVisible();
-  await techRow.locator(`[data-staff-name='${techName}']`).click();
-  await expect(page.locator("[data-slot='checkout-tech-chip']")).toBeVisible();
+  const techId = techName === "Jordan Lee" ? SEEDED_STAFF_IDS.jordan : SEEDED_STAFF_IDS.sam;
+  const ticketId = await createOpenTicket(admin, {
+    techId,
+    openedByStaffId: SEEDED_STAFF_IDS.maya,
+    items: [
+      {
+        serviceId: SEEDED_SERVICE_IDS.classicManicure,
+        displayName: "Classic manicure",
+        unitPriceCents: 2500,
+      },
+    ],
+  });
+  await page.goto(`/checkout/${ticketId}`);
+  await expect(page.locator("[data-slot='checkout-tech-chip']")).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(page.locator("[data-slot='cart-line']").first()).toContainText("Classic manicure");
   return ticketId;
 }
 
@@ -132,19 +151,7 @@ test.describe("US3: Discount lines", () => {
     const admin = adminClient();
     const cursor = newAuditCursor();
 
-    await page.goto("/dashboard");
-    const ticketId = await openFreshTicket(page, "Jordan Lee");
-
-    // Add a $25 Classic manicure line.
-    await page
-      .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
-      .click();
-    const serviceLine = page
-      .locator("[data-slot='cart-line']")
-      .filter({ hasText: "Classic manicure" })
-      .first();
-    await expect(serviceLine).toHaveAttribute("data-needs-price", "false");
-    await waitForConfirmedLine(serviceLine);
+    const ticketId = await openFreshTicket(page, admin, "Jordan Lee");
 
     // (a) Click "+ Discount" → sheet opens with two shape options.
     const addDiscountBtn = page.locator("[data-slot='add-discount-button']");
@@ -292,19 +299,8 @@ test.describe("US3: Discount lines", () => {
   }) => {
     const admin = adminClient();
 
-    await page.goto("/dashboard");
     // Sam is the only tech with both Classic manicure AND Gel polish access.
-    const ticketId = await openFreshTicket(page, "Sam Chen");
-
-    // Add one Classic manicure line ($25).
-    await page
-      .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
-      .click();
-    const firstService = page
-      .locator("[data-slot='cart-line']")
-      .filter({ hasText: "Classic manicure" })
-      .first();
-    await waitForConfirmedLine(firstService);
+    const ticketId = await openFreshTicket(page, admin, "Sam Chen");
 
     // Open the discount sheet → switch to Percent → enter 15.
     await page.locator("[data-slot='add-discount-button']").click();
@@ -361,18 +357,7 @@ test.describe("US3: Discount lines", () => {
   test("(f) over-discount floors total to $0 and disables Charge", async ({ page }) => {
     const admin = adminClient();
 
-    await page.goto("/dashboard");
-    const ticketId = await openFreshTicket(page, "Jordan Lee");
-
-    // Add one $25 Classic manicure line.
-    await page
-      .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
-      .click();
-    const serviceLine = page
-      .locator("[data-slot='cart-line']")
-      .filter({ hasText: "Classic manicure" })
-      .first();
-    await waitForConfirmedLine(serviceLine);
+    const ticketId = await openFreshTicket(page, admin, "Jordan Lee");
 
     // Add a $50 flat discount → over-discount, total floors to $0.
     await page.locator("[data-slot='add-discount-button']").click();
@@ -398,19 +383,10 @@ test.describe("US3: Discount lines", () => {
   }) => {
     const admin = adminClient();
 
-    await page.goto("/dashboard");
-    const ticketId = await openFreshTicket(page, "Jordan Lee");
-
-    // 1) Add a confirmed $25 Classic manicure line (so the discount has a
-    //    service subtotal to land against).
-    await page
-      .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
-      .click();
-    const fixedLine = page
-      .locator("[data-slot='cart-line']")
-      .filter({ hasText: "Classic manicure" })
-      .first();
-    await waitForConfirmedLine(fixedLine);
+    // 1) Direct-insert open ticket with Jordan + confirmed Classic
+    //    manicure ($25) line — the discount needs a service subtotal
+    //    to land against.
+    const ticketId = await openFreshTicket(page, admin, "Jordan Lee");
 
     // 2) Add the variable Nail art tile → auto-opens the price sheet.
     //    Cancel it so the row stays unconfirmed.

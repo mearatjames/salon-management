@@ -24,6 +24,7 @@ import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
+import { createOpenTicket, SEEDED_SERVICE_IDS } from "./_open-ticket";
 
 test.use({
   storageState: async ({ authState }, provide) => {
@@ -58,7 +59,10 @@ const MAYA_STAFF_ID = "10000000-0000-0000-0000-000000000001"; // operator / owne
 const JORDAN_STAFF_ID = "10000000-0000-0000-0000-000000000002"; // header pick (A)
 const SAM_STAFF_ID = "10000000-0000-0000-0000-000000000003"; // per-line override (B)
 
-const CLASSIC_MANICURE_ID = "20000000-0000-0000-0000-000000000001";
+// Classic manicure is seeded by `_open-ticket` and not clicked separately.
+// Classic pedicure is referenced by test (1) as the second tile-click target
+// (it asserts the new line's tech defaults to the header pick, not the
+// per-line override applied to the seeded Classic manicure row).
 const CLASSIC_PEDICURE_ID = "20000000-0000-0000-0000-000000000003";
 
 async function cleanupTickets(
@@ -101,24 +105,26 @@ test.describe("US3: per-line tech override", () => {
     const admin = adminClient();
     const created: string[] = [];
 
-    await page.goto("/dashboard");
-
-    // Start a fresh ticket (?fresh=1 via dashboard CTA).
-    await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+    // 042-ephemeral-cart: direct-insert an open ticket with Jordan +
+    // Classic manicure pre-seeded so the spec lands on the cart-edit
+    // route with a confirmed line ready for the tech-override popover.
+    const ticketId = await createOpenTicket(admin, {
+      techId: JORDAN_STAFF_ID,
+      openedByStaffId: MAYA_STAFF_ID,
+      items: [
+        {
+          serviceId: SEEDED_SERVICE_IDS.classicManicure,
+          displayName: "Classic manicure",
+          unitPriceCents: 2500,
+        },
+      ],
+    });
     created.push(ticketId);
+    await page.goto(`/checkout/${ticketId}`);
+    await expect(page.locator("[data-slot='checkout-tech-chip']")).toBeVisible({
+      timeout: 10_000,
+    });
 
-    // Header pick: Jordan Lee (A).
-    const techRow = page.locator("[data-slot='checkout-tech-row']");
-    await expect(techRow).toBeVisible();
-    await techRow.locator(`[data-staff-id='${JORDAN_STAFF_ID}']`).click();
-    await expect(page.locator("[data-slot='checkout-tech-chip']")).toBeVisible();
-
-    // Tap "Classic manicure" — first cart line is assigned to Jordan.
-    await page
-      .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANICURE_ID}']`)
-      .click();
     const firstLine = page.locator("[data-slot='cart-line']").first();
     await expect(firstLine).toContainText("Classic manicure");
     await expect(firstLine.locator("[data-slot='cart-line-tech-chip']")).toHaveAttribute(
@@ -126,14 +132,10 @@ test.describe("US3: per-line tech override", () => {
       JORDAN_STAFF_ID
     );
 
-    // Wait for the optimistic temp id to be replaced by the real server id
-    // so the subsequent setLineTech round-trip targets the persisted row.
-    const firstLineId = await firstLine.evaluate((el) => el.getAttribute("data-line-id")!);
-    await expect(firstLine).toHaveAttribute("data-line-id", /^(?!tmp-)[0-9a-f-]{36}$/, {
-      timeout: 10_000,
-    });
+    // The seeded line already has a real UUID (no temp-id replacement
+    // needed). Read it for the assertions below.
     const persistedFirstLineId = await firstLine.evaluate((el) => el.getAttribute("data-line-id")!);
-    expect(persistedFirstLineId).not.toBe(firstLineId.startsWith("tmp-") ? firstLineId : "");
+    expect(persistedFirstLineId).toMatch(/^[0-9a-f-]{36}$/);
 
     // Open that line's chip popover (the chip is now the PopoverTrigger).
     const cursor = newAuditCursor();
@@ -221,26 +223,28 @@ test.describe("US3: per-line tech override", () => {
     const admin = adminClient();
     const created: string[] = [];
 
-    await page.goto("/dashboard");
-
-    await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+    // Direct-insert open ticket with Jordan + Classic manicure pre-seeded.
+    const ticketId = await createOpenTicket(admin, {
+      techId: JORDAN_STAFF_ID,
+      openedByStaffId: MAYA_STAFF_ID,
+      items: [
+        {
+          serviceId: SEEDED_SERVICE_IDS.classicManicure,
+          displayName: "Classic manicure",
+          unitPriceCents: 2500,
+        },
+      ],
+    });
     created.push(ticketId);
-
-    // Header pick: Jordan.
-    await page
-      .locator(`[data-slot='checkout-tech-row'] [data-staff-id='${JORDAN_STAFF_ID}']`)
-      .click();
-    await page
-      .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANICURE_ID}']`)
-      .click();
-    const line = page.locator("[data-slot='cart-line']").first();
-    await expect(line).toBeVisible();
-    await expect(line).toHaveAttribute("data-line-id", /^(?!tmp-)[0-9a-f-]{36}$/, {
+    await page.goto(`/checkout/${ticketId}`);
+    await expect(page.locator("[data-slot='checkout-tech-chip']")).toBeVisible({
       timeout: 10_000,
     });
+
+    const line = page.locator("[data-slot='cart-line']").first();
+    await expect(line).toBeVisible();
     const lineId = await line.evaluate((el) => el.getAttribute("data-line-id")!);
+    expect(lineId).toMatch(/^[0-9a-f-]{36}$/);
 
     // Open the popover — the currently assigned (Jordan) item is marked
     // as the current pick (aria-disabled / visually disabled). Tapping it

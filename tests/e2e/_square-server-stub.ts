@@ -44,6 +44,20 @@ export type MerchantStub = {
 export type CheckoutCreateStub = {
   status: "PENDING" | "IN_PROGRESS" | "COMPLETED" | "CANCELED";
   tipCents?: number;
+  /**
+   * Feature 042 (T017): when set, the next createCheckout returns a
+   * non-2xx response with this body — the Square SDK throws and
+   * `sendCardToTerminalFromCart` translates it to TERMINAL_HANDOFF_FAILED.
+   * Tested against `_square-server-stub.ts` happy responses; the failure
+   * payload mirrors Square's `errors[]` shape so the SDK surfaces a
+   * meaningful message.
+   */
+  failure?: {
+    httpStatus: number;
+    category?: string;
+    code?: string;
+    detail?: string;
+  };
 };
 
 export type CheckoutGetStub = {
@@ -356,8 +370,21 @@ export async function startSquareServerStub(port = 4567): Promise<ServerHandle> 
     // POST /v2/terminals/checkouts  (createCheckout)
     if (method === "POST" && /^\/v2\/terminals\/checkouts\/?$/.test(path)) {
       await readBody(req);
-      const createStatus = nextCheckoutCreate?.status ?? "PENDING";
-      const createTip = nextCheckoutCreate?.tipCents;
+      const stub = nextCheckoutCreate;
+      nextCheckoutCreate = null;
+      if (stub?.failure) {
+        return json(res, stub.failure.httpStatus, {
+          errors: [
+            {
+              category: stub.failure.category ?? "API_ERROR",
+              code: stub.failure.code ?? "INTERNAL_SERVER_ERROR",
+              detail: stub.failure.detail ?? "stub-injected createCheckout failure",
+            },
+          ],
+        });
+      }
+      const createStatus = stub?.status ?? "PENDING";
+      const createTip = stub?.tipCents;
       const newCheckoutId = `tco_stub_${Math.random().toString(36).slice(2, 10)}`;
       lastMintedCheckoutId = newCheckoutId;
       const body = {
@@ -369,7 +396,6 @@ export async function startSquareServerStub(port = 4567): Promise<ServerHandle> 
           tip_money: createTip != null ? { amount: createTip, currency: "USD" } : undefined,
         },
       };
-      nextCheckoutCreate = null;
       return json(res, 200, body);
     }
 

@@ -158,11 +158,11 @@ test.describe("US2: split tender — cash + card", () => {
     const stub: SquareStub = await squareStub(context, baseURL!);
     stub.stubListDevices([{ id: "device:STUB_SPLIT", name: "Lobby Terminal", status: "PAIRED" }]);
 
-    // 3) Open a fresh ticket via dashboard.
+    // 3) Open the cart-build entry via dashboard CTA. 042 ephemeral cart:
+    //    lands on /checkout, no ticket row yet.
     await page.goto("/dashboard");
     await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
 
     // 4) Pick Sam, then Gel polish ($35) + Classic manicure ($25) = $60.
     //    The seed catalog has no single $60 fixed-price service, so we
@@ -176,7 +176,17 @@ test.describe("US2: split tender — cash + card", () => {
       .click();
     await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$60.00");
 
-    // 5) Tap Split tile → SplitCartFooter renders.
+    // 5) Tap Split tile on the cart-build screen → splitTenderFromCart
+    //    materializes the ticket + items (no legs) and redirects to
+    //    /checkout/<ticketId>.
+    await page.locator("[data-slot='payment-tile'][data-method='split']").click();
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 15_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+
+    // 5a) On the [ticketId] screen splitMode is false until the operator
+    //     re-taps Split (no legs auto-detected because the from-cart
+    //     action defers leg composition to the mid-split-tender UI per
+    //     `splitTenderFromCart` doc). Re-tap to surface the footer.
     await page.locator("[data-slot='payment-tile'][data-method='split']").click();
     await expect(page.locator("[data-slot='split-cart-footer']")).toBeVisible({ timeout: 5_000 });
 

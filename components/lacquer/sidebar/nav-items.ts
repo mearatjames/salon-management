@@ -84,6 +84,9 @@ export const NAV_CONFIG: NavConfig = {
         { id: "schedule", label: "Schedule", icon: Calendar, href: "/calendar" },
         { id: "clients", label: "Clients", icon: Users, href: "/clients" },
         { id: "services", label: "Services", icon: Sparkles, href: "/services" },
+        // Cart-building entry — `/checkout` renders the ephemeral cart screen
+        // (no eager ticket create). A ticket row is materialized only when
+        // the operator commits a payment.
         { id: "checkout", label: "Checkout", icon: DollarSign, href: "/checkout" },
         { id: "walkin", label: "Walk-in", icon: Footprints, href: "/walkin" },
       ],
