@@ -17,7 +17,6 @@
 //      CTA reappears. `select count(*) from square_oauth` returns 0.
 //   8. The audit log shows the four expected verbs in order.
 
-import { type Page } from "@playwright/test";
 import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
