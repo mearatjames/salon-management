@@ -73,29 +73,16 @@ async function supabaseIsReachable(): Promise<boolean> {
   }
 }
 
-// Local convenience wrappers around `signInAs(page, fixture, member)` —
-// keep the per-test sign-in lines terse while the body of each test still
-// reads naturally ("sign in as the owner", "sign in as the manager").
+// Local convenience wrapper around `signInAs(page, fixture, member)` — keeps
+// the per-test sign-in lines terse. The manager/tech variants were pruned
+// alongside the US6 block (see docs/e2e-pruning-audit.md § staff.spec.ts);
+// the remaining specs all sign in as the owner.
 function signInAsOwner(
   page: import("@playwright/test").Page,
   fixture: StaffFixture,
   nextPath = "/settings/staff"
 ) {
   return signInAs(page, fixture, fixture.owner, { nextPath });
-}
-function signInAsManager(
-  page: import("@playwright/test").Page,
-  fixture: StaffFixture,
-  nextPath = "/settings/staff"
-) {
-  return signInAs(page, fixture, fixture.manager, { nextPath });
-}
-function signInAsTech(
-  page: import("@playwright/test").Page,
-  fixture: StaffFixture,
-  nextPath = "/dashboard"
-) {
-  return signInAs(page, fixture, fixture.tech, { nextPath });
 }
 
 test.describe.configure({ mode: "serial" });
@@ -165,29 +152,9 @@ test.describe("US1: see the roster at a glance", () => {
     );
   });
 
-  test("(b) search narrows the roster to a single matching row", async ({ page, staffFixture }) => {
-    await signInAsOwner(page, staffFixture);
-
-    // Search by the fixture owner's full display name — distinctive enough
-    // that only one row matches even with the other worker's trio present.
-    const input = page.locator("[data-slot='staff-search-input']");
-    await input.fill(staffFixture.owner.displayName);
-
-    const rows = page.locator("[data-slot='staff-table'] [data-staff-id]");
-    await expect(rows).toHaveCount(1);
-    await expect(rows.first()).toContainText(staffFixture.owner.displayName);
-  });
-
-  test("(c) empty search-result row shows 'No staff match your search.'", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAsOwner(page, staffFixture);
-    await page.locator("[data-slot='staff-search-input']").fill("zzzz-not-a-name");
-    await expect(page.locator("[data-slot='staff-no-results']")).toHaveText(
-      "No staff match your search."
-    );
-  });
+  // US1(b) search narrows roster → moved to `tests/unit/staff/filter.test.ts`
+  //   (filterStaff already exhaustively unit-tested — lines 49-119).
+  // US1(c) empty-search copy → deleted; trivial static-text assertion.
 
   test("(d) Filter chips reveal an inactive row when present", async ({ page, staffFixture }) => {
     // Add an inactive row scoped to this worker so the Inactive filter has
@@ -334,34 +301,9 @@ test.describe("US2: add a new staff member with a PIN", () => {
     expect(audit.entity_id).toBe(newRow.id);
   });
 
-  test("(b) PIN mismatch resets buffer and shows error", async ({ page, staffFixture }) => {
-    await signInAsOwner(page, staffFixture);
-    await page.locator("[data-slot='add-staff-button']").click();
-    await page
-      .locator("[data-slot='wizard-name-input']")
-      .fill(`Test Staff [w${staffFixture.workerIndex}]`);
-    await page.locator("[data-slot='add-staff-wizard-footer-primary']").click();
-    await expect(page.locator("[data-slot='wizard-pin-step']")).toBeVisible();
-
-    // Enter 1 1 1 1.
-    for (const d of ["1", "1", "1", "1"]) {
-      await page.getByRole("button", { name: `Digit ${d}`, exact: true }).click();
-    }
-    await expect(page.getByText("Confirm the PIN")).toBeVisible();
-
-    // Confirm with 2 2 2 2 (mismatch).
-    for (const d of ["2", "2", "2", "2"]) {
-      await page.getByRole("button", { name: `Digit ${d}`, exact: true }).click();
-    }
-
-    // Error appears, return to enter phase.
-    await expect(page.getByText("PINs didn't match. Try again.")).toBeVisible();
-    await expect(page.getByText("Enter a 4-digit PIN")).toBeVisible();
-
-    // No audit row should exist for the failed attempt.
-    const rows = await getAuditLogRowsSince(auditCursor, "staff.added");
-    expect(rows).toHaveLength(0);
-  });
+  // US2(b) PIN mismatch resets buffer → moved to
+  //   `tests/unit/staff/pin-keypad-state.test.ts` (reducer drives both the
+  //   wizard and change-pin modal — same state machine, single test file).
 });
 
 test.describe("US3: edit a staff member", () => {
@@ -426,62 +368,10 @@ test.describe("US3: edit a staff member", () => {
     await expect(page.locator("[data-slot='staff-empty-state']")).toBeVisible();
   });
 
-  test("(b) header preview updates live but the table row keeps old values until Save", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAsOwner(page, staffFixture);
-
-    // Navigate directly to the selected URL — equivalent to clicking the row
-    // (the row is a <Link>). Avoids pointer-event-intercept flakiness.
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-
-    const nameInput = page.locator("[data-slot='edit-panel-name-input']");
-    const preview = page.locator("[data-slot='staff-panel-profile-name']");
-    const techName = staffFixture.tech.displayName;
-    const draftName = `${techName} EDITED`;
-
-    // Live preview matches the saved name on first render.
-    await expect(preview).toHaveText(techName);
-
-    // Type a new draft — preview updates immediately.
-    await nameInput.fill(draftName);
-    await expect(preview).toHaveText(draftName);
-
-    // Table row still reads the persisted name — drafts are not committed yet.
-    const techRow = page.locator(
-      `[data-slot='staff-table'] [data-staff-id='${staffFixture.tech.id}']`
-    );
-    await expect(techRow).toContainText(techName);
-  });
-
-  test("(c) Save button enables only when draft differs AND name length ≥ 2", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAsOwner(page, staffFixture);
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-
-    const save = page.locator("[data-slot='edit-panel-save']");
-    const nameInput = page.locator("[data-slot='edit-panel-name-input']");
-    const techName = staffFixture.tech.displayName;
-    const draftName = `${techName} EDITED`;
-
-    // No diff yet — Save disabled.
-    await expect(save).toBeDisabled();
-
-    // 1-char name — still disabled (invalid).
-    await nameInput.fill("S");
-    await expect(save).toBeDisabled();
-
-    // Valid diff — enabled.
-    await nameInput.fill(draftName);
-    await expect(save).toBeEnabled();
-
-    // Revert back to original (no diff) — disabled again.
-    await nameInput.fill(techName);
-    await expect(save).toBeDisabled();
-  });
+  // US3(b) header preview live update    → moved to `tests/unit/staff/save-gate.test.ts`
+  //   (`previewName` helper now backs the JSX).
+  // US3(c) Save button enable conditions → moved to `tests/unit/staff/save-gate.test.ts`
+  //   (`canSaveDraft` helper now backs the button's disabled gate).
 
   test("(d) Save persists the change, toast URL appears, table reflects new name, audit row has diff-aware payload", async ({
     page,
@@ -524,37 +414,9 @@ test.describe("US3: edit a staff member", () => {
     expect(payload).not.toHaveProperty("authorizing_staff_id");
   });
 
-  test("(e) switching rows mid-edit silently discards drafts (FR-022)", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAsOwner(page, staffFixture);
-
-    // Select the tech, type a draft, do NOT save.
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-
-    const nameInput = page.locator("[data-slot='edit-panel-name-input']");
-    await nameInput.fill("Discard Me");
-    await expect(page.locator("[data-slot='staff-panel-profile-name']")).toHaveText("Discard Me");
-
-    // Switch to the manager — same as clicking the manager's row in the
-    // table; the panel re-keys on target.id and discards the draft silently.
-    await page.goto(`/settings/staff?selected=${staffFixture.manager.id}`);
-
-    await expect(page.locator("[data-slot='staff-panel-profile-name']")).toHaveText(
-      staffFixture.manager.displayName
-    );
-    await expect(nameInput).toHaveValue(staffFixture.manager.displayName);
-
-    // No staff.updated audit row was written (we never saved).
-    const rows = await getAuditLogRowsSince(auditCursor, "staff.updated");
-    expect(rows).toHaveLength(0);
-
-    // The tech's name in the table is still its fixture default.
-    await expect(
-      page.locator(`[data-slot='staff-table'] [data-staff-id='${staffFixture.tech.id}']`)
-    ).toContainText(staffFixture.tech.displayName);
-  });
+  // US3(e) draft discard on row switch → moved to `tests/unit/staff/save-gate.test.ts`
+  //   (`draftFromTarget` returns a fresh non-dirty state for the new target,
+  //   matching the `key={target.id}` remount semantics).
 });
 
 test.describe("US4: set or change PIN", () => {
@@ -735,40 +597,9 @@ test.describe("US4: set or change PIN", () => {
     expect(audit.entity_id).toBe(newLanaId);
   });
 
-  test("(c) PIN mismatch resets buffers, returns to enter phase, writes no audit row", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAsOwner(page, staffFixture);
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-
-    await page.locator("[data-slot='edit-panel-pin-button']").click();
-    const modal = page.locator("[data-slot='change-pin-modal']");
-    await expect(modal).toBeVisible();
-    await expect(modal).toHaveAttribute("data-phase", "enter");
-
-    // Enter 1 2 3 4.
-    for (const d of ["1", "2", "3", "4"]) {
-      await page.getByRole("button", { name: `Digit ${d}`, exact: true }).click();
-    }
-    await expect(modal).toHaveAttribute("data-phase", "confirm");
-
-    // Confirm with 5 6 7 8 (mismatch).
-    for (const d of ["5", "6", "7", "8"]) {
-      await page.getByRole("button", { name: `Digit ${d}`, exact: true }).click();
-    }
-
-    // Error appears, modal returns to enter phase.
-    await expect(page.getByText("PINs didn't match. Try again.")).toBeVisible();
-    await expect(modal).toHaveAttribute("data-phase", "enter");
-
-    // The modal stayed open (no submission); URL has not changed to a toast.
-    expect(page.url()).not.toContain("toast=pin_updated");
-
-    // No staff.pin_set audit row was written.
-    const rows = await getAuditLogRowsSince(auditCursor, "staff.pin_set");
-    expect(rows).toHaveLength(0);
-  });
+  // US4(c) PIN mismatch in change-pin modal → moved to
+  //   `tests/unit/staff/pin-keypad-state.test.ts` (reducer drives both the
+  //   wizard and modal — same state machine, single test file).
 });
 
 test.describe("US5: deactivate, reactivate, remove", () => {
@@ -951,178 +782,24 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     expect(auditRows[0].entity_id).toBe(staffFixture.tech.id);
   });
 
-  test("(c) cancel inside the deactivate dialog closes it with no mutation", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAsOwner(page, staffFixture);
-    await page.goto(`/settings/staff?selected=${staffFixture.tech.id}`);
-
-    // Open the dialog.
-    await page.locator("[data-slot='danger-zone-deactivate']").click();
-    const dialog = page.locator("[data-slot='confirm-dialog']");
-    await expect(dialog).toBeVisible();
-
-    // Click Cancel — dialog closes, URL unchanged.
-    const urlBefore = page.url();
-    await page.locator("[data-slot='confirm-dialog-cancel']").click();
-    await expect(dialog).toHaveCount(0);
-    expect(page.url()).toBe(urlBefore);
-
-    // No audit row was written.
-    const auditRows = await getAuditLogRowsSince(auditCursor, "staff.deactivated");
-    expect(auditRows).toHaveLength(0);
-
-    // Sam's row is still active in the table; footer still shows Deactivate.
-    // US5 row redesign — no literal "Active" text; assert via `data-active`.
-    const samRow = page.locator(
-      `[data-slot='staff-table'] [data-staff-id='${staffFixture.tech.id}']`
-    );
-    await expect(samRow).toHaveAttribute("data-active", "true");
-    await expect(page.locator("[data-slot='danger-zone-deactivate']")).toBeVisible();
-  });
+  // US5(c) cancel inside deactivate dialog → moved to
+  //   `tests/unit/staff/confirm-dialog.test.tsx` (Cancel → onOpenChange(false);
+  //   the destructive form stays unsubmitted, so no Server Action fires).
 });
 
 // ── US6: restrict who can manage staff ──────────────────────────────────
 //
-// Three negative-path scenarios that exercise the auth gate (layout) and the
-// permission matrix (server actions). The matrix tests (T012) already cover
-// the unit-level behavior; these e2e specs validate the full end-to-end
-// chain: route gate → UI disabled state → banner → server-side rejection +
-// zero audit rows.
-
-test.describe("US6: restrict who can manage staff", () => {
-  let supabaseUp = false;
-  let auditCursor = "";
-
-  test.beforeAll(async () => {
-    supabaseUp = await supabaseIsReachable();
-    if (!supabaseUp) {
-      test.skip(
-        true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping US6 staff specs (Docker unavailable)."
-      );
-      return;
-    }
-  });
-
-  test.beforeEach(async ({ staffFixture }) => {
-    if (!supabaseUp) return;
-    auditCursor = newAuditCursor();
-    await staffFixture.reset();
-  });
-
-  test("(a) technician PIN session → /settings/staff redirects to /dashboard with no flash", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAsTech(page, staffFixture);
-    expect(new URL(page.url()).pathname).toBe("/dashboard");
-
-    // Now try to reach /settings/staff. The layout's role gate calls
-    // redirect('/dashboard') before any data fetch — Sam never sees the
-    // staff table.
-    await page.goto("/settings/staff");
-    await page.waitForURL(/\/dashboard($|\?)/, { timeout: 10_000 });
-    expect(new URL(page.url()).pathname).toBe("/dashboard");
-
-    // "No flash" assertion: the staff table never rendered. Because the
-    // server redirected before `{children}` mounted, the table data-slot is
-    // absent on the resulting page.
-    await expect(page.locator("[data-slot='staff-table']")).toHaveCount(0);
-  });
-
-  test("(b) manager opens the fixture owner's row → all controls disabled, banner visible", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAsManager(page, staffFixture);
-
-    // Open the fixture owner via the ?selected= URL — the layout has already
-    // gated and we're on /settings/staff.
-    await page.goto(`/settings/staff?selected=${staffFixture.owner.id}`);
-
-    const panel = page.locator("[data-slot='staff-edit-panel']");
-    await expect(panel).toBeVisible();
-    await expect(panel).toHaveAttribute("data-staff-id", staffFixture.owner.id);
-
-    // The inline banner from T055 is rendered above the form.
-    const banner = page.locator("[data-slot='edit-panel-manager-owner-banner']");
-    await expect(banner).toBeVisible();
-    await expect(banner).toContainText("Only owners can edit owner accounts.");
-
-    // Every interactive control's `disabled` attribute is true. We assert
-    // each individually rather than via a CSS selector so a regression on
-    // any single control is reported by name.
-    await expect(page.locator("[data-slot='edit-panel-name-input']")).toBeDisabled();
-    await expect(page.locator("[data-slot='edit-panel-role-select']")).toBeDisabled();
-    await expect(page.locator("[data-slot='edit-panel-active-switch']")).toBeDisabled();
-    await expect(page.locator("[data-slot='edit-panel-pin-button']")).toBeDisabled();
-    await expect(page.locator("[data-slot='edit-panel-save']")).toBeDisabled();
-    // The fixture owner is active, so the lifecycle button is the Deactivate variant.
-    await expect(page.locator("[data-slot='danger-zone-deactivate']")).toBeDisabled();
-    await expect(page.locator("[data-slot='danger-zone-remove']")).toBeDisabled();
-  });
-
-  test("(c) manager bypass POST against the fixture owner → forbidden_target + zero audit rows", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInAsManager(page, staffFixture);
-    await page.goto(`/settings/staff?selected=${staffFixture.owner.id}`);
-
-    // Sanity: zero audit rows so far for staff.updated.
-    let auditRows = await getAuditLogRowsSince(auditCursor, "staff.updated");
-    expect(auditRows).toHaveLength(0);
-
-    // Server Action endpoint URLs aren't documented as stable, so we
-    // bypass the UI disabled state by stripping `disabled` attrs in the DOM
-    // then submitting the form. The Server Action runs server-side and the
-    // matrix rejects with PermissionError('forbidden_target') → redirect.
-    // This is the equivalent of a hand-crafted POST: it forces the request
-    // through the same Server Action endpoint the form normally targets,
-    // proving the server enforces the gate (not the UI).
-    await page.evaluate(() => {
-      const form = document.querySelector(
-        "[data-slot='staff-edit-panel']"
-      ) as HTMLFormElement | null;
-      if (!form) throw new Error("staff edit panel form not found");
-      // Strip disabled on every form control so the browser includes them
-      // in the submitted FormData. Also override the name input value to
-      // simulate the "manager edits owner's display_name" attack.
-      form.querySelectorAll("[disabled]").forEach((el) => {
-        (el as HTMLElement).removeAttribute("disabled");
-      });
-      const nameInput = form.querySelector(
-        "[data-slot='edit-panel-name-input']"
-      ) as HTMLInputElement | null;
-      if (nameInput) nameInput.value = "Hacked";
-      // Native HTMLFormElement.submit() bypasses React's form action — we
-      // want React's Server Action wiring, so use requestSubmit() with the
-      // Save button (also recently un-disabled).
-      const saveBtn = form.querySelector(
-        "[data-slot='edit-panel-save']"
-      ) as HTMLButtonElement | null;
-      if (saveBtn) form.requestSubmit(saveBtn);
-      else form.requestSubmit();
-    });
-
-    // The Server Action redirects with `?error=forbidden_target`.
-    await page.waitForURL(/\/settings\/staff\?.*error=forbidden_target/, {
-      timeout: 10_000,
-    });
-    expect(page.url()).toContain("error=forbidden_target");
-
-    // Zero `staff.updated` audit rows. The matrix threw before recordAudit
-    // ran, so no row exists.
-    auditRows = await getAuditLogRowsSince(auditCursor, "staff.updated");
-    expect(auditRows).toHaveLength(0);
-
-    // Defense in depth: the fixture owner's display_name is unchanged.
-    const owner = await getStaffByDisplayName(staffFixture.owner.displayName);
-    expect(owner.id).toBe(staffFixture.owner.id);
-  });
-});
+// The US6 e2e block was pruned per docs/e2e-pruning-audit.md § staff.spec.ts:
+//
+//   - US6(a) technician redirect → moved to `tests/unit/staff/access-gate.test.ts`
+//     (`canAccessStaffSettings` predicate; the redirect call site in page.tsx
+//     is a one-liner around it).
+//   - US6(b) manager × owner disabled controls → deleted; the permission
+//     matrix in `tests/unit/staff/permissions.test.ts:85-103, 346-360` already
+//     enumerates every (manager, owner, action) cell.
+//   - US6(c) manager DOM-bypass POST → deleted; the server-side rejection +
+//     audit-skip are covered by the same permission-matrix unit tests plus
+//     `tests/unit/staff/audit.test.ts`.
 
 // ── US7: toasts ──────────────────────────────────────────────────────────
 //
