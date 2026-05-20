@@ -263,5 +263,5 @@ Spec Kit (`/speckit-specify`, `/speckit-plan`, etc.) inside the worktree
 instead of trying to ship it in one PR.
 
 <!-- SPECKIT START -->
-Active plan: `specs/043-checkout-ephemeral-draft/plan.md`
+Active plan: `specs/044-select-staff-redesign/plan.md`
 <!-- SPECKIT END -->

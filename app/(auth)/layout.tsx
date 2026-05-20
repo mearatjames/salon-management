@@ -1,17 +1,17 @@
-// `(auth)` route-group layout. Wraps `/login`, `/reset-password`, and
-// `/select-staff` in the two-panel Lacquer shell introduced by
-// 010-login-redesign (FR-001, FR-002).
+// `(auth)` route-group layout. Wraps only `/login` and `/reset-password`
+// in the two-panel Lacquer shell introduced by 010-login-redesign
+// (FR-001, FR-002).
 //
-// The `/select-staff` keypad surface inherits this same shell as a
-// deliberate styling consequence (FR-026): the keypad DOM, selectors,
-// copy, and logic are unchanged — only the surrounding chrome (the brand
-// panel) is shared with the sign-in surface for design cohesion across
-// the `(auth)` route group.
+// `/select-staff` is NO LONGER in this route group — the
+// 044-select-staff-redesign feature moved it to the `(device)` route
+// group, which has its own full-bleed avatar-grid layout. The `(auth)`
+// shell now serves the sign-in / password-reset surfaces exclusively.
 //
 // The `<AuthShell>` component is responsible for the grid + both panels;
 // `children` flow into the form-panel form well. The
-// `import "@/styles/auth.css"` side-effect is preserved so the keypad +
-// roster styles continue to ship alongside the shell.
+// `import "@/styles/auth.css"` side-effect is preserved so the
+// `/login` and `/reset-password` form styles continue to ship alongside
+// the shell.
 
 import "@/styles/auth.css";
 

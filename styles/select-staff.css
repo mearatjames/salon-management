@@ -1,0 +1,385 @@
+/* ==========================================================================
+   Tang Nails — Select-staff device surface (`/select-staff`, the `(device)`
+   route group).
+   Adapted from `design-system/prototypes/select-staff/select-staff-variants.jsx`
+   § `VariantAvatarGrid` (Option D) — the avatar-grid + modal-keypad layout.
+   Every value MUST resolve to a `var(--*)` from `styles/tokens.css`.
+   Spacing scale: 4/8/12/16/20/24/32/40/48/64. Radii: 4 inputs, 6 buttons,
+   8 chips, 12 cards, 16 sheets/dialogs, 999 pills. Constitution Principle I.
+
+   Scope note: search-field + empty-result styles shipped in Phase 4 (T016);
+   the PIN-indicator error state + admin-PIN-reset notice shipped in Phase 5
+   (T021).
+
+   Class prefix `select-staff-*` keeps these rules from colliding with the
+   `.auth-*` rules in `styles/auth.css`.
+   ========================================================================== */
+
+/* ---------- Screen shell (full-viewport, no brand panel) ---------- */
+.select-staff-root {
+  min-height: 100dvh;
+}
+
+.select-staff-screen {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 100dvh;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+/* ---------- Header row (brand wordmark + sign-out control) ---------- */
+.select-staff-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-8);
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+
+.select-staff-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.select-staff-brand-name {
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-snug);
+}
+
+.select-staff-signout {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  padding: 0;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+.select-staff-signout:hover {
+  color: var(--foreground);
+}
+
+/* ---------- Body ---------- */
+/* The body is a non-scrolling flex column: the screen header stays pinned
+   while the avatar grid (the single `flex: 1; overflow-y: auto` region —
+   FR-006, research R7) scrolls beneath it. */
+.select-staff-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-12);
+  min-height: 0;
+}
+
+/* ---------- Screen header (title / subtitle) ---------- */
+.select-staff-screen-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.select-staff-title {
+  font-size: var(--text-3xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-snug);
+  line-height: var(--leading-snug);
+  margin: 0;
+}
+.select-staff-subtitle {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  margin: 0;
+}
+
+/* ---------- Search field ---------- */
+/* Pinned below the screen header and above the avatar grid (FR-006). It sits
+   in the non-scrolling body region — `flex-shrink: 0` keeps it from being
+   squeezed when the grid (`flex: 1`) claims the leftover height. The Lucide
+   search icon is absolutely positioned inside the field; `max-width` keeps
+   the input from stretching the full body width. */
+.select-staff-search {
+  position: relative;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 400px;
+}
+
+.select-staff-search-icon {
+  position: absolute;
+  left: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.select-staff-search-input {
+  width: 100%;
+  height: 44px;
+  padding: 0 var(--space-3) 0 var(--space-10);
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-xs); /* 4 — input */
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+.select-staff-search-input::placeholder {
+  color: var(--muted-foreground);
+}
+.select-staff-search-input:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 18%, transparent);
+}
+
+/* ---------- Empty-result message ---------- */
+/* Shown in place of the avatar grid when a non-empty query matches no staff
+   (FR-010). `flex: 1` lets it claim the grid's space so the body layout is
+   unchanged between the grid and the no-match states. */
+.select-staff-empty-result {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-10) 0;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+/* ---------- Avatar grid ---------- */
+/* The single scrollable region — `flex: 1` claims the leftover body height,
+   `overflow-y: auto` scrolls the tiles while the header stays pinned
+   (FR-006, research R7). `align-content: start` keeps short rosters
+   top-aligned instead of stretching the tiles. */
+.select-staff-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: var(--space-4);
+  align-content: start;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ---------- Avatar tile ---------- */
+.select-staff-tile {
+  position: relative; /* anchors the admin-PIN-reset notice badge */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-3);
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg); /* 12 — card */
+  cursor: pointer;
+  text-align: center;
+  font-family: inherit;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+.select-staff-tile:hover {
+  border-color: var(--ring);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+.select-staff-tile:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 18%, transparent);
+}
+
+.select-staff-tile-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-full);
+  color: var(--primary-foreground);
+  font-size: var(--text-xl);
+  font-weight: 600;
+}
+
+.select-staff-tile-name {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.select-staff-tile-role {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+/* ---------- Admin-PIN-reset notice badge ---------- */
+/* Shown in the top-right corner of a tile whose `pin_reset_admin_at` is set
+   (FR-021). A small token-tinted circular badge carrying a Lucide `Info`
+   glyph; the tooltip copy is owned by the component. Idiom carried over from
+   the deleted `staff-tile.tsx`: a 14%-opacity wash of `--info` behind the
+   full-opacity `--info` glyph. */
+.select-staff-tile-pin-reset {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-6);
+  height: var(--space-6);
+  border-radius: var(--radius-full);
+  background: color-mix(in oklch, var(--info) 14%, transparent);
+  color: var(--info);
+}
+
+/* ---------- PIN indicator: wrong-PIN error state ---------- */
+/* Set on `[data-slot="pin-indicator"]` after a failed attempt (FR-017). The
+   four positions tint to `--destructive` so the operator sees the entry was
+   rejected; it clears the instant the next digit is typed. */
+.select-staff-pin-dots[data-error="true"] .select-staff-pin-dot {
+  border-color: var(--destructive);
+}
+.select-staff-pin-dots[data-error="true"] .select-staff-pin-dot[data-filled="true"] {
+  background: var(--destructive);
+  border-color: var(--destructive);
+}
+
+/* ---------- Modal body (keypad surface inside the shadcn Dialog) ---------- */
+.select-staff-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-3) 0;
+}
+
+.select-staff-modal-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-full);
+  color: var(--primary-foreground);
+  font-size: var(--text-3xl);
+  font-weight: 600;
+}
+
+.select-staff-modal-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+}
+.select-staff-modal-name {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-snug);
+}
+.select-staff-modal-role {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.select-staff-modal-prompt {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+
+/* ---------- PIN indicator (4-position) ---------- */
+.select-staff-pin-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  height: var(--space-8);
+}
+.select-staff-pin-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--border);
+  background: transparent;
+  transform: scale(0.85);
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+.select-staff-pin-dot[data-filled="true"] {
+  background: var(--foreground);
+  border-color: var(--foreground);
+  transform: scale(1);
+}
+
+/* ---------- Keypad (12-key, 3x4 grid) ---------- */
+.select-staff-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.select-staff-keypad-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 72px;
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg); /* 12 — card */
+  font-family: var(--font-sans);
+  font-size: var(--text-3xl);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.select-staff-keypad-key:hover {
+  background: var(--accent);
+  border-color: var(--ring);
+}
+.select-staff-keypad-key:active {
+  background: var(--muted);
+}
+.select-staff-keypad-key:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 18%, transparent);
+}
+
+/* The `Clear` / `Backspace` keys read as secondary controls. */
+.select-staff-keypad-key--dim {
+  font-size: var(--text-base);
+  color: var(--muted-foreground);
+}

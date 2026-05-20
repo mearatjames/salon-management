@@ -437,9 +437,10 @@ test.describe("US3: Active row Reset PIN + notice", () => {
 
     // 5. Pick the tech tile, enter 7777 → lands on /dashboard, banner clears.
     await techTile.click();
-    await page.waitForURL(/selectedTileId=/);
+    const modal = page.getByRole("dialog");
+    await modal.waitFor({ state: "visible" });
     for (const d of "7777") {
-      await page.getByRole("button", { name: `Digit ${d}` }).click();
+      await modal.getByRole("button", { name: `Digit ${d}`, exact: true }).click();
     }
     await page.waitForURL(/\/dashboard($|\?)/);
 

@@ -120,7 +120,15 @@ test.describe("US1: owner signs in with password", () => {
   });
 });
 
-// ----- US2: Staff selects identity with a PIN --------------------------------
+// ----- 044-US1: Pick your avatar and sign in --------------------------------
+//
+// 044-select-staff-redesign replaced the old `(auth)` two-panel select-staff
+// surface (a scrolling roster + inline keypad below it) with a dedicated
+// full-bleed `(device)` screen: a full-width avatar grid, and a centered
+// keypad MODAL (shadcn Dialog) that opens on a tile tap. There is no
+// `.auth-form-panel` and no `?selectedTileId=` URL param — tile selection
+// is transient client state. The correct PIN auto-verifies on the 4th
+// digit (no submit button).
 
 // Helper: walk the device-login portion of the auth flow (email + password
 // only), stopping at /select-staff. Used by tests that need to assert on
@@ -136,7 +144,7 @@ async function signInOwnerDevice(page: import("@playwright/test").Page, fixture:
   await page.waitForURL(/\/select-staff\?next=%2Fdashboard/);
 }
 
-test.describe("US2: staff selects identity with a PIN", () => {
+test.describe("044-US1: pick your avatar and sign in", () => {
   let supabaseUp = false;
   let auditCursor = "";
 
@@ -145,7 +153,7 @@ test.describe("US2: staff selects identity with a PIN", () => {
     if (!supabaseUp) {
       test.skip(
         true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping US2 auth specs (Docker unavailable)."
+        "Supabase not reachable at 127.0.0.1:54321 — skipping 044-US1 select-staff specs (Docker unavailable)."
       );
       return;
     }
@@ -156,100 +164,262 @@ test.describe("US2: staff selects identity with a PIN", () => {
     auditCursor = newAuditCursor();
     // Restore the seeded staff to canonical state so earlier specs (012
     // onboarding offboard/remove/reactivate) don't leave Jordan in a
-    // non-active state that hides him from /select-staff for this US2.
+    // non-active state that hides him from /select-staff here.
     await staffFixture.reset();
   });
 
-  test("(a) roster renders three tiles by display name", async ({ page, staffFixture }) => {
-    await signInOwnerDevice(page, staffFixture);
-    await expect(page.getByRole("button", { name: /Maya Patel/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Jordan Lee/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Sam Chen/ })).toBeVisible();
-  });
-
-  test("(b) tapping Maya reveals the keypad with 4 empty dots + 11 buttons", async ({
+  test("(a) renders a full-width avatar grid with one tile per eligible staff and no auth-form-panel", async ({
     page,
     staffFixture,
   }) => {
     await signInOwnerDevice(page, staffFixture);
-    await page.getByRole("button", { name: /Maya Patel/ }).click();
-    await page.waitForURL(/selectedTileId=/);
-    // 4 dots, none filled yet.
-    const dots = page.locator(".auth-keypad-display > span");
-    await expect(dots).toHaveCount(4);
-    for (let i = 0; i < 4; i++) {
-      await expect(dots.nth(i)).toHaveAttribute("data-filled", "false");
-    }
-    // 11 keypad buttons (1-9, 0, Clear).
-    await expect(page.locator(".auth-keypad-key")).toHaveCount(11);
-    await expect(page.getByRole("button", { name: "Clear" })).toBeVisible();
+    // The redesigned screen lives in the `(device)` route group — the old
+    // `(auth)` two-panel form panel is gone.
+    await expect(page.locator(".auth-form-panel")).toHaveCount(0);
+    // The avatar grid is rendered with one tile per eligible staff member.
+    await expect(page.locator(".select-staff-grid")).toBeVisible();
+    await expect(page.locator(`[data-staff-id="${staffFixture.owner.id}"]`)).toBeVisible();
+    await expect(page.locator(`[data-staff-id="${staffFixture.manager.id}"]`)).toBeVisible();
+    await expect(page.locator(`[data-staff-id="${staffFixture.tech.id}"]`)).toBeVisible();
   });
 
-  test("(c) Maya + correct PIN 1234 lands on /dashboard with the chip", async ({
-    page,
-    staffFixture,
-  }) => {
-    await signInOwnerDevice(page, staffFixture);
-    await page.getByRole("button", { name: /Maya Patel/ }).click();
-    await page.waitForURL(/selectedTileId=/);
-    await page.getByRole("button", { name: "Digit 1" }).click();
-    await page.getByRole("button", { name: "Digit 2" }).click();
-    await page.getByRole("button", { name: "Digit 3" }).click();
-    await page.getByRole("button", { name: "Digit 4" }).click();
-    await page.waitForURL(/\/dashboard($|\?)/);
-    expect(new URL(page.url()).pathname).toBe("/dashboard");
-    // Topbar operator chip shows Maya.
-    await expect(page.locator("[data-slot='operator-chip']")).toContainText("Maya Patel");
-  });
-
-  test("(d) fixture owner + wrong PIN 0000 surfaces calm error + audit row", async ({
+  test("(b) tapping a tile opens a dialog with the staff avatar, name, role and keypad", async ({
     page,
     staffFixture,
   }) => {
     await signInOwnerDevice(page, staffFixture);
     await page.locator(`[data-staff-id="${staffFixture.owner.id}"]`).click();
-    await page.waitForURL(/selectedTileId=/);
-    await page.getByRole("button", { name: "Digit 0" }).click();
-    await page.getByRole("button", { name: "Digit 0" }).click();
-    await page.getByRole("button", { name: "Digit 0" }).click();
-    await page.getByRole("button", { name: "Digit 0" }).click();
-    await page.waitForURL(/\/select-staff\?error=pin_failed/);
-    await expect(page.locator('[data-slot="alert"]')).toHaveText("PIN didn't match. Try again.");
 
-    const failed = await getAuditLogRowsSince(auditCursor, "staff.pin_failed");
-    const mismatch = failed.find(
-      (row) =>
-        row.entity_id === staffFixture.owner.id &&
-        row.payload !== null &&
-        (row.payload as Record<string, unknown>).reason === "mismatch"
-    );
-    expect(mismatch).toBeTruthy();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    // Identity: the owner's display name + role label.
+    await expect(dialog).toContainText(staffFixture.owner.displayName);
+    await expect(dialog).toContainText("Owner");
+    // Keypad: 9 digits + 0 + Clear + Backspace, and no submit button.
+    for (const d of ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]) {
+      await expect(dialog.getByRole("button", { name: `Digit ${d}`, exact: true })).toBeVisible();
+    }
+    await expect(dialog.getByRole("button", { name: "Clear" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Backspace" })).toBeVisible();
   });
 
-  test("(e) keyboard input on Jordan's keypad auto-submits", async ({ page, staffFixture }) => {
-    await signInOwnerDevice(page, staffFixture);
-    await page.getByRole("button", { name: /Jordan Lee/ }).click();
-    await page.waitForURL(/selectedTileId=/);
-    await expect(page.locator(".auth-keypad")).toBeVisible();
-    await page.keyboard.type("5678");
-    await page.waitForURL(/\/dashboard($|\?)/);
-    expect(new URL(page.url()).pathname).toBe("/dashboard");
-  });
-
-  test("(f) refreshing the keypad page collapses back to the roster", async ({
+  test("(c) the 4-position indicator fills one position per digit and never shows the numbers", async ({
     page,
     staffFixture,
   }) => {
     await signInOwnerDevice(page, staffFixture);
-    await page.getByRole("button", { name: /Maya Patel/ }).click();
-    await page.waitForURL(/selectedTileId=/);
-    // The keypad is visible.
-    await expect(page.locator(".auth-keypad")).toBeVisible();
-    // Reload — local digit buffer should not persist. Navigate to the bare
-    // /select-staff URL to simulate the "no buffer persistence" edge case.
-    await page.goto("/select-staff?next=%2Fdashboard");
-    await expect(page.locator(".auth-keypad")).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /Maya Patel/ })).toBeVisible();
+    await page.locator(`[data-staff-id="${staffFixture.owner.id}"]`).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    const indicator = dialog.locator("[data-slot='pin-indicator']");
+    const dots = indicator.locator(".select-staff-pin-dot");
+    await expect(dots).toHaveCount(4);
+    // All four empty before any input.
+    for (let i = 0; i < 4; i++) {
+      await expect(dots.nth(i)).toHaveAttribute("data-filled", "false");
+    }
+    // First three of the owner's PIN ("1234") — stop before auto-verify so
+    // the indicator can be inspected mid-entry.
+    await dialog.getByRole("button", { name: "Digit 1", exact: true }).click();
+    await expect(dots.nth(0)).toHaveAttribute("data-filled", "true");
+    await dialog.getByRole("button", { name: "Digit 2", exact: true }).click();
+    await expect(dots.nth(1)).toHaveAttribute("data-filled", "true");
+    await dialog.getByRole("button", { name: "Digit 3", exact: true }).click();
+    await expect(dots.nth(2)).toHaveAttribute("data-filled", "true");
+    await expect(dots.nth(3)).toHaveAttribute("data-filled", "false");
+    // The typed digits are never revealed — the indicator renders dots,
+    // not characters, so none of the typed digits appear in its text.
+    // (Scoped to the indicator, not the whole dialog, whose text includes
+    // the keypad button labels "123456789…".)
+    await expect(indicator).toHaveText("");
+  });
+
+  test("(d) the correct PIN auto-verifies on the 4th digit and lands on the destination with the operator chip", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
+    await page.locator(`[data-staff-id="${staffFixture.owner.id}"]`).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    // No submit button — the 4th digit triggers verification.
+    for (const digit of staffFixture.owner.pin) {
+      await dialog.getByRole("button", { name: `Digit ${digit}`, exact: true }).click();
+    }
+    await page.waitForURL(/\/dashboard($|\?)/);
+    expect(new URL(page.url()).pathname).toBe("/dashboard");
+    await expect(page.locator("[data-slot='operator-chip']")).toContainText(
+      staffFixture.owner.displayName
+    );
+  });
+
+  test("(e) keyboard input into the modal keypad auto-submits on the 4th digit", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
+    await page.locator(`[data-staff-id="${staffFixture.manager.id}"]`).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await page.keyboard.type(staffFixture.manager.pin);
+    await page.waitForURL(/\/dashboard($|\?)/);
+    expect(new URL(page.url()).pathname).toBe("/dashboard");
+    await expect(page.locator("[data-slot='operator-chip']")).toContainText(
+      staffFixture.manager.displayName
+    );
+  });
+
+  test("(f) one staff.signed_in audit row is written for a successful sign-in", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
+    await page.locator(`[data-staff-id="${staffFixture.owner.id}"]`).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    for (const digit of staffFixture.owner.pin) {
+      await dialog.getByRole("button", { name: `Digit ${digit}`, exact: true }).click();
+    }
+    await page.waitForURL(/\/dashboard($|\?)/);
+
+    const signedIn = await getAuditLogRowsSince(auditCursor, "staff.signed_in");
+    const ownerRows = signedIn.filter((r) => r.acting_as_staff_id === staffFixture.owner.id);
+    expect(ownerRows.length).toBe(1);
+  });
+});
+
+// ----- 044-US2: Find yourself fast in a large roster ------------------------
+//
+// 044-select-staff-redesign US2 added a search field pinned in the header
+// region of /select-staff (below the title, above the avatar grid). Typing
+// filters the grid to display-name matches synchronously — per keystroke, no
+// submit. A no-match query swaps the grid for an empty-result message that
+// names the typed text. The search field reuses the worker-scoped staff trio
+// fixture exactly as 044-US1 does.
+
+test.describe("044-US2: find yourself fast in a large roster", () => {
+  let supabaseUp = false;
+
+  test.beforeAll(async () => {
+    supabaseUp = await supabaseIsReachable();
+    if (!supabaseUp) {
+      test.skip(
+        true,
+        "Supabase not reachable at 127.0.0.1:54321 — skipping 044-US2 select-staff specs (Docker unavailable)."
+      );
+      return;
+    }
+  });
+
+  test.beforeEach(async ({ staffFixture }) => {
+    if (!supabaseUp) return;
+    // Restore the seeded staff to canonical state so earlier specs don't
+    // leave a fixture member inactive (and so hidden from /select-staff).
+    await staffFixture.reset();
+  });
+
+  test("(a) typing into the search field narrows the grid as each character is typed", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
+    await expect(page.locator(".select-staff-grid")).toBeVisible();
+
+    const ownerTile = page.locator(`[data-staff-id="${staffFixture.owner.id}"]`);
+    const managerTile = page.locator(`[data-staff-id="${staffFixture.manager.id}"]`);
+    const techTile = page.locator(`[data-staff-id="${staffFixture.tech.id}"]`);
+
+    // All three fixture tiles visible before any input.
+    await expect(ownerTile).toBeVisible();
+    await expect(managerTile).toBeVisible();
+    await expect(techTile).toBeVisible();
+
+    const search = page.locator(".select-staff-search-input");
+    await expect(search).toBeVisible();
+
+    // The fixture owner is "Test Owner [w<N>]". Typing the owner's display
+    // name character-by-character narrows the grid until only the owner's
+    // tile (and any other display-name superstring) remains. No submit step.
+    const ownerName = staffFixture.owner.displayName;
+    let typed = "";
+    for (const ch of ownerName) {
+      typed += ch;
+      await search.pressSequentially(ch);
+      // The owner's tile always matches its own (growing) name prefix.
+      await expect(ownerTile).toBeVisible();
+    }
+
+    // With the full owner name typed, the manager + tech tiles are filtered
+    // out — their display names do not contain the owner's full name. The
+    // grid has narrowed without any submit click.
+    await expect(ownerTile).toBeVisible();
+    await expect(managerTile).toHaveCount(0);
+    await expect(techTile).toHaveCount(0);
+    expect(typed).toBe(ownerName);
+  });
+
+  test("(b) a no-match query shows an empty-result message naming the typed text", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
+
+    const search = page.locator(".select-staff-search-input");
+    await expect(search).toBeVisible();
+
+    // A string that no display name can contain.
+    const needle = "zzz-no-such-staff";
+    await search.fill(needle);
+
+    // The grid is replaced by an empty-result message that names the text.
+    await expect(page.locator(".select-staff-grid")).toHaveCount(0);
+    const empty = page.locator(".select-staff-empty-result");
+    await expect(empty).toBeVisible();
+    await expect(empty).toContainText(needle);
+  });
+
+  test("(c) tapping a filtered tile opens the modal as from the unfiltered grid", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
+
+    const search = page.locator(".select-staff-search-input");
+    await search.fill(staffFixture.manager.displayName);
+
+    // The manager's tile is still in the (narrowed) grid; tapping it opens
+    // the keypad modal exactly as it would from the full grid.
+    const managerTile = page.locator(`[data-staff-id="${staffFixture.manager.id}"]`);
+    await expect(managerTile).toBeVisible();
+    await managerTile.click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(staffFixture.manager.displayName);
+  });
+
+  test("(d) clearing the search field restores the full roster", async ({ page, staffFixture }) => {
+    await signInOwnerDevice(page, staffFixture);
+
+    const ownerTile = page.locator(`[data-staff-id="${staffFixture.owner.id}"]`);
+    const managerTile = page.locator(`[data-staff-id="${staffFixture.manager.id}"]`);
+    const techTile = page.locator(`[data-staff-id="${staffFixture.tech.id}"]`);
+
+    const search = page.locator(".select-staff-search-input");
+    // Narrow to just the owner's tile.
+    await search.fill(staffFixture.owner.displayName);
+    await expect(ownerTile).toBeVisible();
+    await expect(managerTile).toHaveCount(0);
+    await expect(techTile).toHaveCount(0);
+
+    // Clear the field — the full roster comes back.
+    await search.fill("");
+    await expect(ownerTile).toBeVisible();
+    await expect(managerTile).toBeVisible();
+    await expect(techTile).toBeVisible();
   });
 });
 
@@ -300,7 +470,7 @@ test.describe("US3: switch staff at shift change", () => {
     await expect(page.locator("#signin-password")).toHaveCount(0);
   });
 
-  test("(b) previously-selected tile is rendered with the selected modifier", async ({
+  test("(b) the avatar grid renders normally after a switch-staff redirect", async ({
     page,
     staffFixture,
   }) => {
@@ -308,15 +478,19 @@ test.describe("US3: switch staff at shift change", () => {
     await page.locator("[data-slot='switch-staff-button']").click();
     await page.waitForURL(/\/select-staff\?next=/);
 
-    // The redirect carries `selectedTileId=<owner>` so the page can show
-    // "you were <owner>" before the next operator pins in. The .selected
-    // class is the canonical marker (see StaffTile).
+    // 044-select-staff-redesign (research R6) removed the URL-driven
+    // `?selectedTileId=` param and the `.selected` tile modifier — tile
+    // selection is now transient client state, so there is no
+    // "previously-selected" marker to assert. After a switch-staff
+    // redirect the grid simply renders normally, every tile fresh and
+    // un-pre-selected, ready for the next operator to pick.
+    await expect(page.locator(".select-staff-grid")).toBeVisible();
     const ownerTile = page.locator(`[data-staff-id="${staffFixture.owner.id}"]`);
-    await expect(ownerTile).toHaveClass(/selected/);
-    await expect(ownerTile).toHaveAttribute("aria-pressed", "true");
+    await expect(ownerTile).toBeVisible();
+    await expect(ownerTile).not.toHaveClass(/selected/);
   });
 
-  test("(c) tap Jordan + PIN 5678 → /dashboard with Jordan in the topbar", async ({
+  test("(c) tap the manager tile + PIN → /dashboard with the manager in the topbar", async ({
     page,
     staffFixture,
   }) => {
@@ -324,19 +498,23 @@ test.describe("US3: switch staff at shift change", () => {
     await page.locator("[data-slot='switch-staff-button']").click();
     await page.waitForURL(/\/select-staff\?next=/);
 
-    await page.getByRole("button", { name: /Jordan Lee/ }).click();
-    await page.waitForURL(/selectedTileId=/);
-    await page.getByRole("button", { name: "Digit 5" }).click();
-    await page.getByRole("button", { name: "Digit 6" }).click();
-    await page.getByRole("button", { name: "Digit 7" }).click();
-    await page.getByRole("button", { name: "Digit 8" }).click();
+    // 044-select-staff-redesign: tap the tile → keypad modal opens → enter
+    // the PIN in the modal. The 4th digit auto-verifies.
+    await page.locator(`[data-staff-id="${staffFixture.manager.id}"]`).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    for (const digit of staffFixture.manager.pin) {
+      await dialog.getByRole("button", { name: `Digit ${digit}`, exact: true }).click();
+    }
 
     await page.waitForURL(/\/dashboard($|\?)/);
     expect(new URL(page.url()).pathname).toBe("/dashboard");
-    await expect(page.locator("[data-slot='operator-chip']")).toContainText("Jordan Lee");
+    await expect(page.locator("[data-slot='operator-chip']")).toContainText(
+      staffFixture.manager.displayName
+    );
   });
 
-  test("(d) one staff.switched audit row (acting_as=Maya) + staff.signed_in with previous_staff_id=Maya", async ({
+  test("(d) one staff.switched audit row (acting_as=owner) + staff.signed_in with previous_staff_id=owner", async ({
     page,
     staffFixture,
   }) => {
@@ -344,10 +522,11 @@ test.describe("US3: switch staff at shift change", () => {
     await page.locator("[data-slot='switch-staff-button']").click();
     await page.waitForURL(/\/select-staff\?next=/);
 
-    await page.getByRole("button", { name: /Jordan Lee/ }).click();
-    await page.waitForURL(/selectedTileId=/);
-    await expect(page.locator(".auth-keypad")).toBeVisible();
-    await page.keyboard.type("5678");
+    // Tap the manager tile → modal opens → type the PIN (keyboard input
+    // into the modal keypad auto-submits on the 4th digit).
+    await page.locator(`[data-staff-id="${staffFixture.manager.id}"]`).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.keyboard.type(staffFixture.manager.pin);
     await page.waitForURL(/\/dashboard($|\?)/);
 
     const switched = await getAuditLogRowsSince(auditCursor, "staff.switched");
@@ -373,6 +552,237 @@ test.describe("US3: switch staff at shift change", () => {
     await page.locator("[data-slot='operator-chip']").click();
     await expect(page.getByRole("menuitem", { name: /Switch staff/ })).toHaveCount(0);
     await expect(page.getByRole("menuitem", { name: /Sign out/ })).toBeVisible();
+  });
+});
+
+// ----- 044-US3: Recover from a mistake without losing your place ------------
+//
+// 044-select-staff-redesign US3 hardens the keypad MODAL against mistakes:
+//   - A wrong PIN keeps the modal open with a destructive error indicator
+//     and a cleared entry, so the operator retries in place (FR-017).
+//   - Backdrop click, the close (X) control and Escape each dismiss the
+//     modal back to the avatar grid with no one signed in (FR-018).
+//   - Picking a different tile starts PIN entry fresh — no carried-over
+//     digits from the previous modal (FR-019).
+//   - A staff member whose PIN an owner reset (`pin_reset_admin_at` set)
+//     shows an admin-PIN-reset notice on their tile (FR-021).
+//
+// Setup idiom matches 044-US1/US2: worker-scoped staff trio fixture,
+// `staffFixture.reset()` in `beforeEach`, per-test audit cursor.
+
+// Set/clear `pin_reset_admin_at` on a staff row via the service-role
+// client (mirrors the `createClient` dynamic-import idiom used elsewhere
+// in this file). Scoped to a single spec so it stays close to its use.
+async function setPinResetAdminAt(staffId: string, value: string | null): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error("SUPABASE env vars missing — required by 044-US3 spec helper");
+  }
+  const { createClient } = await import("@supabase/supabase-js");
+  const admin = createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { error } = await admin
+    .from("staff")
+    .update({ pin_reset_admin_at: value })
+    .eq("id", staffId);
+  if (error) throw new Error(`pin_reset_admin_at update failed: ${error.message}`);
+}
+
+test.describe("044-US3: recover from a mistake without losing your place", () => {
+  let supabaseUp = false;
+
+  test.beforeAll(async () => {
+    supabaseUp = await supabaseIsReachable();
+    if (!supabaseUp) {
+      test.skip(
+        true,
+        "Supabase not reachable at 127.0.0.1:54321 — skipping 044-US3 select-staff specs (Docker unavailable)."
+      );
+      return;
+    }
+  });
+
+  test.beforeEach(async ({ staffFixture }) => {
+    if (!supabaseUp) return;
+    // Restore the trio to canonical state — clears any `pin_reset_admin_at`
+    // a prior test set, and undoes any inactive/offboarded state.
+    await staffFixture.reset();
+  });
+
+  test("(a) a wrong PIN keeps the modal open with an error indicator and a cleared entry, then a correct retry succeeds in the same modal", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
+    await page.locator(`[data-staff-id="${staffFixture.owner.id}"]`).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    const indicator = dialog.locator("[data-slot='pin-indicator']");
+    const dots = indicator.locator(".select-staff-pin-dot");
+
+    // The owner's PIN is "1234" — "0000" is a wrong 4-digit PIN.
+    for (const digit of "0000") {
+      await dialog.getByRole("button", { name: `Digit ${digit}`, exact: true }).click();
+    }
+    // The modal stays OPEN, the indicator paints its error state and the
+    // entry is cleared back to four empty positions.
+    await expect(dialog).toBeVisible();
+    await expect(indicator).toHaveAttribute("data-error", "true");
+    for (let i = 0; i < 4; i++) {
+      await expect(dots.nth(i)).toHaveAttribute("data-filled", "false");
+    }
+
+    // Retry with the CORRECT PIN in the SAME modal — no re-selecting the
+    // tile. The first digit clears the error state; the 4th auto-verifies.
+    await dialog.getByRole("button", { name: "Digit 1", exact: true }).click();
+    await expect(indicator).not.toHaveAttribute("data-error", "true");
+    for (const digit of "234") {
+      await dialog.getByRole("button", { name: `Digit ${digit}`, exact: true }).click();
+    }
+    await page.waitForURL(/\/dashboard($|\?)/);
+    expect(new URL(page.url()).pathname).toBe("/dashboard");
+    await expect(page.locator("[data-slot='operator-chip']")).toContainText(
+      staffFixture.owner.displayName
+    );
+  });
+
+  test("(b) two identical wrong PINs in a row each clear the entry", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
+    await page.locator(`[data-staff-id="${staffFixture.owner.id}"]`).click();
+
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    const indicator = dialog.locator("[data-slot='pin-indicator']");
+    const dots = indicator.locator(".select-staff-pin-dot");
+
+    // First wrong attempt.
+    for (const digit of "0000") {
+      await dialog.getByRole("button", { name: `Digit ${digit}`, exact: true }).click();
+    }
+    await expect(indicator).toHaveAttribute("data-error", "true");
+    for (let i = 0; i < 4; i++) {
+      await expect(dots.nth(i)).toHaveAttribute("data-filled", "false");
+    }
+
+    // The SAME wrong PIN again — the attempt-keyed `<PinPad>` remount means
+    // this still clears deterministically (research R3/R4).
+    for (const digit of "0000") {
+      await dialog.getByRole("button", { name: `Digit ${digit}`, exact: true }).click();
+    }
+    await expect(dialog).toBeVisible();
+    await expect(indicator).toHaveAttribute("data-error", "true");
+    for (let i = 0; i < 4; i++) {
+      await expect(dots.nth(i)).toHaveAttribute("data-filled", "false");
+    }
+  });
+
+  test("(c) a backdrop click dismisses the modal back to the grid with no one signed in", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
+    await page.locator(`[data-staff-id="${staffFixture.owner.id}"]`).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+
+    // The Radix Dialog overlay is the backdrop — clicking it dismisses.
+    await page.locator("[data-slot='dialog-overlay']").click({ position: { x: 8, y: 8 } });
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // Back on the grid, still on /select-staff — no operator signed in.
+    expect(new URL(page.url()).pathname).toBe("/select-staff");
+    await expect(page.locator(".select-staff-grid")).toBeVisible();
+  });
+
+  test("(d) the close control dismisses the modal back to the grid with no one signed in", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
+    await page.locator(`[data-staff-id="${staffFixture.owner.id}"]`).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+
+    // The shadcn DialogContent close (X) button is labelled "Close".
+    await dialog.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(new URL(page.url()).pathname).toBe("/select-staff");
+    await expect(page.locator(".select-staff-grid")).toBeVisible();
+  });
+
+  test("(e) Escape dismisses the modal back to the grid with no one signed in", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
+    await page.locator(`[data-staff-id="${staffFixture.owner.id}"]`).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    expect(new URL(page.url()).pathname).toBe("/select-staff");
+    await expect(page.locator(".select-staff-grid")).toBeVisible();
+  });
+
+  test("(f) selecting a different tile starts PIN entry fresh with no carried-over digits", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInOwnerDevice(page, staffFixture);
+
+    // Open the owner's modal and type two digits, then dismiss with Escape.
+    await page.locator(`[data-staff-id="${staffFixture.owner.id}"]`).click();
+    let dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    for (const digit of "12") {
+      await dialog.getByRole("button", { name: `Digit ${digit}`, exact: true }).click();
+    }
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+
+    // Open a DIFFERENT tile — the fresh modal's indicator is fully empty,
+    // none of the owner modal's digits leaked across the remount (FR-019).
+    await page.locator(`[data-staff-id="${staffFixture.manager.id}"]`).click();
+    dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(staffFixture.manager.displayName);
+    const dots = dialog.locator("[data-slot='pin-indicator'] .select-staff-pin-dot");
+    for (let i = 0; i < 4; i++) {
+      await expect(dots.nth(i)).toHaveAttribute("data-filled", "false");
+    }
+  });
+
+  test("(g) a staff member with pin_reset_admin_at set shows the admin-PIN-reset notice", async ({
+    page,
+    staffFixture,
+  }) => {
+    // Mark the fixture tech's PIN as admin-reset before loading the grid.
+    await setPinResetAdminAt(staffFixture.tech.id, new Date().toISOString());
+
+    await signInOwnerDevice(page, staffFixture);
+    const techTile = page.locator(`[data-staff-id="${staffFixture.tech.id}"]`);
+    await expect(techTile).toBeVisible();
+
+    // The notice badge is scoped to the tech's tile by `data-staff-name`.
+    const notice = page.locator(
+      `[data-slot='pin-reset-notice'][data-staff-name='${staffFixture.tech.displayName}']`
+    );
+    await expect(notice).toBeVisible();
+    await expect(notice).toHaveAttribute(
+      "aria-label",
+      "Your PIN was reset by an owner. Try your new PIN."
+    );
+    // No notice on the owner's tile — only the tech's PIN was reset.
+    await expect(
+      page.locator(
+        `[data-slot='pin-reset-notice'][data-staff-name='${staffFixture.owner.displayName}']`
+      )
+    ).toHaveCount(0);
   });
 });
 
@@ -686,15 +1096,14 @@ test.describe("US5: operator session expiry", () => {
     ).toBeTruthy();
   });
 
-  test("(f) pinning in again as Maya transitions to /calendar (still 404 expected)", async ({
+  test("(f) pinning in again as the owner transitions to /calendar (still 404 expected)", async ({
     page,
     context,
     staffFixture,
   }) => {
     await signInAsOwner(page, staffFixture);
-    const maya = await getStaffByDisplayName("Maya Patel");
     const expiredValue = await mintExpiredCookie({
-      sid: maya.id,
+      sid: staffFixture.owner.id,
       secret: cookieSecret!,
     });
     await context.clearCookies({ name: "acting_as_staff_id" });
@@ -713,11 +1122,11 @@ test.describe("US5: operator session expiry", () => {
     await page.goto("/calendar");
     await page.waitForURL(/\/select-staff\?next=%2Fcalendar/);
 
-    // Re-pin as Maya — the keypad-on-roster should be visible (no /login).
-    await page.getByRole("button", { name: /Maya Patel/ }).click();
-    await page.waitForURL(/selectedTileId=/);
-    await expect(page.locator(".auth-keypad")).toBeVisible();
-    await page.keyboard.type("1234");
+    // 044-select-staff-redesign: re-pin via the new flow — tap the owner
+    // tile → keypad modal opens → type the PIN (no /login flash).
+    await page.locator(`[data-staff-id="${staffFixture.owner.id}"]`).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.keyboard.type(staffFixture.owner.pin);
 
     // We only verify the URL transition; the route itself is a 404.
     await page.waitForURL(/\/calendar($|\?)/, { timeout: 10_000 });

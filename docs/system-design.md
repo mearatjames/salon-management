@@ -336,6 +336,7 @@ The handoff zip ships JSX prototypes that map almost 1:1 to v1 surfaces. Adapt t
 - `prototypes/walkin/StaffWaitlist.jsx` → `app/(studio)/walkin/page.tsx`
 - `prototypes/walkin/KioskSignIn.jsx` → `app/kiosk/[token]/page.tsx`
 - `prototypes/walkin/PhoneWaitlist.jsx` → `app/(studio)/walkin/phone-view.tsx`
+- `prototypes/select-staff/select-staff-variants.jsx (VariantAvatarGrid / Option D) → app/(device)/select-staff/page.tsx`
 - `colors_and_type.css` → `styles/tokens.css` (verbatim)
 
 These prototypes are static / data-mocked. We replace the mock data with Supabase queries and Server Actions; layout and styling stay.

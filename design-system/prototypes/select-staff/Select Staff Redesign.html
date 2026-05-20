@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Select Staff — Redesign</title>
+  <link rel="stylesheet" href="colors_and_type.css" />
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, #root { height: 100%; width: 100%; }
+    body { background: #f0eee9; overflow: hidden; }
+    button { font-family: inherit; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="select-staff-variants.jsx"></script>
+<script type="text/babel">
+
+function CurrentNote() {
+  // Show what's there today, so the manager sees the gap the redesigns close
+  return (
+    <div style={{
+      width:'100%', height:'100%', background:'var(--background)',
+      color:'var(--foreground)', fontFamily:'var(--font-sans)',
+      padding: 40, overflowY:'auto',
+    }}>
+      <div style={{ maxWidth: 760, margin:'0 auto', display:'flex', flexDirection:'column', gap: 20 }}>
+        <div>
+          <p style={{
+            fontSize:'var(--text-xs)', color:'var(--muted-foreground)',
+            letterSpacing:'var(--tracking-wide)', textTransform:'uppercase', marginBottom: 6,
+          }}>Context</p>
+          <h1 style={{
+            fontSize:'var(--text-3xl)', fontWeight: 600,
+            letterSpacing:'var(--tracking-snug)', margin: 0,
+          }}>Why <code style={{fontFamily:'var(--font-mono)', fontSize:'0.85em'}}>/select-staff</code> needs a redesign</h1>
+        </div>
+
+        <p style={{ color:'var(--muted-foreground)', lineHeight: 1.6 }}>
+          Today the screen lives in the 480px form panel from <code style={{fontFamily:'var(--font-mono)'}}>auth-shell</code>.
+          Tiles are 160×88 min, laid out in a 3-col grid, and the keypad stacks below.
+          That fits 3 staff cleanly. At 18 it scrolls — and once you scroll to find your tile,
+          the keypad is offscreen.
+        </p>
+
+        <ul style={{ paddingLeft: 20, lineHeight: 1.7, color:'var(--foreground)' }}>
+          <li><strong>Real estate.</strong> 480px is too narrow. <code style={{fontFamily:'var(--font-mono)'}}>/select-staff</code> has more content than <code style={{fontFamily:'var(--font-mono)'}}>/login</code> — drop the brand panel here.</li>
+          <li><strong>Scrolling.</strong> No search means you scan 18 tiles to find yours.</li>
+          <li><strong>Two-step jolt.</strong> Tap tile → keypad appears below → scroll. Better: keypad is always visible, or modally focused.</li>
+          <li><strong>Repeat-user cost.</strong> The same 3–5 people sign in 90% of the time. They shouldn't have to scan.</li>
+        </ul>
+
+        <div style={{
+          padding: 20, background:'var(--muted)',
+          borderRadius:'var(--radius-lg)', border:'1px solid var(--border)',
+        }}>
+          <p style={{ fontSize:'var(--text-sm)', fontWeight: 600, marginBottom: 8 }}>The four directions →</p>
+          <ol style={{ paddingLeft: 20, lineHeight: 1.7, fontSize:'var(--text-sm)', color:'var(--muted-foreground)' }}>
+            <li><strong>Split view</strong> — searchable roster + always-on keypad. Safest pick.</li>
+            <li><strong>PIN-first</strong> — type your PIN, system identifies you. Fastest, but PINs must be unique.</li>
+            <li><strong>Recents + search</strong> — surface the 4 frequent users, hide the rest. Best for 80/20.</li>
+            <li><strong>Avatar grid + modal</strong> — compact visual scan, modal keypad. Closest to the current pattern.</li>
+          </ol>
+        </div>
+
+        <p style={{ fontSize:'var(--text-sm)', color:'var(--muted-foreground)' }}>
+          All four are populated with an 18-staff fixture — same as a busy salon — so you can compare under realistic load.
+          Try <code style={{fontFamily:'var(--font-mono)', fontSize:'0.9em', background:'var(--muted)', padding:'2px 6px', borderRadius: 4}}>1234</code> as the PIN in Split / Recents / Avatar grid,
+          or <code style={{fontFamily:'var(--font-mono)', fontSize:'0.9em', background:'var(--muted)', padding:'2px 6px', borderRadius: 4}}>4321</code> in PIN-first (signs in as Maya).
+        </p>
+      </div>
+    </div>
+  );
+}
+
+const W = 1180, H = 820;
+
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection
+        id="intro"
+        title="Select staff — redesign"
+        subtitle="Four directions for the post-login PIN gate, sized for iPad landscape (1180×820)"
+      >
+        <DCArtboard id="context" label="Read me first" width={760} height={560}>
+          <CurrentNote />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection
+        id="variants"
+        title="Variants"
+        subtitle="Try them with 18 staff loaded — switch focus mode (⊞) to enter fullscreen"
+      >
+        <DCArtboard id="A" label="A · Split view — roster + always-on keypad" width={W} height={H}>
+          <VariantSplit />
+        </DCArtboard>
+
+        <DCArtboard id="B" label="B · PIN-first — type to identify" width={W} height={H}>
+          <VariantPinFirst />
+        </DCArtboard>
+
+        <DCArtboard id="C" label="C · Recents + slide-in keypad" width={W} height={H}>
+          <VariantRecents />
+        </DCArtboard>
+
+        <DCArtboard id="D" label="D · Avatar grid + modal keypad" width={W} height={H}>
+          <VariantAvatarGrid />
+        </DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

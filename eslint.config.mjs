@@ -40,8 +40,9 @@ const eslintConfig = defineConfig([
     "test-results/**",
     "coverage/**",
     // Local git worktrees (sibling feature branches checked out under
-    // .worktrees/<branch>) — not part of this branch's source tree.
-    ".worktrees/**",
+    // .claude/worktrees/<branch> per CLAUDE.md) — not part of this
+    // branch's source tree.
+    ".claude/worktrees/**",
   ]),
   // Must be last: disables ESLint rules that conflict with Prettier.
   prettier,
