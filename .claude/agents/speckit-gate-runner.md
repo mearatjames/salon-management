@@ -17,6 +17,10 @@ anything — you diagnose and report; the caller decides what to do.
   `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm test`,
   `npm run test:e2e`, `npm run build`. Sometimes a subset, sometimes `npm ci` or a
   reproducibility check.
+- At **intermediate phase gates** the caller passes the scoped variants —
+  `npm run test:changed` (unit) and `npm run test:e2e:changed` (e2e) — in place
+  of `npm test` / `npm run test:e2e`. Run exactly what you are given; never
+  substitute the full suite for a scoped command or the reverse.
 - Optionally, a working directory or pre-step (e.g. "run `npm ci` first").
 
 ## What you do
@@ -26,7 +30,7 @@ anything — you diagnose and report; the caller decides what to do.
    - `npm run format:check`
    - `npm run lint`
    - `npm run typecheck`
-   - `npm test`
+   - `npm test` (or `npm run test:changed` at an intermediate phase gate)
 
    Sequential would be ~7+3+7+22 = 39s on Tang Nails; concurrent is ~22s (bounded by
    the slowest, unit tests). Same wall-clock saving applies on any Node project.
