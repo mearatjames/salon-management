@@ -9,9 +9,9 @@
 //
 // US2 (feature 015) enables the Card tile when `squareConnected &&
 // devicesAvailable >= 1`. When disabled, the tooltip explains why
-// (connect Square or pair a device). The "Send to Square Terminal · $X"
-// CTA renders below the row when Card is the picked method, so the
-// operator has a single, sharp affordance to dispatch the payment.
+// (connect Square or pair a device). The method-aware charge button
+// (cash → "Take cash", card → "Send to Square") lives in the cart
+// footer next to "Bill" — see `checkout-screen.client.tsx` (issue #98).
 
 import { Banknote, CreditCard, Gift, SplitSquareHorizontal } from "lucide-react";
 
@@ -28,10 +28,6 @@ export type PaymentTilesProps = {
   squareConnected?: boolean;
   /** How many paired terminal devices are visible (US2). */
   devicesAvailable?: number;
-  /** Card-CTA wiring (US2). Renders the "Send to Square Terminal · $X" button below the row. */
-  amountCents?: number;
-  onSendCard?: () => void;
-  cardSendDisabled?: boolean;
   /**
    * Feature 018 — fired in addition to onChange('gift') when the Gift tile
    * is tapped. Surfaces the parent's "open GAN entry sheet" callback so
@@ -74,18 +70,11 @@ function tileStyle(active: boolean, enabled: boolean): React.CSSProperties {
   };
 }
 
-function fmt(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
-
 export function PaymentTiles({
   value,
   onChange,
   squareConnected = false,
   devicesAvailable = 0,
-  amountCents,
-  onSendCard,
-  cardSendDisabled,
   onPickGift,
   onPickSplit,
 }: PaymentTilesProps) {
@@ -131,8 +120,6 @@ export function PaymentTiles({
       enabled: true,
     },
   ];
-
-  const showCardCta = value === "card" && cardEnabled && onSendCard && amountCents != null;
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -194,33 +181,6 @@ export function PaymentTiles({
           );
         })}
       </div>
-      {showCardCta ? (
-        <button
-          type="button"
-          data-slot="send-to-terminal-button"
-          onClick={onSendCard}
-          disabled={cardSendDisabled}
-          style={{
-            marginTop: "var(--space-2)",
-            width: "100%",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            height: "var(--space-10)",
-            padding: "0 var(--space-4)",
-            background: cardSendDisabled ? "var(--muted)" : "var(--primary)",
-            color: cardSendDisabled ? "var(--muted-foreground)" : "var(--primary-foreground)",
-            border: "none",
-            borderRadius: "var(--radius-sm)",
-            fontSize: "var(--text-base)",
-            fontWeight: 600,
-            cursor: cardSendDisabled ? "not-allowed" : "pointer",
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          Send to Square Terminal · {fmt(amountCents!)}
-        </button>
-      ) : null}
     </TooltipProvider>
   );
 }
