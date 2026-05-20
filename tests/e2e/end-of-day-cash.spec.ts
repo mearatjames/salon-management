@@ -184,6 +184,23 @@ async function restoreSeededCashTickets(): Promise<void> {
       price_unconfirmed: false,
     },
     {
+      // Regression guard — keep this discount line. A `discount` row
+      // carries `assigned_staff_id: null`; `loadCashCount` must strip
+      // that null before its staff `.in("id", …)` lookup. A null in that
+      // list makes Postgres reject the query ("invalid input syntax for
+      // type uuid: \"null\"") and the /end-of-day page 500s. Without a
+      // discounted cash ticket in this fixture, the whole EOD suite ran
+      // green while the page crashed in any environment that had one.
+      ticket_id: CASH_TICKET_IDS[0],
+      kind: "discount",
+      ref_id: null,
+      name_snapshot: "Loyalty discount",
+      unit_price_cents: -500,
+      qty: 1,
+      assigned_staff_id: null,
+      price_unconfirmed: false,
+    },
+    {
       ticket_id: CASH_TICKET_IDS[1],
       kind: "service",
       ref_id: svcMani,
