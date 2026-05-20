@@ -162,8 +162,8 @@
   gap: var(--space-2);
 }
 
-/* DoneScreen: full-screen "Charged $X" + New sale button. Renders in place
-   of `.checkout-body` when the ticket's status is 'paid'. */
+/* DoneScreen: full-screen "Charged $X" + payment summary + action row.
+   Renders in place of `.checkout-body` when the ticket's status is 'paid'. */
 .checkout-done {
   flex: 1;
   display: flex;
@@ -175,6 +175,17 @@
   text-align: center;
 }
 
+.checkout-done-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-12);
+  height: var(--space-12);
+  border-radius: var(--radius-full);
+  background: color-mix(in oklch, var(--success) 14%, transparent);
+  color: var(--success);
+}
+
 .checkout-done-amount {
   font-size: var(--text-5xl);
   line-height: var(--leading-tight);
@@ -182,6 +193,74 @@
   font-weight: 600;
   font-feature-settings: "tnum", "cv02", "cv03";
   font-variant-numeric: tabular-nums;
+}
+
+/* Payment summary line — "Paid by card •••• 4242 · tip $12.00 (20%)". */
+.checkout-done-detail {
+  margin-top: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Square payment reference — only rendered for Square-settled payments. */
+.checkout-done-reference {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Action row — Dashboard / New transaction / Switch staff. Wraps on a
+   narrow viewport. */
+.checkout-done-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+
+.checkout-done-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: var(--space-8);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-decoration: none;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+
+.checkout-done-action--secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+.checkout-done-action--secondary:hover {
+  background: var(--accent);
+  color: var(--foreground);
+  border-color: var(--ring);
+}
+
+.checkout-done-action--primary {
+  background: var(--primary);
+  border: 1px solid var(--primary);
+  color: var(--primary-foreground);
+  font-weight: 600;
+}
+
+.checkout-done-action--primary:hover {
+  background: color-mix(in oklch, var(--primary) 92%, black);
+  border-color: color-mix(in oklch, var(--primary) 92%, black);
 }
 
 /* ==========================================================================
