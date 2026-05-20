@@ -6,7 +6,7 @@
 //   2. Open a fresh ephemeral /checkout (no pre-existing ticket — feature
 //      043), pick a tech + service. The URL stays paramless `/checkout`
 //      while the cart is built — nothing is persisted yet.
-//   3. Pick Card → "Send to Square Terminal · $X". This is the first
+//   3. Pick Card → "Send to Square · $X". This is the first
 //      payment-initiating action: the cart is persisted atomically and the
 //      URL becomes /checkout/[ticketId]. Terminal stub primes
 //      createCheckout PENDING.
@@ -180,12 +180,18 @@ test.describe("US2: Take a card payment — happy path", () => {
     // SOLUTION: post-hoc — observe the row that sendCardToTerminal
     // inserts and then drive the webhook against it.
 
-    // 6) Tap Card tile → CTA appears → tap "Send to Square Terminal · $X".
-    //    Feature 043: this is the first payment-initiating action — the
+    // 6) Tap Card tile → footer charge button becomes "Send to Square · $X"
+    //    → tap it. Feature 043: this is the first payment-initiating action — the
     //    ephemeral cart is persisted atomically and the URL becomes
     //    /checkout/[ticketId].
     await page.locator("[data-slot='payment-tile'][data-method='card']").click();
-    await page.locator("[data-slot='send-to-terminal-button']").click();
+    // Issue #98 regression: picking Card shows exactly one charge button —
+    // the footer "Send to Square" CTA — not a second dead "Take cash" button.
+    const sendCardButton = page.locator("[data-slot='send-to-terminal-button']");
+    await expect(sendCardButton).toHaveCount(1);
+    await expect(sendCardButton).toContainText("Send to Square");
+    await expect(page.locator("[data-slot='take-cash-button']")).toHaveCount(0);
+    await sendCardButton.click();
 
     // 7) The cart is now persisted: the URL carries a ticket id and the
     //    card-waiting screen rehydrates from the persisted route.

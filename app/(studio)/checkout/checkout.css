@@ -140,6 +140,53 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Price-edit affordance on service cart lines (issue #88). A confirmed
+   price reads as a bordered, tappable chip with a pencil icon, matching
+   `transaction.css` § ".tx-price-edit" — so it visibly signals that
+   tapping it opens the price-override sheet. The `.is-unconfirmed`
+   modifier keeps the existing primary-tinted "needs price" emphasis for
+   lines whose price has not been set yet. */
+.checkout-line-price-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--foreground);
+  font-size: var(--text-base);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.checkout-line-price-edit:hover {
+  border-color: var(--ring);
+  background: color-mix(in oklch, var(--primary) 5%, var(--card));
+}
+
+.checkout-line-price-edit svg {
+  color: var(--muted-foreground);
+}
+
+.checkout-line-price-edit.is-unconfirmed {
+  border-color: var(--primary);
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+}
+
+.checkout-line-price-edit.is-unconfirmed svg {
+  color: var(--primary);
+}
+
+.checkout-line-price-edit.is-unconfirmed:hover {
+  border-color: var(--primary);
+  background: color-mix(in oklch, var(--primary) 14%, transparent);
+}
+
 /* Totals block sits between the line list and the payment tiles. */
 .checkout-totals {
   display: flex;
@@ -166,11 +213,13 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Payment tiles: 2x2 grid (cash | card | gift | split). Cash is the only
-   enabled one in v1; the rest carry `aria-disabled="true"`. */
+/* Payment tiles: compact 4-across row (card | cash | gift | split),
+   matching FlowSingle's `.tx-paytiles.compact` — the canonical checkout
+   reference (issue #90). Card/Gift enable when Square is connected; the
+   rest carry `aria-disabled="true"` with a reason tooltip. */
 .checkout-payment-tiles {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--space-2);
 }
 

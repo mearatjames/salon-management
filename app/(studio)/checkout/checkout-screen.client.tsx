@@ -376,6 +376,15 @@ export function CheckoutScreen({
 
   const takeCashEnabled = !inflight && paymentMethod === "cash" && totals.chargeEligible;
 
+  // Issue #98: one method-aware charge button sits in the cart footer next
+  // to "Bill" — cash (or no method) → "Take cash", card → "Send to Square".
+  // The card CTA is no longer injected inside `PaymentTiles`.
+  const chargeMethodIsCard = paymentMethod === "card";
+  const hasUnpricedLines = lines.some((l) => l.priceUnconfirmed);
+  const chargeButtonEnabled = chargeMethodIsCard
+    ? !inflight && totals.chargeEligible && !hasUnpricedLines
+    : takeCashEnabled;
+
   function handlePickTech(staffId: string) {
     setSelectedStaffId(staffId);
   }
@@ -1998,11 +2007,6 @@ export function CheckoutScreen({
                 onChange={setPaymentMethod}
                 squareConnected={squareConnected && !requiresReconnect}
                 devicesAvailable={pairedDevices.length}
-                amountCents={totals.totalCents}
-                onSendCard={handleSendCard}
-                cardSendDisabled={
-                  inflight || !totals.chargeEligible || lines.some((l) => l.priceUnconfirmed)
-                }
                 onPickGift={() => {
                   if (!totals.chargeEligible || lines.some((l) => l.priceUnconfirmed)) {
                     toast.error("Set a price on every line before charging.");
@@ -2039,9 +2043,9 @@ export function CheckoutScreen({
                 </button>
                 <button
                   type="button"
-                  onClick={handleTakeCash}
-                  disabled={!takeCashEnabled}
-                  data-slot="take-cash-button"
+                  onClick={chargeMethodIsCard ? handleSendCard : handleTakeCash}
+                  disabled={!chargeButtonEnabled}
+                  data-slot={chargeMethodIsCard ? "send-to-terminal-button" : "take-cash-button"}
                   style={{
                     flex: "1 1 auto",
                     display: "inline-flex",
@@ -2049,21 +2053,23 @@ export function CheckoutScreen({
                     justifyContent: "center",
                     height: "var(--space-10)",
                     padding: "0 var(--space-4)",
-                    background: takeCashEnabled ? "var(--primary)" : "var(--muted)",
-                    color: takeCashEnabled
+                    background: chargeButtonEnabled ? "var(--primary)" : "var(--muted)",
+                    color: chargeButtonEnabled
                       ? "var(--primary-foreground)"
                       : "var(--muted-foreground)",
                     border: "none",
                     borderRadius: "var(--radius-sm)",
                     fontSize: "var(--text-base)",
                     fontWeight: 600,
-                    cursor: takeCashEnabled ? "pointer" : "not-allowed",
+                    cursor: chargeButtonEnabled ? "pointer" : "not-allowed",
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  {lines.some((l) => l.priceUnconfirmed)
+                  {hasUnpricedLines
                     ? "Set price on highlighted items"
-                    : `Take cash · ${fmt(totals.totalCents)}`}
+                    : chargeMethodIsCard
+                      ? `Send to Square · ${fmt(totals.totalCents)}`
+                      : `Take cash · ${fmt(totals.totalCents)}`}
                 </button>
               </div>
             </>

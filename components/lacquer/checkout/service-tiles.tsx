@@ -165,6 +165,14 @@ export function ServiceTiles({ services, disabled, onPick }: ServiceTilesProps) 
           </div>
         ) : (
           filtered.map((s) => (
+            // No `minHeight` on this tile button. An explicit min-height on a
+            // CSS Grid item pins the item's minimum contribution, so the
+            // `auto` row track of `.checkout-catalog-grid` — itself a scroll
+            // container with no free space to distribute — cannot grow past
+            // it. Without it the row tracks size to content, so a wrapped
+            // 2-line name keeps the duration/price meta row inside the card
+            // border. Tiles in a row still resolve to equal height (the
+            // track sizes to the tallest tile; items stretch). See issue #100.
             <button
               key={s.id}
               type="button"
@@ -185,7 +193,6 @@ export function ServiceTiles({ services, disabled, onPick }: ServiceTilesProps) 
                 borderRadius: "var(--radius-md)",
                 cursor: disabled ? "not-allowed" : "pointer",
                 textAlign: "left",
-                minHeight: "var(--space-16)",
               }}
             >
               <span

@@ -259,7 +259,7 @@ function FlowSingle({ density = "regular", numpad = false, initialTechs = ["maya
                     : isCash
                       ? `Take cash · $${squareSubtotal.toFixed(2)}`
                       : isSquareMethod
-                        ? <>Send to Square Terminal · ${squareSubtotal.toFixed(2)}</>
+                        ? <>Send to Square · ${squareSubtotal.toFixed(2)}</>
                         : `Charge $${squareSubtotal.toFixed(2)}`}
                 </button>
               </div>

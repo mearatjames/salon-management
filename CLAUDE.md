@@ -182,9 +182,15 @@ belongs at the final gate only.
 The `git diff` form covers tracked changes since the last commit; if
 nothing is modified the eslint fallback runs the project default (`.`).
 
-**Typecheck and unit tests** stay full-suite even at intermediate gates —
-TypeScript's project-wide type graph and Vitest's fast watch mode mean
-scoping them adds complexity without meaningful savings.
+**Unit tests** — run `npm run test:changed` at intermediate gates. It
+uses Vitest's `--changed` module graph to run only the test files whose
+imports transitively touch files changed vs `origin/main` (override the
+base with `VITEST_BASE=<ref> npm run test:changed`). No affected files
+prints a no-op and exits 0. Full `npm test` belongs at the final gate.
+
+**Typecheck** stays full-suite even at intermediate gates —
+TypeScript's project-wide type graph means scoping it adds complexity
+without meaningful savings.
 
 **Final gate** (the one before "feature done"): run everything full.
 `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e`.
@@ -202,7 +208,9 @@ The project-local agents and skills under `.claude/agents/` and
 run picks them up automatically:
 
 - `speckit-gate-runner` runs the four cheap gates concurrently
-  (format:check, lint, typecheck, test) — never sequentially.
+  (format:check, lint, typecheck, unit tests) — never sequentially. At
+  intermediate phase gates the unit gate is the scoped `npm run
+  test:changed`; the final gate uses full `npm test`.
 - `speckit-phase-executor` does NOT re-read design docs the orchestrator
   inlines in its dispatch prompt, and does NOT re-install dependencies
   after Phase 1.

@@ -403,24 +403,10 @@ export function CartRowWithTech({
           type="button"
           onClick={onEditPrice}
           data-slot="cart-line-price"
+          className={"checkout-line-price-edit" + (needsPrice ? " is-unconfirmed" : "")}
           aria-label={needsPrice ? "Set price for this line" : "Edit price for this line"}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "var(--space-1)",
-            padding: "var(--space-1) var(--space-2)",
-            background: needsPrice
-              ? "color-mix(in oklch, var(--primary) 10%, transparent)"
-              : "transparent",
-            border: needsPrice ? "1px solid var(--primary)" : "1px solid transparent",
-            borderRadius: "var(--radius-sm)",
-            cursor: "pointer",
-            color: "var(--foreground)",
-            fontSize: "var(--text-sm)",
-            fontWeight: 500,
-            fontVariantNumeric: "tabular-nums",
-          }}
         >
+          <Edit3 size={16} strokeWidth={1.5} aria-hidden="true" />
           <span className="checkout-line-price">{fmtMoney(lineTotalCents)}</span>
         </button>
         <button
