@@ -1,13 +1,16 @@
 "use client";
 
-// PaymentTiles — 2×2 grid of payment methods (cash | card | gift | split).
-// Adapted from `design-system/prototypes/transaction/components.jsx`
-// § PaymentTiles.
+// PaymentTiles — compact 4-across row of payment methods
+// (card | cash | gift | split). Adapted from
+// `design-system/prototypes/transaction/components.jsx` § PaymentTiles,
+// laid out per FlowSingle's `.tx-paytiles.compact` — one short
+// horizontal row, card first — which is the canonical checkout
+// reference (issue #90).
 //
 // US2 (feature 015) enables the Card tile when `squareConnected &&
 // devicesAvailable >= 1`. When disabled, the tooltip explains why
 // (connect Square or pair a device). The "Send to Square Terminal · $X"
-// CTA renders below the grid when Card is the picked method, so the
+// CTA renders below the row when Card is the picked method, so the
 // operator has a single, sharp affordance to dispatch the payment.
 
 import { Banknote, CreditCard, Gift, SplitSquareHorizontal } from "lucide-react";
@@ -25,7 +28,7 @@ export type PaymentTilesProps = {
   squareConnected?: boolean;
   /** How many paired terminal devices are visible (US2). */
   devicesAvailable?: number;
-  /** Card-CTA wiring (US2). Renders the "Send to Square Terminal · $X" button below the grid. */
+  /** Card-CTA wiring (US2). Renders the "Send to Square Terminal · $X" button below the row. */
   amountCents?: number;
   onSendCard?: () => void;
   cardSendDisabled?: boolean;
@@ -58,7 +61,7 @@ function tileStyle(active: boolean, enabled: boolean): React.CSSProperties {
     alignItems: "center",
     justifyContent: "center",
     gap: "var(--space-1)",
-    padding: "var(--space-3)",
+    padding: "var(--space-2)",
     background: active ? "color-mix(in oklch, var(--primary) 8%, var(--card))" : "var(--card)",
     border: active ? "1px solid var(--primary)" : "1px solid var(--border)",
     borderRadius: "var(--radius-md)",
@@ -102,8 +105,10 @@ export function PaymentTiles({
     ? "Connect Square in settings to accept gift cards"
     : undefined;
 
+  // Tile order follows FlowSingle's `PAYMENT_METHODS` — card first
+  // (issue #90). Selectors are keyed on `data-method`, not position, so
+  // the order is purely visual.
   const tiles: ReadonlyArray<TileSpec> = [
-    { id: "cash", label: "Cash", icon: Banknote, enabled: true },
     {
       id: "card",
       label: "Card",
@@ -111,6 +116,7 @@ export function PaymentTiles({
       enabled: cardEnabled,
       disabledReason: cardDisabledReason,
     },
+    { id: "cash", label: "Cash", icon: Banknote, enabled: true },
     {
       id: "gift",
       label: "Gift",
