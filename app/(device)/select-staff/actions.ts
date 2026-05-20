@@ -1,14 +1,22 @@
 "use server";
 
-// Server Actions for `/select-staff`.
+// Server Actions for `/select-staff` (the `(device)` route group).
 //
 // `submitPin` is the **only** action in the codebase that issues an operator
 // cookie. It writes one `staff.signed_in` (success) or `staff.pin_failed`
-// (failure) audit row per attempt, always awaited before the redirect so a
-// forensic query sees the attempt.
+// (failure) audit row per attempt, always awaited before the redirect/return so
+// a forensic query sees the attempt.
 //
-// Behavior matches `specs/003-login-flow/contracts/server-actions.contract.md`
-// § submitPin verbatim — see that doc for the authoritative description.
+// Failure-return contract (044-select-staff-redesign): a PIN failure
+// (`invalid_target` / `mismatch`) now `return { ok: false }` instead of
+// redirecting with `?error=pin_failed`. The keypad modal is transient client
+// state, so it stays open and surfaces the error inline — see
+// `specs/044-select-staff-redesign/contracts/submit-pin.contract.md`. A missing
+// device session is still a `redirect("/login?next=…")` — that is a navigation,
+// not a PIN failure. Success still `redirect(sanitizeNext(next))`.
+//
+// Behavior otherwise matches
+// `specs/003-login-flow/contracts/server-actions.contract.md` § submitPin.
 // FR-011 + Q2: no throttling, no lockout. Bcrypt's cost is the only brake.
 
 import { cookies } from "next/headers";
@@ -29,11 +37,13 @@ import { createSupabaseServerClient } from "@/lib/db/server";
 const COOKIE_NAME = "acting_as_staff_id";
 const COOKIE_MAX_AGE_SECONDS = 43_200; // 12 hours — must match cookie.contract.md.
 
+export type SubmitPinResult = { ok: false };
+
 function encodeNext(next: string): string {
   return encodeURIComponent(next);
 }
 
-export async function submitPin(formData: FormData): Promise<void> {
+export async function submitPin(formData: FormData): Promise<SubmitPinResult> {
   const staffId = String(formData.get("staffId") ?? "").trim();
   const pin = String(formData.get("pin") ?? "");
   const next = String(formData.get("next") ?? "");
@@ -57,7 +67,7 @@ export async function submitPin(formData: FormData): Promise<void> {
     await recordAuth("staff.pin_failed", deviceUser!.id, staffId || null, {
       reason: "invalid_target",
     });
-    redirect(`/select-staff?error=pin_failed&next=${encodeNext(next)}`);
+    return { ok: false };
   }
 
   const ok = await verifyPin(pin, row!.pin_hash);
@@ -65,7 +75,7 @@ export async function submitPin(formData: FormData): Promise<void> {
     await recordAuth("staff.pin_failed", deviceUser!.id, staffId, {
       reason: "mismatch",
     });
-    redirect(`/select-staff?error=pin_failed&next=${encodeNext(next)}`);
+    return { ok: false };
   }
 
   // Capture any previous operator cookie (for the audit payload). Swallow
@@ -83,7 +93,6 @@ export async function submitPin(formData: FormData): Promise<void> {
         !(err instanceof OperatorCookieInvalidError) &&
         !(err instanceof OperatorCookieExpiredError)
       ) {
-        // Re-throw unexpected errors so the error boundary catches them.
         throw err;
       }
     }
@@ -109,16 +118,10 @@ export async function submitPin(formData: FormData): Promise<void> {
     previousSid ? { previous_staff_id: previousSid } : {}
   );
 
-  // Feature 012 US3 (FR-035 / FR-036): on a successful PIN match, clear the
-  // admin-reset notice on this row. Idempotent — when nothing was reset
-  // there is nothing to clear; the UPDATE is cheap and uses service-role
-  // because RLS forbids non-admin writes to staff.
   try {
     const admin = createSupabaseServiceRoleClient();
     await admin.from("staff").update({ pin_reset_admin_at: null }).eq("id", staffId);
   } catch (err) {
-    // Best-effort: failing to clear the notice doesn't block the sign-in;
-    // the user just sees the badge until the next successful PIN.
     console.error("submitPin: failed to clear pin_reset_admin_at", err);
   }
 

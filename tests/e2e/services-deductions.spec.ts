@@ -49,11 +49,12 @@ async function signInAsMaya(page: import("@playwright/test").Page) {
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/select-staff\?next=/);
   await page.getByRole("button", { name: /Maya Patel/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
+  const modal = page.getByRole("dialog");
+  await modal.waitFor({ state: "visible" });
+  await modal.getByRole("button", { name: "Digit 1", exact: true }).click();
+  await modal.getByRole("button", { name: "Digit 2", exact: true }).click();
+  await modal.getByRole("button", { name: "Digit 3", exact: true }).click();
+  await modal.getByRole("button", { name: "Digit 4", exact: true }).click();
   await page.waitForURL(/\/services(\?|$)/, { timeout: 10_000 });
 }
 
@@ -68,9 +69,10 @@ async function signInAsSamOnServicesPage(page: import("@playwright/test").Page):
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/select-staff\?next=/);
   await page.getByRole("button", { name: /Sam Chen/ }).click();
-  await page.waitForURL(/selectedTileId=/);
+  const modal = page.getByRole("dialog");
+  await modal.waitFor({ state: "visible" });
   for (const d of ["9", "9", "9", "9"]) {
-    await page.getByRole("button", { name: `Digit ${d}`, exact: true }).click();
+    await modal.getByRole("button", { name: `Digit ${d}`, exact: true }).click();
   }
   await page.waitForURL(/\/services(\?|$)/, { timeout: 10_000 });
 }

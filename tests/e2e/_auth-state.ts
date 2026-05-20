@@ -98,12 +98,15 @@ async function signInOnce(
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.waitForURL(/\/select-staff\?next=/);
     // [data-staff-id] is the stable identity set by
-    // `components/lacquer/staff-tile.tsx` — name-based selectors would
-    // need a regex around the role-label suffix.
+    // `components/lacquer/select-staff/staff-avatar-tile.tsx` —
+    // name-based selectors would need a regex around the role-label suffix.
     await page.locator(`[data-staff-id="${asMember.id}"]`).click();
-    await page.waitForURL(/selectedTileId=/);
+    // 044-select-staff-redesign: tapping the tile opens a `[role="dialog"]`
+    // keypad modal (selection is transient client state — no URL param).
+    const modal = page.getByRole("dialog");
+    await modal.waitFor({ state: "visible" });
     for (const digit of asMember.pin) {
-      await page.getByRole("button", { name: `Digit ${digit}`, exact: true }).click();
+      await modal.getByRole("button", { name: `Digit ${digit}`, exact: true }).click();
     }
     await page.waitForURL(/\/dashboard(\?|$)/, { timeout: 10_000 });
     await ctx.storageState({ path: outPath });

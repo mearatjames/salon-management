@@ -442,15 +442,18 @@ export async function signInAs(
   await page.locator("#signin-password").fill(fixture.owner.password);
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/select-staff\?next=/);
-  // Use `[data-staff-id]` (set by `components/lacquer/staff-tile.tsx`)
-  // for an unambiguous selector. The tile's computed accessible name
-  // includes the role label (e.g. "Test Owner [w0] OWNER"), so a
-  // name-based selector would need a regex; the data attribute is the
-  // tile's stable identity regardless of display chrome.
+  // 044-select-staff-redesign: tapping the avatar tile opens a centered
+  // `[role="dialog"]` keypad modal (no `?selectedTileId=` URL param —
+  // selection is transient client state). Use `[data-staff-id]` for an
+  // unambiguous selector: the tile's accessible name includes the role
+  // label (e.g. "Test Owner [w0] OWNER"), so a name-based selector would
+  // need a regex; the data attribute is the tile's stable identity.
   await page.locator(`[data-staff-id="${member.id}"]`).click();
-  await page.waitForURL(/selectedTileId=/);
+  const modal = page.getByRole("dialog");
+  await modal.waitFor({ state: "visible" });
+  // The PIN auto-verifies on the 4th digit — no submit button.
   for (const digit of member.pin) {
-    await page.getByRole("button", { name: `Digit ${digit}`, exact: true }).click();
+    await modal.getByRole("button", { name: `Digit ${digit}`, exact: true }).click();
   }
   await page.waitForURL(new RegExp(nextPath.replace(/\//g, "\\/") + "(\\?|$)"), {
     timeout: 10_000,

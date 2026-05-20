@@ -154,11 +154,12 @@ async function signInAsStaff(
   await page.waitForURL(/\/select-staff\?next=/);
   const tile = who === "maya" ? /Maya Patel/ : /Jordan Lee/;
   await page.getByRole("button", { name: tile }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 1" }).click();
-  await page.getByRole("button", { name: "Digit 2" }).click();
-  await page.getByRole("button", { name: "Digit 3" }).click();
-  await page.getByRole("button", { name: "Digit 4" }).click();
+  const modal = page.getByRole("dialog");
+  await modal.waitFor({ state: "visible" });
+  await modal.getByRole("button", { name: "Digit 1", exact: true }).click();
+  await modal.getByRole("button", { name: "Digit 2", exact: true }).click();
+  await modal.getByRole("button", { name: "Digit 3", exact: true }).click();
+  await modal.getByRole("button", { name: "Digit 4", exact: true }).click();
 }
 
 // Technician needs PIN 9999 (per seed). Use a dedicated helper rather
@@ -177,11 +178,12 @@ async function signInAsSam(
   await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/select-staff\?next=/);
   await page.getByRole("button", { name: /Sam Chen/ }).click();
-  await page.waitForURL(/selectedTileId=/);
-  await page.getByRole("button", { name: "Digit 9" }).click();
-  await page.getByRole("button", { name: "Digit 9" }).click();
-  await page.getByRole("button", { name: "Digit 9" }).click();
-  await page.getByRole("button", { name: "Digit 9" }).click();
+  const modal = page.getByRole("dialog");
+  await modal.waitFor({ state: "visible" });
+  await modal.getByRole("button", { name: "Digit 9", exact: true }).click();
+  await modal.getByRole("button", { name: "Digit 9", exact: true }).click();
+  await modal.getByRole("button", { name: "Digit 9", exact: true }).click();
+  await modal.getByRole("button", { name: "Digit 9", exact: true }).click();
 }
 
 test.describe.configure({ mode: "serial" });
