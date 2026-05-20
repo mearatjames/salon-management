@@ -1,24 +1,41 @@
 // DoneScreen — terminal-state surface (FR-023). Rendered when
-// `tickets.status === 'paid'`. Shows "Charged $X" + a "New sale" link.
+// `tickets.status === 'paid'`. Shows "Charged $X", a payment summary
+// line, and a three-action row (Dashboard / New transaction / Switch
+// staff).
 //
-// The "New sale" button is a `<Link href="/checkout">` — the paramless
+// "New transaction" is a `<Link href="/checkout">` — the paramless
 // `/checkout` page (`app/(studio)/checkout/page.tsx`) renders a fresh
 // ephemeral in-memory draft cart directly. No ticket is created up front;
 // nothing is persisted until "Take cash".
 //
-// Server Component — no client JS needed.
+// Server Component — `SwitchStaffButton` is a client component rendered
+// as a child, so the surface itself needs no client JS.
 
 import Link from "next/link";
-import { Check } from "lucide-react";
+import { Check, LayoutDashboard, Plus } from "lucide-react";
+
+import { SwitchStaffButton } from "@/components/lacquer/switch-staff-button";
 
 export type DoneScreenProps = {
   chargedCents: number;
   /**
    * Payment method that closed the ticket. Drives the "Paid by …" line.
    * Defaults to "cash" for backwards-compatibility with the original
-   * cash-only callsite; the card flow (015 Square Terminal) passes "card".
+   * cash-only callsite; the Square flows pass "card" / "gift".
    */
-  method?: "cash" | "card";
+  method?: "cash" | "card" | "gift";
+  /**
+   * Tip captured on the Square Terminal, in cents. Card / gift only —
+   * cash tips aren't reported to the salon, so the cash callsite passes
+   * `null` and the detail line stays a bare "Paid by cash".
+   */
+  tipCents?: number | null;
+  /** Tip as a whole-number percent of the pre-tip amount. Card / gift only. */
+  tipPercent?: number | null;
+  /** Masked last-4 of the card / gift card, when known (`•••• 4242`). */
+  last4?: string | null;
+  /** Square payment / terminal-checkout reference id — Square-settled only. */
+  reference?: string | null;
 };
 
 function fmt(cents: number): string {
@@ -28,64 +45,69 @@ function fmt(cents: number): string {
 const METHOD_LABEL: Record<NonNullable<DoneScreenProps["method"]>, string> = {
   cash: "Paid by cash",
   card: "Paid by card",
+  gift: "Paid by gift card",
 };
 
-export function DoneScreen({ chargedCents, method = "cash" }: DoneScreenProps) {
+export function DoneScreen({
+  chargedCents,
+  method = "cash",
+  tipCents = null,
+  tipPercent = null,
+  last4 = null,
+  reference = null,
+}: DoneScreenProps) {
+  // Card + gift settle on the Square Terminal, which collects the tip and
+  // returns a payment reference; cash is handled in-app with no tip line.
+  const isSquareSettled = method === "card" || method === "gift";
+
+  let detailLine = METHOD_LABEL[method];
+  if (isSquareSettled) {
+    if (last4) detailLine += ` •••• ${last4}`;
+    if (tipCents != null) {
+      detailLine += ` · tip ${fmt(tipCents)}`;
+      if (tipPercent != null) detailLine += ` (${tipPercent}%)`;
+    }
+  }
+
   return (
     <div className="checkout-done" data-slot="done-screen">
-      <span
-        aria-hidden="true"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: "var(--space-12)",
-          height: "var(--space-12)",
-          borderRadius: "var(--radius-full)",
-          background: "color-mix(in oklch, var(--success) 14%, transparent)",
-          color: "var(--success)",
-        }}
-      >
+      <span aria-hidden="true" className="checkout-done-check">
         <Check size={24} strokeWidth={1.5} />
       </span>
       <div>
         <div className="checkout-done-amount" data-slot="done-charged-amount">
           {fmt(chargedCents)}
         </div>
-        <div
-          style={{
-            marginTop: "var(--space-2)",
-            fontSize: "var(--text-sm)",
-            color: "var(--muted-foreground)",
-          }}
-          data-slot="done-method-line"
-        >
-          {METHOD_LABEL[method]}
+        <div className="checkout-done-detail" data-slot="done-method-line">
+          {detailLine}
         </div>
+        {reference && (
+          <div className="checkout-done-reference" data-slot="done-reference-line">
+            Square ref {reference}
+          </div>
+        )}
       </div>
-      <Link
-        href="/checkout"
-        data-slot="new-sale-button"
-        prefetch={false}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "var(--space-10)",
-          padding: "0 var(--space-5)",
-          background: "var(--primary)",
-          color: "var(--primary-foreground)",
-          border: "none",
-          borderRadius: "var(--radius-sm)",
-          fontSize: "var(--text-sm)",
-          fontWeight: 600,
-          cursor: "pointer",
-          textDecoration: "none",
-          marginTop: "var(--space-2)",
-        }}
-      >
-        New sale
-      </Link>
+      <div className="checkout-done-actions" data-slot="done-actions">
+        <Link
+          href="/dashboard"
+          data-slot="dashboard-button"
+          prefetch={false}
+          className="checkout-done-action checkout-done-action--secondary"
+        >
+          <LayoutDashboard size={16} strokeWidth={1.5} aria-hidden="true" />
+          Dashboard
+        </Link>
+        <Link
+          href="/checkout"
+          data-slot="new-transaction-button"
+          prefetch={false}
+          className="checkout-done-action checkout-done-action--primary"
+        >
+          <Plus size={16} strokeWidth={1.5} aria-hidden="true" />
+          New transaction
+        </Link>
+        <SwitchStaffButton />
+      </div>
     </div>
   );
 }

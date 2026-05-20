@@ -61,14 +61,17 @@ export default async function CheckoutTicketPage({
     .from("square_devices")
     .select("square_device_id, friendly_name, is_default");
 
-  // For the paid render branch: surface "Paid by {method}" on the Done
-  // screen. Pick the most recent succeeded payment row for this ticket;
-  // for a single-method close that's authoritative. (Split-tender is out
-  // of scope per spec; if/when added this query would need to summarize
-  // the mix instead of picking one.)
+  // For the paid render branch: surface the payment summary on the Done
+  // screen — method, tip, last-4, and the Square reference id. Pick the
+  // most recent succeeded payment row for this ticket; for a single-method
+  // close that's authoritative. (Split-tender is out of scope per spec;
+  // if/when added this query would need to summarize the mix instead of
+  // picking one.)
   const lastSucceededPaymentPromise = supabase
     .from("payments")
-    .select("method")
+    .select(
+      "method, amount_cents, tip_cents, gift_card_id, square_payment_id, square_terminal_checkout_id, square_gift_card_payment_id"
+    )
     .eq("ticket_id", ticketId)
     .eq("status", "succeeded")
     .order("processed_at", { ascending: false, nullsFirst: false })
@@ -159,11 +162,53 @@ export default async function CheckoutTicketPage({
   const ticket = ticketRes.data;
 
   if (ticket.status === "paid") {
-    const paidByMethod: "cash" | "card" =
-      lastSucceededPaymentRes.data?.method === "card" ? "card" : "cash";
+    const pay = lastSucceededPaymentRes.data;
+    const method: "cash" | "card" | "gift" =
+      pay?.method === "card" ? "card" : pay?.method === "gift" ? "gift" : "cash";
+
+    // Card + gift settle on the Square Terminal — they carry a tip and a
+    // payment reference. Cash tips aren't reported to the salon, so cash
+    // surfaces neither.
+    const isSquareSettled = method === "card" || method === "gift";
+    const tipCents = isSquareSettled ? (pay?.tip_cents ?? 0) : null;
+    const amountCents = pay?.amount_cents ?? 0;
+    const tipPercent =
+      isSquareSettled && amountCents > 0
+        ? Math.round(((pay?.tip_cents ?? 0) / amountCents) * 100)
+        : null;
+
+    // Reference: the canonical Square payment id for card (falling back to
+    // the terminal-checkout id), the gift-card payment id for gift.
+    const reference =
+      method === "card"
+        ? (pay?.square_payment_id ?? pay?.square_terminal_checkout_id ?? null)
+        : method === "gift"
+          ? (pay?.square_gift_card_payment_id ?? null)
+          : null;
+
+    // Gift cards expose a stored last-4 mask; resolve it for a gift close.
+    // Card last-4 isn't captured from the Square Terminal checkout payload,
+    // so it stays null.
+    let last4: string | null = null;
+    if (method === "gift" && pay?.gift_card_id) {
+      const { data: giftCard } = await supabase
+        .from("gift_cards")
+        .select("last4_mask")
+        .eq("id", pay.gift_card_id)
+        .maybeSingle();
+      last4 = giftCard?.last4_mask ?? null;
+    }
+
     return (
       <div className="checkout-shell" data-slot="checkout-paid">
-        <DoneScreen chargedCents={ticket.total_cents} method={paidByMethod} />
+        <DoneScreen
+          chargedCents={ticket.total_cents}
+          method={method}
+          tipCents={tipCents}
+          tipPercent={tipPercent}
+          last4={last4}
+          reference={reference}
+        />
       </div>
     );
   }

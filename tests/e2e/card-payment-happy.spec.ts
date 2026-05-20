@@ -261,6 +261,15 @@ test.describe("US2: Take a card payment — happy path", () => {
     //     channel + polling fallback).
     await expect(page.locator("[data-slot='done-screen']")).toBeVisible({ timeout: 8000 });
 
+    // #86: the done screen summarises the card payment — the tip and the
+    // Square reference. (Card last-4 isn't captured from the terminal
+    // checkout payload, so no `•••• ` segment for card.)
+    await expect(page.locator("[data-slot='done-method-line']")).toContainText("Paid by card");
+    await expect(page.locator("[data-slot='done-method-line']")).toContainText("tip $8.00");
+    await expect(page.locator("[data-slot='done-reference-line']")).toContainText(
+      `Square ref pay_${checkoutId}`
+    );
+
     // 11) DB asserts.
     const { data: paymentRow } = await supabase
       .from("payments")
