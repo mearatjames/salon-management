@@ -34,6 +34,14 @@ import { isActiveSection } from "./is-active-section";
 import { NAV_CONFIG, type NavItem } from "./nav-items";
 
 export type SidebarShellProps = {
+  /**
+   * The viewer's studio role. Items carrying a `roles` allow-list that does
+   * not include this role are skipped (not rendered). UX only — the route's
+   * own redirect is the security boundary (Constitution Principle II). In a
+   * degraded session the layout passes the placeholder `"technician"`, so
+   * role-gated items default to hidden.
+   */
+  role: string;
   children?: ReactNode;
 };
 
@@ -113,7 +121,13 @@ function renderItem(item: NavItem, isActive: boolean) {
   );
 }
 
-export function SidebarShell({ children }: SidebarShellProps) {
+// An item is visible to the viewer when it carries no `roles` allow-list, or
+// when its allow-list includes the viewer's role.
+function isVisibleToRole(item: NavItem, role: string): boolean {
+  return item.roles === undefined || item.roles.includes(role as never);
+}
+
+export function SidebarShell({ role, children }: SidebarShellProps) {
   const pathname = usePathname() ?? "";
 
   // Reads the `<html data-studio-sidebar-collapsed>` attribute (seeded by the
@@ -156,14 +170,18 @@ export function SidebarShell({ children }: SidebarShellProps) {
         </button>
       </div>
 
-      {NAV_CONFIG.top.map((item) => renderItem(item, isActiveSection(pathname, item.href)))}
+      {NAV_CONFIG.top
+        .filter((item) => isVisibleToRole(item, role))
+        .map((item) => renderItem(item, isActiveSection(pathname, item.href)))}
 
       <hr className="studio-nav-divider" />
 
       {NAV_CONFIG.groups.map((group) => (
         <div key={group.id}>
           <div className="studio-nav-section">{group.label}</div>
-          {group.items.map((item) => renderItem(item, isActiveSection(pathname, item.href)))}
+          {group.items
+            .filter((item) => isVisibleToRole(item, role))
+            .map((item) => renderItem(item, isActiveSection(pathname, item.href)))}
         </div>
       ))}
 

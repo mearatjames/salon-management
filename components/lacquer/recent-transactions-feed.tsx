@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import type { Technician, TransactionRow } from "@/lib/dashboard/aggregate";
 import { formatCurrency } from "@/lib/dashboard/format";
 import { EmptyFeedState } from "@/components/lacquer/empty-feed-state";
@@ -17,21 +19,20 @@ export type RecentTransactionsFeedProps = {
 // FR-023: the client-name column is removed.
 // FR-014a: the method pill renders via `<MethodPill />` so the `split`
 //          variant has a single source of truth.
-// FR-013: when there are no rows, the feed header (title + inert "View
-//         all" control) stays mounted and the body collapses to an
+// FR-013: when there are no rows, the feed header (title + "View all"
+//         control) stays mounted and the body collapses to an
 //         `<EmptyFeedState />`.
 //
-// The "View all" control is intentionally inert in v1 — a `<button>` styled
-// as a link via `.tx-link`. No `/transactions` route exists yet (Constitution
-// Principle V — Scope Discipline).
+// The "View all" control is a `next/link` `<Link>` styled as a link via
+// `.tx-link`; it navigates to the `/transactions` page (feature 045).
 export function RecentTransactionsFeed({ rows, staff }: RecentTransactionsFeedProps) {
   return (
     <div className="tx-feed" data-slot="recent-transactions-feed">
       <div className="tx-feed-h">
         <span className="ttl">Recent transactions</span>
-        <button type="button" className="tx-link">
+        <Link href="/transactions" className="tx-link">
           View all
-        </button>
+        </Link>
       </div>
       {rows.length === 0 ? (
         <EmptyFeedState />

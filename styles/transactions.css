@@ -1,0 +1,948 @@
+/* ==========================================================================
+   Tang Nails — Transactions page chrome (`/transactions`).
+
+   Adapted from `design-system/prototypes/transaction/transactions-page.css`
+   (the Lacquer transaction-history prototype handoff). The prototype's
+   `@import` of `colors_and_type.css` + `user-management.css` and its
+   `body { overflow: hidden }` override are intentionally dropped — the
+   production app loads tokens via `styles/tokens.css` and owns its own
+   body styling. Only the `.tp-*` rules are carried over.
+
+   Constitution Principle I (Design System Fidelity, NON-NEGOTIABLE): every
+   colour / spacing / radius / shadow value resolves to a `var(--*)` token
+   from `styles/tokens.css`. Audit with
+   `grep -nE '#[0-9a-fA-F]{3,8}|oklch\(' styles/transactions.css` — must
+   return zero matches.
+
+   Payment-method pill colours and the up/down KPI delta colours are NOT
+   styled here: the prototype expressed them as raw `oklch` literals, and
+   the production page renders methods via the `<MethodPill>` component and
+   deltas via the `--success` / `--destructive` tokens (later tasks).
+   ========================================================================== */
+
+/* ===== Page shell ===== */
+.tp-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/* ===== Page header ===== */
+.tp-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: var(--space-6) var(--space-8) 0;
+  gap: var(--space-4);
+}
+.tp-head h1 {
+  font-size: var(--text-3xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-tight);
+}
+.tp-head .sub {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  margin-top: var(--space-1);
+  max-width: 60ch;
+}
+.tp-head .actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.tp-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 34px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: 1px solid transparent;
+  font: 500 var(--text-sm) var(--font-sans);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.tp-btn-primary:hover {
+  background: color-mix(in oklch, var(--primary) 90%, var(--foreground));
+}
+.tp-btn-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 34px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  font: 500 var(--text-sm) var(--font-sans);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.tp-btn-outline:hover {
+  background: var(--accent);
+}
+.tp-btn-outline svg {
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
+}
+
+/* ===== Period tabs row ===== */
+.tp-period-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-8) 0;
+}
+.tp-period {
+  display: inline-flex;
+  gap: 2px;
+  padding: var(--space-1);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.tp-period button {
+  height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  border: 0;
+  font: 500 var(--text-xs) var(--font-sans);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.tp-period button:hover {
+  color: var(--foreground);
+}
+.tp-period button.active {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-xs);
+}
+
+.tp-range {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+.tp-range .arrow {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--card);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.tp-range .arrow:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.tp-range .lbl {
+  font-weight: 500;
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+  min-width: 180px;
+  text-align: center;
+}
+
+/* ===== KPI strip ===== */
+.tp-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-8) 0;
+}
+.tp-kpi {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.tp-kpi .lbl {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--muted-foreground);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+}
+.tp-kpi .lbl svg {
+  color: var(--muted-foreground);
+}
+.tp-kpi .val {
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-tight);
+  margin-top: 2px;
+}
+.tp-kpi .sub {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+}
+.tp-kpi .delta {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.tp-kpi .delta.up {
+  color: var(--success);
+}
+.tp-kpi .delta.down {
+  color: var(--destructive);
+}
+
+/* ===== Filter row ===== */
+.tp-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-8) var(--space-3);
+  flex-wrap: wrap;
+}
+.tp-search {
+  position: relative;
+  flex: 1;
+  min-width: 220px;
+  max-width: 360px;
+}
+.tp-search svg {
+  position: absolute;
+  left: var(--space-2);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+.tp-search input {
+  height: 32px;
+  padding: 0 var(--space-3) 0 var(--space-8);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  font: 400 var(--text-sm) var(--font-sans);
+  color: var(--foreground);
+  outline: none;
+  width: 100%;
+  transition: border-color var(--duration-fast);
+}
+.tp-search input:focus {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 20%, transparent);
+}
+
+.tp-chipgroup {
+  display: inline-flex;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.tp-chipgroup button {
+  height: 26px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  border: 0;
+  font: 500 var(--text-xs) var(--font-sans);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  transition: all var(--duration-fast);
+}
+.tp-chipgroup button:hover {
+  color: var(--foreground);
+}
+.tp-chipgroup button.active {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-xs);
+}
+.tp-chipgroup button .pill {
+  font-size: var(--text-xs);
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--border);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.tp-chipgroup button.active .pill {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+/* Tech filter dropdown trigger */
+.tp-filter-btn {
+  height: 32px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  font: 500 var(--text-xs) var(--font-sans);
+  color: var(--foreground);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  transition: border-color var(--duration-fast);
+}
+.tp-filter-btn:hover {
+  border-color: var(--neutral-400);
+}
+.tp-filter-btn.has-value {
+  border-color: var(--primary);
+  background: color-mix(in oklch, var(--primary) 6%, transparent);
+}
+.tp-filter-btn .ct {
+  font-size: var(--text-xs);
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-full);
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.tp-filter-btn svg {
+  width: 12px;
+  height: 12px;
+  color: var(--muted-foreground);
+}
+
+.tp-filter-spacer {
+  flex: 1;
+}
+
+/* Active filter pill (shown when a filter is set) */
+.tp-active-filters {
+  display: inline-flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+.tp-active-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 26px;
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  border: 1px solid color-mix(in oklch, var(--primary) 25%, transparent);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--rose-700);
+}
+.tp-active-pill button {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--rose-700);
+}
+.tp-active-pill button:hover {
+  background: color-mix(in oklch, var(--primary) 20%, transparent);
+}
+
+/* ===== Popover ===== */
+.tp-pop-wrap {
+  position: relative;
+  display: inline-block;
+}
+.tp-pop {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  min-width: 220px;
+  max-width: 320px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-1);
+  z-index: 30;
+  max-height: 320px;
+  overflow: auto;
+}
+/* The tech-filter popover renders through the shadcn `PopoverContent` (Radix
+ * portal), which `cn()` leaves carrying default Tailwind chrome (rounded-lg,
+ * bg-popover, p-2.5, shadow-md, ring-1, text-*). Those single-class utilities
+ * tie `.tp-pop` on specificity, so the cascade winner would depend on
+ * stylesheet load order. This `[data-slot]` selector (specificity 0,2,0)
+ * re-declares the tokenised chrome so it wins definitively — only `var(--*)`
+ * tokens, no raw values (Constitution Principle I). */
+.tp-pop[data-slot="tech-filter-pop"] {
+  position: relative;
+  top: auto;
+  left: auto;
+  width: auto;
+  gap: 0;
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-1);
+  font-size: var(--text-sm);
+}
+.tp-pop-h {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--muted-foreground);
+  font-weight: 500;
+  padding: var(--space-1) var(--space-2) var(--space-1);
+}
+.tp-pop-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+.tp-pop-row:hover {
+  background: var(--accent);
+}
+.tp-pop-row .check {
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-xs);
+  border: 1.5px solid var(--neutral-400);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--primary-foreground);
+}
+.tp-pop-row .check.on {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.tp-pop-row.radio .check {
+  border-radius: var(--radius-full);
+}
+.tp-pop-row.radio .check.on {
+  background: var(--card);
+  border-color: var(--primary);
+  position: relative;
+}
+.tp-pop-row.radio .check.on::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--primary);
+}
+.tp-pop-foot {
+  border-top: 1px solid var(--border);
+  padding: var(--space-1);
+  margin-top: var(--space-1);
+  display: flex;
+  justify-content: space-between;
+}
+.tp-pop-clear {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: var(--space-1);
+  border-radius: var(--radius-xs);
+}
+.tp-pop-clear:hover {
+  color: var(--foreground);
+  background: var(--accent);
+}
+
+/* ===== Day-group header in table ===== */
+.tp-table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--space-8) var(--space-8);
+}
+.tp-day-group {
+  margin-top: var(--space-4);
+}
+.tp-day-h {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: var(--space-5);
+  align-items: baseline;
+  padding: var(--space-4) var(--space-4) var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+.tp-day-h .date {
+  font-size: var(--text-base);
+  font-weight: 600;
+  letter-spacing: var(--tracking-snug);
+}
+.tp-day-h .date .rel {
+  font-weight: 400;
+  color: var(--muted-foreground);
+  margin-left: var(--space-2);
+  font-size: var(--text-xs);
+}
+.tp-day-h .stat {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: baseline;
+  font-variant-numeric: tabular-nums;
+}
+.tp-day-h .stat b {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+/* ===== Transactions table ===== */
+.tp-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-sm);
+}
+.tp-table thead th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  border-bottom: 1px solid var(--border);
+  background: var(--muted);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.tp-table thead th.num {
+  text-align: right;
+}
+.tp-table tbody tr {
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+.tp-table tbody tr:hover {
+  background: var(--accent);
+}
+.tp-table tbody tr.selected {
+  background: color-mix(in oklch, var(--primary) 6%, transparent);
+}
+.tp-table tbody tr.refunded {
+  color: var(--muted-foreground);
+}
+.tp-table tbody tr.refunded .num {
+  text-decoration: line-through;
+}
+.tp-table tbody td {
+  padding: var(--space-3);
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+.tp-table tbody td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.tp-table tbody td.time {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  width: 80px;
+}
+.tp-table tbody td.id {
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.tp-table tbody td.client b {
+  font-weight: 500;
+}
+.tp-table tbody td.services {
+  color: var(--muted-foreground);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tp-table tbody td.total {
+  font-weight: 600;
+}
+
+/* Payment-method pill geometry. Per-method colours (card / cash / gift /
+   split) are supplied by the `<MethodPill>` component, not this stylesheet —
+   the prototype expressed them as raw `oklch` literals with no token. */
+.tp-meth {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 22px;
+  padding: 0 var(--space-2) 0 var(--space-1);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted-foreground);
+}
+.tp-meth svg {
+  width: 11px;
+  height: 11px;
+}
+
+.tp-status-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-normal);
+}
+.tp-status-pill.refunded {
+  background: color-mix(in oklch, var(--destructive) 10%, transparent);
+  color: var(--destructive);
+}
+.tp-status-pill.voided {
+  background: var(--border);
+  color: var(--muted-foreground);
+}
+
+.tp-empty {
+  padding: var(--space-16) var(--space-8);
+  text-align: center;
+  color: var(--muted-foreground);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+.tp-empty .ic {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+}
+.tp-empty .ttl {
+  font-size: var(--text-base);
+  font-weight: 500;
+  color: var(--foreground);
+}
+.tp-empty .ds {
+  font-size: var(--text-xs);
+}
+
+/* ===== Detail drawer (receipt) ===== */
+.tp-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in oklch, var(--foreground) 14%, transparent);
+  z-index: 40;
+  animation: tpFade var(--duration-base) var(--ease-out);
+}
+@keyframes tpFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.tp-drawer {
+  position: fixed;
+  right: 0;
+  top: 0;
+  height: 100%;
+  width: 460px;
+  background: var(--card);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  z-index: 41;
+  animation: tpSlide var(--duration-slow) var(--ease-out);
+}
+@keyframes tpSlide {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+.tp-drawer-h {
+  padding: var(--space-4) var(--space-5) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.tp-drawer-h .ttl {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-snug);
+}
+.tp-drawer-h .sub {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  margin-top: 2px;
+  font-family: var(--font-mono);
+}
+.tp-drawer-close {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+}
+.tp-drawer-close:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+.tp-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-5) var(--space-5) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.tp-d-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.tp-d-section .h {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+.tp-d-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-4);
+  font-size: var(--text-sm);
+  align-items: baseline;
+}
+.tp-d-meta .k {
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+}
+.tp-d-meta .v {
+  font-weight: 500;
+}
+.tp-d-meta .v.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 400;
+}
+
+.tp-d-line {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) 0;
+  border-bottom: 1px dashed var(--border);
+  align-items: flex-start;
+}
+.tp-d-line:last-child {
+  border-bottom: 0;
+}
+.tp-d-line .nm {
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.tp-d-line .meta {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.tp-d-line .price {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-d-tech-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 1px var(--space-2) 1px 1px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+.tp-d-totals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+.tp-d-totals .row {
+  display: flex;
+  justify-content: space-between;
+  font-variant-numeric: tabular-nums;
+}
+.tp-d-totals .row .k {
+  color: var(--muted-foreground);
+}
+.tp-d-totals .row.total {
+  padding-top: var(--space-2);
+  margin-top: var(--space-1);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.tp-d-pay {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.tp-d-pay .body {
+  flex: 1;
+  min-width: 0;
+}
+.tp-d-pay .body .lbl {
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+.tp-d-pay .body .sub {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  font-family: var(--font-mono);
+  margin-top: 2px;
+}
+.tp-d-pay .amt {
+  font-size: var(--text-base);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-d-activity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+}
+.tp-d-activity .row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+.tp-d-activity .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+  background: var(--neutral-400);
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+.tp-d-activity .row.active .dot {
+  background: var(--primary);
+}
+.tp-d-activity .body {
+  flex: 1;
+  min-width: 0;
+}
+.tp-d-activity .body .t {
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  margin-top: 2px;
+}
+
+.tp-drawer-foot {
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: var(--space-2);
+}
+.tp-drawer-foot .tp-btn-outline {
+  flex: 1;
+  justify-content: center;
+}
+.tp-drawer-foot .tp-btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  height: 34px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--destructive);
+  border: 1px solid color-mix(in oklch, var(--destructive) 25%, transparent);
+  font: 500 var(--text-sm) var(--font-sans);
+  cursor: pointer;
+}
+.tp-drawer-foot .tp-btn-danger:hover {
+  background: color-mix(in oklch, var(--destructive) 8%, transparent);
+}
