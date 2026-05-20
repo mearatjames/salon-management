@@ -263,5 +263,5 @@ Spec Kit (`/speckit-specify`, `/speckit-plan`, etc.) inside the worktree
 instead of trying to ship it in one PR.
 
 <!-- SPECKIT START -->
-Active plan: `specs/045-transactions-page/plan.md`
+Active plan: `specs/046-report-page/plan.md`
 <!-- SPECKIT END -->

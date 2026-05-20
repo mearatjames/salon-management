@@ -21,6 +21,7 @@ The design source of truth is `design-system/prototypes/transaction/Day Report.h
 - Q: Reporting period model — Day/Week/Semi-monthly (prototype) vs Today/Week/Month (Transactions page)? → A: Day / Week / Semi-monthly, keep the prototype exactly (Semi-monthly = the salon pay period).
 - Q: Who appears as a report row — any staff member who performed services, or only the "technician" role? → A: Any staff member who performed ≥1 service appears, regardless of role (owners/managers who do nails included).
 - Q: What does the Print action output — the current view, the All-Staff overview only, or a complete multi-section document? → A: Print the currently displayed view (All-Staff overview, or the selected technician's detail when one is open), per the prototype.
+- Q: FR-030 / SC-004 require the report's gross revenue to match the Transactions page, but the report's gross is gross service earnings (excludes tips, tax, discounts) while the Transactions page's gross-revenue KPI includes tips and ticket subtotals net out discounts — they cannot be byte-identical when a day has tips or discounts. How should the two reconcile? → A: Reconcile on transaction count and identical paid-ticket set only; the two "gross revenue" figures are deliberately different metrics that legitimately differ by tips and discounts. FR-030 and SC-004 reworded accordingly; the report issues no query against Transactions-page data.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -187,7 +188,7 @@ The owner needs the report on paper for their files, or as a spreadsheet for the
 **Presentation & consistency**
 
 - **FR-029**: When the selected period has no transactions, the report MUST show an empty state rather than an error or a blank table.
-- **FR-030**: The report's gross revenue and transaction count for a given day MUST match the Transactions page for the same day.
+- **FR-030**: The report and the Transactions page MUST be consistent views of the same underlying data: for a given day the report's transaction count MUST equal the Transactions page's, and both MUST reflect the identical set of paid tickets — no ticket dropped or double-counted. The report's "gross revenue" is gross service earnings (the sum of service-line prices) and is intentionally a different metric from the Transactions page's tip-inclusive gross-revenue KPI; the two revenue figures legitimately differ by tips and discounts.
 - **FR-031**: All monetary and numeric values MUST use tabular numerals and consistent currency formatting, and the page MUST follow the Lacquer design system per the matching prototype.
 
 ### Key Entities *(include if feature involves data)*
@@ -205,7 +206,7 @@ The owner needs the report on paper for their files, or as a spreadsheet for the
 - **SC-001**: An owner can determine any single technician's commissionable earnings for a day within 10 seconds of opening the Report page.
 - **SC-002**: The all-staff totals row reconciles to 100% — every total exactly equals the sum of the technician rows for gross, card fee, supply, commissionable, and card tips.
 - **SC-003**: Any deducted amount can be traced to a specific service and deduction type by expanding at most one transaction row.
-- **SC-004**: The Report's gross revenue and transaction count for a given day match the Transactions page for the same day, with no discrepancy.
+- **SC-004**: For a given day, the Report's transaction count equals the Transactions page's, and both surfaces reflect the identical set of paid tickets — no ticket dropped or double-counted. (The two pages' headline "gross revenue" figures differ by tips and discounts by design — see FR-030.)
 - **SC-005**: A technician marked exempt shows zero deductions and commissionable earnings equal to gross, with no manual adjustment required.
 - **SC-006**: The report for a typical day (30–60 transactions) renders within 2 seconds of opening the page or changing the period.
 - **SC-007**: An exported CSV contains every technician row plus the totals row, and each value matches the on-screen overview exactly.
