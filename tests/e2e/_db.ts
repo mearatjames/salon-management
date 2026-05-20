@@ -54,10 +54,22 @@ export function newAuditCursor(): string {
 }
 
 // Returns audit rows written at or after `cursor` (use `newAuditCursor()` to
-// produce one in `beforeEach`). Optionally filtered to a specific `action`.
+// produce one in `beforeEach`). Optionally filtered to a specific `action`,
+// and/or to rows whose `acting_as_staff_id` is in `actingStaffIds`.
+//
+// Pass `actingStaffIds` (a worker's staff trio) when an assertion checks for
+// the *absence* of audit rows: under `workers > 1` a concurrent worker may
+// write rows in the same cursor window, and an unscoped `expect(rows)
+// .toEqual([])` would race. Scoping to the calling worker's own staff makes
+// the absence check see only rows it could itself have caused.
+//
 // Ordered by `ts` ascending so multi-row assertions can assume insertion
 // order.
-export async function getAuditLogRowsSince(cursor: string, action?: string): Promise<AuditRow[]> {
+export async function getAuditLogRowsSince(
+  cursor: string,
+  action?: string,
+  actingStaffIds?: ReadonlyArray<string>
+): Promise<AuditRow[]> {
   let query = client()
     .from("audit_log")
     .select("action, actor_user_id, acting_as_staff_id, entity_type, entity_id, payload, ts")
@@ -65,6 +77,9 @@ export async function getAuditLogRowsSince(cursor: string, action?: string): Pro
     .order("ts", { ascending: true });
   if (action) {
     query = query.eq("action", action);
+  }
+  if (actingStaffIds && actingStaffIds.length > 0) {
+    query = query.in("acting_as_staff_id", actingStaffIds as string[]);
   }
   const { data, error } = await query;
   if (error) throw new Error(`audit_log read failed: ${error.message}`);

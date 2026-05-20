@@ -44,9 +44,16 @@ Run them in this order so the cheapest checks fail fast:
 5. `npm run test:e2e` — Playwright against a local Supabase. Defaults to
    parallel workers and to the same prebuilt `npm run start` server CI uses
    (sets `PLAYWRIGHT_PROD=1` internally), so cold paths don't pay the
-   next-dev JIT compile tax under load. For iterating on a single failing
-   spec, use `npm run test:e2e:dev` instead — it leaves `PLAYWRIGHT_PROD`
-   unset so `npm run dev` hot-reloads edits between runs. The script is
+   next-dev JIT compile tax under load. Before Playwright starts, the
+   `scripts/test-e2e.mjs` wrapper runs `supabase db reset` (migrate +
+   reseed) so every full run begins from the seed baseline — without it
+   the suite mutates shared tables and successive local runs accumulate
+   rows until seed-baseline assertions fail (issue #92). The reset is
+   skipped when the local Supabase stack is unreachable (specs then
+   self-skip). For iterating on a single failing spec, use `npm run
+   test:e2e:dev` instead — it leaves `PLAYWRIGHT_PROD` unset so `npm run
+   dev` hot-reloads edits between runs, and it does NOT reset the DB
+   (that would wipe the state you're iterating on). The script is
    wrapped in `flock /tmp/tang-nails-e2e.lock` so
    parallel Claude Code sessions (each in its own worktree) sharing the
    local Supabase stack serialize their e2e runs — see "Parallel sessions"
@@ -86,13 +93,61 @@ state mid-test.
 
 `npm run test:e2e` is wrapped in `flock /tmp/tang-nails-e2e.lock` to
 serialize concurrent runs across sessions: only one e2e invocation holds
-the lock at a time, others block until release. Single-session runs are
-unaffected — uncontended `flock` acquires immediately. **One-time setup
-on macOS: `brew install flock`** (Linux ships it via `util-linux`).
+the lock at a time, others block until release. The `supabase db reset`
+the wrapper runs before Playwright happens inside that same lock — one
+critical section spans reset + run, so a reset never wipes another
+session's in-flight seed state. Single-session runs are unaffected —
+uncontended `flock` acquires immediately. **One-time setup on macOS:
+`brew install flock`** (Linux ships it via `util-linux`).
 
 `npm run dev` doesn't share state via the lock; if you need to run dev
 servers in two worktrees simultaneously, set `PORT=3001` (etc.) in the
 second worktree's `.env.local` to avoid the port-3000 collision.
+
+### Two-phase e2e projects
+
+The Playwright suite runs as four chained projects
+(`playwright.config.ts`):
+
+1. `baseline-services` — `services.spec.ts` only.
+2. `baseline-eod` — `end-of-day-cash.spec.ts` only, depends on
+   `baseline-services`.
+3. `baseline-dashboard` — `dashboard.spec.ts` only, depends on
+   `baseline-eod`.
+4. `main` — every other spec, depends on `baseline-dashboard`.
+
+Playwright runs them strictly in order via project `dependencies`: each
+baseline project is a single file (one worker, no concurrency), then
+`main` runs fully parallel once all three finish.
+
+Why: three specs assert a **global aggregate over a shared table** that
+the parallel pool would race —
+
+- `services.spec.ts` — page-computed catalog aggregates (`5 active · 6
+  total`, the group-header set); also its US1 empty-state test wipes
+  `services` / `tickets` / `payments` globally.
+- `end-of-day-cash.spec.ts` — today's cash total (seeded `$115`); also
+  wipes every today-paid ticket via `clearAllTodayPaidTickets()`.
+- `dashboard.spec.ts` — the exact today-feed row count.
+
+The page renders every row regardless of which worker created it, so no
+test-side filter can make these assertions both correct and parallel —
+and the destructive wipes would corrupt any concurrent spec's tickets.
+Running them in their own serial phase, first, on the freshly-reset DB
+(the `test:e2e` wrapper resets before Playwright) keeps the assertions
+strong. Order matters: `dashboard.spec.ts` runs last so its `afterAll`
+`restoreSeededPaidTickets()` leaves the seeded tickets the earlier
+wipes removed in place, so `main` starts from the seed baseline.
+
+The serial baseline phase adds roughly +1–1.5 min to a full
+`npm run test:e2e`. `npm run test:e2e:dev` and `npm run test:e2e:changed`
+pass Playwright's `--no-deps`, so single-spec / scoped runs skip the
+chain and stay fast — only the full `npm run test:e2e` runs it end to
+end.
+
+When you add a spec that asserts a global count or summary over a
+shared table, add it to a baseline project's `testMatch` (and the
+`main` project's `testIgnore`) — otherwise it races the parallel pool.
 
 ### Scoping intermediate phase gates
 
