@@ -809,6 +809,14 @@ export type Database = {
         };
         Returns: string;
       };
+      pos_create_ticket_from_draft: {
+        Args: { p_items: Json; p_operator: string };
+        Returns: {
+          subtotal_cents: number;
+          ticket_id: string;
+          total_cents: number;
+        }[];
+      };
       pos_edit_cash_drawer: {
         Args: {
           p_counted_cents: number;

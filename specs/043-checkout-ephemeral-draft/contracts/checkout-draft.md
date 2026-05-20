@@ -6,7 +6,7 @@ The client → server contract at submission. The checkout client serializes its
 in-memory cart into this payload; the server validates it, resolves it against
 the catalog, and hands the resolved rows to `pos_create_ticket_from_draft`.
 
-## TypeScript shape (new module `app/(studio)/checkout/_draft.ts`)
+## TypeScript shape (new module `app/(studio)/checkout/_cart-draft.ts`)
 
 ```ts
 export type DraftServiceLine = {
@@ -38,7 +38,7 @@ session (`requireStudioSession()`).
 
 ## Server-side validation & resolution
 
-Performed by a helper in `_draft.ts`, called by every draft-path payment action
+Performed by a helper in `_cart-draft.ts`, called by every draft-path payment action
 **before** `pos_create_ticket_from_draft`. Order:
 
 1. **Non-empty**: at least one `service` line, else refuse with the same

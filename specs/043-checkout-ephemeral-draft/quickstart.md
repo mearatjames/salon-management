@@ -16,7 +16,7 @@ become one context-aware control.
 
 1. **Migration** — `supabase/migrations/0020_checkout_ephemeral_draft.sql`:
    add `pos_create_ticket_from_draft`, drop `tickets_open_by_operator_recent_idx`.
-2. **Draft module** — `app/(studio)/checkout/_draft.ts`: the `CheckoutDraft`
+2. **Draft module** — `app/(studio)/checkout/_cart-draft.ts`: the `CheckoutDraft`
    type + the server-side validate/resolve helper.
 3. **Server actions** — `actions.ts`: delete `createEmptyTicket` /
    `resumeOrCreateTicket`; add the draft path to `takeCash`,

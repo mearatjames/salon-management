@@ -25,6 +25,13 @@
 // square_oauth row (the test resets the table first) or by the inserted
 // row's merchant_id matching the simulated event. The signed POST is
 // sent with the fixture HMAC key that mirrors the dev .env.local.
+//
+// Feature 043-checkout-ephemeral-draft: the seed below — a persisted
+// `tickets` row + its `pending` card payment — is exactly the state a
+// ticket is in *after* the first card-send payment-initiating action.
+// The late-capture recovery webhook path operates on that persisted
+// ticket unchanged (FR-008/FR-009), so this spec needs no ephemeral-entry
+// rewrite: it already starts from the post-payment-initiation state.
 
 import { createHmac } from "node:crypto";
 import { readFileSync } from "node:fs";

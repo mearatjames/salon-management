@@ -92,7 +92,7 @@ untouched** (FR-008).
 ## R4. Draft validation & snapshot authority
 
 **Decision**: The client sends the whole cart as a draft payload at submission.
-The TS server action (in `actions.ts`, helper in `_draft.ts`):
+The TS server action (in `actions.ts`, helper in `_cart-draft.ts`):
 
 1. Reads the service catalog and active staff once.
 2. Validates every line: the referenced service row exists; assigned staff is

@@ -48,6 +48,7 @@ import {
   takeCash,
   type LookupGiftCardResult,
 } from "@/app/(studio)/checkout/actions";
+import type { CheckoutDraft, DraftLine } from "@/app/(studio)/checkout/_cart-draft";
 import {
   CashPaymentFailedError,
   DiscountInvalidError,
@@ -107,7 +108,16 @@ export type TerminalDevicePropView = {
 };
 
 export type CheckoutScreenProps = {
-  ticketId: string;
+  /**
+   * The persisted ticket id, or `null` for the ephemeral-draft path
+   * (feature 043-checkout-ephemeral-draft). A `null` id means the cart is
+   * an in-memory draft with no DB row yet. `[ticketId]/page.tsx` always
+   * passes a real (non-null) id, so the persisted-mode behavior here is
+   * unchanged. The ephemeral editing/submission wiring lands in Phase 3
+   * (T013/T014) — this prop only widens the type and powers the
+   * `isEphemeral` derivation below.
+   */
+  ticketId: string | null;
   initialItems: CartLineView[];
   staff: Staff[];
   services: ServiceTileService[];
@@ -130,6 +140,35 @@ export type CheckoutScreenProps = {
    * has already composed one leg.
    */
   initialLegs?: SplitLeg[];
+  /**
+   * Feature 043-checkout-ephemeral-draft (T028): when the page loads a
+   * ticket whose only non-failed payment is a single-tender `pending` card
+   * row, it seeds `"waiting"` here so the card-waiting screen rehydrates
+   * after the ephemeral card-send `router.replace`s onto this route. The
+   * realtime/polling settlement path then runs identically to the pre-043
+   * in-session card-wait (FR-003). Defaults to `"cart"`.
+   */
+  initialCardStage?: "cart" | "waiting" | "card-failed";
+  /** Feature 043: the pending card payment id paired with `initialCardStage`. */
+  initialActiveCardPaymentId?: string | null;
+  /**
+   * Feature 043-checkout-ephemeral-draft (T028): mirror of
+   * `initialCardStage` for the whole-ticket gift path — `"waiting"` when
+   * the page loaded a ticket whose only non-failed payment is a single
+   * `pending` gift row, so the gift-card-waiting screen rehydrates after
+   * the ephemeral gift-redeem `router.replace`d here. Defaults to `"idle"`.
+   */
+  initialGiftStage?: "idle" | "numpad" | "balance" | "waiting";
+  /** Feature 043: the pending gift payment id paired with `initialGiftStage`. */
+  initialActiveGiftPaymentId?: string | null;
+  /**
+   * Feature 043-checkout-ephemeral-draft (T028): when the page loaded a
+   * ticket whose only payment is a `pending` gift leg short of the total
+   * (the `partial_split` shape), this carries the remainder in cents so
+   * the rehydrated client re-opens the second-leg method picker — matching
+   * the in-session `partial_split` UX. `null` otherwise.
+   */
+  initialMethodPickerAmountCents?: number | null;
 };
 
 // Feature 018 (US2): the leg shape we hold in client state. Drives the
@@ -176,7 +215,7 @@ function isTicketAlreadyBeingCharged(err: unknown): boolean {
 }
 
 export function CheckoutScreen({
-  ticketId,
+  ticketId: ticketIdProp,
   initialItems,
   staff,
   services,
@@ -187,9 +226,26 @@ export function CheckoutScreen({
   pairedDevices = [],
   requiresReconnect = false,
   initialLegs = [],
+  initialCardStage = "cart",
+  initialActiveCardPaymentId = null,
+  initialGiftStage = "idle",
+  initialActiveGiftPaymentId = null,
+  initialMethodPickerAmountCents = null,
 }: CheckoutScreenProps) {
   const router = useRouter();
   const [, startTransition] = useTransition();
+
+  // Feature 043-checkout-ephemeral-draft: `ticketId === null` means the
+  // cart is an ephemeral in-memory draft with no DB row yet. Phase 3
+  // (T013/T014) wires the ephemeral editing/submission paths; until then
+  // every code path below runs in persisted mode, where `[ticketId]/
+  // page.tsx` always supplies a non-null id. The non-null `ticketId`
+  // local below keeps the existing persisted-mode call sites unchanged.
+  const isEphemeral = ticketIdProp === null;
+  // Persisted-mode id. In ephemeral mode no persisted ticket exists yet;
+  // the empty-string fallback is never reached by the persisted code
+  // paths (T013/T014 add the ephemeral branches that skip them).
+  const ticketId: string = ticketIdProp ?? "";
 
   // Header tech pick defaults to the first service line's assigned staff if
   // the ticket was already non-empty when the page loaded; otherwise null.
@@ -219,8 +275,13 @@ export function CheckoutScreen({
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   // US2 (015) — card payment flow state.
   // stage: 'cart' = default, 'waiting' = terminal prompt in flight, 'card-failed' = inline retry UI.
-  const [cardStage, setCardStage] = useState<"cart" | "waiting" | "card-failed">("cart");
-  const [activeCardPaymentId, setActiveCardPaymentId] = useState<string | null>(null);
+  // Feature 043 (T028): seed from the server-derived rehydration props so
+  // an ephemeral card-send that `router.replace`d onto `/checkout/[id]`
+  // resumes the card-waiting screen (and its realtime/polling effect).
+  const [cardStage, setCardStage] = useState<"cart" | "waiting" | "card-failed">(initialCardStage);
+  const [activeCardPaymentId, setActiveCardPaymentId] = useState<string | null>(
+    initialActiveCardPaymentId
+  );
   const [cardFailureReason, setCardFailureReason] = useState<string | null>(null);
   // We need a ref to the latest activeCardPaymentId so the polling
   // setInterval (set up once at waiting-stage start) can read the current
@@ -236,11 +297,16 @@ export function CheckoutScreen({
   //   balance → GiftCardBalanceSheet visible with the lookup result.
   //   waiting → redeem in flight; subscribe + poll the gift-card payment.
   type GiftStage = "idle" | "numpad" | "balance" | "waiting";
-  const [giftStage, setGiftStage] = useState<GiftStage>("idle");
+  // Feature 043 (T028): seed from the server-derived rehydration props so
+  // an ephemeral gift-redeem that `router.replace`d onto `/checkout/[id]`
+  // resumes the gift-card-waiting screen (and its realtime/polling effect).
+  const [giftStage, setGiftStage] = useState<GiftStage>(initialGiftStage);
   const [giftBusy, setGiftBusy] = useState(false);
   const [giftLookup, setGiftLookup] = useState<LookupGiftCardResult | null>(null);
   const [giftGan, setGiftGan] = useState<string | null>(null);
-  const [activeGiftPaymentId, setActiveGiftPaymentId] = useState<string | null>(null);
+  const [activeGiftPaymentId, setActiveGiftPaymentId] = useState<string | null>(
+    initialActiveGiftPaymentId
+  );
   const activeGiftPaymentRef = useRef<string | null>(null);
   useEffect(() => {
     activeGiftPaymentRef.current = activeGiftPaymentId;
@@ -273,9 +339,14 @@ export function CheckoutScreen({
   // `{kind: 'partial_split', nextLegAmountCents}`. The operator's pick
   // drives a regular `composeDraftLeg` + `activate*Draft` round-trip
   // (no server-side second-draft synthesis).
+  // Feature 043 (T028): seed from `initialMethodPickerAmountCents` so the
+  // ephemeral partial-gift redeem that `router.replace`d here re-opens the
+  // second-leg method picker for the remainder.
   const [methodPicker, setMethodPicker] = useState<{
     amountCents: number;
-  } | null>(null);
+  } | null>(
+    initialMethodPickerAmountCents != null ? { amountCents: initialMethodPickerAmountCents } : null
+  );
   const [methodPickerBusy, setMethodPickerBusy] = useState(false);
 
   const staffById = useMemo(() => {
@@ -315,7 +386,11 @@ export function CheckoutScreen({
 
   function handlePickService(svc: ServiceTileService) {
     if (!selectedStaffId) return;
-    const tmp = tempId();
+    // Feature 043 (T013): ephemeral lines get a real client-generated
+    // `crypto.randomUUID()` id (it doubles as the draft's `clientLineId`
+    // at submission). Persisted mode keeps the optimistic `tmp-` id that
+    // the server swaps for the inserted row's id.
+    const tmp = isEphemeral ? crypto.randomUUID() : tempId();
     const optimisticLine: CartLineView = {
       id: tmp,
       serviceId: svc.id,
@@ -342,6 +417,18 @@ export function CheckoutScreen({
     };
     setLines((prev) => [...prev, optimisticLine]);
     setErrorBanner(null);
+
+    // Feature 043 (T013): ephemeral mode — the cart is an in-memory draft
+    // with no DB row. The line stays in local React state with its
+    // client-generated UUID; no server action, no audit, no round-trip.
+    // FR-001's auto-open of the price sheet for variable-price services
+    // still applies — the operator UX is unchanged.
+    if (isEphemeral) {
+      if (svc.variable_price) {
+        setPriceSheet({ lineId: optimisticLine.id, isOverride: false });
+      }
+      return;
+    }
 
     startTransition(async () => {
       try {
@@ -401,6 +488,11 @@ export function CheckoutScreen({
     setLines((prev) => prev.filter((l) => l.id !== line.id));
     setErrorBanner(null);
 
+    // Feature 043 (T013): ephemeral mode — the cart is an in-memory draft.
+    // Removing a line is a local-state mutation only; no server action,
+    // no audit.
+    if (isEphemeral) return;
+
     // Skip the round-trip for optimistic-only temp lines (the server
     // never saw them).
     if (line.id.startsWith("tmp-")) return;
@@ -436,6 +528,31 @@ export function CheckoutScreen({
     note: string | undefined;
   }): Promise<void> {
     setErrorBanner(null);
+
+    // Feature 043 (T013): ephemeral mode — append the discount row to
+    // local React state with a client-generated UUID. No server action,
+    // no audit; the row is folded into the draft at submission.
+    if (isEphemeral) {
+      setLines((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          serviceId: null,
+          name: payload.shape === "percent" ? `Discount · ${payload.value}%` : "Discount",
+          unitPriceCents: payload.shape === "flat" ? -payload.value : 0,
+          qty: 1,
+          priceUnconfirmed: false,
+          assignedStaffId: null,
+          kind: "discount",
+          note: payload.note ?? null,
+          discountPct: payload.shape === "percent" ? payload.value : null,
+          serviceMeta: null,
+        },
+      ]);
+      setDiscountSheetOpen(false);
+      return;
+    }
+
     try {
       const result = await addDiscountLine({
         ticketId,
@@ -494,6 +611,10 @@ export function CheckoutScreen({
     );
     setErrorBanner(null);
 
+    // Feature 043 (T013): ephemeral mode — reassigning a line's tech is a
+    // local-state mutation only; no server action, no audit.
+    if (isEphemeral) return;
+
     // Skip the round-trip for optimistic-only temp lines (the server has
     // not yet seen the row; the eventual addServiceLine insert will carry
     // the latest selectedStaffId, not this override).
@@ -541,6 +662,18 @@ export function CheckoutScreen({
     if (!priceSheet) return;
     const { lineId } = priceSheet;
     setErrorBanner(null);
+
+    // Feature 043 (T013): ephemeral mode — set/override price is a
+    // local-state mutation only. Clear the unconfirmed flag and reflect
+    // the new amount so the cart total recomputes immediately.
+    if (isEphemeral) {
+      setLines((prev) =>
+        prev.map((l) => (l.id === lineId ? { ...l, unitPriceCents, priceUnconfirmed: false } : l))
+      );
+      setPriceSheet(null);
+      return;
+    }
+
     try {
       await setLinePrice({ ticketId, lineId, unitPriceCents });
       // Local update: clear the unconfirmed flag and reflect the new
@@ -568,12 +701,57 @@ export function CheckoutScreen({
     setPriceSheet(null);
   }
 
+  // Feature 043 (T014): serialize the live ephemeral cart into the
+  // `CheckoutDraft` the server expects. Each local service line becomes a
+  // `DraftServiceLine` (carrying the line's UUID as `clientLineId`); each
+  // discount line becomes a `DraftDiscountLine`. The server re-validates
+  // and re-resolves every field via `validateAndResolveDraft`.
+  function serializeDraft(): CheckoutDraft {
+    const draftLines: DraftLine[] = lines.map((l): DraftLine => {
+      if (l.kind === "discount") {
+        return {
+          kind: "discount",
+          clientLineId: l.id,
+          shape: l.discountPct != null ? "percent" : "flat",
+          // Percent: the whole-number percent. Flat: the positive cents
+          // amount (the local row stores a negative `unitPriceCents`).
+          value: l.discountPct != null ? l.discountPct : -l.unitPriceCents,
+          note: l.note,
+        };
+      }
+      return {
+        kind: "service",
+        clientLineId: l.id,
+        serviceId: l.serviceId as string,
+        unitPriceCents: l.unitPriceCents,
+        priceUnconfirmed: l.priceUnconfirmed,
+        assignedStaffId: l.assignedStaffId as string,
+      };
+    });
+    return { lines: draftLines };
+  }
+
   async function handleTakeCash() {
     if (!takeCashEnabled || inflight) return;
     setInflight(true);
     setErrorBanner(null);
     try {
-      await takeCash({ ticketId });
+      // Feature 043 (T014): ephemeral mode — this is the first payment-
+      // initiating action. Serialize the in-memory cart into a
+      // `CheckoutDraft`; `takeCash` persists it atomically via
+      // `pos_create_ticket_from_draft` then runs `pos_take_cash` and
+      // returns the freshly-resolved ticket id. `router.replace` onto the
+      // persisted `[ticketId]` route so the paid surface renders the done
+      // screen.
+      if (isEphemeral) {
+        const { ticketId: paidTicketId } = await takeCash({
+          from: "draft",
+          draft: serializeDraft(),
+        });
+        router.replace(`/checkout/${paidTicketId}`);
+        return;
+      }
+      await takeCash({ from: "ticket", ticketId });
       router.refresh();
     } catch (err) {
       if (err instanceof TicketHasUnpricedItemsError) {
@@ -685,7 +863,25 @@ export function CheckoutScreen({
     setInflight(true);
     setErrorBanner(null);
     try {
-      const { paymentId } = await sendCardToTerminal(ticketId, defaultDeviceId ?? undefined);
+      // Feature 043 (T028): ephemeral mode — sending to the terminal is the
+      // first payment-initiating action. Serialize the in-memory cart into a
+      // `CheckoutDraft`; `sendCardToTerminal` persists it atomically via
+      // `pos_create_ticket_from_draft`, inserts the `pending` card row, and
+      // pushes the Square checkout — then returns the resolved ticket id.
+      // `router.replace` onto the persisted `[ticketId]` route so the
+      // card-waiting screen rehydrates from the DB.
+      if (isEphemeral) {
+        const { ticketId: persistedTicketId } = await sendCardToTerminal(
+          { from: "draft", draft: serializeDraft() },
+          defaultDeviceId ?? undefined
+        );
+        router.replace(`/checkout/${persistedTicketId}`);
+        return;
+      }
+      const { paymentId } = await sendCardToTerminal(
+        { from: "ticket", ticketId },
+        defaultDeviceId ?? undefined
+      );
       setActiveCardPaymentId(paymentId);
       setCardStage("waiting");
     } catch (err) {
@@ -830,7 +1026,12 @@ export function CheckoutScreen({
     setInflight(true);
     setErrorBanner(null);
     try {
-      const { paymentId } = await sendCardToTerminal(ticketId, defaultDeviceId ?? undefined);
+      // A failed charge means the ticket was already persisted by the first
+      // attempt — retry always runs in persisted mode.
+      const { paymentId } = await sendCardToTerminal(
+        { from: "ticket", ticketId },
+        defaultDeviceId ?? undefined
+      );
       setActiveCardPaymentId(paymentId);
       setCardStage("waiting");
     } catch (err) {
@@ -976,7 +1177,22 @@ export function CheckoutScreen({
     setGiftBusy(true);
     setErrorBanner(null);
     try {
-      const result = await redeemGiftCardWholeTicket(ticketId, giftGan);
+      // Feature 043 (T028): ephemeral mode — redeeming a gift card is the
+      // first payment-initiating action. Serialize the in-memory cart;
+      // `redeemGiftCardWholeTicket` persists it atomically via
+      // `pos_create_ticket_from_draft` BEFORE the redemption, then returns
+      // the resolved ticket id on every result variant. `router.replace`
+      // onto the persisted `[ticketId]` route so the gift-waiting / split
+      // continuation rehydrates from the DB (the ticket now exists
+      // regardless of the redemption outcome).
+      const result = await redeemGiftCardWholeTicket(
+        isEphemeral ? { from: "draft", draft: serializeDraft() } : { from: "ticket", ticketId },
+        giftGan
+      );
+      if (isEphemeral) {
+        router.replace(`/checkout/${result.ticketId}`);
+        return;
+      }
       if (result.kind === "fully_paid") {
         setActiveGiftPaymentId(result.paymentId);
         setGiftStage("waiting");
@@ -1058,8 +1274,10 @@ export function CheckoutScreen({
     setSplitBusy(true);
     setErrorBanner(null);
     try {
+      // The second-leg picker only runs after a payment-initiating action
+      // already persisted the ticket — always persisted mode here.
       const { paymentId: nextDraftId } = await composeDraftLeg(
-        ticketId,
+        { from: "ticket", ticketId },
         method,
         picker.amountCents
       );
@@ -1084,10 +1302,13 @@ export function CheckoutScreen({
         );
         if (result.ticketFlippedToPaid) router.refresh();
       } else if (method === "card") {
-        const { paymentId: confirmedId } = await sendCardToTerminal(ticketId, {
-          deviceId: defaultDeviceId ?? undefined,
-          existingDraftId: nextDraftId,
-        });
+        const { paymentId: confirmedId } = await sendCardToTerminal(
+          { from: "ticket", ticketId },
+          {
+            deviceId: defaultDeviceId ?? undefined,
+            existingDraftId: nextDraftId,
+          }
+        );
         setActiveCardPaymentId(confirmedId);
         setLegs((prev) =>
           prev.map((l) => (l.id === nextDraftId ? { ...l, status: "pending" } : l))
@@ -1294,7 +1515,23 @@ export function CheckoutScreen({
     setSplitBusy(true);
     setErrorBanner(null);
     try {
-      const result = await composeDraftLeg(ticketId, method, amountCents);
+      // Feature 043 (T028): ephemeral mode — composing the FIRST split-
+      // tender leg is a payment-initiating action (FR-005). Serialize the
+      // in-memory cart; `composeDraftLeg` persists it atomically via
+      // `pos_create_ticket_from_draft` BEFORE composing the leg, then
+      // returns the resolved ticket id. `router.replace` onto the persisted
+      // `[ticketId]` route so the split-tender panel rehydrates from the DB
+      // — every subsequent leg then runs in persisted mode.
+      if (isEphemeral) {
+        const result = await composeDraftLeg(
+          { from: "draft", draft: serializeDraft() },
+          method,
+          amountCents
+        );
+        router.replace(`/checkout/${result.ticketId}`);
+        return;
+      }
+      const result = await composeDraftLeg({ from: "ticket", ticketId }, method, amountCents);
       // Optimistic insert; the realtime channel will reconcile.
       setLegs((prev) => [
         ...prev,
@@ -1372,10 +1609,13 @@ export function CheckoutScreen({
     setSplitBusy(true);
     setErrorBanner(null);
     try {
-      const { paymentId: confirmedId } = await sendCardToTerminal(ticketId, {
-        deviceId: defaultDeviceId ?? undefined,
-        existingDraftId: paymentId,
-      });
+      const { paymentId: confirmedId } = await sendCardToTerminal(
+        { from: "ticket", ticketId },
+        {
+          deviceId: defaultDeviceId ?? undefined,
+          existingDraftId: paymentId,
+        }
+      );
       setActiveCardPaymentId(confirmedId);
       setLegs((prev) => prev.map((l) => (l.id === paymentId ? { ...l, status: "pending" } : l)));
       setCardStage("waiting");
@@ -1449,7 +1689,12 @@ export function CheckoutScreen({
   // focus is on the terminal. On cancel we return to the picker.
   if (cardStage === "waiting") {
     return (
-      <div className="checkout-shell" data-slot="checkout-shell" data-ticket-id={ticketId}>
+      <div
+        className="checkout-shell"
+        data-slot="checkout-shell"
+        data-ticket-id={ticketId}
+        data-ephemeral={isEphemeral ? "true" : "false"}
+      >
         <TxHeader
           subtitle="Walk-in"
           onCancel={() => void handleCancelTerminalPayment()}
@@ -1502,7 +1747,12 @@ export function CheckoutScreen({
                 : "Card payment failed";
 
     return (
-      <div className="checkout-shell" data-slot="checkout-shell" data-ticket-id={ticketId}>
+      <div
+        className="checkout-shell"
+        data-slot="checkout-shell"
+        data-ticket-id={ticketId}
+        data-ephemeral={isEphemeral ? "true" : "false"}
+      >
         <TxHeader
           subtitle="Walk-in"
           onCancel={returnToPickerFromWaiting}
@@ -1578,9 +1828,15 @@ export function CheckoutScreen({
   }
 
   return (
-    <div className="checkout-shell" data-slot="checkout-shell" data-ticket-id={ticketId}>
+    <div
+      className="checkout-shell"
+      data-slot="checkout-shell"
+      data-ticket-id={ticketId}
+      data-ephemeral={isEphemeral ? "true" : "false"}
+    >
       <TxHeader
         subtitle="Walk-in"
+        isEphemeral={isEphemeral}
         onCancel={handleCancel}
         onDiscard={handleDiscard}
         disabled={inflight}

@@ -138,10 +138,11 @@ test.describe("US3: Cancel and recover", () => {
     const stub: SquareStub = await squareStub(context, baseURL!);
     stub.stubListDevices([{ id: deviceId, name: "Lobby Terminal", status: "PAIRED" }]);
 
+    // Feature 043: open a fresh ephemeral cart — the URL stays paramless
+    // `/checkout` and nothing is persisted while the cart is built.
     await page.goto("/dashboard");
     await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
 
     await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Jordan Lee']").click();
     await page
@@ -149,9 +150,13 @@ test.describe("US3: Cancel and recover", () => {
       .click();
     await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$25.00");
 
-    // Send to Square Terminal.
+    // Send to Square Terminal. Feature 043: this is the first payment-
+    // initiating action — the cart is persisted and the URL gains a ticket
+    // id; the card-waiting screen rehydrates from the persisted route.
     await page.locator("[data-slot='payment-tile'][data-method='card']").click();
     await page.locator("[data-slot='send-to-terminal-button']").click();
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
     await expect(page.locator("[data-slot='card-waiting']")).toBeVisible({ timeout: 10_000 });
 
     // Wait for the pending row + checkoutId so we can prime cancel response.
@@ -241,10 +246,10 @@ test.describe("US3: Cancel and recover", () => {
     const stub: SquareStub = await squareStub(context, baseURL!);
     stub.stubListDevices([{ id: deviceId, name: "Lobby Terminal", status: "PAIRED" }]);
 
+    // Feature 043: ephemeral cart — paramless `/checkout` while building.
     await page.goto("/dashboard");
     await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
 
     await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Jordan Lee']").click();
     await page
@@ -252,8 +257,12 @@ test.describe("US3: Cancel and recover", () => {
       .click();
     await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$25.00");
 
+    // Send to Square Terminal — first payment-initiating action persists
+    // the cart and the URL gains a ticket id.
     await page.locator("[data-slot='payment-tile'][data-method='card']").click();
     await page.locator("[data-slot='send-to-terminal-button']").click();
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
     await expect(page.locator("[data-slot='card-waiting']")).toBeVisible({ timeout: 10_000 });
 
     const supabase = serviceClient();

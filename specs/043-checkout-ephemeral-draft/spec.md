@@ -30,7 +30,7 @@ checkout discards it (see Clarifications).
 ### Session 2026-05-19
 
 - Q: How should an unsubmitted checkout draft be held so it survives navigation away and page refresh? → A: In-memory only — the draft lives solely in the checkout screen's memory. Navigating away from checkout or refreshing the page discards it; an unsubmitted cart is never recovered. This removes today's resume behavior (a deliberate, accepted change).
-- Q: When is the ticket persisted for a split-tender sale? → A: At the first payment-initiating action of any kind, including composing the first split-tender draft leg. The existing draft-leg machinery is reused unchanged; composing a leg then fully abandoning the cart leaves one empty open ticket — an accepted rare residual.
+- Q: When is the ticket persisted for a split-tender sale? → A: At the first payment-initiating action of any kind, including composing the first split-tender draft leg. The existing draft-leg machinery is reused unchanged; composing a leg then fully abandoning the cart leaves one open ticket — an accepted rare residual.
 - Q: What happens to the per-edit audit-log rows once the cart is ephemeral? → A: Stop emitting them entirely. Cart editing moves no money and persists nothing, so there is nothing to trace; the audit trail for payment capture and ticket discard is fully preserved.
 - Q: Pre-submission, Cancel and Discard now do the same thing — what should the header show? → A: A single exit control. While no ticket is persisted it is labeled "Cancel" and simply leaves checkout, abandoning the in-memory draft.
 - Q: After a payment has been attempted and a real ticket exists, what should the exit control do? → A: It becomes "Discard" — exiting marks the persisted ticket discarded (terminal, audited), exactly as today's Discard. With resume removed, exiting never leaves a persisted ticket open, so no unreachable orphan ticket is created.
@@ -347,7 +347,7 @@ settles to a paid ticket with the same records as today.
   because the existing payment records require a real ticket to reference, and
   the split-tender draft-leg machinery is reused unchanged. Cart edits before
   that point are ephemeral. Accepted residual: composing a split leg and then
-  fully abandoning the cart leaves one empty open ticket — far rarer than the
+  fully abandoning the cart leaves one open ticket — far rarer than the
   browse-time ghost rows this feature eliminates.
 - **No resume of unsubmitted carts**: Per the Clarifications session, the
   in-progress cart is held only in the checkout screen's memory. It does not

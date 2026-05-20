@@ -36,7 +36,7 @@ type PaymentTarget =
 | `redeemGiftCardWholeTicket` | `PaymentTarget` (+ `gan`) | Draft path: persist first, then today's gift redemption. Returns include `ticketId`. |
 
 The persist step inside the draft path resolves the operator from the session and
-runs the `_draft.ts` validation/resolution helper before the RPC. The empty-cart
+runs the `_cart-draft.ts` validation/resolution helper before the RPC. The empty-cart
 and unconfirmed-price refusals surface with **today's messaging** (FR-015) —
 reuse `TicketEmptyError` / `TicketHasUnpricedItemsError`; no new error class is
 needed.

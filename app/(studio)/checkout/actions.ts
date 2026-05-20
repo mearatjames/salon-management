@@ -12,9 +12,11 @@
 //   6. `recordAudit(...)`        — controlled-vocab verbs from lib/auth/audit.ts
 //   7. return the typed result   — no redirect; the client island reacts
 //
-// Phase 2 (this file's initial commit) ships the scaffold + the one action
-// shared across stories: `createEmptyTicket()`. The other six actions land
-// in their respective user-story phases.
+// The in-progress cart is an ephemeral in-memory draft
+// (`043-checkout-ephemeral-draft`): nothing is persisted until payment.
+// The cart is materialised atomically by the `pos_create_ticket_from_draft`
+// RPC at "Take cash" time — there is no up-front `createEmptyTicket` /
+// `resumeOrCreateTicket` step any more.
 //
 // Typed error classes live in `./_errors` because Next.js' `"use server"`
 // constraint forbids any non-async export from this file. Callers
@@ -32,6 +34,7 @@ import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 import { getSetting } from "@/lib/settings/read";
 
 import { discardDraftLegs } from "./_drafts";
+import { validateAndResolveDraft, type PaymentTarget } from "./_cart-draft";
 import {
   CashPaymentFailedError,
   DiscountInvalidError,
@@ -122,178 +125,6 @@ function assertUuid(value: unknown, label: string): asserts value is string {
   if (typeof value !== "string" || !UUID_SHAPE.test(value)) {
     throw new Error(`${label}: expected uuid, got ${JSON.stringify(value)}`);
   }
-}
-
-// ----------------------------------------------------------------------
-// 1. createEmptyTicket — opens a fresh ticket with no appointment and no
-//    lines. Called by:
-//      - the dashboard "New transaction" CTA (passes 'dashboard_cta')
-//      - the DoneScreen's "New sale" button (FR-023; default 'unspecified'
-//        — startNewSale below)
-//      - `resumeOrCreateTicket()` when no same-day open ticket is found
-//        for this operator (US2; passes 'sidebar_resume_or_create')
-//
-//    Returns `{ ticketId }` so the caller can redirect to
-//    `/checkout/[ticketId]`. The server emits the `ticket.created` audit
-//    row before returning; the redirect is the caller's responsibility.
-//
-//    The `entryPoint` argument is stamped onto the audit payload
-//    (`payload.created_by_entry_point`) so the audit log explains which
-//    surface created the ticket. Defaults to `'unspecified'` for
-//    backward-compatible callers that haven't been parameterised yet.
-// ----------------------------------------------------------------------
-
-export type TicketEntryPoint =
-  | "unspecified"
-  | "dashboard_cta"
-  | "sidebar_resume_or_create"
-  | "done_screen_new_sale";
-
-export async function createEmptyTicket(
-  entryPoint: TicketEntryPoint = "unspecified"
-): Promise<{ ticketId: string }> {
-  const viewer = await requireStudioSession();
-  const supabase = createSupabaseServiceRoleClient();
-
-  const { data, error } = await supabase
-    .from("tickets")
-    .insert({
-      status: "open",
-      appointment_id: null,
-      opened_by_staff_id: viewer.staff.id,
-    })
-    .select("id")
-    .single();
-
-  if (error || !data) {
-    throw new Error(`createEmptyTicket failed: ${error?.message ?? "no row returned"}`);
-  }
-
-  await recordAudit(
-    "ticket.created",
-    viewer.deviceUserId,
-    data.id,
-    { created_by_entry_point: entryPoint },
-    viewer.staff.id
-  );
-
-  return { ticketId: data.id };
-}
-
-// ----------------------------------------------------------------------
-// 2. resumeOrCreateTicket — sidebar "Checkout" entry-point (T033 /
-//    contracts § 2 / research.md § R8). Returns the operator's existing
-//    same-day open ticket (most recently updated) if one exists;
-//    otherwise delegates to `createEmptyTicket('sidebar_resume_or_create')`.
-//
-//    Resume is the read path — NO audit row is emitted when an existing
-//    ticket is returned (no write occurred). Audit emission happens only
-//    via the delegated `createEmptyTicket()` call when we fall through to
-//    the create branch, with `created_by_entry_point` set correctly.
-//
-//    "Today" is the operator's salon-local calendar day (FR-003 / R8):
-//    we read `process.env.SALON_TZ` (defaulting to America/New_York to
-//    match research.md), derive today's YYYY-MM-DD in that zone via
-//    `Intl.DateTimeFormat`, and compute the UTC instants for
-//    salon-midnight today and salon-midnight tomorrow. The query then
-//    filters `created_at >= startOfDay AND created_at < nextDay`.
-//    DST is handled by the two-pass offset trick in
-//    `salonMidnightUtc()` — see comments there.
-// ----------------------------------------------------------------------
-
-const SALON_TZ_DEFAULT = "America/New_York";
-
-/**
- * Returns the UTC `Date` instant corresponding to salon-local midnight on
- * `ymd` (`YYYY-MM-DD`) in the IANA zone `tz`. Two-pass:
- *   1. Treat `${ymd}T00:00:00` as if it were UTC; ask `Intl` what
- *      wall-clock that instant is in `tz`.
- *   2. The difference between the original "as-if-UTC" instant and the
- *      wall-clock `Intl` reports back is the zone offset (signed). Add
- *      it back to land on the true midnight-in-`tz` UTC instant.
- *
- * Correct across DST transitions because the offset is queried for the
- * specific date being computed, not a fixed value.
- */
-function salonMidnightUtc(ymd: string, tz: string): Date {
-  const asUtc = new Date(`${ymd}T00:00:00Z`);
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).formatToParts(asUtc);
-  const get = (t: string) => parts.find((p) => p.type === t)!.value;
-  const observedWall = Date.parse(
-    `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}Z`
-  );
-  const offsetMs = asUtc.getTime() - observedWall;
-  return new Date(asUtc.getTime() + offsetMs);
-}
-
-/**
- * Returns `[startOfDay, nextDay]` — the UTC instants bounding the
- * salon's current calendar day. Exported for unit tests + future
- * `lib/time/*` extraction.
- */
-function salonTodayBoundsUtc(): { startOfDay: Date; nextDay: Date } {
-  const tz = process.env.SALON_TZ ?? SALON_TZ_DEFAULT;
-  // Derive the salon's current Y-M-D in `tz`-local terms.
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-  const get = (t: string) => parts.find((p) => p.type === t)!.value;
-  const salonYmd = `${get("year")}-${get("month")}-${get("day")}`;
-  const startOfDay = salonMidnightUtc(salonYmd, tz);
-  const nextDay = new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000);
-  return { startOfDay, nextDay };
-}
-
-export async function resumeOrCreateTicket(): Promise<{
-  ticketId: string;
-  resumed: boolean;
-}> {
-  const viewer = await requireStudioSession();
-  const supabase = createSupabaseServiceRoleClient();
-
-  const { startOfDay, nextDay } = salonTodayBoundsUtc();
-
-  // The partial index `tickets_open_by_operator_recent_idx` on
-  // (opened_by_staff_id, updated_at desc) WHERE status='open' makes this
-  // an index-only resume lookup. Filter by created_at within the salon's
-  // current day; order by most-recently-updated and take the first row.
-  const { data, error } = await supabase
-    .from("tickets")
-    .select("id")
-    .eq("status", "open")
-    .eq("opened_by_staff_id", viewer.staff.id)
-    .gte("created_at", startOfDay.toISOString())
-    .lt("created_at", nextDay.toISOString())
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    throw new Error(`resumeOrCreateTicket query failed: ${error.message}`);
-  }
-
-  if (data?.id) {
-    // Read-only hit — no audit (no write occurred). Per contracts § 2.
-    return { ticketId: data.id, resumed: true };
-  }
-
-  // No same-day open ticket for this operator — fall through to create.
-  // The `ticket.created` audit row is emitted by `createEmptyTicket()`
-  // with `created_by_entry_point = 'sidebar_resume_or_create'`.
-  const { ticketId } = await createEmptyTicket("sidebar_resume_or_create");
-  return { ticketId, resumed: false };
 }
 
 // ----------------------------------------------------------------------
@@ -802,23 +633,74 @@ export async function setLinePrice(
 //    Calls `pos_take_cash` RPC and maps Postgres error messages to the
 //    typed checkout-error classes. The RPC owns the audit emission for
 //    `payment.captured` — this action does NOT also call recordAudit.
+//
+//    Feature 043-checkout-ephemeral-draft (T010): `takeCash` accepts a
+//    discriminated `PaymentTarget`:
+//      - `{ from: 'ticket', ticketId }` — today's direct cash path.
+//      - `{ from: 'draft', draft }`     — the ephemeral path. The cart was
+//        never persisted; this is the first payment-initiating action so
+//        it persists the whole cart atomically first. We re-validate +
+//        resolve the draft (`validateAndResolveDraft`), call
+//        `pos_create_ticket_from_draft` to write one `tickets` row + N
+//        `ticket_items` + the `ticket.created` audit row, then run today's
+//        `pos_take_cash` against the freshly-resolved ticket id.
+//    The return value carries the resolved `ticketId` so the client can
+//    `router.replace('/checkout/<ticketId>')` onto the paid surface.
 // ----------------------------------------------------------------------
-
-export type TakeCashInput = { ticketId: string };
 
 // TODO(phase-9): when cash drawer sessions are gated (Out of Scope here),
 // ensure pos_take_cash() also increments the open session's expected_cents.
 
-export async function takeCash(
-  input: TakeCashInput
-): Promise<{ paymentId: string; chargedCents: number }> {
-  assertUuid(input.ticketId, "takeCash.ticketId");
+/**
+ * Resolve a `PaymentTarget` to a persisted `tickets.id`. For the `draft`
+ * path this is the persistence boundary: re-validate the proposal, then
+ * write it atomically via `pos_create_ticket_from_draft`. For the
+ * `ticket` path the id is already persisted — return it verbatim.
+ */
+async function resolvePaymentTargetTicketId(
+  target: PaymentTarget,
+  operatorId: string,
+  supabase: ReturnType<typeof createSupabaseServiceRoleClient>
+): Promise<string> {
+  if (target.from === "ticket") {
+    assertUuid(target.ticketId, "takeCash.ticketId");
+    return target.ticketId;
+  }
 
+  // Draft path — re-validate + resolve the proposal against the
+  // catalog/staff (Constitution Principle II), then persist it.
+  const items = await validateAndResolveDraft(target.draft, supabase);
+
+  const { data, error } = await supabase.rpc("pos_create_ticket_from_draft", {
+    p_operator: operatorId,
+    p_items: items,
+  });
+  if (error) {
+    throw new CashPaymentFailedError(
+      "could not persist the checkout draft",
+      error.message ?? undefined
+    );
+  }
+  // `pos_create_ticket_from_draft` returns a one-row table
+  // `(ticket_id, subtotal_cents, total_cents)`.
+  const row = Array.isArray(data) ? data[0] : data;
+  const ticketId = (row as { ticket_id?: string } | null)?.ticket_id;
+  if (!ticketId) {
+    throw new CashPaymentFailedError("draft persistence returned no ticket id");
+  }
+  return ticketId;
+}
+
+export async function takeCash(
+  input: PaymentTarget
+): Promise<{ ticketId: string; paymentId: string; chargedCents: number }> {
   const viewer = await requireStudioSession();
   const supabase = createSupabaseServiceRoleClient();
 
+  const ticketId = await resolvePaymentTargetTicketId(input, viewer.staff.id, supabase);
+
   const { data: paymentId, error } = await supabase.rpc("pos_take_cash", {
-    p_ticket_id: input.ticketId,
+    p_ticket_id: ticketId,
     p_operator: viewer.staff.id,
   });
 
@@ -845,7 +727,7 @@ export async function takeCash(
   const { data: ticketRow, error: readErr } = await supabase
     .from("tickets")
     .select("total_cents")
-    .eq("id", input.ticketId)
+    .eq("id", ticketId)
     .single();
   if (readErr || !ticketRow) {
     throw new CashPaymentFailedError(
@@ -853,7 +735,7 @@ export async function takeCash(
     );
   }
 
-  return { paymentId: paymentId as string, chargedCents: ticketRow.total_cents };
+  return { ticketId, paymentId: paymentId as string, chargedCents: ticketRow.total_cents };
 }
 
 // ----------------------------------------------------------------------
@@ -1293,14 +1175,18 @@ export async function emailBillStub(input: EmailBillStubInput): Promise<{ ok: tr
 
 // ----------------------------------------------------------------------
 // startNewSale — `<form action={startNewSale}>` helper for DoneScreen
-// (FR-023). Creates a fresh empty ticket then redirects server-side.
-// Lives here because Server Action exports must come from a "use server"
-// file and the action needs to run in the request's server lifecycle.
+// (FR-023). Lives here because Server Action exports must come from a
+// "use server" file and the action needs to run in the request's server
+// lifecycle.
+//
+// Feature 043-checkout-ephemeral-draft (T011): with the ephemeral-draft
+// model, `/checkout` renders a fresh in-memory cart on every entry — no
+// DB ticket is created up front. "New sale" therefore just redirects to
+// the paramless `/checkout`; the empty draft cart is created client-side.
 // ----------------------------------------------------------------------
 
 export async function startNewSale(): Promise<void> {
-  const { ticketId } = await createEmptyTicket();
-  redirect(`/checkout/${ticketId}`);
+  redirect("/checkout");
 }
 
 // ----------------------------------------------------------------------
@@ -1335,6 +1221,7 @@ export async function startNewSale(): Promise<void> {
 // ----------------------------------------------------------------------
 
 export type SendCardToTerminalResult = {
+  ticketId: string;
   paymentId: string;
   squareTerminalCheckoutId: string;
 };
@@ -1351,12 +1238,20 @@ export type SendCardToTerminalOptions = {
   existingDraftId?: string;
 };
 
+// Feature 043-checkout-ephemeral-draft (T025): `sendCardToTerminal` takes a
+// discriminated `PaymentTarget` as its first arg:
+//   - { from: 'ticket', ticketId } — today's direct path against the
+//     already-persisted ticket.
+//   - { from: 'draft', draft }     — the ephemeral path. Card initiation is
+//     the first payment-initiating action, so the action persists the cart
+//     via `resolvePaymentTargetTicketId` (validate + resolve + the
+//     `pos_create_ticket_from_draft` RPC) BEFORE today's pending-row +
+//     Square `createCheckout` logic, which then runs verbatim against the
+//     resolved ticket id.
 export async function sendCardToTerminal(
-  ticketId: string,
+  target: PaymentTarget,
   deviceIdOrOptions?: string | SendCardToTerminalOptions
 ): Promise<SendCardToTerminalResult> {
-  assertUuid(ticketId, "sendCardToTerminal.ticketId");
-
   // Back-compat: callers may pass deviceId positionally OR an options object.
   const options: SendCardToTerminalOptions =
     typeof deviceIdOrOptions === "string"
@@ -1367,6 +1262,11 @@ export async function sendCardToTerminal(
 
   const viewer = await requireStudioSession();
   const supabase = createSupabaseServiceRoleClient();
+
+  // Resolve the payment target. On the draft path this re-validates the
+  // proposal and persists the cart atomically (the persistence boundary);
+  // on the ticket path it returns the already-persisted id verbatim.
+  const ticketId = await resolvePaymentTargetTicketId(target, viewer.staff.id, supabase);
 
   // 1) Ticket must be open + has priced lines + total > 0.
   const { data: ticket, error: tkErr } = await supabase
@@ -1566,7 +1466,7 @@ export async function sendCardToTerminal(
     );
   }
 
-  return { paymentId, squareTerminalCheckoutId };
+  return { ticketId, paymentId, squareTerminalCheckoutId };
 }
 
 // ----------------------------------------------------------------------
@@ -2056,26 +1956,39 @@ export async function activateGiftDraft(
 //   `gift_card.redeemed` on settlement.
 // ----------------------------------------------------------------------
 
+// Feature 043-checkout-ephemeral-draft (T027): every variant carries the
+// resolved `ticketId` so the client can `router.replace('/checkout/<id>')`
+// onto the persisted route after the gift redemption begins.
 export type RedeemGiftCardResult =
-  | { kind: "fully_paid"; paymentId: string; ticketFlippedToPaid: true }
-  | { kind: "partial_split"; paymentId: string; nextLegAmountCents: number }
-  | { kind: "lookup_zero_balance"; last4Mask: string }
+  | { kind: "fully_paid"; ticketId: string; paymentId: string; ticketFlippedToPaid: true }
+  | { kind: "partial_split"; ticketId: string; paymentId: string; nextLegAmountCents: number }
+  | { kind: "lookup_zero_balance"; ticketId: string; last4Mask: string }
   | {
       kind: "lookup_not_redeemable";
+      ticketId: string;
       last4Mask: string;
       state: "PENDING" | "BLOCKED" | "DEACTIVATED";
     }
-  | { kind: "lookup_not_found" };
+  | { kind: "lookup_not_found"; ticketId: string };
 
+// Feature 043-checkout-ephemeral-draft (T027): `redeemGiftCardWholeTicket`
+// takes a discriminated `PaymentTarget` as its first arg. On the
+// `{ from: 'draft' }` path the gift redemption is the first payment-
+// initiating action, so the cart is persisted via
+// `resolvePaymentTargetTicketId` before today's lookup + compose-draft +
+// activate-draft sequence — which then runs verbatim against the resolved
+// ticket id.
 export async function redeemGiftCardWholeTicket(
-  ticketId: string,
+  target: PaymentTarget,
   gan: string
 ): Promise<RedeemGiftCardResult> {
-  assertUuid(ticketId, "redeemGiftCardWholeTicket.ticketId");
   assertValidGan(gan);
 
   const viewer = await requireStudioSession();
   const supabase = createSupabaseServiceRoleClient();
+
+  // Resolve the payment target — draft path persists the cart atomically.
+  const ticketId = await resolvePaymentTargetTicketId(target, viewer.staff.id, supabase);
 
   // 1) Refuse if a leg is in flight (FR-022). The cart-edit invalidation
   //    helper also performs this check, but we do it up front so we don't
@@ -2115,14 +2028,15 @@ export async function redeemGiftCardWholeTicket(
 
   // 4) Short-circuit lookup_* exits without composing/activating a payment.
   if (lookup.kind === "not_found") {
-    return { kind: "lookup_not_found" };
+    return { kind: "lookup_not_found", ticketId };
   }
   if (lookup.kind === "zero_balance") {
-    return { kind: "lookup_zero_balance", last4Mask: lookup.last4Mask };
+    return { kind: "lookup_zero_balance", ticketId, last4Mask: lookup.last4Mask };
   }
   if (lookup.kind === "not_redeemable") {
     return {
       kind: "lookup_not_redeemable",
+      ticketId,
       last4Mask: lookup.last4Mask,
       state: lookup.state,
     };
@@ -2179,7 +2093,7 @@ export async function redeemGiftCardWholeTicket(
   // 9) Branch on full vs partial coverage.
   if (amountToCharge === remainingOwed) {
     // Full coverage — eventual webhook flips the ticket to paid.
-    return { kind: "fully_paid", paymentId, ticketFlippedToPaid: true };
+    return { kind: "fully_paid", ticketId, paymentId, ticketFlippedToPaid: true };
   }
 
   // Partial coverage (US3 / T050) — the gift leg covers part of the bill.
@@ -2187,6 +2101,7 @@ export async function redeemGiftCardWholeTicket(
   // and drives the second-leg composeDraftLeg + activate*Draft itself.
   return {
     kind: "partial_split",
+    ticketId,
     paymentId,
     nextLegAmountCents: remainingOwed - amountToCharge,
   };
@@ -2202,15 +2117,22 @@ export async function redeemGiftCardWholeTicket(
 //   typed classes.
 // ----------------------------------------------------------------------
 
+// Feature 043-checkout-ephemeral-draft (T026): `composeDraftLeg` takes a
+// discriminated `PaymentTarget` as its first arg. Composing the FIRST
+// split-tender leg is a payment-initiating action (FR-005) — on the
+// `{ from: 'draft' }` path the action persists the cart via
+// `resolvePaymentTargetTicketId` before running `pos_compose_payment_draft`.
+// Second and subsequent legs run in persisted mode (`{ from: 'ticket' }`).
 export async function composeDraftLeg(
-  ticketId: string,
+  target: PaymentTarget,
   method: "cash" | "card" | "gift",
   amountCents: number
-): Promise<{ paymentId: string; status: "draft"; amountCents: number }> {
-  assertUuid(ticketId, "composeDraftLeg.ticketId");
-
+): Promise<{ ticketId: string; paymentId: string; status: "draft"; amountCents: number }> {
   const viewer = await requireStudioSession();
   const supabase = createSupabaseServiceRoleClient();
+
+  // Resolve the payment target — draft path persists the cart atomically.
+  const ticketId = await resolvePaymentTargetTicketId(target, viewer.staff.id, supabase);
 
   const { data, error } = await supabase.rpc("pos_compose_payment_draft", {
     p_ticket_id: ticketId,
@@ -2241,7 +2163,7 @@ export async function composeDraftLeg(
     throw new Error("composeDraftLeg RPC returned no payment id");
   }
 
-  return { paymentId: data as unknown as string, status: "draft", amountCents };
+  return { ticketId, paymentId: data as unknown as string, status: "draft", amountCents };
 }
 
 // ----------------------------------------------------------------------

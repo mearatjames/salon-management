@@ -45,6 +45,19 @@ export const AFFECTED_MAP = {
   ],
   "lib/pos/**": ["tests/e2e/checkout-*.spec.ts", "tests/e2e/split-tender-*.spec.ts"],
 
+  // Ephemeral-draft persistence RPC (migration 0020). Every draft-path
+  // payment runs `pos_create_ticket_from_draft`, so a change to the
+  // migration needs the full checkout payment set. (The draft module
+  // `app/(studio)/checkout/_cart-draft.ts` and the checkout routes are
+  // already covered by the `app/(studio)/checkout/**` entry above.)
+  "supabase/migrations/0020_checkout_ephemeral_draft.sql": [
+    "tests/e2e/checkout-*.spec.ts",
+    "tests/e2e/split-tender-*.spec.ts",
+    "tests/e2e/card-payment-*.spec.ts",
+    "tests/e2e/gift-card-*.spec.ts",
+    "tests/e2e/concurrent-charge-blocked.spec.ts",
+  ],
+
   // Square server-side + settings.
   "app/api/square/**": [
     "tests/e2e/card-payment-*.spec.ts",

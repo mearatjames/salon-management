@@ -128,10 +128,10 @@ test.describe("US2: Take a card payment — polling fallback", () => {
     await page.goto("/settings/square");
     await connectSquareViaStub(page, context, baseURL!);
 
+    // Feature 043: ephemeral cart — paramless `/checkout` while building.
     await page.goto("/dashboard");
     await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
 
     await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Jordan Lee']").click();
     await page
@@ -139,8 +139,12 @@ test.describe("US2: Take a card payment — polling fallback", () => {
       .click();
     await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$25.00");
 
+    // Send to Square Terminal — first payment-initiating action persists
+    // the cart; the URL gains a ticket id.
     await page.locator("[data-slot='payment-tile'][data-method='card']").click();
     await page.locator("[data-slot='send-to-terminal-button']").click();
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
 
     await expect(page.locator("[data-slot='card-waiting']")).toBeVisible({ timeout: 10_000 });
 

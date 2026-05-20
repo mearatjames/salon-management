@@ -1,13 +1,10 @@
 // DoneScreen — terminal-state surface (FR-023). Rendered when
 // `tickets.status === 'paid'`. Shows "Charged $X" + a "New sale" link.
 //
-// The "New sale" button is a `<Link href="/checkout">` — the entry-point
-// page (`app/(studio)/checkout/page.tsx`) does the server-side
-// createEmptyTicket() + redirect. This keeps the navigation contract
-// inside the page (single source of truth) and avoids the Next 16
-// form-action quirk where `redirect()` inside a server action invoked
-// from `<form action={…}>` does not always update the browser URL when
-// the action's POST target is already a paid ticket route.
+// The "New sale" button is a `<Link href="/checkout">` — the paramless
+// `/checkout` page (`app/(studio)/checkout/page.tsx`) renders a fresh
+// ephemeral in-memory draft cart directly. No ticket is created up front;
+// nothing is persisted until "Take cash".
 //
 // Server Component — no client JS needed.
 

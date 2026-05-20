@@ -3,8 +3,12 @@
 // US2 happy path — front desk takes a card payment end-to-end:
 //   1. Sign in, connect Square via stub, return to settings, default
 //      device set.
-//   2. Open a fresh ticket, pick a tech + service.
-//   3. Pick Card → "Send to Square Terminal · $X" → terminal stub primes
+//   2. Open a fresh ephemeral /checkout (no pre-existing ticket — feature
+//      043), pick a tech + service. The URL stays paramless `/checkout`
+//      while the cart is built — nothing is persisted yet.
+//   3. Pick Card → "Send to Square Terminal · $X". This is the first
+//      payment-initiating action: the cart is persisted atomically and the
+//      URL becomes /checkout/[ticketId]. Terminal stub primes
 //      createCheckout PENDING.
 //   4. After 500ms, simulateWebhook fires terminal.checkout.updated
 //      COMPLETED with tip_money 800.
@@ -146,11 +150,13 @@ test.describe("US2: Take a card payment — happy path", () => {
     const stub: SquareStub = await squareStub(context, baseURL!);
     stub.stubListDevices([{ id: "device:STUB_HAPPY", name: "Lobby Terminal", status: "PAIRED" }]);
 
-    // 3) Start a fresh ticket through the dashboard.
+    // 3) Start a fresh ephemeral cart through the dashboard. Feature 043:
+    //    the in-progress cart is an in-memory draft — the URL stays
+    //    paramless `/checkout` and nothing is persisted to the DB until the
+    //    first payment-initiating action.
     await page.goto("/dashboard");
     await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
 
     // 4) Pick Jordan + Classic manicure ($25).
     await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Jordan Lee']").click();
@@ -175,10 +181,16 @@ test.describe("US2: Take a card payment — happy path", () => {
     // inserts and then drive the webhook against it.
 
     // 6) Tap Card tile → CTA appears → tap "Send to Square Terminal · $X".
+    //    Feature 043: this is the first payment-initiating action — the
+    //    ephemeral cart is persisted atomically and the URL becomes
+    //    /checkout/[ticketId].
     await page.locator("[data-slot='payment-tile'][data-method='card']").click();
     await page.locator("[data-slot='send-to-terminal-button']").click();
 
-    // 7) Card-waiting screen appears.
+    // 7) The cart is now persisted: the URL carries a ticket id and the
+    //    card-waiting screen rehydrates from the persisted route.
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
     await expect(page.locator("[data-slot='card-waiting']")).toBeVisible({
       timeout: 10_000,
     });

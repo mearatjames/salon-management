@@ -1,9 +1,16 @@
 // tests/e2e/checkout-discard-with-inflight-payment.spec.ts
 //
 // Issue #26 — discardTicket money-loss defense.
+// Updated for feature 043-checkout-ephemeral-draft.
+//
+// After 043 the in-progress cart is an ephemeral in-memory draft — a
+// ticket only exists once a payment-initiating action persisted it. So
+// this spec seeds a *persisted open* ticket with one service line
+// directly (a payment was initiated against it — the captured cash leg
+// below is exactly that), then opens it at `/checkout/[ticketId]`.
 //
 // Scenario:
-//   1. Open a fresh ticket via UI and add one service line.
+//   1. Seed a persisted open ticket with one service line.
 //   2. Insert a captured (`succeeded`) cash payment row directly via the
 //      admin client to simulate one settled leg of a split tender. We
 //      bypass the split-tender UI because reaching `succeeded` through
@@ -12,7 +19,8 @@
 //      to what this issue is testing. The cash-status check constraint
 //      already enforces method=cash → status=succeeded, so the inserted
 //      row exactly mirrors the production shape.
-//   3. Tap Discard from the TxHeader.
+//   3. Tap the consolidated exit control (labeled "Discard" in persisted
+//      mode) from the TxHeader.
 //   4. Server refuses because the ticket has a `succeeded` payments row;
 //      the client surfaces the dedicated banner copy.
 //   5. The ticket must remain `open` in the DB.
@@ -69,20 +77,37 @@ test.describe("Issue26: discard refuses while in-flight payments exist", () => {
     if (!supabaseUp) test.skip();
     const supabase = serviceClient();
 
-    await page.goto("/dashboard");
+    // Seed a persisted open ticket with a Classic manicure ($25) line
+    // directly — a payment was initiated against it (043: a ticket exists
+    // only after a payment-initiating action). A non-empty cart matches
+    // how a real partial split would arrive.
+    const { data: ticket, error: tkErr } = await supabase
+      .from("tickets")
+      .insert({
+        opened_by_staff_id: MAYA_STAFF_ID,
+        status: "open",
+        subtotal_cents: 2500,
+        tax_cents: 0,
+        total_cents: 2500,
+      })
+      .select("id")
+      .single();
+    if (tkErr || !ticket) throw new Error(`seed ticket failed: ${tkErr?.message}`);
+    const ticketId = ticket.id;
 
-    // Open a fresh ticket via the dashboard CTA.
-    await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+    await supabase.from("ticket_items").insert({
+      ticket_id: ticketId,
+      kind: "service",
+      ref_id: "20000000-0000-0000-0000-000000000001", // Classic manicure ($25)
+      assigned_staff_id: MAYA_STAFF_ID,
+      name_snapshot: "Classic manicure",
+      unit_price_cents: 2500,
+      qty: 1,
+      price_unconfirmed: false,
+    });
 
-    // Pick a tech + Classic manicure ($25) so the ticket isn't empty
-    // (the Discard button is enabled on any non-terminal ticket regardless,
-    // but a non-empty cart matches how a real partial split would arrive).
-    await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Jordan Lee']").click();
-    await page
-      .locator("[data-slot='service-tile'][data-service-id='20000000-0000-0000-0000-000000000001']")
-      .click();
+    await page.goto(`/checkout/${ticketId}`);
+    await page.waitForURL(new RegExp(`/checkout/${ticketId}`), { timeout: 10_000 });
     await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$25.00");
 
     // Simulate a captured cash leg of a split tender by inserting the
@@ -98,8 +123,11 @@ test.describe("Issue26: discard refuses while in-flight payments exist", () => {
     });
     expect(insertErr).toBeNull();
 
-    // Tap Discard — server must refuse because of the captured payment.
-    await page.locator("[data-slot='discard-ticket-button']").click();
+    // Tap the consolidated exit control (labeled "Discard" in persisted
+    // mode) — server must refuse because of the captured payment.
+    const exit = page.locator("[data-slot='checkout-exit-control']");
+    await expect(exit).toContainText(/Discard/i);
+    await exit.click();
 
     // Banner appears with the required copy.
     await expect(page.locator("[data-slot='checkout-error-banner']")).toContainText(

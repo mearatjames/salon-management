@@ -185,7 +185,7 @@ describeIfUp("sendCardToTerminal — retry semantics (per-attempt row)", () => {
     fakeCreate.mockResolvedValueOnce({
       checkout: { id: "tco_ATTEMPT_1", status: "PENDING" },
     });
-    const first = await sendCardToTerminal(ticketId);
+    const first = await sendCardToTerminal({ from: "ticket", ticketId });
     expect(first.paymentId).toBeTruthy();
     expect(first.squareTerminalCheckoutId).toBe("tco_ATTEMPT_1");
 
@@ -206,7 +206,7 @@ describeIfUp("sendCardToTerminal — retry semantics (per-attempt row)", () => {
     fakeCreate.mockResolvedValueOnce({
       checkout: { id: "tco_ATTEMPT_2", status: "PENDING" },
     });
-    const second = await sendCardToTerminal(ticketId);
+    const second = await sendCardToTerminal({ from: "ticket", ticketId });
     expect(second.paymentId).toBeTruthy();
     expect(second.paymentId).not.toBe(first.paymentId);
     expect(second.squareTerminalCheckoutId).toBe("tco_ATTEMPT_2");

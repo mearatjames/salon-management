@@ -154,11 +154,12 @@ test.describe("US1: redeem full-balance gift card", () => {
     const stub: SquareStub = await squareStub(context, baseURL!);
     stub.stubListDevices([{ id: "device:STUB_GIFT_US1", name: "Lobby", status: "PAIRED" }]);
 
-    // 3) Start a fresh ticket through the dashboard.
+    // 3) Start a fresh ephemeral cart through the dashboard. Feature 043:
+    //    the URL stays paramless `/checkout` while the cart is built —
+    //    nothing is persisted until the gift redemption begins.
     await page.goto("/dashboard");
     await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
 
     // 4) Pick Sam (technician) + Classic pedicure ($40).
     await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Sam Chen']").click();
@@ -181,8 +182,14 @@ test.describe("US1: redeem full-balance gift card", () => {
     });
     await expect(page.locator("[data-slot='gift-card-balance-amount']")).toContainText("$60.00");
 
-    // 8) Tap Redeem.
+    // 8) Tap Redeem. Feature 043: the gift-card lookup above is read-only
+    //    (no ticket persisted); tapping Redeem is the first payment-
+    //    initiating action — the cart is persisted atomically and the URL
+    //    gains a ticket id. The gift-card-waiting screen rehydrates from
+    //    the persisted route.
     await page.locator("[data-slot='gift-card-balance-redeem']").click();
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
 
     // 9) Waiting micro-state appears.
     await expect(page.locator("[data-slot='gift-card-waiting']")).toBeVisible({ timeout: 5_000 });

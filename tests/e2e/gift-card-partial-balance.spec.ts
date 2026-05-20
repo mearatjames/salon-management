@@ -161,11 +161,12 @@ test.describe("US3: gift card partial balance", () => {
     const stub: SquareStub = await squareStub(context, baseURL!);
     stub.stubListDevices([{ id: "device:STUB_GIFT_US3", name: "Lobby", status: "PAIRED" }]);
 
-    // 3) Open a fresh ticket via dashboard.
+    // 3) Open a fresh ephemeral cart via dashboard. Feature 043: the URL
+    //    stays paramless `/checkout` while the cart is built — nothing is
+    //    persisted until the gift redemption begins.
     await page.goto("/dashboard");
     await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
 
     // 4) Pick Sam + Classic pedicure ($40).
     await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Sam Chen']").click();
@@ -203,14 +204,23 @@ test.describe("US3: gift card partial balance", () => {
     //    unrealistically fast for an interactive flow, so we gate it.
     await serverStub.suppressGiftWebhook();
 
-    // 9) Tap "Redeem available".
+    // 9) Tap "Redeem available". Feature 043: the gift-card lookup above
+    //    is read-only (no ticket persisted); tapping Redeem is the first
+    //    payment-initiating action — the cart is persisted atomically and
+    //    the URL gains a ticket id. The split-tender continuation (gift
+    //    leg pending + the method picker for the remainder) rehydrates
+    //    from the persisted route.
     const redeemBtn = page.locator("[data-slot='gift-card-balance-redeem']");
     await expect(redeemBtn).toContainText(/Redeem available/i);
     await redeemBtn.click();
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
 
-    // 10) MethodPickerPopover auto-opens for the $25 remainder.
+    // 10) The persisted route rehydrates the split-tender continuation:
+    //     the pending gift leg + the MethodPickerPopover re-opened for the
+    //     $25 remainder (seeded from the server-computed remaining-owed).
     await expect(page.locator("[data-slot='method-picker-popover']")).toBeVisible({
-      timeout: 5_000,
+      timeout: 10_000,
     });
     await expect(page.locator("[data-slot='method-picker-amount']")).toContainText("$25.00");
 

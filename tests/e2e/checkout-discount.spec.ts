@@ -25,10 +25,15 @@
 //       with the "Set price on highlighted items" hint (the unconfirmed
 //       gate takes precedence over the discount floor)
 //
-// DB assertions: `ticket_items` rows for kind='discount' with the right
-// discount_pct + note; `audit_log` rows scoped via newAuditCursor() +
-// getAuditLogRowsSince() so the parallel-worker run does not race on the
-// shared audit_log table.
+// Feature 043-checkout-ephemeral-draft: the in-progress cart is now an
+// ephemeral in-memory draft. Entry is the paramless `/checkout`; adding /
+// removing discounts mutates local React state only — NO `ticket_items`
+// or `audit_log` rows exist until payment. Specs that complete a sale
+// take cash at the end and assert the PERSISTED discount rows + the
+// single `ticket.created` audit row; specs whose flow leaves Charge
+// disabled (over-discount, unconfirmed line) verify UI behavior only.
+// Audit reads are scoped via newAuditCursor() + getAuditLogRowsSince() so
+// the parallel-worker run does not race on the shared audit_log table.
 
 import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -68,35 +73,25 @@ const CLASSIC_MANI_SERVICE_ID = "20000000-0000-0000-0000-000000000001"; // $25 f
 const GEL_POLISH_SERVICE_ID = "20000000-0000-0000-0000-000000000002"; // assigned to Sam only
 const NAIL_ART_SERVICE_ID = "20000000-0000-0000-0000-000000000005"; // variable
 
+// Feature 043: open a fresh ephemeral draft cart. Entry is the paramless
+// `/checkout` — no DB ticket, no `/checkout/[ticketId]` URL until payment.
 async function openFreshTicket(
   page: import("@playwright/test").Page,
   techName: string
-): Promise<string> {
+): Promise<void> {
   await page.locator("[data-slot='new-transaction-cta']").click();
-  await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-  const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+  await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
   const techRow = page.locator("[data-slot='checkout-tech-row']");
   await expect(techRow).toBeVisible();
   await techRow.locator(`[data-staff-name='${techName}']`).click();
   await expect(page.locator("[data-slot='checkout-tech-chip']")).toBeVisible();
-  return ticketId;
-}
-
-async function discardTicket(admin: SupabaseClient, ticketId: string): Promise<void> {
-  await admin
-    .from("tickets")
-    .update({
-      status: "discarded",
-      closed_at: new Date().toISOString(),
-      closed_by_staff_id: "10000000-0000-0000-0000-000000000001",
-    })
-    .eq("id", ticketId);
 }
 
 /**
- * Wait for the (optimistically inserted) cart line to flip its data-line-id
- * from a temp id (`tmp-…`) to a real UUID — operations against the line
- * (set tech, remove, set price, remove discount) require a server-confirmed id.
+ * Wait for a cart line to carry a stable `data-line-id`. In the ephemeral-
+ * draft model lines get a client-generated UUID immediately (no `tmp-`
+ * swap), so this resolves as soon as the row is in the DOM — it stays as a
+ * defensive guard before line-level operations (remove, set price).
  */
 async function waitForConfirmedLine(
   cartLine: import("@playwright/test").Locator,
@@ -113,6 +108,16 @@ async function waitForConfirmedLine(
     .toBe("ready");
 }
 
+// Take cash and return the persisted ticket id (the URL becomes
+// `/checkout/[ticketId]` only after the draft is persisted + charged).
+async function takeCashAndGetTicketId(page: import("@playwright/test").Page): Promise<string> {
+  await page.locator("[data-slot='payment-tile'][data-method='cash']").click();
+  await page.locator("[data-slot='take-cash-button']").click();
+  await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+  await expect(page.locator("[data-slot='done-screen']")).toBeVisible({ timeout: 10_000 });
+  return new URL(page.url()).pathname.split("/").pop()!;
+}
+
 test.describe("US3: Discount lines", () => {
   let supabaseUp = false;
 
@@ -126,14 +131,14 @@ test.describe("US3: Discount lines", () => {
     }
   });
 
-  test("(a, b, e, g, h, i) flat discount with note → row + recompute + status='open' invariant + remove restores total", async ({
+  test("(a, b, e, g, h) flat discount with note → row + recompute + remove restores total → persisted on payment", async ({
     page,
   }) => {
     const admin = adminClient();
     const cursor = newAuditCursor();
 
     await page.goto("/dashboard");
-    const ticketId = await openFreshTicket(page, "Jordan Lee");
+    await openFreshTicket(page, "Jordan Lee");
 
     // Add a $25 Classic manicure line.
     await page
@@ -156,14 +161,6 @@ test.describe("US3: Discount lines", () => {
     await expect(discountSheet.locator("[data-slot='discount-sheet-shape-flat']")).toBeVisible();
     await expect(discountSheet.locator("[data-slot='discount-sheet-shape-percent']")).toBeVisible();
 
-    // [FR-019 invariant — pre]: ticket is still open before any discount op.
-    const { data: tkPre } = await admin
-      .from("tickets")
-      .select("status")
-      .eq("id", ticketId)
-      .single();
-    expect(tkPre!.status).toBe("open");
-
     // (b) Flat amount $5 with note "Loyalty perk".
     // The default shape is flat; just fill the amount + note.
     await discountSheet.locator("[data-slot='discount-sheet-amount']").fill("5");
@@ -183,49 +180,8 @@ test.describe("US3: Discount lines", () => {
     const chargeBtn = page.locator("[data-slot='take-cash-button']");
     await expect(chargeBtn).toHaveText(/Take cash · \$20\.00/);
 
-    // [FR-019 invariant — post addDiscountLine]: ticket still open.
-    const { data: tkMid } = await admin
-      .from("tickets")
-      .select("status")
-      .eq("id", ticketId)
-      .single();
-    expect(tkMid!.status).toBe("open");
-
-    // DB: discount row exists with the expected shape/note.
-    const { data: items, error: itErr } = await admin
-      .from("ticket_items")
-      .select(
-        "id, kind, unit_price_cents, discount_pct, note, name_snapshot, ref_id, assigned_staff_id"
-      )
-      .eq("ticket_id", ticketId);
-    expect(itErr).toBeNull();
-    const dbDiscount = items!.find((i) => i.kind === "discount");
-    expect(dbDiscount).toMatchObject({
-      kind: "discount",
-      unit_price_cents: -500,
-      discount_pct: null,
-      note: "Loyalty perk",
-      name_snapshot: "Discount",
-      ref_id: null,
-      assigned_staff_id: null,
-    });
-
-    // Audit row for discount.added. Filter to this ticket so parallel
-    // workers running other US3 tests don't pollute the assertion.
-    const addedRows = (await getAuditLogRowsSince(cursor, "discount.added")).filter(
-      (r) => (r.payload as { ticket_id?: string } | null)?.ticket_id === ticketId
-    );
-    expect(addedRows.length).toBe(1);
-    const addAudit = addedRows[0];
-    expect(addAudit.entity_id).toBe(dbDiscount!.id);
-    expect(addAudit.payload).toMatchObject({
-      ticket_id: ticketId,
-      shape: "flat",
-      value: 500,
-      note: "Loyalty perk",
-    });
-
-    // (e) Wait for the discount row id to settle (post-server) then remove it.
+    // (e) Remove the discount via the row's remove control — local-state
+    //     mutation only in the ephemeral draft.
     await waitForConfirmedLine(discountLine);
     await discountLine.locator("[data-slot='cart-line-remove']").click();
     await expect(page.locator("[data-slot='cart-line'][data-line-kind='discount']")).toHaveCount(
@@ -237,38 +193,6 @@ test.describe("US3: Discount lines", () => {
 
     // Total recomputed back: $25.
     await expect(chargeBtn).toHaveText(/Take cash · \$25\.00/);
-
-    // [FR-019 invariant — post removeDiscountLine]: ticket still open.
-    const { data: tkPost } = await admin
-      .from("tickets")
-      .select("status")
-      .eq("id", ticketId)
-      .single();
-    expect(tkPost!.status).toBe("open");
-
-    // Audit row for discount.removed. The remove uses optimistic UI
-    // (`startTransition` non-blocking), so poll the audit_log until the
-    // server-side `recordAudit` call lands. Filter to this ticket so
-    // parallel workers don't pollute the assertion.
-    await expect
-      .poll(
-        async () =>
-          (await getAuditLogRowsSince(cursor, "discount.removed")).filter(
-            (r) => (r.payload as { ticket_id?: string } | null)?.ticket_id === ticketId
-          ).length,
-        { timeout: 5_000 }
-      )
-      .toBe(1);
-    const removedRows = (await getAuditLogRowsSince(cursor, "discount.removed")).filter(
-      (r) => (r.payload as { ticket_id?: string } | null)?.ticket_id === ticketId
-    );
-    const removeAudit = removedRows[0];
-    expect(removeAudit.payload).toMatchObject({
-      ticket_id: ticketId,
-      shape: "flat",
-      value: 500,
-      note: "Loyalty perk",
-    });
 
     // (g) Add a second discount with NO note → row falls back to "Discount".
     await addDiscountBtn.click();
@@ -283,8 +207,36 @@ test.describe("US3: Discount lines", () => {
       .first();
     await expect(noNoteDiscount).toBeVisible({ timeout: 5_000 });
     await expect(noNoteDiscount.locator("[data-slot='cart-line-name']")).toHaveText("Discount");
+    // $25 - $2 = $23.
+    await expect(chargeBtn).toHaveText(/Take cash · \$23\.00/);
 
-    await discardTicket(admin, ticketId);
+    // Feature 043: take cash — only NOW is the cart persisted. The
+    // persisted ticket carries exactly the live cart: one service line +
+    // the no-note flat discount (the removed $5 discount was never
+    // written). The whole cart yields a single `ticket.created` audit row.
+    const ticketId = await takeCashAndGetTicketId(page);
+
+    const { data: items, error: itErr } = await admin
+      .from("ticket_items")
+      .select(
+        "id, kind, unit_price_cents, discount_pct, note, name_snapshot, ref_id, assigned_staff_id"
+      )
+      .eq("ticket_id", ticketId);
+    expect(itErr).toBeNull();
+    expect(items).toHaveLength(2);
+    const dbDiscount = items!.find((i) => i.kind === "discount");
+    expect(dbDiscount).toMatchObject({
+      kind: "discount",
+      unit_price_cents: -200,
+      discount_pct: null,
+      note: null,
+      name_snapshot: "Discount",
+      ref_id: null,
+      assigned_staff_id: null,
+    });
+
+    const createdRows = await getAuditLogRowsSince(cursor, "ticket.created");
+    expect(createdRows.some((r) => r.entity_id === ticketId)).toBe(true);
   });
 
   test("(c, d) percent discount recomputes against live service subtotal as services change", async ({
@@ -294,7 +246,7 @@ test.describe("US3: Discount lines", () => {
 
     await page.goto("/dashboard");
     // Sam is the only tech with both Classic manicure AND Gel polish access.
-    const ticketId = await openFreshTicket(page, "Sam Chen");
+    await openFreshTicket(page, "Sam Chen");
 
     // Add one Classic manicure line ($25).
     await page
@@ -342,7 +294,11 @@ test.describe("US3: Discount lines", () => {
     // $60 - $9.00 = $51.00
     await expect(chargeBtn).toHaveText(/Take cash · \$51\.00/);
 
-    // DB: discount row carries discount_pct=15 and a recomputed amount.
+    // Feature 043: take cash — the persisted discount row carries
+    // discount_pct=15 and the amount the server folded against the final
+    // $60 service subtotal (15% of $60 = $9.00).
+    const ticketId = await takeCashAndGetTicketId(page);
+
     const { data: items } = await admin
       .from("ticket_items")
       .select("kind, unit_price_cents, discount_pct, name_snapshot")
@@ -354,15 +310,11 @@ test.describe("US3: Discount lines", () => {
       name_snapshot: "Discount · 15%",
       unit_price_cents: -900,
     });
-
-    await discardTicket(admin, ticketId);
   });
 
   test("(f) over-discount floors total to $0 and disables Charge", async ({ page }) => {
-    const admin = adminClient();
-
     await page.goto("/dashboard");
-    const ticketId = await openFreshTicket(page, "Jordan Lee");
+    await openFreshTicket(page, "Jordan Lee");
 
     // Add one $25 Classic manicure line.
     await page
@@ -389,17 +341,13 @@ test.describe("US3: Discount lines", () => {
     // because totals.totalCents === 0.
     await page.locator("[data-slot='payment-tile'][data-method='cash']").click();
     await expect(chargeBtn).toBeDisabled();
-
-    await discardTicket(admin, ticketId);
   });
 
   test("(j) discount + unconfirmed line → discount applies, Charge stays disabled with 'Set price' hint", async ({
     page,
   }) => {
-    const admin = adminClient();
-
     await page.goto("/dashboard");
-    const ticketId = await openFreshTicket(page, "Jordan Lee");
+    await openFreshTicket(page, "Jordan Lee");
 
     // 1) Add a confirmed $25 Classic manicure line (so the discount has a
     //    service subtotal to land against).
@@ -447,18 +395,8 @@ test.describe("US3: Discount lines", () => {
     await expect(chargeBtn).toBeDisabled();
     await expect(chargeBtn).toHaveText(/Set price on highlighted items/);
 
-    // DB: discount row is present with the expected shape.
-    const { data: items } = await admin
-      .from("ticket_items")
-      .select("kind, unit_price_cents, discount_pct, note")
-      .eq("ticket_id", ticketId);
-    const dbDiscount = items!.find((i) => i.kind === "discount");
-    expect(dbDiscount).toMatchObject({
-      kind: "discount",
-      unit_price_cents: -500,
-      discount_pct: null,
-    });
-
-    await discardTicket(admin, ticketId);
+    // Feature 043: the cart is an ephemeral draft and Charge never fires,
+    // so nothing is ever persisted — there are no `ticket_items` rows to
+    // assert. The disabled-Charge UI behavior above is the contract.
   });
 });

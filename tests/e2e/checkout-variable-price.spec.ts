@@ -12,11 +12,14 @@
 //       the entered amount, and Charge enables and reads
 //       "Take cash · $X.XX"
 //
-// DB assertions: `ticket_items.unit_price_cents` matches the entered
-// amount and `price_unconfirmed=false`; an `audit_log` row for
-// `line.price_set` exists, scoped via `newAuditCursor()` +
-// `getAuditLogRowsSince()` so the parallel-worker run does not race on
-// the shared `audit_log` table.
+// Feature 043-checkout-ephemeral-draft: the in-progress cart is now an
+// ephemeral in-memory draft. Entry is the paramless `/checkout` (no
+// redirect to `/checkout/[ticketId]` while building); variable-price
+// entry mutates local React state only — NO `ticket_items` rows exist
+// until payment. This spec therefore takes cash at the end and asserts
+// the PERSISTED ticket: one `ticket_items` row with the entered amount +
+// `price_unconfirmed=false`, scoped via `newAuditCursor()` so the
+// parallel-worker run does not race on the shared `audit_log` table.
 
 import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -74,10 +77,10 @@ test.describe("US1: Variable price entry", () => {
 
     await page.goto("/dashboard");
 
-    // Open a fresh ticket via the dashboard CTA.
+    // Open a fresh ephemeral draft cart via the dashboard CTA. Entry is
+    // the paramless `/checkout` — no redirect to `/checkout/[ticketId]`.
     await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
 
     // Pick Jordan Lee as the header tech.
     const techRow = page.locator("[data-slot='checkout-tech-row']");
@@ -147,7 +150,16 @@ test.describe("US1: Variable price entry", () => {
     await page.locator("[data-slot='payment-tile'][data-method='cash']").click();
     await expect(chargeBtn).toBeEnabled();
 
-    // DB-level assertions.
+    // Feature 043: take cash — the ephemeral cart is persisted atomically
+    // (one `tickets` row + one `ticket_items` row) then charged. Only NOW
+    // does the URL become `/checkout/[ticketId]`.
+    await chargeBtn.click();
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+    await expect(page.locator("[data-slot='done-screen']")).toBeVisible({ timeout: 10_000 });
+
+    // DB-level assertions on the now-persisted ticket: the variable-price
+    // line landed with the entered amount and a confirmed price.
     const admin = adminClient();
     const { data: items, error: itErr } = await admin
       .from("ticket_items")
@@ -162,25 +174,10 @@ test.describe("US1: Variable price entry", () => {
       ref_id: NAIL_ART_SERVICE_ID,
     });
 
-    // Audit: a `line.price_set` row with the expected payload exists.
-    const auditRows = await getAuditLogRowsSince(cursor, "line.price_set");
-    expect(auditRows.length).toBeGreaterThanOrEqual(1);
-    const lastSet = auditRows[auditRows.length - 1];
-    expect(lastSet.entity_id).toBe(items![0].id);
-    expect(lastSet.payload).toMatchObject({
-      ticket_id: ticketId,
-      new_unit_price_cents: 5000,
-      was_unconfirmed: true,
-    });
-
-    // Cleanup: discard the ticket so re-runs start clean.
-    await admin
-      .from("tickets")
-      .update({
-        status: "discarded",
-        closed_at: new Date().toISOString(),
-        closed_by_staff_id: "10000000-0000-0000-0000-000000000001",
-      })
-      .eq("id", ticketId);
+    // Audit: the draft persistence emits a single `ticket.created` row for
+    // the whole cart (no per-edit `line.price_set` rows in ephemeral mode).
+    const createdRows = await getAuditLogRowsSince(cursor, "ticket.created");
+    expect(createdRows.length).toBeGreaterThanOrEqual(1);
+    expect(createdRows[createdRows.length - 1].entity_id).toBe(ticketId);
   });
 });

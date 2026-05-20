@@ -16,6 +16,16 @@
 //     leg via pos_compose_payment_draft); the client drives the second-
 //     leg method-pick + composeDraftLeg round-trip — the server does NOT
 //     synthesise a second draft row in redeemGiftCardWholeTicket.
+//
+// Feature 043-checkout-ephemeral-draft (T024/T027): `redeemGiftCardWholeTicket`
+// now takes a discriminated `PaymentTarget` as its first arg:
+//   - { from: 'ticket', ticketId } — today's direct path against the
+//     persisted ticket.
+//   - { from: 'draft', draft }     — the ephemeral path: the action calls
+//     `validateAndResolveDraft`, then `pos_create_ticket_from_draft` to
+//     persist the cart atomically, THEN runs today's gift redemption
+//     against the freshly-resolved ticket id. Every return shape carries
+//     that resolved `ticketId`.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -65,11 +75,16 @@ type TicketRow = {
   total_cents: number;
 };
 
+const SERVICE_ID = "20000000-0000-0000-0000-000000000001";
+const SVC_STAFF_ID = "30000000-0000-0000-0000-000000000001";
+
 function setupClient({
   ticket,
   inFlightLeg,
   succeededSum,
   paymentDraftRow,
+  draftServiceRows = [{ id: SERVICE_ID, name: "Classic manicure" }],
+  draftStaffRows = [{ id: SVC_STAFF_ID, active: true, removed_at: null }],
 }: {
   ticket: TicketRow;
   inFlightLeg?: boolean;
@@ -81,6 +96,8 @@ function setupClient({
     status: "draft";
     amount_cents: number;
   };
+  draftServiceRows?: Array<{ id: string; name: string }>;
+  draftStaffRows?: Array<{ id: string; active: boolean; removed_at: string | null }>;
 }) {
   const insertedPaymentRows: Array<Record<string, unknown>> = [];
   const updateCalls: Array<{
@@ -94,6 +111,18 @@ function setupClient({
     rpcCalls.push({ fn, args });
     if (fn === "pos_compose_payment_draft") {
       return { data: PAYMENT_ID, error: null };
+    }
+    if (fn === "pos_create_ticket_from_draft") {
+      return {
+        data: [
+          {
+            ticket_id: ticket.id,
+            subtotal_cents: ticket.total_cents,
+            total_cents: ticket.total_cents,
+          },
+        ],
+        error: null,
+      };
     }
     return { data: null, error: null };
   });
@@ -219,9 +248,28 @@ function setupClient({
     };
   }
 
+  // Backs `validateAndResolveDraft` on the { from: 'draft' } path —
+  // catalog + staff resolution reads.
+  function servicesTable() {
+    return {
+      select: vi.fn(() => ({
+        in: vi.fn(async () => ({ data: draftServiceRows, error: null })),
+      })),
+    };
+  }
+  function staffTable() {
+    return {
+      select: vi.fn(() => ({
+        in: vi.fn(async () => ({ data: draftStaffRows, error: null })),
+      })),
+    };
+  }
+
   const from = vi.fn((table: string) => {
     if (table === "tickets") return ticketsTable();
     if (table === "payments") return paymentsTable();
+    if (table === "services") return servicesTable();
+    if (table === "staff") return staffTable();
     return {};
   });
 
@@ -269,10 +317,14 @@ describe("redeemGiftCardWholeTicket — full-balance branch", () => {
     });
 
     const { redeemGiftCardWholeTicket } = await import("@/app/(studio)/checkout/actions");
-    const result = await redeemGiftCardWholeTicket(TICKET_ID, "6000 1234 5678 0001");
+    const result = await redeemGiftCardWholeTicket(
+      { from: "ticket", ticketId: TICKET_ID },
+      "6000 1234 5678 0001"
+    );
 
     expect(result.kind).toBe("fully_paid");
     if (result.kind !== "fully_paid") throw new Error("type guard");
+    expect(result.ticketId).toBe(TICKET_ID);
     expect(result.paymentId).toBe(PAYMENT_ID);
     expect(result.ticketFlippedToPaid).toBe(true);
   });
@@ -292,7 +344,10 @@ describe("redeemGiftCardWholeTicket — full-balance branch", () => {
     });
 
     const { redeemGiftCardWholeTicket } = await import("@/app/(studio)/checkout/actions");
-    const result = await redeemGiftCardWholeTicket(TICKET_ID, "6000 1234 5678 0000");
+    const result = await redeemGiftCardWholeTicket(
+      { from: "ticket", ticketId: TICKET_ID },
+      "6000 1234 5678 0000"
+    );
 
     expect(result.kind).toBe("lookup_zero_balance");
     if (result.kind !== "lookup_zero_balance") throw new Error("type guard");
@@ -316,7 +371,10 @@ describe("redeemGiftCardWholeTicket — full-balance branch", () => {
     });
 
     const { redeemGiftCardWholeTicket } = await import("@/app/(studio)/checkout/actions");
-    const result = await redeemGiftCardWholeTicket(TICKET_ID, "6000 1234 5678 BLKD");
+    const result = await redeemGiftCardWholeTicket(
+      { from: "ticket", ticketId: TICKET_ID },
+      "6000 1234 5678 BLKD"
+    );
 
     expect(result.kind).toBe("lookup_not_redeemable");
     if (result.kind !== "lookup_not_redeemable") throw new Error("type guard");
@@ -336,7 +394,10 @@ describe("redeemGiftCardWholeTicket — full-balance branch", () => {
     });
 
     const { redeemGiftCardWholeTicket } = await import("@/app/(studio)/checkout/actions");
-    const result = await redeemGiftCardWholeTicket(TICKET_ID, "6000 1234 5678 9999");
+    const result = await redeemGiftCardWholeTicket(
+      { from: "ticket", ticketId: TICKET_ID },
+      "6000 1234 5678 9999"
+    );
 
     expect(result.kind).toBe("lookup_not_found");
     expect(insertedPaymentRows).toHaveLength(0);
@@ -380,10 +441,14 @@ describe("redeemGiftCardWholeTicket — partial-balance branch (US3 / T050)", ()
     });
 
     const { redeemGiftCardWholeTicket } = await import("@/app/(studio)/checkout/actions");
-    const result = await redeemGiftCardWholeTicket(TICKET_ID, "6000 1234 5678 0002");
+    const result = await redeemGiftCardWholeTicket(
+      { from: "ticket", ticketId: TICKET_ID },
+      "6000 1234 5678 0002"
+    );
 
     expect(result.kind).toBe("partial_split");
     if (result.kind !== "partial_split") throw new Error("type guard");
+    expect(result.ticketId).toBe(TICKET_ID);
     expect(result.paymentId).toBe(PAYMENT_ID);
     // remainingOwed (4000) - amountToCharge (1500) = 2500
     expect(result.nextLegAmountCents).toBe(2500);
@@ -431,10 +496,130 @@ describe("redeemGiftCardWholeTicket — partial-balance branch (US3 / T050)", ()
     });
 
     const { redeemGiftCardWholeTicket } = await import("@/app/(studio)/checkout/actions");
-    const result = await redeemGiftCardWholeTicket(TICKET_ID, "6000 1234 5678 0002");
+    const result = await redeemGiftCardWholeTicket(
+      { from: "ticket", ticketId: TICKET_ID },
+      "6000 1234 5678 0002"
+    );
 
     expect(result.kind).toBe("partial_split");
     if (result.kind !== "partial_split") throw new Error("type guard");
     expect(result.nextLegAmountCents).toBe(2500);
+  });
+});
+
+// ----------------------------------------------------------------------
+// Draft path (feature 043 — T024 / T027) — { from: 'draft', draft }.
+//
+// Redeeming a gift card against an unpersisted cart is a payment-
+// initiating action: the action persists the cart via
+// `pos_create_ticket_from_draft` BEFORE the gift redemption, then runs
+// today's logic against the freshly-resolved ticket id.
+// ----------------------------------------------------------------------
+describe("redeemGiftCardWholeTicket — draft path (feature 043)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSession();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function serviceDraft(
+    overrides: Partial<{ unitPriceCents: number; priceUnconfirmed: boolean }> = {}
+  ) {
+    return {
+      lines: [
+        {
+          kind: "service" as const,
+          clientLineId: "client-line-1",
+          serviceId: SERVICE_ID,
+          unitPriceCents: overrides.unitPriceCents ?? 4000,
+          priceUnconfirmed: overrides.priceUnconfirmed ?? false,
+          assignedStaffId: SVC_STAFF_ID,
+        },
+      ],
+    };
+  }
+
+  it("persists via pos_create_ticket_from_draft then redeems the gift card against the resolved ticketId", async () => {
+    (retrieveGiftCardFromGAN as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      kind: "found",
+      giftCardId: GIFT_CARD_ID,
+      squareGiftCardId: "gftc_0001",
+      last4Mask: "0001",
+      balanceCents: 6000,
+      state: "ACTIVE",
+    });
+    (createGiftCardPayment as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+      squareGiftCardPaymentId: "pay_gc_OK",
+      status: "COMPLETED",
+    });
+
+    const { rpcCalls } = setupClient({
+      ticket: { id: TICKET_ID, status: "open", total_cents: 4000 },
+      paymentDraftRow: {
+        id: PAYMENT_ID,
+        ticket_id: TICKET_ID,
+        method: "gift",
+        status: "draft",
+        amount_cents: 4000,
+      },
+    });
+
+    const { redeemGiftCardWholeTicket } = await import("@/app/(studio)/checkout/actions");
+    const result = await redeemGiftCardWholeTicket(
+      { from: "draft", draft: serviceDraft() },
+      "6000 1234 5678 0001"
+    );
+
+    // The cart was persisted FIRST (before any gift payment compose).
+    const createIdx = rpcCalls.findIndex((c) => c.fn === "pos_create_ticket_from_draft");
+    const composeIdx = rpcCalls.findIndex((c) => c.fn === "pos_compose_payment_draft");
+    expect(createIdx).toBeGreaterThanOrEqual(0);
+    expect(composeIdx).toBeGreaterThan(createIdx);
+
+    // The create RPC carries the session-resolved operator id.
+    const createArgs = rpcCalls[createIdx]!.args as Record<string, unknown>;
+    expect(createArgs.p_operator).toBe(STAFF_ID);
+    expect(Array.isArray(createArgs.p_items)).toBe(true);
+
+    expect(result.kind).toBe("fully_paid");
+    if (result.kind !== "fully_paid") throw new Error("type guard");
+    expect(result.ticketId).toBe(TICKET_ID);
+    expect(result.paymentId).toBe(PAYMENT_ID);
+  });
+
+  it("refuses an empty cart with TicketEmptyError and never persists or redeems", async () => {
+    const { rpcCalls } = setupClient({
+      ticket: { id: TICKET_ID, status: "open", total_cents: 4000 },
+    });
+
+    const { redeemGiftCardWholeTicket } = await import("@/app/(studio)/checkout/actions");
+    const { TicketEmptyError } = await import("@/app/(studio)/checkout/_errors");
+    await expect(
+      redeemGiftCardWholeTicket({ from: "draft", draft: { lines: [] } }, "6000 1234 5678 0001")
+    ).rejects.toBeInstanceOf(TicketEmptyError);
+
+    expect(rpcCalls.some((c) => c.fn === "pos_create_ticket_from_draft")).toBe(false);
+    expect(createGiftCardPayment).not.toHaveBeenCalled();
+  });
+
+  it("refuses an unconfirmed price with TicketHasUnpricedItemsError and never persists or redeems", async () => {
+    const { rpcCalls } = setupClient({
+      ticket: { id: TICKET_ID, status: "open", total_cents: 4000 },
+    });
+
+    const { redeemGiftCardWholeTicket } = await import("@/app/(studio)/checkout/actions");
+    const { TicketHasUnpricedItemsError } = await import("@/app/(studio)/checkout/_errors");
+    await expect(
+      redeemGiftCardWholeTicket(
+        { from: "draft", draft: serviceDraft({ priceUnconfirmed: true }) },
+        "6000 1234 5678 0001"
+      )
+    ).rejects.toBeInstanceOf(TicketHasUnpricedItemsError);
+
+    expect(rpcCalls.some((c) => c.fn === "pos_create_ticket_from_draft")).toBe(false);
+    expect(createGiftCardPayment).not.toHaveBeenCalled();
   });
 });

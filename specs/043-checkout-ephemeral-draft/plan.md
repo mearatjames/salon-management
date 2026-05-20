@@ -101,8 +101,8 @@ app/(studio)/checkout/
 ├── actions.ts                    # CHANGED — remove createEmptyTicket/resumeOrCreateTicket;
 │                                 #   draft path on takeCash/sendCardToTerminal/
 │                                 #   composeDraftLeg/redeemGiftCardWholeTicket; simplify startNewSale
-├── _draft.ts                     # NEW — CheckoutDraft type + server-side validate/resolve helper
-├── _drafts.ts                    # unchanged (split-tender draft-leg machinery)
+├── _cart-draft.ts                # NEW — CheckoutDraft type + server-side validate/resolve helper
+├── _drafts.ts                    # unchanged (split-tender payment-draft-leg machinery)
 ├── _errors.ts                    # unchanged (reuse TicketEmptyError / TicketHasUnpricedItemsError)
 ├── checkout.css                  # unchanged
 └── [ticketId]/

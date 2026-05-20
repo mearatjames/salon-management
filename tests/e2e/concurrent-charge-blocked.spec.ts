@@ -11,6 +11,15 @@
 // (mimicking a card or gift leg already in flight from device A) and then
 // attempting an activation from device B. Square is not involved in this
 // path — we exercise the DB-side guard directly.
+//
+// Feature 043-checkout-ephemeral-draft: the seeded persisted `tickets`
+// row + its `pending` card payment is exactly the state device A leaves
+// behind once its first payment-initiating action (the card-send) has
+// persisted the cart. Device B then opens the *persisted* `/checkout/[id]`
+// route and its cart edit hits the unchanged in-flight safeguard
+// (FR-008). The pre-payment ephemeral entry only matters for device A's
+// first charge — modelled here by the seed — so the FR-022 assertion
+// below runs against the post-persistence ticket exactly as before.
 
 import { expect, test } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -101,12 +110,20 @@ test.describe("US2: concurrent charge blocked", () => {
     });
 
     // 4) Park a pending card-payment row on the ticket — mimics device A
-    //    having already tapped "Send to terminal" with the card leg.
+    //    having already activated a split-tender card leg. Feature 043:
+    //    the leg is seeded at $20 (< the $40 total) so it models a
+    //    split-tender leg in flight, not a single-tender whole-ticket
+    //    card payment. A lone full-cover pending card leg would rehydrate
+    //    the dedicated card-waiting screen (T028) — which has no cart for
+    //    device B to edit; a partial leg keeps the split footer + cart
+    //    visible so the FR-022 cart-edit refusal below is reachable. The
+    //    in-flight guard (`discardDraftLegs` prelude) gates on
+    //    `status='pending'` regardless of the leg amount.
     const { error: pendErr } = await supabase.from("payments").insert({
       ticket_id: ticketId,
       method: "card",
       kind: "payment",
-      amount_cents: 4000,
+      amount_cents: 2000,
       status: "pending",
       taken_by_staff_id: ownerId,
     });

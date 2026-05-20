@@ -158,11 +158,12 @@ test.describe("US2: split tender — cash + card", () => {
     const stub: SquareStub = await squareStub(context, baseURL!);
     stub.stubListDevices([{ id: "device:STUB_SPLIT", name: "Lobby Terminal", status: "PAIRED" }]);
 
-    // 3) Open a fresh ticket via dashboard.
+    // 3) Open a fresh ephemeral cart via dashboard. Feature 043: the URL
+    //    stays paramless `/checkout` while the cart is built — nothing is
+    //    persisted until the first split-tender leg is composed.
     await page.goto("/dashboard");
     await page.locator("[data-slot='new-transaction-cta']").click();
-    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
 
     // 4) Pick Sam, then Gel polish ($35) + Classic manicure ($25) = $60.
     //    The seed catalog has no single $60 fixed-price service, so we
@@ -180,8 +181,14 @@ test.describe("US2: split tender — cash + card", () => {
     await page.locator("[data-slot='payment-tile'][data-method='split']").click();
     await expect(page.locator("[data-slot='split-cart-footer']")).toBeVisible({ timeout: 5_000 });
 
-    // 6) Compose $20 cash + $40 card drafts.
+    // 6) Compose $20 cash + $40 card drafts. Feature 043: composing the
+    //    FIRST split-tender leg is the first payment-initiating action —
+    //    the ephemeral cart is persisted atomically and the URL gains a
+    //    ticket id. The split-tender panel rehydrates from the persisted
+    //    route; every subsequent leg runs in persisted mode.
     await fillComposer(page, "20.00", "cash");
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
     await expect(
       page.locator("[data-slot='payment-leg-row'][data-method='cash'][data-status='draft']")
     ).toBeVisible({ timeout: 5_000 });
