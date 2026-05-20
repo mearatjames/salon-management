@@ -6,8 +6,8 @@
 //   3. Tap Gift tile → GanNumpadSheet opens.
 //   4. Enter GAN `6000 1234 5678 0001` (stub fixture: ACTIVE $60).
 //   5. Balance sheet shows "$60.00 available · Card ending in 0001 · Redeem".
-//   6. Tap Redeem → waiting micro-state → stub auto-fires the
-//      payment.updated webhook → ticket flips paid → DoneScreen.
+//   6. Tap Redeem → waiting micro-state (auto gift webhook suppressed) →
+//      test fires the payment.updated webhook → ticket flips paid → DoneScreen.
 //   7. Audit cursor asserts the three verbs in order:
 //        gift_card.balance_looked_up
 //        payment.draft_created
@@ -182,22 +182,72 @@ test.describe("US1: redeem full-balance gift card", () => {
     });
     await expect(page.locator("[data-slot='gift-card-balance-amount']")).toContainText("$60.00");
 
-    // 8) Tap Redeem. Feature 043: the gift-card lookup above is read-only
-    //    (no ticket persisted); tapping Redeem is the first payment-
-    //    initiating action — the cart is persisted atomically and the URL
-    //    gains a ticket id. The gift-card-waiting screen rehydrates from
-    //    the persisted route.
+    // 8) Suppress the stub's 100ms auto-fired gift webhook. Feature 043:
+    //    tapping Redeem persists the ticket and `router.replace`s onto
+    //    `/checkout/[ticketId]`, where the gift-card-waiting screen
+    //    rehydrates from the persisted route. The stub's auto-fire is
+    //    unrealistically fast — it can settle the payment before that
+    //    navigation + SSR completes, skipping the waiting screen. Gate it
+    //    and fire the webhook explicitly once the waiting screen is shown,
+    //    exactly as the card-terminal and partial-balance specs do.
+    await serverStub.suppressGiftWebhook();
+
+    // 9) Tap Redeem — the first payment-initiating action. The cart is
+    //    persisted atomically and the URL gains a ticket id.
     await page.locator("[data-slot='gift-card-balance-redeem']").click();
     await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
     const ticketId = new URL(page.url()).pathname.split("/").pop()!;
 
-    // 9) Waiting micro-state appears.
+    // 10) Waiting micro-state appears — deterministic: the webhook is
+    //     suppressed, so the persisted route rehydrates the pending gift
+    //     leg into the gift-card-waiting stage.
     await expect(page.locator("[data-slot='gift-card-waiting']")).toBeVisible({ timeout: 5_000 });
 
-    // 10) Within ~10s the auto-fired webhook lands → ticket flips paid → DoneScreen.
+    // 11) Fire the gift webhook explicitly. Read the Square gift-card
+    //     payment id off the pending leg, then POST a valid signed
+    //     payment.updated event — the same shape the stub would auto-fire.
+    let giftSquarePaymentId: string | null = null;
+    for (let i = 0; i < 20 && !giftSquarePaymentId; i++) {
+      const { data } = await supabase
+        .from("payments")
+        .select("square_gift_card_payment_id")
+        .eq("ticket_id", ticketId)
+        .eq("method", "gift")
+        .maybeSingle();
+      const row = data as { square_gift_card_payment_id: string | null } | null;
+      if (row?.square_gift_card_payment_id) {
+        giftSquarePaymentId = row.square_gift_card_payment_id;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(giftSquarePaymentId).toBeTruthy();
+
+    const webhookRes = await stub.simulateWebhook({
+      merchant_id: "MERCHANT_STUB",
+      type: "payment.updated",
+      event_id: `evt_gift_full_${Date.now()}`,
+      created_at: new Date().toISOString(),
+      data: {
+        type: "payment",
+        id: giftSquarePaymentId,
+        object: {
+          payment: {
+            id: giftSquarePaymentId,
+            status: "COMPLETED",
+            source_type: "GIFT_CARD",
+            amount_money: { amount: 4000, currency: "USD" },
+            reference_id: ticketId,
+          },
+        },
+      },
+    });
+    expect(webhookRes.status).toBe(200);
+
+    // 12) The webhook settles the gift payment → ticket flips paid → DoneScreen.
     await expect(page.locator("[data-slot='done-screen']")).toBeVisible({ timeout: 15_000 });
 
-    // 11) DB asserts: succeeded payment of $40, ticket paid.
+    // 13) DB asserts: succeeded payment of $40, ticket paid.
     const { data: paymentRow } = await supabase
       .from("payments")
       .select("status, amount_cents, method, square_gift_card_payment_id")
@@ -215,14 +265,14 @@ test.describe("US1: redeem full-balance gift card", () => {
       .single();
     expect(ticketRow?.status).toBe("paid");
 
-    // 12) Audit cursor — three verbs landed in order.
+    // 14) Audit cursor — three verbs landed in order.
     const rows = await getAuditLogRowsSince(cursor);
     const actions = rows.map((r) => r.action);
     expect(actions).toContain("gift_card.balance_looked_up");
     expect(actions).toContain("payment.draft_created");
     expect(actions).toContain("gift_card.redeemed");
 
-    // 13) No stray Square calls.
+    // 15) No stray Square calls.
     stub.assertNoLiveSquareCalls();
   });
 });
