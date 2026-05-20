@@ -1841,15 +1841,29 @@ export function CheckoutScreen({
         onDiscard={handleDiscard}
         disabled={inflight}
       />
+      {/* Tech-assignment band — a full-width gate between the header and
+          the two-column body, so "assign a tech" reads as a prominent
+          step before any service can be tapped. Mirrors `FlowSingle.jsx`
+          lines 182-199 (the prototype every checkout component cites). */}
+      <div className="checkout-tech-band" data-slot="checkout-tech-band">
+        <TechAvatarRow
+          staff={staff}
+          selectedStaffId={selectedStaffId}
+          onPick={handlePickTech}
+          onClear={handleClearTech}
+        />
+      </div>
       <div className="checkout-body">
-        {/* LEFT: cart column */}
-        <section className="checkout-cart" aria-label="Cart">
-          <TechAvatarRow
-            staff={staff}
-            selectedStaffId={selectedStaffId}
-            onPick={handlePickTech}
-            onClear={handleClearTech}
+        {/* LEFT: service catalog column */}
+        <section className="checkout-catalog" aria-label="Service catalog">
+          <ServiceTiles
+            services={services}
+            disabled={!selectedStaffId}
+            onPick={handlePickService}
           />
+        </section>
+        {/* RIGHT: cart column */}
+        <section className="checkout-cart" aria-label="Cart">
           {/* US3 cart header — title + + Discount affordance. The button
               opens the DiscountSheet (mounted at the bottom of this island);
               uses the same `tx-btn ghost` token-styled chrome the rest of
@@ -1861,7 +1875,6 @@ export function CheckoutScreen({
               alignItems: "center",
               justifyContent: "space-between",
               gap: "var(--space-2)",
-              marginTop: "var(--space-3)",
             }}
           >
             <div
@@ -2055,15 +2068,6 @@ export function CheckoutScreen({
               </div>
             </>
           )}
-        </section>
-
-        {/* RIGHT: catalog column */}
-        <section className="checkout-catalog" aria-label="Service catalog">
-          <ServiceTiles
-            services={services}
-            disabled={!selectedStaffId}
-            onPick={handlePickService}
-          />
         </section>
       </div>
 

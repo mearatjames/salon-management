@@ -1,9 +1,10 @@
 /* ==========================================================================
    Lacquer — Checkout (cash-only sale) layout
    Adapted from `design-system/prototypes/transaction/FlowSingle.jsx`.
-   Single-screen cart: header row across the top, two columns below — the
-   left column is the cart (lines + totals + payment tiles), the right
-   column is the service catalog (tech-avatar row + search + tiles).
+   Single-screen cart: a header row, a full-width tech-assignment band,
+   then two columns below — the left column is the service catalog
+   (search + tiles), the right column is the cart (lines + totals +
+   payment tiles).
    Every value resolves to a `var(--*)` token from `styles/tokens.css`.
    ========================================================================== */
 
@@ -44,13 +45,24 @@
   gap: var(--space-2);
 }
 
-/* Two-column body: cart on the left, catalog on the right.
+/* Tech-assignment band: a full-width row between the header and the
+   two-column body. Assigning a tech reads as a prominent gate before any
+   service can be tapped — mirrors `FlowSingle.jsx` lines 182-199. */
+.checkout-tech-band {
+  display: flex;
+  align-items: center;
+  padding: var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+
+/* Two-column body: service catalog on the left, cart on the right.
    `min-height: 0` lets the inner overflow regions reclaim height. */
 .checkout-body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 380px);
   gap: var(--space-6);
   padding: var(--space-6);
   overflow: hidden;
@@ -78,8 +90,8 @@
   overflow: auto;
 }
 
-/* Catalog column: tech-avatar row across the top, then search input,
-   category chips, and the service tile grid. */
+/* Catalog column: search input, category chips, and the service tile
+   grid. */
 .checkout-catalog {
   display: flex;
   flex-direction: column;
