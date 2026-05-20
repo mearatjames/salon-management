@@ -12,7 +12,7 @@
 //       becomes /checkout/[ticketId]; DoneScreen shows "Charged $X"; DB:
 //       payments row method='cash' status='succeeded' + tickets.status
 //       ='paid' + the `payment.captured` audit row
-//   (e) "New sale" → fresh empty /checkout reachable
+//   (e) "New transaction" → fresh empty /checkout reachable
 //
 // Docker / Supabase availability: same probe pattern as the rest of the
 // suite — skip when the local Supabase is unreachable.
@@ -65,7 +65,9 @@ test.describe("US1: process a cash-only walk-in sale end-to-end", () => {
     }
   });
 
-  test("(a–e) dashboard → ephemeral cart → take cash → DoneScreen → New sale", async ({ page }) => {
+  test("(a–e) dashboard → ephemeral cart → take cash → DoneScreen → New transaction", async ({
+    page,
+  }) => {
     const cursor = newAuditCursor();
     const admin = adminClient();
 
@@ -116,6 +118,18 @@ test.describe("US1: process a cash-only walk-in sale end-to-end", () => {
     await expect(page.locator("[data-slot='done-screen']")).toBeVisible({ timeout: 10_000 });
     await expect(page.locator("[data-slot='done-charged-amount']")).toHaveText("$25.00");
 
+    // Cash done screen is unchanged (#86): a bare "Paid by cash" line —
+    // no tip, no Square reference. The three-action row (#87) is present.
+    // Scope to `done-actions`: the studio topbar renders its own
+    // SwitchStaffButton (same `data-slot`), so an unscoped switch-staff
+    // selector would be a strict-mode violation on this page.
+    const doneActions = page.locator("[data-slot='done-actions']");
+    await expect(page.locator("[data-slot='done-method-line']")).toHaveText("Paid by cash");
+    await expect(page.locator("[data-slot='done-reference-line']")).toHaveCount(0);
+    await expect(doneActions.locator("[data-slot='dashboard-button']")).toBeVisible();
+    await expect(doneActions.locator("[data-slot='new-transaction-button']")).toBeVisible();
+    await expect(doneActions.locator("[data-slot='switch-staff-button']")).toBeVisible();
+
     // DB-level assertions: payments + tickets state.
     const { data: payments, error: payErr } = await admin
       .from("payments")
@@ -162,10 +176,10 @@ test.describe("US1: process a cash-only walk-in sale end-to-end", () => {
     // entity_type for payment.captured is "payment" (derived by prefix).
     expect(captureRows[captureRows.length - 1].entity_type).toBe("payment");
 
-    // (e) "New sale" must reach a fresh empty /checkout. The browser is
-    //     already on /checkout/<firstTicketId>; the Link target is the
+    // (e) "New transaction" must reach a fresh empty /checkout. The browser
+    //     is already on /checkout/<firstTicketId>; the Link target is the
     //     paramless /checkout, which renders a fresh ephemeral cart.
-    await page.locator("[data-slot='new-sale-button']").click();
+    await page.locator("[data-slot='new-transaction-button']").click();
     await page.waitForURL(/\/checkout$/, { timeout: 15_000 });
     // The fresh draft cart shows the empty pre-pick tech row again.
     await expect(page.locator("[data-slot='checkout-tech-row']")).toBeVisible();

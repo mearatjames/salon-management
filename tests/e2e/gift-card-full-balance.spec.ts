@@ -247,6 +247,14 @@ test.describe("US1: redeem full-balance gift card", () => {
     // 12) The webhook settles the gift payment → ticket flips paid → DoneScreen.
     await expect(page.locator("[data-slot='done-screen']")).toBeVisible({ timeout: 15_000 });
 
+    // #86: the done screen summarises the gift payment — the gift-card
+    // method label, the tip, and the Square reference.
+    await expect(page.locator("[data-slot='done-method-line']")).toContainText("Paid by gift card");
+    await expect(page.locator("[data-slot='done-method-line']")).toContainText("tip $0.00");
+    await expect(page.locator("[data-slot='done-reference-line']")).toContainText(
+      `Square ref ${giftSquarePaymentId}`
+    );
+
     // 13) DB asserts: succeeded payment of $40, ticket paid.
     const { data: paymentRow } = await supabase
       .from("payments")
