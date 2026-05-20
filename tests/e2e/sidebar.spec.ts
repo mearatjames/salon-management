@@ -15,15 +15,18 @@ test.use({
   },
 });
 
-// The 9 nav items in render order — matches `NAV_CONFIG` in
+// The nav items in render order — matches `NAV_CONFIG` in
 // `components/lacquer/sidebar/nav-items.ts` and the table in
-// `contracts/nav-items.contract.md` § 2.
+// `contracts/nav-items.contract.md` § 2. `transactions` is owner/manager
+// only (feature 045); this spec runs as owner so it is present and ordered
+// between `checkout` and `walkin`.
 const EXPECTED_NAV_IDS = [
   "dashboard",
   "schedule",
   "clients",
   "services",
   "checkout",
+  "transactions",
   "walkin",
   "end-of-day",
   "day-report",

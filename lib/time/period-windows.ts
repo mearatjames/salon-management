@@ -56,6 +56,25 @@ function localStartOfMonthUtc(tz: string, instant: Date): Date {
   return utcFromLocalParts(tz, year, month, 1, 0, 0, 0);
 }
 
+// Returns the UTC instant corresponding to "local midnight on the first day of
+// the local month `monthsOffset` away from the local month that contains
+// `instant`". `monthsOffset` of 0 is the current month, -1 the previous, etc.
+function localStartOfMonthUtcOffset(tz: string, instant: Date, monthsOffset: number): Date {
+  const parts = formatPartsInTz(tz, instant);
+  let year = Number(parts.year);
+  let month = Number(parts.month); // 1-12
+
+  if (monthsOffset !== 0) {
+    // Month math via a zero-based month index, normalised through Date.UTC so
+    // year boundaries (Jan → Dec) carry correctly.
+    const shifted = new Date(Date.UTC(year, month - 1 + monthsOffset, 1));
+    year = shifted.getUTCFullYear();
+    month = shifted.getUTCMonth() + 1;
+  }
+
+  return utcFromLocalParts(tz, year, month, 1, 0, 0, 0);
+}
+
 // Returns the UTC instant corresponding to "local midnight in `tz` on the
 // most recent local Monday at or before the local date of `instant`".
 function localStartOfWeekUtc(tz: string, instant: Date): Date {
@@ -198,4 +217,39 @@ export function weekWindow(tz: string, now: Date): readonly [Date, Date] {
 
 export function monthWindow(tz: string, now: Date): readonly [Date, Date] {
   return [localStartOfMonthUtc(tz, now), now];
+}
+
+// ── Offset-aware full-period windows ───────────────────────────────────────
+//
+// Unlike todayWindow / weekWindow / monthWindow (which end at `now`), these
+// return the FULL period `offset` steps back: `end` is the start of the NEXT
+// period, never `now`. Used by the Transactions page, which browses complete
+// historical periods. `offset` of 0 is the current period, -1 the previous,
+// -2 two periods back, and so on. Callers clamp `offset` to ≤ 0 upstream.
+
+// Returns `[start, end)` for the local day `offset` days before the local day
+// that contains `now`.
+export function dayWindowAt(tz: string, now: Date, offset: number): readonly [Date, Date] {
+  const start = localStartOfDayUtc(tz, now, offset);
+  const end = localStartOfDayUtc(tz, now, offset + 1);
+  return [start, end];
+}
+
+// Returns `[start, end)` for the Monday-start week `offset` weeks before the
+// week that contains `now`.
+export function weekWindowAt(tz: string, now: Date, offset: number): readonly [Date, Date] {
+  // Anchor on this week's Monday, then step by whole weeks via the day-offset
+  // primitive (DST-safe — it re-derives each local midnight).
+  const thisWeekStart = localStartOfWeekUtc(tz, now);
+  const start = localStartOfDayUtc(tz, thisWeekStart, offset * 7);
+  const end = localStartOfDayUtc(tz, thisWeekStart, (offset + 1) * 7);
+  return [start, end];
+}
+
+// Returns `[start, end)` for the calendar month `offset` months before the
+// month that contains `now`.
+export function monthWindowAt(tz: string, now: Date, offset: number): readonly [Date, Date] {
+  const start = localStartOfMonthUtcOffset(tz, now, offset);
+  const end = localStartOfMonthUtcOffset(tz, now, offset + 1);
+  return [start, end];
 }

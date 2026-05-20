@@ -28,7 +28,7 @@ export type StudioSidebarProps = {
 
 export function StudioSidebar({ staff, degraded }: StudioSidebarProps) {
   return (
-    <SidebarShell>
+    <SidebarShell role={staff.role}>
       <SidebarFooter staff={staff} degraded={degraded} />
     </SidebarShell>
   );

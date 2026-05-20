@@ -135,15 +135,26 @@ export const AFFECTED_MAP = {
     "tests/e2e/staff*.spec.ts",
   ],
 
-  // Sidebar chrome.
-  "components/lacquer/sidebar/**": ["tests/e2e/sidebar.spec.ts"],
+  // Sidebar chrome. The transactions nav item is role-gated via the sidebar,
+  // so sidebar changes also exercise the transactions spec's role gating.
+  "components/lacquer/sidebar/**": ["tests/e2e/sidebar.spec.ts", "tests/e2e/transactions.spec.ts"],
+
+  // Transactions page (feature 045).
+  "app/(studio)/transactions/**": ["tests/e2e/transactions.spec.ts"],
+  "components/lacquer/transactions/**": ["tests/e2e/transactions.spec.ts"],
+  "lib/transactions/**": ["tests/e2e/transactions.spec.ts"],
 
   // Dashboard.
   "app/(studio)/dashboard/**": ["tests/e2e/dashboard.spec.ts"],
   "components/lacquer/period-summary.client.tsx": ["tests/e2e/dashboard.spec.ts"],
   "components/lacquer/period-toggle.tsx": ["tests/e2e/dashboard.spec.ts"],
   "components/lacquer/payment-mix-card.tsx": ["tests/e2e/dashboard.spec.ts"],
-  "components/lacquer/recent-transactions-feed.tsx": ["tests/e2e/dashboard.spec.ts"],
+  // The dashboard feed's "View all" links to /transactions, so changes here
+  // affect both the dashboard spec and the transactions spec.
+  "components/lacquer/recent-transactions-feed.tsx": [
+    "tests/e2e/dashboard.spec.ts",
+    "tests/e2e/transactions.spec.ts",
+  ],
   "components/lacquer/stat-card.tsx": ["tests/e2e/dashboard.spec.ts"],
 
   // Shared utilities used across specs.

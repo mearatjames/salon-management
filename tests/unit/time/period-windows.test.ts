@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { monthWindow, salonNow, todayWindow, weekWindow } from "@/lib/time/period-windows";
+import {
+  dayWindowAt,
+  monthWindow,
+  monthWindowAt,
+  salonNow,
+  todayWindow,
+  weekWindow,
+  weekWindowAt,
+} from "@/lib/time/period-windows";
 
 const LA = "America/Los_Angeles";
 const TYO = "Asia/Tokyo";
@@ -138,5 +146,148 @@ describe("todayWindow — far-from-UTC tz (Asia/Tokyo)", () => {
     // diff = 8 hours.
     expect(diffMs).toBe(8 * 60 * 60 * 1000);
     expect(iso(tyoStart)).toBe("2026-05-16T15:00:00.000Z");
+  });
+});
+
+// ─── Offset-aware full-period windows ────────────────────────────────────────
+// dayWindowAt / weekWindowAt / monthWindowAt return the FULL period `offset`
+// steps back — `end` is the start of the NEXT period, not "now".
+
+describe("dayWindowAt — offset-aware day windows (America/Los_Angeles)", () => {
+  // now = 2026-05-16T22:14:00.000Z (Saturday 3:14 PM PDT)
+  const now = new Date("2026-05-16T22:14:00.000Z");
+
+  it("offset 0 → the full current day [midnight, next midnight)", () => {
+    const [start, end] = dayWindowAt(LA, now, 0);
+    expect(iso(start)).toBe("2026-05-16T07:00:00.000Z");
+    // end is the start of the NEXT day (2026-05-17), not `now`.
+    expect(iso(end)).toBe("2026-05-17T07:00:00.000Z");
+  });
+
+  it("offset -1 → the full previous day", () => {
+    const [start, end] = dayWindowAt(LA, now, -1);
+    expect(iso(start)).toBe("2026-05-15T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-05-16T07:00:00.000Z");
+  });
+
+  it("offset -2 → two full days back", () => {
+    const [start, end] = dayWindowAt(LA, now, -2);
+    expect(iso(start)).toBe("2026-05-14T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-05-15T07:00:00.000Z");
+  });
+
+  it("consecutive offsets are contiguous — one period's end is the next's start", () => {
+    const [, end1] = dayWindowAt(LA, now, -1);
+    const [start0] = dayWindowAt(LA, now, 0);
+    expect(iso(end1)).toBe(iso(start0));
+  });
+
+  it("DST spring-forward — the offset-0 day spanning the lost hour is 23h long", () => {
+    // 2026-03-08 is the LA spring-forward day.
+    const nowDst = new Date("2026-03-08T15:00:00.000Z");
+    const [start, end] = dayWindowAt(LA, nowDst, 0);
+    expect(iso(start)).toBe("2026-03-08T08:00:00.000Z");
+    expect(end.getTime() - start.getTime()).toBe(23 * 60 * 60 * 1000);
+  });
+
+  it("DST fall-back — the offset-0 day spanning the gained hour is 25h long", () => {
+    // 2026-11-01 is the LA fall-back day.
+    const nowDst = new Date("2026-11-01T13:00:00.000Z");
+    const [start, end] = dayWindowAt(LA, nowDst, 0);
+    expect(iso(start)).toBe("2026-11-01T07:00:00.000Z");
+    expect(end.getTime() - start.getTime()).toBe(25 * 60 * 60 * 1000);
+  });
+});
+
+describe("weekWindowAt — offset-aware Monday-start week windows (America/Los_Angeles)", () => {
+  // now = 2026-05-16T22:14:00.000Z (Saturday in the week of Mon 2026-05-11)
+  const now = new Date("2026-05-16T22:14:00.000Z");
+
+  it("offset 0 → the full current week [Monday, next Monday)", () => {
+    const [start, end] = weekWindowAt(LA, now, 0);
+    expect(iso(start)).toBe("2026-05-11T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-05-18T07:00:00.000Z");
+  });
+
+  it("offset -1 → the full previous week", () => {
+    const [start, end] = weekWindowAt(LA, now, -1);
+    expect(iso(start)).toBe("2026-05-04T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-05-11T07:00:00.000Z");
+  });
+
+  it("offset -2 → two full weeks back", () => {
+    const [start, end] = weekWindowAt(LA, now, -2);
+    expect(iso(start)).toBe("2026-04-27T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-05-04T07:00:00.000Z");
+  });
+
+  it("the current week's end equals the next Monday's midnight", () => {
+    const [, end] = weekWindowAt(LA, now, 0);
+    // 2026-05-18 is the next Monday.
+    expect(iso(end)).toBe("2026-05-18T07:00:00.000Z");
+  });
+
+  it("offset -1 spans a DST spring-forward — start/end straddle the change", () => {
+    // 2026-03-08 spring-forward falls inside the week of Mon 2026-03-02.
+    // now in the week of Mon 2026-03-09; offset -1 is the week of Mon 2026-03-02.
+    const nowDst = new Date("2026-03-11T20:00:00.000Z");
+    const [start, end] = weekWindowAt(LA, nowDst, -1);
+    expect(iso(start)).toBe("2026-03-02T08:00:00.000Z"); // PST
+    expect(iso(end)).toBe("2026-03-09T07:00:00.000Z"); // PDT
+    // 7 calendar days but one wall hour lost → 7*24 - 1 hours.
+    expect(end.getTime() - start.getTime()).toBe((7 * 24 - 1) * 60 * 60 * 1000);
+  });
+});
+
+describe("monthWindowAt — offset-aware calendar-month windows (America/Los_Angeles)", () => {
+  // now = 2026-05-16T22:14:00.000Z (May 2026)
+  const now = new Date("2026-05-16T22:14:00.000Z");
+
+  it("offset 0 → the full current month [1st, 1st of next month)", () => {
+    const [start, end] = monthWindowAt(LA, now, 0);
+    expect(iso(start)).toBe("2026-05-01T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-06-01T07:00:00.000Z");
+  });
+
+  it("offset -1 → the full previous month (April)", () => {
+    const [start, end] = monthWindowAt(LA, now, -1);
+    expect(iso(start)).toBe("2026-04-01T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-05-01T07:00:00.000Z");
+  });
+
+  it("offset -2 → two full months back (March, crossing the DST boundary)", () => {
+    const [start, end] = monthWindowAt(LA, now, -2);
+    expect(iso(start)).toBe("2026-03-01T08:00:00.000Z"); // PST
+    expect(iso(end)).toBe("2026-04-01T07:00:00.000Z"); // PDT
+  });
+
+  it("offset -3 → February — crosses a year-agnostic month boundary cleanly", () => {
+    const [start, end] = monthWindowAt(LA, now, -3);
+    expect(iso(start)).toBe("2026-02-01T08:00:00.000Z");
+    expect(iso(end)).toBe("2026-03-01T08:00:00.000Z");
+  });
+
+  it("offset stepping back across a January→December year boundary", () => {
+    // now in January 2026; offset -1 → December 2025.
+    const nowJan = new Date("2026-01-15T20:00:00.000Z");
+    const [start, end] = monthWindowAt(LA, nowJan, -1);
+    expect(iso(start)).toBe("2025-12-01T08:00:00.000Z");
+    expect(iso(end)).toBe("2026-01-01T08:00:00.000Z");
+  });
+
+  it("consecutive months are contiguous", () => {
+    const [, endApr] = monthWindowAt(LA, now, -1);
+    const [startMay] = monthWindowAt(LA, now, 0);
+    expect(iso(endApr)).toBe(iso(startMay));
+  });
+});
+
+describe("offset-aware windows — far-from-UTC tz (Asia/Tokyo)", () => {
+  const now = new Date("2026-05-16T22:14:00.000Z"); // 2026-05-17 07:14 JST
+
+  it("dayWindowAt offset 0 in Tokyo is the JST calendar day", () => {
+    const [start, end] = dayWindowAt(TYO, now, 0);
+    expect(iso(start)).toBe("2026-05-16T15:00:00.000Z"); // midnight JST 2026-05-17
+    expect(iso(end)).toBe("2026-05-17T15:00:00.000Z");
   });
 });

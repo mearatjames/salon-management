@@ -5,11 +5,14 @@ import {
   FileBarChart,
   Footprints,
   Home,
+  Receipt,
   Settings,
   Sparkles,
   Users,
   type LucideIcon,
 } from "lucide-react";
+
+import type { StudioRole } from "@/lib/auth/session";
 
 export type NavItem = {
   /**
@@ -48,6 +51,14 @@ export type NavItem = {
    * `data-disabled="true"`, no hover, no click handler. MUST imply `href === null`.
    */
   disabled?: boolean;
+
+  /**
+   * Roles allowed to see this item. Absent ⇒ visible to all roles. The
+   * sidebar role-filter (`SidebarShell`) skips any item whose `roles` is set
+   * and does not include the viewer's role — UX only; the route's own
+   * redirect is the security boundary (Constitution Principle II).
+   */
+  roles?: readonly StudioRole[];
 };
 
 export type NavGroup = {
@@ -85,6 +96,13 @@ export const NAV_CONFIG: NavConfig = {
         { id: "clients", label: "Clients", icon: Users, href: "/clients" },
         { id: "services", label: "Services", icon: Sparkles, href: "/services" },
         { id: "checkout", label: "Checkout", icon: DollarSign, href: "/checkout" },
+        {
+          id: "transactions",
+          label: "Transactions",
+          icon: Receipt,
+          href: "/transactions",
+          roles: ["owner", "manager"],
+        },
         { id: "walkin", label: "Walk-in", icon: Footprints, href: "/walkin" },
       ],
     },
