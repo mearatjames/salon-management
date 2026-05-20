@@ -253,3 +253,38 @@ export function monthWindowAt(tz: string, now: Date, offset: number): readonly [
   const end = localStartOfMonthUtcOffset(tz, now, offset + 1);
   return [start, end];
 }
+
+// Returns the UTC instant for "local midnight in `tz` on the first day of the
+// half-month at absolute half-month index `halfIndex`". Half-months are indexed
+// `year * 24 + (month - 1) * 2 + half`, where `half` is 0 (the 1st–15th) or 1
+// (the 16th–end). The index makes stepping by whole half-months arithmetic that
+// carries across month and year boundaries.
+function localStartOfHalfMonthUtcByIndex(tz: string, halfIndex: number): Date {
+  // Decompose the absolute index back into (year, month, half). `halfIndex`
+  // can be negative after a backward step; Math.floor keeps the year math
+  // correct on the negative side.
+  const year = Math.floor(halfIndex / 24);
+  const withinYear = halfIndex - year * 24; // 0..23
+  const month = Math.floor(withinYear / 2) + 1; // 1-12
+  const half = withinYear % 2; // 0 → 1st, 1 → 16th
+  const day = half === 0 ? 1 : 16;
+  return utcFromLocalParts(tz, year, month, day, 0, 0, 0);
+}
+
+// Returns `[start, end)` for the half-month `offset` half-months before the
+// half-month that contains `now`. The current half-month (`offset` 0) is
+// `[1st, 16th)` when the local day of `now` is ≤ 15, else
+// `[16th, 1st-of-next-month)`. Stepping moves by whole half-months across
+// month and year boundaries.
+export function semiMonthlyWindowAt(tz: string, now: Date, offset: number): readonly [Date, Date] {
+  const parts = formatPartsInTz(tz, now);
+  const year = Number(parts.year);
+  const month = Number(parts.month); // 1-12
+  const day = Number(parts.day);
+  const half = day <= 15 ? 0 : 1;
+
+  const currentIndex = year * 24 + (month - 1) * 2 + half;
+  const start = localStartOfHalfMonthUtcByIndex(tz, currentIndex + offset);
+  const end = localStartOfHalfMonthUtcByIndex(tz, currentIndex + offset + 1);
+  return [start, end];
+}

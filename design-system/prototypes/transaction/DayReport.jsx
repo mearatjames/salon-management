@@ -473,7 +473,7 @@ function DrTechDetailView({ t, expandedTx, onToggle, variant = 'original' }) {
 
 // ─── 9. MAIN COMPONENT ────────────────────────────────────────────────────────
 
-function DayReport({ exemptTechs = DR_DEFAULT_EXEMPT, allTx = DR_ALL_TX, variant = 'original' }) {
+function DayReport({ exemptTechs = DR_DEFAULT_EXEMPT, allTx = DR_ALL_TX, variant = 'original', layout = 'tablet' }) {
   const [date, setDate]         = useState(new Date(2026, 4, 11)); // May 11
   const [period, setPeriod]     = useState('day');
   const [selTech, setSelTech]   = useState(null); // null = All Staff
@@ -550,12 +550,42 @@ function DayReport({ exemptTechs = DR_DEFAULT_EXEMPT, allTx = DR_ALL_TX, variant
   });
 
   return (
-    <div className="dr-app">
+    <div className={`dr-app${layout === 'page' ? ' dr-app-page' : ''}`}>
 
-      {/* ── Header ─────────────────────────────────────────────── */}
-      <header className="dr-header">
+      {/* ── Page chrome (Transactions-style) ─────────────────────── */}
+      {layout === 'page' && (
+        <>
+          <div className="tp-head">
+            <div>
+              <h1>Report</h1>
+              <div className="sub">Per-tech earnings, deductions, and tips for the selected day. Click any technician to drill into their transactions and expand a row for the deduction breakdown.</div>
+            </div>
+            <div className="actions">
+              <button className="tp-btn-outline" onClick={() => window.print()}><IcoPrint /> Print</button>
+              <button className="tp-btn-outline" onClick={exportCSV}><IcoDownload /> Export CSV</button>
+            </div>
+          </div>
+
+          <div className="tp-period-row">
+            <div className="tp-period">
+              {[['day','Day'],['week','Week'],['semi','Semi-monthly']].map(([v, l]) => (
+                <button key={v} className={period === v ? 'active' : ''} onClick={() => setPeriod(v)}>{l}</button>
+              ))}
+            </div>
+            <div className="tp-range">
+              <button className="arrow" onClick={() => shiftDate(-1)} aria-label="Previous"><IcoChevL /></button>
+              <span className="lbl">{dateLabel()}</span>
+              <button className="arrow" onClick={() => shiftDate(1)} aria-label="Next"><IcoChevR /></button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Tablet header ─────────────────────────────────────────── */}
+      {layout !== 'page' && (
+        <header className="dr-header">
         <div className="dr-header-l">
-          <span className="dr-title">Day Report</span>
+          <span className="dr-title">Report</span>
 
           <div className="dr-date-nav">
             <button className="dr-nav-btn" onClick={() => shiftDate(-1)}><IcoChevL /></button>
@@ -575,6 +605,7 @@ function DayReport({ exemptTechs = DR_DEFAULT_EXEMPT, allTx = DR_ALL_TX, variant
           <button className="dr-ghost-btn" onClick={exportCSV}><IcoDownload /> Export CSV</button>
         </div>
       </header>
+      )}
 
       {/* ── Summary strip ──────────────────────────────────────── */}
       {variant === 'original' && (

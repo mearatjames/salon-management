@@ -1,0 +1,312 @@
+/* Lacquer Studio — Day Report page
+ * Reuses the Transactions page chrome (tp-head, tp-period-row, tp-btn-outline)
+ * so the two pages feel like part of the same product family. */
+@import url("../../colors_and_type.css");
+@import url("../user-management/user-management.css");
+@import url("./transactions-page.css");
+
+body { overflow: hidden; }
+
+/* ──────────────────────────────────────────────────────────────────
+ * Day Report core component styles
+ * (Originally inline in the prior Day Report.html; relocated here so
+ * the component can be used in both tablet-canvas and page contexts.)
+ * ────────────────────────────────────────────────────────────────── */
+
+.dr-app {
+  height: 100%; display: flex; flex-direction: column;
+  overflow: hidden; background: var(--background);
+  font-family: var(--font-sans); font-size: 14px; color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Header (tablet variant) */
+.dr-header {
+  height: 48px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 16px; border-bottom: 1px solid var(--border);
+  background: var(--card); flex-shrink: 0; gap: 10px;
+}
+.dr-header-l { display: flex; align-items: center; gap: 10px; }
+.dr-header-r { display: flex; align-items: center; gap: 6px; }
+.dr-title { font-size: 15px; font-weight: 700; letter-spacing: -0.02em; flex-shrink: 0; }
+
+.dr-date-nav { display: flex; align-items: center; gap: 1px; background: var(--muted); border-radius: 8px; padding: 2px; }
+.dr-nav-btn { width: 26px; height: 26px; border-radius: 6px; border: none; background: transparent; cursor: pointer; color: var(--foreground); display: flex; align-items: center; justify-content: center; transition: background 100ms; }
+.dr-nav-btn:hover { background: var(--border); }
+.dr-date-lbl { font-size: 12px; font-weight: 600; padding: 0 6px; white-space: nowrap; }
+
+.dr-periods { display: flex; background: var(--muted); border-radius: 7px; padding: 2px; gap: 1px; }
+.dr-period-btn { padding: 3px 9px; border-radius: 5px; border: none; background: transparent; font-size: 11px; font-weight: 500; cursor: pointer; color: var(--muted-foreground); font-family: var(--font-sans); transition: all 120ms; }
+.dr-period-btn.on { background: var(--card); color: var(--foreground); box-shadow: var(--shadow-xs); }
+
+.dr-ghost-btn { display: flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--border); background: var(--card); font-size: 12px; font-weight: 500; cursor: pointer; color: var(--foreground); font-family: var(--font-sans); transition: background 120ms; }
+.dr-ghost-btn:hover { background: var(--muted); }
+
+/* Summary strip (tablet original variant) */
+.dr-summary { display: grid; grid-template-columns: repeat(3, 1fr); border-bottom: 1px solid var(--border); background: var(--card); flex-shrink: 0; }
+.dr-stat { padding: 9px 16px; border-right: 1px solid var(--border); }
+.dr-stat.last { border-right: none; }
+.dr-stat-l { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-foreground); margin-bottom: 2px; }
+.dr-stat-v { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.dr-stat-v.neg { color: var(--destructive); }
+.dr-stat-v.pos { color: var(--success); }
+.dr-stat-v.tip { color: oklch(0.42 0.12 150); }
+.dr-stat-s { font-size: 10px; color: var(--muted-foreground); margin-top: 1px; }
+
+/* Body */
+.dr-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+
+/* Variant B summary strip */
+.dr-summary-b { display: flex; align-items: stretch; background: var(--card); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.dr-scope { padding: 11px 16px; flex-shrink: 0; min-width: 180px; border-right: 1px solid var(--border); display: flex; flex-direction: column; justify-content: center; }
+.dr-scope-ttl { font-size: 14px; font-weight: 700; letter-spacing: -0.02em; display: flex; align-items: center; flex-wrap: wrap; }
+.dr-scope-sub { font-size: 11px; color: var(--muted-foreground); margin-top: 2px; }
+.dr-scope-stats { flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; }
+.dr-scope-stat { padding: 10px 16px; border-right: 1px solid var(--border); display: flex; flex-direction: column; justify-content: center; }
+.dr-scope-stat:last-child { border-right: none; }
+.dr-scope-stat-l { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-foreground); }
+.dr-scope-stat-v { font-size: 19px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.15; margin-top: 2px; }
+.dr-scope-stat-v.neg { color: var(--destructive); }
+.dr-scope-stat-v.pos { color: var(--success); }
+.dr-scope-stat-v.tip { color: oklch(0.42 0.12 150); }
+
+/* Variant A: narrower left nav (no per-tech KPIs except inline Net) */
+.dr-left.nav { width: 232px; }
+.dr-tech-card.nav { padding: 8px 10px; }
+
+/* Variant B: slimmer right detail header (totals are in top strip) */
+.dr-detail-head.slim { padding: 8px 16px; }
+
+/* Left panel */
+.dr-left {
+  width: 282px; flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+
+.dr-allstaff-btn {
+  flex-shrink: 0; padding: 9px 14px;
+  border-bottom: 1px solid var(--border);
+  background: transparent; text-align: left;
+  border-top: none; border-right: none;
+  border-left: 3px solid transparent;
+  cursor: pointer; width: 100%; transition: background 120ms;
+}
+.dr-allstaff-btn:hover { background: var(--muted); }
+.dr-allstaff-btn.on {
+  background: color-mix(in oklch, var(--primary) 7%, var(--card));
+  border-left-color: var(--primary); padding-left: 11px;
+}
+
+.dr-tech-list {
+  flex: 1; overflow-y: auto; padding: 5px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.dr-tech-list::-webkit-scrollbar { width: 4px; }
+.dr-tech-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.dr-tech-card {
+  padding: 9px 10px; border-radius: 8px;
+  border: 1px solid transparent; background: transparent;
+  text-align: left; cursor: pointer; width: 100%;
+  transition: all 120ms;
+}
+.dr-tech-card:hover { background: var(--muted); }
+.dr-tech-card.on {
+  background: color-mix(in oklch, var(--primary) 7%, var(--card));
+  border-color: color-mix(in oklch, var(--primary) 35%, transparent);
+}
+
+.dr-card-nums { display: flex; gap: 12px; margin-top: 7px; }
+.dr-card-num  { display: flex; flex-direction: column; gap: 1px; }
+.dr-cn-l { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-foreground); }
+.dr-cn-v { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dr-cn-v.neg  { color: var(--destructive); }
+.dr-cn-v.bold { font-weight: 700; }
+
+/* Exempt badges */
+.dr-exempt-tag {
+  font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
+  background: color-mix(in oklch, var(--success) 14%, transparent);
+  color: oklch(0.36 0.12 150);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.dr-exempt-badge {
+  font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 9999px;
+  background: color-mix(in oklch, var(--success) 14%, transparent);
+  color: oklch(0.36 0.12 150);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.dr-exempt-inline {
+  display: inline-block; font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 4px;
+  background: color-mix(in oklch, var(--success) 14%, transparent);
+  color: oklch(0.36 0.12 150); text-transform: uppercase; letter-spacing: 0.04em;
+}
+.dr-em-dash { color: oklch(0.38 0.10 150); font-weight: 600; }
+
+/* Right panel */
+.dr-right { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+.dr-detail { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
+
+.dr-detail-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  background: var(--card); flex-shrink: 0; gap: 10px; flex-wrap: wrap;
+}
+
+.dr-head-totals { display: flex; gap: 18px; flex-shrink: 0; text-align: right; }
+.dr-htotal { min-width: 58px; }
+.dr-htotal-l { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted-foreground); }
+.dr-htotal-v { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; margin-top: 1px; }
+.dr-htotal-v.neg { color: var(--destructive); }
+.dr-htotal-v.pos { color: var(--success); }
+.dr-htotal-v.tip { color: oklch(0.42 0.12 150); }
+
+/* Table */
+.dr-table-wrap { flex: 1; overflow-y: auto; }
+.dr-table-wrap::-webkit-scrollbar { width: 5px; }
+.dr-table-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.dr-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+
+.dr-table th {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--muted);
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted-foreground);
+  padding: 6px 10px; text-align: left;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.dr-table th.num  { text-align: right; }
+.dr-table th.ded  { color: var(--destructive); }
+
+.dr-table td {
+  padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: middle;
+}
+.dr-table td.num  { text-align: right; font-variant-numeric: tabular-nums; }
+.dr-table td.dc   { color: var(--neutral-400); font-size: 11px; }
+.dr-table td.dc.on{ color: var(--destructive); font-weight: 600; font-size: 12px; }
+.dr-table td.net-cell { font-weight: 700; }
+.dr-table td.tip-cell { color: oklch(0.40 0.12 150); font-weight: 600; }
+
+/* Transaction rows */
+.dr-tx-row { transition: background 80ms; }
+.dr-tx-row.click { cursor: pointer; }
+.dr-tx-row.click:hover { background: var(--muted); }
+.dr-tx-row.exp  { background: color-mix(in oklch, var(--primary) 4%, var(--background)); }
+
+.dr-time   { font-size: 11px; color: var(--muted-foreground); white-space: nowrap; }
+.dr-client { font-weight: 600; white-space: nowrap; font-size: 12px; }
+.dr-svcs   { color: var(--muted-foreground); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.dr-expand-caret {
+  display: inline-flex; align-items: center; margin-right: 4px;
+  color: var(--muted-foreground); transition: transform 150ms;
+  vertical-align: middle;
+}
+.dr-expand-caret.open { transform: rotate(180deg); }
+
+/* Expanded detail row */
+.dr-expand-row td {
+  padding: 2px 12px 8px;
+  background: color-mix(in oklch, var(--primary) 3%, var(--background));
+}
+.dr-expand-inner {
+  display: flex; gap: 20px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 12px;
+}
+.dr-expand-sec  { flex: 1; min-width: 0; }
+.dr-expand-ttl  { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted-foreground); margin-bottom: 5px; }
+.dr-expand-line { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; padding: 2px 0; border-bottom: 1px solid var(--border); }
+.dr-expand-line:last-of-type { border-bottom: none; }
+.dr-expand-type { color: var(--muted-foreground); font-weight: 600; }
+.dr-expand-name { color: var(--foreground); }
+.dr-expand-ded  { color: var(--destructive); font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+.dr-expand-subtotal {
+  display: flex; justify-content: space-between;
+  font-size: 11px; font-weight: 700; padding: 4px 0 0; margin-top: 2px;
+  border-top: 1px solid var(--border);
+}
+
+/* Footer totals row */
+.dr-foot-row td {
+  font-weight: 700; font-size: 12px;
+  background: var(--muted);
+  border-top: 2px solid var(--border);
+  padding: 8px 10px;
+}
+
+/* Staff overview rows */
+.dr-staff-row { transition: background 80ms; cursor: default; }
+.dr-staff-row:hover { background: color-mix(in oklch, var(--primary) 3%, var(--background)); }
+
+/* Legend bar */
+.dr-legend {
+  flex-shrink: 0;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
+  padding: 6px 14px; background: var(--muted);
+  border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--muted-foreground);
+}
+.dr-legend strong { color: var(--foreground); }
+.dr-legend-sep { color: var(--border); font-size: 14px; }
+
+/* ──────────────────────────────────────────────────────────────────
+ * Page-mode tweaks
+ * In tablet mode the component sits inside a fixed 1024×720 bezel.
+ * In page mode it lives directly inside the StudioShell content area.
+ * ────────────────────────────────────────────────────────────────── */
+
+.dr-app-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--background);
+}
+
+/* Slim left nav — matches variant A look but slightly wider for the page */
+.dr-app-page .dr-left { width: 248px; }
+
+/* The body fills remaining space and gets the chrome's left/right gutter,
+ * wrapped in a card so it reads as a single cohesive surface (matching
+ * the visual rhythm of the Transactions table). */
+.dr-app-page .dr-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  margin: 18px 32px 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  overflow: hidden;
+}
+
+/* Bump up the detail-head and totals for the larger page canvas */
+.dr-app-page .dr-detail-head { padding: 14px 18px; }
+.dr-app-page .dr-htotal-v { font-size: 18px; }
+
+/* The All-Staff button and tech list use the panel background */
+.dr-app-page .dr-allstaff-btn,
+.dr-app-page .dr-tech-list { background: transparent; }
+
+/* Tighten the period-row gap since the body card now provides its own breathing room */
+.dr-app-page .tp-period-row { padding-bottom: 0; }
+
+/* Print: remove the rounded body card and gutter so the report
+ * prints as a single flat document. */
+@media print {
+  body { overflow: visible; }
+  .app-sidebar, .app-topbar { display: none !important; }
+  .app, .app-main { display: block; height: auto; }
+  .app-content { overflow: visible; padding: 0; }
+  .dr-app-page { height: auto; overflow: visible; }
+  .dr-app-page .dr-body { margin: 0; border: 0; border-radius: 0; }
+  .dr-app-page .dr-left { display: none; }
+  .dr-app-page .dr-right { width: 100%; }
+  .tp-head .actions { display: none; }
+  .dr-table-wrap { overflow: visible; }
+  .dr-table th { position: static; background: var(--muted); }
+}

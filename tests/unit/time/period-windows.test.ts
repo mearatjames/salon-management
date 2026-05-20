@@ -5,6 +5,7 @@ import {
   monthWindow,
   monthWindowAt,
   salonNow,
+  semiMonthlyWindowAt,
   todayWindow,
   weekWindow,
   weekWindowAt,
@@ -289,5 +290,134 @@ describe("offset-aware windows — far-from-UTC tz (Asia/Tokyo)", () => {
     const [start, end] = dayWindowAt(TYO, now, 0);
     expect(iso(start)).toBe("2026-05-16T15:00:00.000Z"); // midnight JST 2026-05-17
     expect(iso(end)).toBe("2026-05-17T15:00:00.000Z");
+  });
+});
+
+// ─── semiMonthlyWindowAt — half-month (1st–15th / 16th–end) windows ──────────
+// `[1st, 16th)` when local day ≤ 15, else `[16th, 1st of next month)`. `offset`
+// steps by whole half-months across month/year boundaries; `end` is the
+// exclusive start of the next half-month.
+
+describe("semiMonthlyWindowAt — offset 0, first half-month (LA)", () => {
+  // 2026-05-12 is the 12th — local day ≤ 15 → the [1st, 16th) half-month.
+  const now = new Date("2026-05-12T20:00:00.000Z"); // 1:00 PM PDT, May 12
+
+  it("offset 0 → [May 1, May 16) local midnights in PDT", () => {
+    const [start, end] = semiMonthlyWindowAt(LA, now, 0);
+    expect(iso(start)).toBe("2026-05-01T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-05-16T07:00:00.000Z");
+  });
+
+  it("offset -1 → the previous half-month [Apr 16, May 1)", () => {
+    const [start, end] = semiMonthlyWindowAt(LA, now, -1);
+    expect(iso(start)).toBe("2026-04-16T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-05-01T07:00:00.000Z");
+  });
+
+  it("offset -2 → two half-months back [Apr 1, Apr 16)", () => {
+    const [start, end] = semiMonthlyWindowAt(LA, now, -2);
+    expect(iso(start)).toBe("2026-04-01T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-04-16T07:00:00.000Z");
+  });
+});
+
+describe("semiMonthlyWindowAt — offset 0, second half-month (LA)", () => {
+  // 2026-05-20 is the 20th — local day > 15 → the [16th, 1st-of-next) half-month.
+  const now = new Date("2026-05-20T20:00:00.000Z"); // 1:00 PM PDT, May 20
+
+  it("offset 0 → [May 16, Jun 1) local midnights in PDT", () => {
+    const [start, end] = semiMonthlyWindowAt(LA, now, 0);
+    expect(iso(start)).toBe("2026-05-16T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-06-01T07:00:00.000Z");
+  });
+
+  it("offset -1 → the previous half-month [May 1, May 16)", () => {
+    const [start, end] = semiMonthlyWindowAt(LA, now, -1);
+    expect(iso(start)).toBe("2026-05-01T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-05-16T07:00:00.000Z");
+  });
+});
+
+describe("semiMonthlyWindowAt — the 15th and 16th land in the right half", () => {
+  it("the 15th is in the first half-month [1st, 16th)", () => {
+    const now = new Date("2026-05-15T20:00:00.000Z"); // May 15, 1 PM PDT
+    const [start, end] = semiMonthlyWindowAt(LA, now, 0);
+    expect(iso(start)).toBe("2026-05-01T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-05-16T07:00:00.000Z");
+  });
+
+  it("the 16th is in the second half-month [16th, 1st-of-next)", () => {
+    const now = new Date("2026-05-16T20:00:00.000Z"); // May 16, 1 PM PDT
+    const [start, end] = semiMonthlyWindowAt(LA, now, 0);
+    expect(iso(start)).toBe("2026-05-16T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-06-01T07:00:00.000Z");
+  });
+});
+
+describe("semiMonthlyWindowAt — stepping across a month boundary", () => {
+  // now in the first half of June; -1 → second half of May, -2 → first half of May.
+  const now = new Date("2026-06-05T20:00:00.000Z"); // Jun 5, 1 PM PDT
+
+  it("offset -1 crosses June→May into the second half of May", () => {
+    const [start, end] = semiMonthlyWindowAt(LA, now, -1);
+    expect(iso(start)).toBe("2026-05-16T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-06-01T07:00:00.000Z");
+  });
+
+  it("offset -2 lands in the first half of May", () => {
+    const [start, end] = semiMonthlyWindowAt(LA, now, -2);
+    expect(iso(start)).toBe("2026-05-01T07:00:00.000Z");
+    expect(iso(end)).toBe("2026-05-16T07:00:00.000Z");
+  });
+});
+
+describe("semiMonthlyWindowAt — stepping across a year boundary", () => {
+  // now in the first half of January 2026; -1 → second half of December 2025.
+  const nowJan = new Date("2026-01-10T20:00:00.000Z"); // Jan 10, 12 PM PST
+
+  it("offset -1 crosses Jan 2026 → second half of Dec 2025", () => {
+    const [start, end] = semiMonthlyWindowAt(LA, nowJan, -1);
+    expect(iso(start)).toBe("2025-12-16T08:00:00.000Z"); // PST
+    expect(iso(end)).toBe("2026-01-01T08:00:00.000Z");
+  });
+
+  it("offset -2 → first half of Dec 2025", () => {
+    const [start, end] = semiMonthlyWindowAt(LA, nowJan, -2);
+    expect(iso(start)).toBe("2025-12-01T08:00:00.000Z");
+    expect(iso(end)).toBe("2025-12-16T08:00:00.000Z");
+  });
+});
+
+describe("semiMonthlyWindowAt — short month (28-day February)", () => {
+  // 2026 is not a leap year — February has 28 days. The second half-month of
+  // February is [Feb 16, Mar 1), 13 calendar days.
+  const now = new Date("2026-02-20T20:00:00.000Z"); // Feb 20, 12 PM PST
+
+  it("the second half of a 28-day February ends at March 1", () => {
+    const [start, end] = semiMonthlyWindowAt(LA, now, 0);
+    expect(iso(start)).toBe("2026-02-16T08:00:00.000Z");
+    expect(iso(end)).toBe("2026-03-01T08:00:00.000Z");
+  });
+
+  it("offset -1 → the first half of February [Feb 1, Feb 16)", () => {
+    const [start, end] = semiMonthlyWindowAt(LA, now, -1);
+    expect(iso(start)).toBe("2026-02-01T08:00:00.000Z");
+    expect(iso(end)).toBe("2026-02-16T08:00:00.000Z");
+  });
+});
+
+describe("semiMonthlyWindowAt — contiguity and exclusivity", () => {
+  const now = new Date("2026-05-20T20:00:00.000Z");
+
+  it("end is the exclusive start of the next half-month", () => {
+    const [, endPrev] = semiMonthlyWindowAt(LA, now, -1);
+    const [startCur] = semiMonthlyWindowAt(LA, now, 0);
+    expect(iso(endPrev)).toBe(iso(startCur));
+  });
+
+  it("the current half-month's end equals the next half-month's start", () => {
+    const [, endCur] = semiMonthlyWindowAt(LA, now, 0);
+    const [startNext] = semiMonthlyWindowAt(LA, now, 1);
+    expect(iso(endCur)).toBe(iso(startNext));
   });
 });

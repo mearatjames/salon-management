@@ -135,14 +135,23 @@ export const AFFECTED_MAP = {
     "tests/e2e/staff*.spec.ts",
   ],
 
-  // Sidebar chrome. The transactions nav item is role-gated via the sidebar,
-  // so sidebar changes also exercise the transactions spec's role gating.
-  "components/lacquer/sidebar/**": ["tests/e2e/sidebar.spec.ts", "tests/e2e/transactions.spec.ts"],
+  // Sidebar chrome. The transactions + report nav items are role-gated via the
+  // sidebar, so sidebar changes also exercise those specs' role gating.
+  "components/lacquer/sidebar/**": [
+    "tests/e2e/sidebar.spec.ts",
+    "tests/e2e/transactions.spec.ts",
+    "tests/e2e/report.spec.ts",
+  ],
 
   // Transactions page (feature 045).
   "app/(studio)/transactions/**": ["tests/e2e/transactions.spec.ts"],
   "components/lacquer/transactions/**": ["tests/e2e/transactions.spec.ts"],
   "lib/transactions/**": ["tests/e2e/transactions.spec.ts"],
+
+  // Report page (feature 046).
+  "app/(studio)/report/**": ["tests/e2e/report.spec.ts"],
+  "components/lacquer/report/**": ["tests/e2e/report.spec.ts"],
+  "lib/report/**": ["tests/e2e/report.spec.ts"],
 
   // Dashboard.
   "app/(studio)/dashboard/**": ["tests/e2e/dashboard.spec.ts"],

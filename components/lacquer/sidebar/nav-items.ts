@@ -111,7 +111,13 @@ export const NAV_CONFIG: NavConfig = {
       label: "Operations",
       items: [
         { id: "end-of-day", label: "End of Day Cash", icon: Banknote, href: "/end-of-day" },
-        { id: "day-report", label: "Day Report", icon: FileBarChart, href: null, disabled: true },
+        {
+          id: "report",
+          label: "Report",
+          icon: FileBarChart,
+          href: "/report",
+          roles: ["owner", "manager"],
+        },
         { id: "settings", label: "Settings", icon: Settings, href: "/settings" },
       ],
     },
