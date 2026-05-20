@@ -37,6 +37,14 @@ function initials(name: string): string {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+// First name only — labels each avatar in the pre-pick picker so techs
+// are identifiable at a glance. Mirrors the prototype's
+// `t.full.split(" ")[0]` (`TechPicker.jsx:88`).
+function firstName(name: string): string {
+  const first = name.trim().split(/\s+/)[0];
+  return first || name;
+}
+
 export function TechAvatarRow({ staff, selectedStaffId, onPick, onClear }: TechAvatarRowProps) {
   const selected = selectedStaffId ? (staff.find((s) => s.id === selectedStaffId) ?? null) : null;
 
@@ -133,20 +141,48 @@ export function TechAvatarRow({ staff, selectedStaffId, onPick, onClear }: TechA
               aria-label={`Assign ${s.display_name} as the tech for this sale`}
               style={{
                 display: "inline-flex",
+                flexDirection: "column",
                 alignItems: "center",
-                justifyContent: "center",
-                width: "var(--space-8)",
-                height: "var(--space-8)",
-                borderRadius: "var(--radius-full)",
-                background: tint,
-                color: fg,
-                fontWeight: 600,
-                fontSize: "var(--text-xs)",
-                border: "1px solid var(--border)",
+                gap: "var(--space-1)",
+                background: "transparent",
+                border: "none",
+                padding: 0,
                 cursor: "pointer",
               }}
             >
-              {initials(s.display_name)}
+              {/* Initials swatch — decorative; the button's aria-label
+                  and the name span below carry the accessible meaning. */}
+              <span
+                aria-hidden="true"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: "var(--space-8)",
+                  height: "var(--space-8)",
+                  borderRadius: "var(--radius-full)",
+                  background: tint,
+                  color: fg,
+                  fontWeight: 600,
+                  fontSize: "var(--text-xs)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                {initials(s.display_name)}
+              </span>
+              <span
+                style={{
+                  maxWidth: "var(--space-16)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  fontSize: "var(--text-xs)",
+                  fontWeight: 500,
+                  color: "var(--foreground)",
+                }}
+              >
+                {firstName(s.display_name)}
+              </span>
             </button>
           );
         })}
