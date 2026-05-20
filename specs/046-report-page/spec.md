@@ -14,6 +14,14 @@ The **Report** page (formerly named "Day Report" in the prototype) is a new owne
 
 The design source of truth is `design-system/prototypes/transaction/Day Report.html` (and `DayReport.jsx`, `day-report-page.css`), copied into the repository as part of this feature.
 
+## Clarifications
+
+### Session 2026-05-20
+
+- Q: Reporting period model — Day/Week/Semi-monthly (prototype) vs Today/Week/Month (Transactions page)? → A: Day / Week / Semi-monthly, keep the prototype exactly (Semi-monthly = the salon pay period).
+- Q: Who appears as a report row — any staff member who performed services, or only the "technician" role? → A: Any staff member who performed ≥1 service appears, regardless of role (owners/managers who do nails included).
+- Q: What does the Print action output — the current view, the All-Staff overview only, or a complete multi-section document? → A: Print the currently displayed view (All-Staff overview, or the selected technician's detail when one is open), per the prototype.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - See all-staff earnings and deductions for the day (Priority: P1)
@@ -133,6 +141,7 @@ The owner needs the report on paper for their files, or as a spreadsheet for the
 
 - **FR-007**: The report MUST include only completed (paid) transactions whose closing time falls within the selected period.
 - **FR-008**: The system MUST attribute each service in a transaction to the technician who performed it; a transaction worked by multiple technicians MUST be split across them by the services each performed.
+- **FR-008a**: The report MUST include every staff member who performed at least one service in the period, regardless of their role — owners and managers who personally perform services appear as report rows alongside technicians. In this specification "technician" denotes any such report subject; role governs only who may view the page (FR-002), not who is reported.
 - **FR-009**: Non-service line items (discounts, products) MUST be excluded from technician gross earnings and from deductions.
 - **FR-010**: A technician with no services in the selected period MUST be omitted from the report.
 
@@ -172,7 +181,7 @@ The owner needs the report on paper for their files, or as a spreadsheet for the
 
 **Print & export**
 
-- **FR-027**: The user MUST be able to print the report, and the printed output MUST exclude the sidebar, top bar, and action buttons.
+- **FR-027**: The user MUST be able to print the currently displayed view — the All-Staff overview, or the selected technician's detail when one is open — and the printed output MUST exclude the sidebar, top bar, and action buttons.
 - **FR-028**: The user MUST be able to export the per-technician summary — every technician row plus the totals row — as a downloadable CSV file whose values match the on-screen overview.
 
 **Presentation & consistency**
@@ -204,7 +213,7 @@ The owner needs the report on paper for their files, or as a spreadsheet for the
 
 ## Assumptions
 
-- **Period model**: The period control offers Day / Week / Semi-monthly, per the prototype, defaulting to the current day. This intentionally differs from the Transactions page's Today / Week / Month because the Report is payroll-adjacent and Semi-monthly mirrors the salon's pay period. If cross-page consistency is preferred over the prototype, this can be revisited in `/speckit-clarify`.
+- **Period model**: The period control offers Day / Week / Semi-monthly, per the prototype, defaulting to the current day (confirmed in clarification). This intentionally differs from the Transactions page's Today / Week / Month because the Report is payroll-adjacent and Semi-monthly mirrors the salon's pay period; the shared page chrome keeps the two surfaces visually consistent.
 - **Cash tips excluded**: Only tips paid by card or gift card are reported. Cash tips are assumed to be handed directly to the technician and never reported through the report, consistent with the prototype and design conversations.
 - **Tip attribution**: For multi-technician transactions, the card tip is split proportionally by each technician's share of the transaction's service subtotal.
 - **Service-to-technician attribution**: Each service line item carries the technician who performed it; the report uses that assignment directly rather than distributing services by position.
