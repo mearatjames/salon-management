@@ -61,7 +61,7 @@ match the selected range.
 A manager spots a transaction they want to understand in detail. They click the
 row and a receipt drawer slides in showing the complete picture: who the client
 was, which techs worked the line items, every service and its price, the
-subtotal/tip/tax/total breakdown, how it was paid, and who closed the sale.
+subtotal/tip/total breakdown, how it was paid, and who closed the sale.
 
 **Why this priority**: "See more details about that transaction than what we
 display in the dashboard" is an explicit goal. The list answers *what happened*;
@@ -70,7 +70,7 @@ is still useful without it.
 
 **Independent Test**: With the transaction list showing, click any row and
 confirm a detail drawer opens with line items, per-line tech, the
-subtotal/tip/tax/total breakdown, payment method and amount, the closing staff
+subtotal/tip/total breakdown, payment method and amount, the closing staff
 member, and a basic activity record; confirm it closes via the close control,
 the backdrop, and the Escape key.
 
@@ -84,7 +84,7 @@ the backdrop, and the Escape key.
    member who closed the sale.
 3. **Given** the drawer is open, **When** the user reads the items section,
    **Then** each line item shows its service name, category, assigned tech, and
-   price, followed by the subtotal, tip, tax, and total.
+   price, followed by the subtotal, tip, and total.
 4. **Given** the drawer is open, **When** the user reads the payment section,
    **Then** it shows the payment method and the amount paid.
 5. **Given** the drawer is open, **When** the user presses Escape, clicks the
@@ -148,8 +148,8 @@ narrowed set, and confirm filters can be cleared.
   Transactions URL directly is blocked and does not see salon-wide revenue.
 - **High-volume month** — a month with several hundred transactions remains
   responsive to scroll, period changes, and filtering.
-- **Zero-value lines** — transactions with a $0 tip and $0 tax render their
-  totals correctly.
+- **Zero-value lines** — transactions with a $0 tip render their totals
+  correctly.
 
 ## Requirements *(mandatory)*
 
@@ -193,7 +193,7 @@ narrowed set, and confirm filters can be cleared.
 - **FR-014**: The receipt detail drawer MUST show: the client, transaction
   identifier, date and time; the assigned techs and the staff member who closed
   the sale; an itemized list where each line shows the service name, category,
-  assigned tech, and price; the subtotal, tip, tax, and total; the payment
+  assigned tech, and price; the subtotal, tip, and total; the payment
   method and amount; and a basic activity record of when and by whom the sale
   was completed.
 - **FR-015**: The receipt detail drawer MUST be dismissable via a close
@@ -230,7 +230,7 @@ narrowed set, and confirm filters can be cleared.
 
 - **Transaction**: a completed sale. Has a date and time it was completed, a
   client, one or more assigned techs, a set of line items, a payment method, a
-  subtotal, tip, tax, total, and the staff member who closed it.
+  subtotal, tip, total, and the staff member who closed it.
 - **Line item**: an entry on a transaction — typically a service. Has a name, a
   category, a quantity, a unit price, and an assigned tech.
 - **Payment**: how a transaction was settled — a method (card, cash, or gift),
@@ -276,8 +276,13 @@ narrowed set, and confirm filters can be cleared.
   (method, amount, tip). It does NOT fabricate card last-four digits,
   authorization codes, cash tendered/change amounts, or gift-card codes shown in
   the prototype, because the current data model does not store them.
-- Tax is currently recorded as $0 on all transactions; the receipt breakdown
-  and KPI strip reflect the stored tax value rather than inventing a tax rate.
+- Every transaction displays "Walk-in" as its client. The v1 schema has no
+  clients table and cash-sale tickets carry no client reference, so a named
+  client is not available; search by client still functions (it matches
+  "Walk-in").
+- Tax is a reserved, always-$0 field in v1 (Constitution Principle V — no tax
+  compute path or UI). The receipt drawer therefore omits the tax line
+  entirely; the displayed total is the subtotal plus the tip.
 - The transaction "ID" presented to users is a short, human-readable identifier
   derived from the underlying sale record.
 - The page renders all transactions within the selected period in one scrolling

@@ -101,17 +101,17 @@ navigates to `/transactions`.
 full line-item, payment, totals, staff, and activity detail.
 
 **Independent Test**: With the list showing, click a row → a drawer opens with
-line items (name, category, tech, price), subtotal/tip/tax/total, the payment
+line items (name, category, tech, price), subtotal/tip/total, the payment
 method and amount, the cashier, and a "sale completed" activity line; it closes
 via the ✕, the backdrop, and the Escape key.
 
 ### Tests for User Story 2
 
-- [ ] T024 [US2] Add US2 scenarios to `tests/e2e/transactions.spec.ts` — clicking a known seeded row opens the receipt drawer; the drawer shows that ticket's line items, subtotal/tip/tax/total, payment block, cashier, and activity line; the drawer closes via the close control, a backdrop click, and the Escape key.
+- [ ] T024 [US2] Add US2 scenarios to `tests/e2e/transactions.spec.ts` — clicking a known seeded row opens the receipt drawer; the drawer shows that ticket's line items, subtotal/tip/total, payment block, cashier, and activity line; the drawer closes via the close control, a backdrop click, and the Escape key.
 
 ### Implementation for User Story 2
 
-- [ ] T025 [P] [US2] Create `components/lacquer/transactions/receipt-drawer.tsx` — the right-side drawer from a `TransactionDetail`: header (client, `displayId`, date + time), meta (techs via `<TechStack>`/`<TechAvatar>`, cashier), itemised line items (name, `category`, assigned tech, line price), subtotal/tip/tax/total, payment block (per `TransactionPayment`), and the activity line ("Sale completed by {cashier} · {date} {time}"); backdrop + ✕ + `Escape` close, body scroll-lock. `.tp-drawer*` / `.tp-d-*` classes. The Print/Email/Refund footer actions from the prototype are out of scope — omit them.
+- [ ] T025 [P] [US2] Create `components/lacquer/transactions/receipt-drawer.tsx` — the right-side drawer from a `TransactionDetail`: header (client, `displayId`, date + time), meta (techs via `<TechStack>`/`<TechAvatar>`, cashier), itemised line items (name, `category`, assigned tech, line price), subtotal/tip/total, payment block (per `TransactionPayment`), and the activity line ("Sale completed by {cashier} · {date} {time}"); backdrop + ✕ + `Escape` close, body scroll-lock. `.tp-drawer*` / `.tp-d-*` classes. The Print/Email/Refund footer actions from the prototype are out of scope — omit them.
 - [ ] T026 [US2] Wire selection into `components/lacquer/transactions/transactions-view.client.tsx` — add `selectedId` state, pass an `onRowClick` setter and `selectedId` to `<TransactionsTable>`, and render `<ReceiptDrawer>` for the selected `TransactionDetail`. Depends on T025.
 
 **Checkpoint**: US1 still works; any row opens a complete, correct receipt drawer that closes three ways.

@@ -39,7 +39,7 @@ npm run dev      # http://localhost:3000
 - **KPI strip** — count (with a vs-previous-period delta), gross revenue,
   services rendered, tips collected, average ticket. (US1)
 - **Receipt drawer** — click any row → drawer with line items (name, category,
-  tech, price), subtotal/tip/tax/total, payment, cashier, and the "sale
+  tech, price), subtotal/tip/total, payment, cashier, and the "sale
   completed" activity line. Closes via the ✕, the backdrop, or `Esc`. (US2)
 - **Search & filters** — search by service or transaction ID; method chips
   (with counts) and the tech multi-select narrow the list and recompute the KPI
@@ -94,4 +94,5 @@ or `oklch` literals.
   drawer actions are out of scope.
 - **Client column** shows "Walk-in" for every transaction (no `clients` table
   in v1).
-- **Tax** displays as the stored `$0` — no tax is computed.
+- **Tax** is a reserved always-$0 field — the receipt drawer omits the tax
+  line (no tax UI or compute path in v1).

@@ -20,7 +20,7 @@ The query layer reads them through the cookie-aware Supabase server client.
 | `id` (uuid) | transaction identity; `data-tx-id`; source of the display ID |
 | `status` (enum) | filter — only `'paid'` rows are transactions |
 | `subtotal_cents` (int) | receipt subtotal; KPI revenue base |
-| `tax_cents` (int) | receipt tax line (always `0` in v1) |
+| `tax_cents` (int) | carried into `totalCents` math (always `0`; not shown in the UI) |
 | `total_cents` (int) | cross-check (`= subtotal + tax`) |
 | `closed_by_staff_id` (uuid → staff) | the cashier shown in the receipt drawer |
 | `closed_at` (timestamptz) | transaction time; day grouping; window filter |
@@ -116,7 +116,7 @@ The per-transaction row + drawer payload.
 | `payments` | `readonly TransactionPayment[]` | succeeded `payments` for the ticket |
 | `method` | `PaymentMethod` | `deriveMethod(payments)` — single method, or `split` for ≥2 distinct |
 | `subtotalCents` | `number` | `tickets.subtotal_cents` |
-| `taxCents` | `number` | `tickets.tax_cents` (`0` in v1) |
+| `taxCents` | `number` | `tickets.tax_cents` — always `0`; used only for `totalCents`, not displayed (spec Assumptions / Constitution V) |
 | `tipCents` | `number` | Σ `payments.tip_cents` |
 | `totalCents` | `number` | `subtotalCents + taxCents + tipCents` (revenue incl. tip) |
 | `serviceCount` | `number` | Σ `qty` over non-discount items |
