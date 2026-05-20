@@ -104,6 +104,51 @@ uncontended `flock` acquires immediately. **One-time setup on macOS:
 servers in two worktrees simultaneously, set `PORT=3001` (etc.) in the
 second worktree's `.env.local` to avoid the port-3000 collision.
 
+### Two-phase e2e projects
+
+The Playwright suite runs as four chained projects
+(`playwright.config.ts`):
+
+1. `baseline-services` — `services.spec.ts` only.
+2. `baseline-eod` — `end-of-day-cash.spec.ts` only, depends on
+   `baseline-services`.
+3. `baseline-dashboard` — `dashboard.spec.ts` only, depends on
+   `baseline-eod`.
+4. `main` — every other spec, depends on `baseline-dashboard`.
+
+Playwright runs them strictly in order via project `dependencies`: each
+baseline project is a single file (one worker, no concurrency), then
+`main` runs fully parallel once all three finish.
+
+Why: three specs assert a **global aggregate over a shared table** that
+the parallel pool would race —
+
+- `services.spec.ts` — page-computed catalog aggregates (`5 active · 6
+  total`, the group-header set); also its US1 empty-state test wipes
+  `services` / `tickets` / `payments` globally.
+- `end-of-day-cash.spec.ts` — today's cash total (seeded `$115`); also
+  wipes every today-paid ticket via `clearAllTodayPaidTickets()`.
+- `dashboard.spec.ts` — the exact today-feed row count.
+
+The page renders every row regardless of which worker created it, so no
+test-side filter can make these assertions both correct and parallel —
+and the destructive wipes would corrupt any concurrent spec's tickets.
+Running them in their own serial phase, first, on the freshly-reset DB
+(the `test:e2e` wrapper resets before Playwright) keeps the assertions
+strong. Order matters: `dashboard.spec.ts` runs last so its `afterAll`
+`restoreSeededPaidTickets()` leaves the seeded tickets the earlier
+wipes removed in place, so `main` starts from the seed baseline.
+
+The serial baseline phase adds roughly +1–1.5 min to a full
+`npm run test:e2e`. `npm run test:e2e:dev` and `npm run test:e2e:changed`
+pass Playwright's `--no-deps`, so single-spec / scoped runs skip the
+chain and stay fast — only the full `npm run test:e2e` runs it end to
+end.
+
+When you add a spec that asserts a global count or summary over a
+shared table, add it to a baseline project's `testMatch` (and the
+`main` project's `testIgnore`) — otherwise it races the parallel pool.
+
 ### Scoping intermediate phase gates
 
 When generating or executing a `specs/<feature>/tasks.md`, intermediate

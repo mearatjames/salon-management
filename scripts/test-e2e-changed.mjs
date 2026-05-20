@@ -152,7 +152,12 @@ console.log(`Running ${union.length} e2e spec(s) affected vs ${BASE}:`);
 union.forEach((s) => console.log(`  · ${s}`));
 console.log("");
 
-const result = spawnSync("npx", ["playwright", "test", ...union], {
+// `--no-deps`: skip the baseline-services → baseline-dashboard → main
+// project chain (playwright.config.ts). A scoped changed-run shouldn't
+// drag the full ~1.5-min baseline phase onto every intermediate gate —
+// the final `npm run test:e2e` runs the chain in full. The full-suite
+// fallback above intentionally omits `--no-deps` so it keeps the chain.
+const result = spawnSync("npx", ["playwright", "test", "--no-deps", ...union], {
   stdio: "inherit",
   cwd: ROOT,
 });

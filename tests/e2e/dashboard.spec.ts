@@ -491,6 +491,7 @@ test.describe("US3: scrollable today feed", () => {
 
   test("(a–f) 15 rows in closed_at desc order, inner scroll, no page horizontal scroll, feed pinned to today, no audit writes", async ({
     page,
+    staffFixture,
   }) => {
     await page.goto("/dashboard");
     const cursor = newAuditCursor();
@@ -538,8 +539,15 @@ test.describe("US3: scrollable today feed", () => {
       parseFeedTimeToMinutes(lastTimeAfter)!
     );
 
-    // (f) audit-log: dashboard read + toggle emit no rows.
-    const audit = await getAuditLogRowsSince(cursor);
+    // (f) audit-log: dashboard read + toggle emit no rows. Scope to this
+    // worker's staff trio — services.spec.ts runs alongside in the
+    // `baseline` project and writes service.* audit rows; an unscoped
+    // absence check would race those.
+    const audit = await getAuditLogRowsSince(cursor, undefined, [
+      staffFixture.owner.id,
+      staffFixture.manager.id,
+      staffFixture.tech.id,
+    ]);
     expect(audit).toEqual([]);
   });
 });
