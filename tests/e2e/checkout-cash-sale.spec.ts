@@ -120,11 +120,15 @@ test.describe("US1: process a cash-only walk-in sale end-to-end", () => {
 
     // Cash done screen is unchanged (#86): a bare "Paid by cash" line —
     // no tip, no Square reference. The three-action row (#87) is present.
+    // Scope to `done-actions`: the studio topbar renders its own
+    // SwitchStaffButton (same `data-slot`), so an unscoped switch-staff
+    // selector would be a strict-mode violation on this page.
+    const doneActions = page.locator("[data-slot='done-actions']");
     await expect(page.locator("[data-slot='done-method-line']")).toHaveText("Paid by cash");
     await expect(page.locator("[data-slot='done-reference-line']")).toHaveCount(0);
-    await expect(page.locator("[data-slot='dashboard-button']")).toBeVisible();
-    await expect(page.locator("[data-slot='new-transaction-button']")).toBeVisible();
-    await expect(page.locator("[data-slot='switch-staff-button']")).toBeVisible();
+    await expect(doneActions.locator("[data-slot='dashboard-button']")).toBeVisible();
+    await expect(doneActions.locator("[data-slot='new-transaction-button']")).toBeVisible();
+    await expect(doneActions.locator("[data-slot='switch-staff-button']")).toBeVisible();
 
     // DB-level assertions: payments + tickets state.
     const { data: payments, error: payErr } = await admin
