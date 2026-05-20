@@ -1,0 +1,961 @@
+/* ==========================================================================
+   Tang Nails — Day Report page chrome & body (`/report`).
+
+   Adapted from `design-system/prototypes/transaction/day-report-page.css`
+   (the Lacquer Day Report prototype handoff). The prototype's `@import` of
+   `colors_and_type.css` / `user-management.css` / `transactions-page.css`
+   and its `body { overflow: hidden }` override are intentionally dropped —
+   the production app loads tokens via `styles/tokens.css` and owns its own
+   body styling. The shared page-chrome rules (`tp-head`, `tp-period-row`,
+   `tp-range`) are re-declared here, tokenised, because route-scoped CSS
+   imports mean `report.css` and `transactions.css` never load together
+   (research decision R15) — the `.tp-*` / `.dr-*` class names carry over
+   without collision.
+
+   Constitution Principle I (Design System Fidelity, NON-NEGOTIABLE): every
+   colour / spacing / radius / shadow / type value resolves to a `var(--*)`
+   token from `styles/tokens.css`. Audit with
+   `grep -nE '#[0-9a-fA-F]{3,8}|oklch\([0-9]' styles/report.css` — must
+   return zero raw-literal matches (`color-mix(in oklch, …)` keyword usage
+   is the tokenised pattern, not a raw literal).
+
+   The prototype expressed the tip-figure and exempt-badge text as raw dark
+   `oklch` greens with no matching token; they resolve to `--success` here
+   (the sole green semantic token). Tablet-only variants the page never
+   renders are still carried over so the class set stays complete.
+   ========================================================================== */
+
+/* ===== Shared page header (carried from Transactions chrome) ===== */
+.tp-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  padding: var(--space-6) var(--space-8) 0;
+  gap: var(--space-4);
+}
+.tp-head h1 {
+  font-size: var(--text-3xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-tight);
+}
+.tp-head .sub {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  margin-top: var(--space-1);
+  max-width: 60ch;
+}
+.tp-head .actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* Print / Export action buttons (carried from Transactions chrome — the
+ * `.tp-btn-outline` class is re-declared here because route-scoped CSS
+ * imports mean `report.css` and `transactions.css` never load together,
+ * research decision R15). Fully tokenised. */
+.tp-btn-outline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 34px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  font: 500 var(--text-sm) var(--font-sans);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.tp-btn-outline:hover {
+  background: var(--accent);
+}
+
+/* ===== Shared period-tabs row (carried from Transactions chrome) ===== */
+.tp-period-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-8) 0;
+}
+.tp-period {
+  display: inline-flex;
+  gap: 2px;
+  padding: var(--space-1);
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.tp-period button {
+  height: 28px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-xs);
+  background: transparent;
+  border: 0;
+  font: 500 var(--text-xs) var(--font-sans);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+.tp-period button:hover {
+  color: var(--foreground);
+}
+.tp-period button.active {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-xs);
+}
+
+.tp-range {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+}
+.tp-range .arrow {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--card);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.tp-range .arrow:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.tp-range .lbl {
+  font-weight: 500;
+  color: var(--foreground);
+  font-variant-numeric: tabular-nums;
+  min-width: 180px;
+  text-align: center;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+ * Day Report core component styles
+ * ────────────────────────────────────────────────────────────────── */
+
+.dr-app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--background);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Header (tablet variant) */
+.dr-header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  flex-shrink: 0;
+  gap: var(--space-2);
+}
+.dr-header-l {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.dr-header-r {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.dr-title {
+  font-size: var(--text-md);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  flex-shrink: 0;
+}
+
+.dr-date-nav {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  background: var(--muted);
+  border-radius: var(--radius-md);
+  padding: 2px;
+}
+.dr-nav-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--foreground);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--duration-fast);
+}
+.dr-nav-btn:hover {
+  background: var(--border);
+}
+.dr-date-lbl {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 0 var(--space-2);
+  white-space: nowrap;
+}
+
+.dr-periods {
+  display: flex;
+  background: var(--muted);
+  border-radius: var(--radius-md);
+  padding: 2px;
+  gap: 1px;
+}
+.dr-period-btn {
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-xs);
+  border: none;
+  background: transparent;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  transition: all var(--duration-fast);
+}
+.dr-period-btn.on {
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: var(--shadow-xs);
+}
+
+.dr-ghost-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  transition: background var(--duration-fast);
+}
+.dr-ghost-btn:hover {
+  background: var(--muted);
+}
+
+/* Summary strip (tablet original variant) */
+.dr-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  flex-shrink: 0;
+}
+.dr-stat {
+  padding: var(--space-2) var(--space-4);
+  border-right: 1px solid var(--border);
+}
+.dr-stat.last {
+  border-right: none;
+}
+.dr-stat-l {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--muted-foreground);
+  margin-bottom: 2px;
+}
+.dr-stat-v {
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-tight);
+}
+.dr-stat-v.neg {
+  color: var(--destructive);
+}
+.dr-stat-v.pos {
+  color: var(--success);
+}
+.dr-stat-v.tip {
+  color: var(--success);
+}
+.dr-stat-s {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  margin-top: 1px;
+}
+
+/* Body */
+.dr-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+/* Variant B summary strip */
+.dr-summary-b {
+  display: flex;
+  align-items: stretch;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.dr-scope {
+  padding: var(--space-3) var(--space-4);
+  flex-shrink: 0;
+  min-width: 180px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.dr-scope-ttl {
+  font-size: var(--text-base);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.dr-scope-sub {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  margin-top: 2px;
+}
+.dr-scope-stats {
+  flex: 1;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+}
+.dr-scope-stat {
+  padding: var(--space-3) var(--space-4);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.dr-scope-stat:last-child {
+  border-right: none;
+}
+.dr-scope-stat-l {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--muted-foreground);
+}
+.dr-scope-stat-v {
+  font-size: var(--text-xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--leading-tight);
+  margin-top: 2px;
+}
+.dr-scope-stat-v.neg {
+  color: var(--destructive);
+}
+.dr-scope-stat-v.pos {
+  color: var(--success);
+}
+.dr-scope-stat-v.tip {
+  color: var(--success);
+}
+
+/* Variant A: narrower left nav (no per-tech KPIs except inline Net) */
+.dr-left.nav {
+  width: 232px;
+}
+.dr-tech-card.nav {
+  padding: var(--space-2) var(--space-3);
+}
+
+/* Variant B: slimmer right detail header (totals are in top strip) */
+.dr-detail-head.slim {
+  padding: var(--space-2) var(--space-4);
+}
+
+/* Left panel */
+.dr-left {
+  width: 282px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dr-allstaff-btn {
+  flex-shrink: 0;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  text-align: left;
+  border-top: none;
+  border-right: none;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  width: 100%;
+  transition: background var(--duration-fast);
+}
+.dr-allstaff-btn:hover {
+  background: var(--muted);
+}
+.dr-allstaff-btn.on {
+  background: color-mix(in oklch, var(--primary) 7%, var(--card));
+  border-left-color: var(--primary);
+  padding-left: var(--space-3);
+}
+
+.dr-tech-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.dr-tech-list::-webkit-scrollbar {
+  width: 4px;
+}
+.dr-tech-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.dr-tech-card {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  transition: all var(--duration-fast);
+}
+.dr-tech-card:hover {
+  background: var(--muted);
+}
+.dr-tech-card.on {
+  background: color-mix(in oklch, var(--primary) 7%, var(--card));
+  border-color: color-mix(in oklch, var(--primary) 35%, transparent);
+}
+
+.dr-card-nums {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+.dr-card-num {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.dr-cn-l {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--muted-foreground);
+}
+.dr-cn-v {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.dr-cn-v.neg {
+  color: var(--destructive);
+}
+.dr-cn-v.bold {
+  font-weight: 700;
+}
+
+/* Exempt badges */
+.dr-exempt-tag {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-xs);
+  background: color-mix(in oklch, var(--success) 14%, transparent);
+  color: var(--success);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+.dr-exempt-badge {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  background: color-mix(in oklch, var(--success) 14%, transparent);
+  color: var(--success);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+.dr-exempt-inline {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px var(--space-1);
+  border-radius: var(--radius-xs);
+  background: color-mix(in oklch, var(--success) 14%, transparent);
+  color: var(--success);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+.dr-em-dash {
+  color: var(--success);
+  font-weight: 600;
+}
+
+/* Right panel */
+.dr-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dr-detail {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dr-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+  flex-shrink: 0;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.dr-head-totals {
+  display: flex;
+  gap: var(--space-5);
+  flex-shrink: 0;
+  text-align: right;
+}
+.dr-htotal {
+  min-width: 58px;
+}
+.dr-htotal-l {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--muted-foreground);
+}
+.dr-htotal-v {
+  font-size: var(--text-lg);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+  margin-top: 1px;
+}
+.dr-htotal-v.neg {
+  color: var(--destructive);
+}
+.dr-htotal-v.pos {
+  color: var(--success);
+}
+.dr-htotal-v.tip {
+  color: var(--success);
+}
+
+/* Table */
+.dr-table-wrap {
+  flex: 1;
+  overflow-y: auto;
+}
+.dr-table-wrap::-webkit-scrollbar {
+  width: 5px;
+}
+.dr-table-wrap::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: var(--radius-xs);
+}
+
+.dr-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.dr-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--muted-foreground);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.dr-table th.num {
+  text-align: right;
+}
+.dr-table th.ded {
+  color: var(--destructive);
+}
+
+.dr-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.dr-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dr-table td.dc {
+  color: var(--neutral-400);
+  font-size: var(--text-xs);
+}
+.dr-table td.dc.on {
+  color: var(--destructive);
+  font-weight: 600;
+  font-size: var(--text-xs);
+}
+.dr-table td.net-cell {
+  font-weight: 700;
+}
+.dr-table td.tip-cell {
+  color: var(--success);
+  font-weight: 600;
+}
+
+/* Transaction rows */
+.dr-tx-row {
+  transition: background var(--duration-fast);
+}
+.dr-tx-row.click {
+  cursor: pointer;
+}
+.dr-tx-row.click:hover {
+  background: var(--muted);
+}
+.dr-tx-row.exp {
+  background: color-mix(in oklch, var(--primary) 4%, var(--background));
+}
+
+.dr-time {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+.dr-client {
+  font-weight: 600;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+}
+.dr-svcs {
+  color: var(--muted-foreground);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dr-expand-caret {
+  display: inline-flex;
+  align-items: center;
+  margin-right: var(--space-1);
+  color: var(--muted-foreground);
+  transition: transform var(--duration-fast);
+  vertical-align: middle;
+}
+.dr-expand-caret.open {
+  transform: rotate(180deg);
+}
+
+/* Expanded detail row */
+.dr-expand-row td {
+  padding: 2px var(--space-3) var(--space-2);
+  background: color-mix(in oklch, var(--primary) 3%, var(--background));
+}
+.dr-expand-inner {
+  display: flex;
+  gap: var(--space-5);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+}
+.dr-expand-sec {
+  flex: 1;
+  min-width: 0;
+}
+.dr-expand-ttl {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  color: var(--muted-foreground);
+  margin-bottom: var(--space-1);
+}
+.dr-expand-line {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border);
+}
+.dr-expand-line:last-of-type {
+  border-bottom: none;
+}
+.dr-expand-type {
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+.dr-expand-name {
+  color: var(--foreground);
+}
+.dr-expand-ded {
+  color: var(--destructive);
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.dr-expand-subtotal {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  padding: var(--space-1) 0 0;
+  margin-top: 2px;
+  border-top: 1px solid var(--border);
+}
+
+/* Footer totals row */
+.dr-foot-row td {
+  font-weight: 700;
+  font-size: var(--text-xs);
+  background: var(--muted);
+  border-top: 2px solid var(--border);
+  padding: var(--space-2) var(--space-3);
+}
+
+/* Staff overview rows */
+.dr-staff-row {
+  transition: background var(--duration-fast);
+  cursor: default;
+}
+.dr-staff-row:hover {
+  background: color-mix(in oklch, var(--primary) 3%, var(--background));
+}
+
+/* Legend bar */
+.dr-legend {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--muted);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+}
+.dr-legend strong {
+  color: var(--foreground);
+}
+.dr-legend-sep {
+  color: var(--border);
+  font-size: var(--text-base);
+}
+
+/* ──────────────────────────────────────────────────────────────────
+ * Empty period state
+ * Shown in place of the summary strip + body when the resolved window
+ * holds no paid tickets (FR-029). A calm, centred single-sentence state
+ * — matches the Lacquer empty-state copy rule.
+ * ────────────────────────────────────────────────────────────────── */
+.dr-empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  margin: var(--space-5) var(--space-8) var(--space-6);
+  padding: var(--space-12) var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  text-align: center;
+}
+.dr-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+.dr-empty-ttl {
+  font-size: var(--text-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--foreground);
+}
+.dr-empty-sub {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  max-width: 44ch;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+ * Page-mode tweaks
+ * In tablet mode the component sits inside a fixed 1024×720 bezel.
+ * In page mode it lives directly inside the app content area.
+ * ────────────────────────────────────────────────────────────────── */
+
+.dr-app-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--background);
+}
+
+/* Slim left nav — matches variant A look but slightly wider for the page */
+.dr-app-page .dr-left {
+  width: 248px;
+}
+
+/* The body fills remaining space and gets the chrome's left/right gutter,
+ * wrapped in a card so it reads as a single cohesive surface (matching
+ * the visual rhythm of the Transactions table). */
+.dr-app-page .dr-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  margin: var(--space-5) var(--space-8) var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  overflow: hidden;
+}
+
+/* Bump up the detail-head and totals for the larger page canvas */
+.dr-app-page .dr-detail-head {
+  padding: var(--space-3) var(--space-5);
+}
+.dr-app-page .dr-htotal-v {
+  font-size: var(--text-xl);
+}
+
+/* The All-Staff button and tech list use the panel background */
+.dr-app-page .dr-allstaff-btn,
+.dr-app-page .dr-tech-list {
+  background: transparent;
+}
+
+/* Tighten the period-row gap since the body card now provides its own breathing room */
+.dr-app-page .tp-period-row {
+  padding-bottom: 0;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+ * Print stylesheet (FR-027 / research R13)
+ * `window.print()` (the header's Print action) captures the live DOM,
+ * so whichever view is on screen prints. This block strips the studio
+ * shell chrome — sidebar, top bar, the period controls, and the
+ * Print/Export buttons — so the printout is the report content only.
+ *
+ * The selectors target the REAL studio shell classes from
+ * `styles/studio.css` (`.studio-shell` grid + `.studio-sidebar` /
+ * `.studio-topbar` / `.studio-main`), NOT the prototype's `.app-*`
+ * names. `display:none` and plain layout resets need no token.
+ * ────────────────────────────────────────────────────────────────── */
+@media print {
+  /* Hide the studio sidebar + top bar — chrome, not report content. */
+  .studio-sidebar,
+  .studio-topbar {
+    display: none !important;
+  }
+
+  /* Collapse the shell grid so the report fills the printed page. */
+  .studio-shell {
+    display: block;
+    height: auto;
+  }
+  .studio-main {
+    display: block;
+    min-height: 0;
+  }
+
+  /* The report root drops its fixed-height / clipped layout for print. */
+  .dr-app-page {
+    height: auto;
+    overflow: visible;
+  }
+
+  /* Hide the period controls and the Print/Export action buttons —
+   * interactive chrome that is meaningless on paper. */
+  .tp-period-row,
+  .tp-head .actions {
+    display: none;
+  }
+
+  /* The body card drops its rounded border + gutter so the report
+   * prints as a single flat document. */
+  .dr-app-page .dr-body {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  .dr-app-page .dr-left {
+    display: none;
+  }
+  .dr-app-page .dr-right {
+    width: 100%;
+  }
+
+  /* Let the table flow across page breaks instead of clipping. */
+  .dr-table-wrap {
+    overflow: visible;
+  }
+  .dr-table th {
+    position: static;
+    background: var(--muted);
+  }
+}

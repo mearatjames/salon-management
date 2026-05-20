@@ -18,8 +18,9 @@ test.use({
 // The nav items in render order — matches `NAV_CONFIG` in
 // `components/lacquer/sidebar/nav-items.ts` and the table in
 // `contracts/nav-items.contract.md` § 2. `transactions` is owner/manager
-// only (feature 045); this spec runs as owner so it is present and ordered
-// between `checkout` and `walkin`.
+// only (feature 045); `report` is owner/manager only (feature 046) and sits
+// in the Operations group before `settings`. This spec runs as owner so both
+// role-gated items are present.
 const EXPECTED_NAV_IDS = [
   "dashboard",
   "schedule",
@@ -29,14 +30,14 @@ const EXPECTED_NAV_IDS = [
   "transactions",
   "walkin",
   "end-of-day",
-  "day-report",
+  "report",
   "settings",
 ] as const;
 
 test.describe.configure({ mode: "serial" });
 
 test.describe("Studio left navigation panel", () => {
-  test("(1) sidebar landmark + 9 items render in expected order on /dashboard", async ({
+  test("(1) sidebar landmark + all items render in expected order on /dashboard", async ({
     page,
   }) => {
     await page.goto("/dashboard");
