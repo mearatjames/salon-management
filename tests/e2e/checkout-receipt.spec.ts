@@ -53,12 +53,16 @@ const CLASSIC_MANICURE_ID = "20000000-0000-0000-0000-000000000001";
  * Walks the US1 happy path UI to land a paid ticket in the DB, returning
  * its id. Uses the same selectors as `checkout-cash-sale.spec.ts` so a
  * change in the cart screen breaks both specs in the same place.
+ *
+ * Feature 043-checkout-ephemeral-draft: entry is the paramless `/checkout`
+ * (the cart is an ephemeral in-memory draft). The `/checkout/[ticketId]`
+ * URL only appears AFTER payment persists the cart — so the ticket id is
+ * captured post-`take-cash`, not on entry.
  */
 async function createPaidTicket(page: import("@playwright/test").Page): Promise<string> {
   await page.goto("/dashboard");
   await page.locator("[data-slot='new-transaction-cta']").click();
-  await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-  const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+  await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
 
   await page
     .locator("[data-slot='checkout-tech-row']")
@@ -69,9 +73,10 @@ async function createPaidTicket(page: import("@playwright/test").Page): Promise<
     .click();
   await page.locator("[data-slot='payment-tile'][data-method='cash']").click();
   await page.locator("[data-slot='take-cash-button']").click();
+  await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
   await expect(page.locator("[data-slot='done-screen']")).toBeVisible({ timeout: 10_000 });
 
-  return ticketId;
+  return new URL(page.url()).pathname.split("/").pop()!;
 }
 
 test.describe.configure({ mode: "serial" });

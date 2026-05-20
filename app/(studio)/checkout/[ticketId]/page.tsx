@@ -17,7 +17,7 @@ import "../checkout.css";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { CheckoutScreen } from "./checkout-screen.client";
+import { CheckoutScreen } from "../checkout-screen.client";
 import { DoneScreen } from "@/components/lacquer/checkout/done-screen";
 import { requireStudioSession } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/db/server";
@@ -254,6 +254,43 @@ export default async function CheckoutTicketPage({
       last4Mask: r.gift_card_id ? (giftLast4ById.get(r.gift_card_id) ?? null) : null,
     }));
 
+  // Feature 043-checkout-ephemeral-draft (T028): a single-tender card or
+  // whole-ticket gift payment inserts ONE `pending` row that covers the
+  // FULL ticket total (no `draft` leg, no remainder). When the ephemeral
+  // card-send / gift-redeem persists the ticket and the client
+  // `router.replace`s onto this route, the card-waiting / gift-card-waiting
+  // screen must rehydrate so the realtime/polling settlement path keeps
+  // running — identical to the pre-043 in-session wait (FR-003). Detect
+  // exactly that shape — one non-failed `pending` leg whose amount equals
+  // `total_cents` — and seed the client's stage. A partial-gift leg
+  // (amount < total — a remainder is still owed) is the split-tender path
+  // and stays in `initialLegs` so the split footer rehydrates instead.
+  const loneFullCoverLeg =
+    initialLegs.length === 1 &&
+    initialLegs[0].status === "pending" &&
+    initialLegs[0].amountCents === ticket.total_cents
+      ? initialLegs[0]
+      : null;
+  const loneCardWaitingLeg = loneFullCoverLeg?.method === "card" ? loneFullCoverLeg : null;
+  const loneGiftWaitingLeg = loneFullCoverLeg?.method === "gift" ? loneFullCoverLeg : null;
+
+  // Feature 043 (T028): when the ephemeral gift-redeem covered only PART
+  // of the ticket (`partial_split`), the persisted ticket has one
+  // `pending` gift leg whose amount is short of `total_cents`. After the
+  // `router.replace` onto this route the split-tender continuation must
+  // re-open the second-leg method picker for the remainder — exactly what
+  // the in-session `partial_split` branch does. Detect that shape and seed
+  // the picker amount so the rehydrated client re-opens it.
+  const nonFailedSettledOrPending = initialLegs.filter(
+    (l) => l.status === "pending" || l.status === "succeeded"
+  );
+  const partialGiftRemainderCents =
+    initialLegs.length >= 1 &&
+    initialLegs.every((l) => l.method === "gift" && l.status === "pending") &&
+    nonFailedSettledOrPending.reduce((sum, l) => sum + l.amountCents, 0) < ticket.total_cents
+      ? ticket.total_cents - nonFailedSettledOrPending.reduce((s, l) => s + l.amountCents, 0)
+      : null;
+
   // status === 'open' — render the cart island with the loaded snapshot.
   return (
     <CheckoutScreen
@@ -264,7 +301,15 @@ export default async function CheckoutTicketPage({
       defaultDeviceFriendlyName={defaultDevice?.friendlyName ?? null}
       pairedDevices={pairedDevices}
       requiresReconnect={requiresReconnect}
-      initialLegs={initialLegs}
+      // When the lone leg is a full-cover pending card or whole-ticket
+      // gift, hand it to the card-waiting / gift-card-waiting stage instead
+      // of the split-tender footer (see above).
+      initialLegs={loneFullCoverLeg ? [] : initialLegs}
+      initialCardStage={loneCardWaitingLeg ? "waiting" : "cart"}
+      initialActiveCardPaymentId={loneCardWaitingLeg ? loneCardWaitingLeg.id : null}
+      initialGiftStage={loneGiftWaitingLeg ? "waiting" : "idle"}
+      initialActiveGiftPaymentId={loneGiftWaitingLeg ? loneGiftWaitingLeg.id : null}
+      initialMethodPickerAmountCents={partialGiftRemainderCents}
       initialItems={(itemsRes.data ?? [])
         // US3 (T031): both service AND discount rows now surface. Discount
         // rows have ref_id=null / assigned_staff_id=null (CHECK-enforced in

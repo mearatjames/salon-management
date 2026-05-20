@@ -1,6 +1,15 @@
 // tests/e2e/checkout-discard-during-waiting.spec.ts
 //
 // Issue #25 — Discard during Square Terminal wait must cancel checkout first.
+// Updated for feature 043-checkout-ephemeral-draft.
+//
+// After 043 the in-progress cart is an ephemeral in-memory draft. The
+// card path still requires a persisted ticket, so this spec seeds a
+// persisted open ticket with one service line directly, opens it at
+// `/checkout/[ticketId]`, then drives the card charge to reach the
+// waiting screen — by the waiting stage a ticket is always persisted.
+// The discard control on the waiting screen is the consolidated exit
+// control, labeled "Discard" in persisted mode.
 //
 // Scenarios:
 //   (a) Cancel-then-discard: with the terminal in the "waiting for card
@@ -110,15 +119,44 @@ async function setupCheckoutInWaiting(
   const stub: SquareStub = await squareStub(context, baseURL);
   stub.stubListDevices([{ id: deviceId, name: "Lobby Terminal", status: "PAIRED" }]);
 
-  await page.goto("/dashboard");
-  await page.locator("[data-slot='new-transaction-cta']").click();
-  await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-  const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+  // Seed a persisted open ticket with a Classic manicure ($25) line —
+  // 043: the card path still requires a persisted ticket. Maya is the
+  // operator.
+  const seedClient = serviceClient();
+  const { data: maya } = await seedClient
+    .from("staff")
+    .select("id")
+    .eq("display_name", "Maya Patel")
+    .single();
+  const ownerId = maya!.id;
 
-  await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Jordan Lee']").click();
-  await page
-    .locator("[data-slot='service-tile'][data-service-id='20000000-0000-0000-0000-000000000001']")
-    .click();
+  const { data: ticket, error: tkErr } = await seedClient
+    .from("tickets")
+    .insert({
+      opened_by_staff_id: ownerId,
+      status: "open",
+      subtotal_cents: 2500,
+      tax_cents: 0,
+      total_cents: 2500,
+    })
+    .select("id")
+    .single();
+  if (tkErr || !ticket) throw new Error(`seed ticket failed: ${tkErr?.message}`);
+  const ticketId = ticket.id;
+
+  await seedClient.from("ticket_items").insert({
+    ticket_id: ticketId,
+    kind: "service",
+    ref_id: "20000000-0000-0000-0000-000000000001", // Classic manicure ($25)
+    assigned_staff_id: ownerId,
+    name_snapshot: "Classic manicure",
+    unit_price_cents: 2500,
+    qty: 1,
+    price_unconfirmed: false,
+  });
+
+  await page.goto(`/checkout/${ticketId}`);
+  await page.waitForURL(new RegExp(`/checkout/${ticketId}`), { timeout: 10_000 });
   await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$25.00");
 
   // Send to Square Terminal → waiting screen.
@@ -200,8 +238,9 @@ test.describe("Issue25: Discard during Square Terminal wait cancels checkout fir
     // Default stub response is CANCELED, but be explicit for readability.
     await serverStub.setCheckoutCancel(checkoutId, { responseStatus: "CANCELED" });
 
-    // Click Discard from the TxHeader on the waiting screen.
-    await page.locator("[data-slot='discard-ticket-button']").click();
+    // Click the consolidated exit control (labeled "Discard" in persisted
+    // mode) from the TxHeader on the waiting screen.
+    await page.locator("[data-slot='checkout-exit-control']").click();
     await page.waitForURL(/\/dashboard(\?|$)/, { timeout: 10_000 });
 
     // The cancel endpoint was hit — this is what proves cancelTerminalPayment
@@ -246,7 +285,7 @@ test.describe("Issue25: Discard during Square Terminal wait cancels checkout fir
     // still_pending → UI must surface the existing banner and abort discard.
     await serverStub.setCheckoutCancel(checkoutId, { responseStatus: "NETWORK_ERROR" });
 
-    await page.locator("[data-slot='discard-ticket-button']").click();
+    await page.locator("[data-slot='checkout-exit-control']").click();
 
     // We stay on the waiting screen with the soft banner.
     await expect(page.locator("[data-slot='card-waiting']")).toBeVisible();

@@ -10,18 +10,27 @@
 //   (d) snapshot semantics — add a service line while the sheet is open;
 //       the sheet's content does NOT change; close + re-open → snapshot
 //       now reflects the new line
-//   (e) Email submit with `you@example.com` → success toast
-//       "Bill emailed to you@example.com" AND a `bill.emailed` audit row
-//       exists (filtered by payload.ticket_id, polled via expect.poll)
-//   (f) Email submit with `not-an-email` → inline error AND no toast AND
-//       no audit row
-//   (g) closing the bill sheet leaves ticket status unchanged (`open`)
-//       and no payment row was inserted
+//   (e) Email submit with `you@example.com` → success toast — see the
+//       feature-043 note below; the email-bill server round-trip is a
+//       persisted-mode-only flow and is not reachable from the ephemeral
+//       pre-payment cart, so this scenario is fixme'd.
+//   (f) Email submit with `not-an-email` → inline error AND no toast
+//       (the invalid-address rejection is client-side, so this still
+//       holds in the ephemeral cart)
+//   (g) closing the bill sheet leaves the ephemeral cart untouched — no
+//       `tickets` / `payments` rows are written
+//
+// Feature 043-checkout-ephemeral-draft: the in-progress cart is now an
+// ephemeral in-memory draft. Entry is the paramless `/checkout`; the bill
+// PREVIEW (masthead, items, totals, print stylesheet, snapshot freeze) is
+// pure client UI that reads local cart state — it works unchanged. The
+// email-bill SERVER action (`emailBillStub`) is, per the feature contract
+// (`contracts/server-actions.md § Unchanged actions`), persisted-mode-
+// only — it requires a real ticket id. Emailing a bill from the ephemeral
+// pre-payment cart is therefore not a supported flow; the email-success
+// scenario (e) is fixme'd accordingly.
 
 import { expect, test } from "./_fixtures";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-
-import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 
 test.use({
   storageState: async ({ authState }, provide) => {
@@ -43,46 +52,28 @@ async function supabaseIsReachable(): Promise<boolean> {
   }
 }
 
-function adminClient(): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-}
-
 // Seeded ids (see supabase/seed.sql).
 const CLASSIC_MANI_SERVICE_ID = "20000000-0000-0000-0000-000000000001"; // $25 fixed
 const GEL_POLISH_SERVICE_ID = "20000000-0000-0000-0000-000000000002"; // assigned to Sam only
 
+// Feature 043: open a fresh ephemeral draft cart. Entry is the paramless
+// `/checkout` — no DB ticket, no `/checkout/[ticketId]` URL.
 async function openFreshTicket(
   page: import("@playwright/test").Page,
   techName: string
-): Promise<string> {
+): Promise<void> {
   await page.locator("[data-slot='new-transaction-cta']").click();
-  await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-  const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+  await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
   const techRow = page.locator("[data-slot='checkout-tech-row']");
   await expect(techRow).toBeVisible();
   await techRow.locator(`[data-staff-name='${techName}']`).click();
   await expect(page.locator("[data-slot='checkout-tech-chip']")).toBeVisible();
-  return ticketId;
-}
-
-async function discardTicket(admin: SupabaseClient, ticketId: string): Promise<void> {
-  await admin
-    .from("tickets")
-    .update({
-      status: "discarded",
-      closed_at: new Date().toISOString(),
-      closed_by_staff_id: "10000000-0000-0000-0000-000000000001",
-    })
-    .eq("id", ticketId);
 }
 
 /**
- * Wait for the (optimistically inserted) cart line to flip its data-line-id
- * from a temp id (`tmp-…`) to a real UUID.
+ * Wait for a cart line to carry a stable `data-line-id`. In the ephemeral-
+ * draft model lines get a client-generated UUID immediately (no `tmp-`
+ * swap), so this resolves as soon as the row is in the DOM.
  */
 async function waitForConfirmedLine(
   cartLine: import("@playwright/test").Locator,
@@ -115,10 +106,8 @@ test.describe("US4: Bill preview", () => {
   test("(a, b) Bill opens sheet with masthead + items + totals + 3 suggested-gratuity rows", async ({
     page,
   }) => {
-    const admin = adminClient();
-
     await page.goto("/dashboard");
-    const ticketId = await openFreshTicket(page, "Jordan Lee");
+    await openFreshTicket(page, "Jordan Lee");
 
     // Add one $25 Classic manicure line.
     await page
@@ -164,17 +153,13 @@ test.describe("US4: Bill preview", () => {
     // 25% of $25 = $6.25; total $31.25.
     await expect(tipRows.nth(2)).toContainText("25%");
     await expect(tipRows.nth(2)).toContainText("$6.25");
-
-    await discardTicket(admin, ticketId);
   });
 
   test("(c) print stylesheet hides chrome — only the bill doc is visible under print media", async ({
     page,
   }) => {
-    const admin = adminClient();
-
     await page.goto("/dashboard");
-    const ticketId = await openFreshTicket(page, "Jordan Lee");
+    await openFreshTicket(page, "Jordan Lee");
 
     await page
       .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
@@ -203,18 +188,14 @@ test.describe("US4: Bill preview", () => {
 
     // Restore screen media so the test cleanup doesn't get a print view.
     await page.emulateMedia({ media: "screen" });
-
-    await discardTicket(admin, ticketId);
   });
 
   test("(d) snapshot semantics — sheet content is frozen at open time; reopen reflects latest cart", async ({
     page,
   }) => {
-    const admin = adminClient();
-
     await page.goto("/dashboard");
     // Sam has both Classic manicure ($25) AND Gel polish ($35) access.
-    const ticketId = await openFreshTicket(page, "Sam Chen");
+    await openFreshTicket(page, "Sam Chen");
 
     await page
       .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
@@ -264,88 +245,26 @@ test.describe("US4: Bill preview", () => {
     await expect(page.locator("[data-slot='bill-item']")).toHaveCount(2);
     // $25 + $35 = $60
     await expect(page.locator("[data-slot='bill-total']")).toHaveText("$60.00");
-
-    await discardTicket(admin, ticketId);
   });
 
-  test("(e) Email submit with a valid address → success toast + bill.emailed audit row", async ({
+  // Feature 043: `emailBillStub` is persisted-mode-only (see file header).
+  // Emailing a bill from the ephemeral pre-payment cart is not a supported
+  // flow — there is no ticket id to attach the `bill.emailed` audit row
+  // to, so the server action would reject. Fixme'd until/unless the
+  // email-bill flow is re-scoped onto the post-payment surface.
+  test.fixme("(e) Email submit with a valid address → success toast + bill.emailed audit row", async ({
     page,
   }) => {
-    const admin = adminClient();
-    const cursor = newAuditCursor();
-
+    // Intentionally minimal — fixme'd: the email-bill server round-trip
+    // requires a persisted ticket, which the ephemeral cart has not yet
+    // created. Restore this assertion when email-bill is re-homed.
     await page.goto("/dashboard");
-    const ticketId = await openFreshTicket(page, "Jordan Lee");
-
-    await page
-      .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
-      .click();
-    const serviceLine = page
-      .locator("[data-slot='cart-line']")
-      .filter({ hasText: "Classic manicure" })
-      .first();
-    await waitForConfirmedLine(serviceLine);
-
-    await page.locator("[data-slot='bill-button']").click();
-    const billSheet = page.locator("[data-slot='bill-sheet']");
-    await expect(billSheet).toBeVisible({ timeout: 5_000 });
-
-    // Click Email → email dialog opens.
-    await page.locator("[data-slot='bill-sheet-email']").click();
-    const emailDialog = page.locator("[data-slot='email-bill-dialog']");
-    await expect(emailDialog).toBeVisible({ timeout: 5_000 });
-
-    // Fill and submit.
-    await emailDialog.locator("[data-slot='email-bill-input']").fill("you@example.com");
-    await emailDialog.locator("[data-slot='email-bill-send']").click();
-
-    // Success toast — sonner renders these as role=status (top-center).
-    const toast = page.getByText("Bill emailed to you@example.com");
-    await expect(toast).toBeVisible({ timeout: 5_000 });
-
-    // Email dialog closes on success.
-    await expect(emailDialog).toBeHidden({ timeout: 5_000 });
-
-    // Audit row exists for bill.emailed, filtered to this ticket. For
-    // bill.emailed the audit `entity_id` is the ticket id itself (per the
-    // contract), so the scoping filter uses entity_id rather than
-    // payload.ticket_id (the way discount.* tests scope). The server
-    // action is awaited but use expect.poll for safety against any
-    // micro-tasking delay.
-    await expect
-      .poll(
-        async () =>
-          (await getAuditLogRowsSince(cursor, "bill.emailed")).filter(
-            (r) => r.entity_id === ticketId
-          ).length,
-        { timeout: 5_000 }
-      )
-      .toBe(1);
-
-    const rows = (await getAuditLogRowsSince(cursor, "bill.emailed")).filter(
-      (r) => r.entity_id === ticketId
-    );
-    expect(rows[0].entity_id).toBe(ticketId);
-    expect(rows[0].payload).toMatchObject({
-      address: "you@example.com",
-      // The action stores the full snapshot under line_snapshot.
-      line_snapshot: expect.objectContaining({
-        totalCents: 2500,
-        serviceSubtotalCents: 2500,
-      }),
-    });
-
-    await discardTicket(admin, ticketId);
+    await openFreshTicket(page, "Jordan Lee");
   });
 
-  test("(f) Email submit with an invalid address → inline error AND no toast AND no audit row", async ({
-    page,
-  }) => {
-    const admin = adminClient();
-    const cursor = newAuditCursor();
-
+  test("(f) Email submit with an invalid address → inline error AND no toast", async ({ page }) => {
     await page.goto("/dashboard");
-    const ticketId = await openFreshTicket(page, "Jordan Lee");
+    await openFreshTicket(page, "Jordan Lee");
 
     await page
       .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
@@ -371,25 +290,16 @@ test.describe("US4: Bill preview", () => {
     // Dialog remains open.
     await expect(emailDialog).toBeVisible();
 
-    // No toast.
+    // No toast — the invalid address is rejected client-side, the server
+    // action is never reached.
     await expect(page.getByText(/Bill emailed to/)).toHaveCount(0);
-
-    // No audit row.
-    const rows = (await getAuditLogRowsSince(cursor, "bill.emailed")).filter(
-      (r) => r.entity_id === ticketId
-    );
-    expect(rows.length).toBe(0);
-
-    await discardTicket(admin, ticketId);
   });
 
-  test("(g) closing the bill sheet leaves ticket status unchanged and no payment row inserted", async ({
+  test("(g) closing the bill sheet writes nothing — the ephemeral cart is untouched", async ({
     page,
   }) => {
-    const admin = adminClient();
-
     await page.goto("/dashboard");
-    const ticketId = await openFreshTicket(page, "Jordan Lee");
+    await openFreshTicket(page, "Jordan Lee");
 
     await page
       .locator(`[data-slot='service-tile'][data-service-id='${CLASSIC_MANI_SERVICE_ID}']`)
@@ -406,14 +316,16 @@ test.describe("US4: Bill preview", () => {
     await page.locator("[data-slot='bill-sheet-back']").click();
     await expect(billSheet).toBeHidden({ timeout: 5_000 });
 
-    // Ticket status still 'open'.
-    const { data: tk } = await admin.from("tickets").select("status").eq("id", ticketId).single();
-    expect(tk!.status).toBe("open");
-
-    // No payment row exists.
-    const { data: payments } = await admin.from("payments").select("id").eq("ticket_id", ticketId);
-    expect((payments ?? []).length).toBe(0);
-
-    await discardTicket(admin, ticketId);
+    // Feature 043: opening + closing the bill never persists anything —
+    // the cart is still an ephemeral draft. The URL stays paramless
+    // `/checkout` (no `/checkout/[ticketId]` route) and the shell stays
+    // `data-ephemeral="true"`. Both are per-page signals that hold
+    // regardless of what parallel workers do to the shared DB (a global
+    // row-count would race).
+    expect(new URL(page.url()).pathname).toBe("/checkout");
+    await expect(page.locator("[data-slot='checkout-shell']")).toHaveAttribute(
+      "data-ephemeral",
+      "true"
+    );
   });
 });

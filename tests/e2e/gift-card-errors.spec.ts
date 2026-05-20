@@ -102,22 +102,18 @@ async function typeGanIntoNumpad(page: Page, ganChars: string): Promise<void> {
   }
 }
 
-async function openCheckoutWithFortyDollarService(page: Page): Promise<string> {
+// Feature 043: build an ephemeral $40 cart. These error variants never
+// tap "Redeem" — they only exercise the read-only GAN lookup — so no
+// ticket is ever persisted. The URL stays paramless `/checkout`.
+async function openEphemeralCheckoutWithFortyDollarService(page: Page): Promise<void> {
   await page.goto("/dashboard");
   await page.locator("[data-slot='new-transaction-cta']").click();
-  await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
-  const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+  await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
   await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Sam Chen']").click();
   await page
     .locator("[data-slot='service-tile'][data-service-id='20000000-0000-0000-0000-000000000003']")
     .click();
   await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$40.00");
-  return ticketId;
-}
-
-async function expectNoPaymentRow(supabase: SupabaseClient, ticketId: string): Promise<void> {
-  const { data } = await supabase.from("payments").select("id, status").eq("ticket_id", ticketId);
-  expect(data ?? []).toHaveLength(0);
 }
 
 test.describe.configure({ mode: "serial" });
@@ -184,7 +180,6 @@ test.describe("US1: gift card errors", () => {
     test(`US1 ${variant.label}`, async ({ page, context, baseURL }) => {
       if (!supabaseUp) test.skip();
       const cursor = newAuditCursor();
-      const supabase = serviceClient();
 
       await page.goto("/settings/square");
       await connectSquareViaStub(page, context, baseURL!);
@@ -192,7 +187,7 @@ test.describe("US1: gift card errors", () => {
       const stub: SquareStub = await squareStub(context, baseURL!);
       stub.stubListDevices([{ id: "device:STUB_GIFT_ERR", name: "Lobby", status: "PAIRED" }]);
 
-      const ticketId = await openCheckoutWithFortyDollarService(page);
+      await openEphemeralCheckoutWithFortyDollarService(page);
 
       // Open gift flow.
       await page.locator("[data-slot='payment-tile'][data-method='gift']").click();
@@ -207,10 +202,16 @@ test.describe("US1: gift card errors", () => {
       await expect(page.locator(variant.expectSlot)).toBeVisible({ timeout: 5_000 });
       await expect(page.locator(variant.expectSlot)).toContainText(variant.expectText);
 
-      // No payment row was created.
-      await expectNoPaymentRow(supabase, ticketId);
+      // Feature 043: the GAN lookup is read-only — no Redeem tapped, so no
+      // ticket is persisted. The URL stays paramless `/checkout` — a
+      // per-page signal that no payment-initiating action ran (the client
+      // only `router.replace`s to `/checkout/[id]` once a ticket is
+      // persisted). This holds regardless of what parallel workers do to
+      // the shared DB, unlike a global `audit_log` row-count.
+      expect(new URL(page.url()).pathname).toBe("/checkout");
 
-      // Audit cursor: exactly one balance_looked_up; no draft_created/redeemed.
+      // Audit cursor: exactly one balance_looked_up; no payment composed
+      // or redeemed for this gift card.
       const rows = await getAuditLogRowsSince(cursor);
       const actions = rows.map((r) => r.action);
       expect(actions.filter((a) => a === "gift_card.balance_looked_up").length).toBe(1);

@@ -247,7 +247,7 @@ All business rules — refund authority, settings edits, manager thresholds — 
 5. Staff taps "Seat" → Server Action creates an `appointment` (source `walk_in`, status `checked_in`), links `walk_ins.seated_appointment_id`, sets walk-in status `seated`.
 
 **POS — services, discounts, split tender, voids, refunds**
-1. From an appointment or walk-in, staff opens `/checkout/[ticketId]` (creates ticket if absent).
+1. From an appointment or walk-in, staff opens `/checkout`. The in-progress cart is an ephemeral in-memory draft — no `tickets` or `ticket_items` rows exist while it is being built. The ticket and all its items are persisted together, atomically, at the first payment-initiating action (see step 3).
 2. Add items (services from `appointment_services` snapshots, optional discount as `ticket_items.kind='discount'`). For each service line, the avatar picker assigns the tech who actually performed it (defaults to `appointment.staff_id`). No products in v1.
 3. Stage one or more **payments** that together cover `tickets.total_cents` (split tender supported). Each payment names its method:
    - **Cash**: Server Action records a `payments` row directly with `status='succeeded'`, increments the open cash drawer's expected balance.
