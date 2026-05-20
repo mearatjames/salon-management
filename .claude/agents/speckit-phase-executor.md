@@ -46,8 +46,12 @@ survives, so keep it tight and structured.
 4. **Honor hard directives exactly.** If a task says "never hand-author package.json" or
    "trace every value to a token," that is non-negotiable — do not shortcut it.
 5. **Run the phase checkpoint.** Most phases end with a verification/checkpoint task. Run
-   it. For build/test/lint verification you MAY delegate to the `speckit-gate-runner`
-   agent to keep command output out of your context — or run it directly if quick.
+   it with the **scoped** intermediate-gate commands from CLAUDE.md § "Scoping
+   intermediate phase gates" — `npm run test:changed` for unit tests, scoped
+   prettier/eslint, `npm run test:e2e:changed` for e2e. Never run the full suites at a
+   per-phase gate; those belong to the feature's final gate only. For build/test/lint
+   verification you MAY delegate to the `speckit-gate-runner` agent to keep command
+   output out of your context — or run it directly if quick.
 6. **Mark completed tasks `[X]`** in `tasks.md` as you finish each one. Do this
    incrementally, not in a batch at the end.
 
