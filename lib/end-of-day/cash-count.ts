@@ -60,7 +60,11 @@ type TicketItemRow = {
   ticket_id: string;
   kind: Database["public"]["Enums"]["ticket_item_kind"];
   name_snapshot: string;
-  assigned_staff_id: string;
+  // Nullable on purpose: `discount` line items carry no staff — the
+  // `ticket_items_kind_columns_chk` constraint forces `assigned_staff_id`
+  // to NULL for them. Typing this as plain `string` was the bug behind
+  // the End-of-Day page crash (see the null-strip in `loadCashCount`).
+  assigned_staff_id: string | null;
 };
 
 type TicketRow = {
@@ -194,7 +198,16 @@ export async function loadCashCount(
     const items = (itemsRes.data ?? []) as readonly TicketItemRow[];
 
     // Collect staff ids referenced by ticket_items, hydrate name + color.
-    const staffIds = Array.from(new Set(items.map((it) => it.assigned_staff_id)));
+    // `discount` rows have a NULL `assigned_staff_id`; strip those out so
+    // the `.in("id", …)` below never receives a null. A null in the list
+    // serializes to `id=in.(…,null)`, which Postgres rejects with
+    // `invalid input syntax for type uuid: "null"` — the error that
+    // crashed the End-of-Day page for any day with a discounted cash
+    // sale. Mirrors the null-strip already used in the sibling
+    // `lib/end-of-day/history.ts`.
+    const staffIds = Array.from(
+      new Set(items.map((it) => it.assigned_staff_id).filter((id): id is string => id !== null))
+    );
     let staffById = new Map<string, StaffRow>();
     if (staffIds.length > 0) {
       const staffRes = await supabase
@@ -229,6 +242,10 @@ export async function loadCashCount(
       const seenStaff = new Set<string>();
       for (const it of ticketItems) {
         if (it.kind === "discount") continue;
+        // Defensive: `assigned_staff_id` is nullable (discount rows). The
+        // `kind` check above already skips those, but the explicit null
+        // guard narrows the type for the lookups below.
+        if (it.assigned_staff_id === null) continue;
         if (seenStaff.has(it.assigned_staff_id)) continue;
         seenStaff.add(it.assigned_staff_id);
         const s = staffById.get(it.assigned_staff_id);
