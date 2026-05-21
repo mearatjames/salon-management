@@ -124,7 +124,7 @@ In Staff settings, each staff member gains editable payroll fields: the **servic
 - **A counted ticket is later refunded or voided**: the open period's figures reflect the current state of tickets; once a period is closed its figures are frozen regardless of later ticket changes.
 - **Rate or ticket change after a tech is already paid**: a paid payout's figures are snapshotted at the moment of payment and never change; only techs still pending recompute live. Closing the period then freezes the pending techs' figures as well.
 - **Closing a period with unpaid techs**: allowed only after an explicit confirmation that names the unpaid techs.
-- **Two managers acting on the same tech at once**: the last write wins and the resulting state is consistent on the next load for both users.
+- **Two managers acting on the same tech at once**: the first mark-paid wins; a concurrent second attempt is rejected with an "already paid" message, and both users see a consistent state on reload.
 - **Viewing a closed/historical period**: all pay, undo, and close actions are disabled; the view is read-only.
 - **Cash tips**: never recorded by the system — they pass directly from client to tech — and never appear in payroll figures.
 - **A non-owner/non-manager opening the Payroll URL directly**: access is denied and the user is redirected, consistent with the Report and Transactions pages.
@@ -167,7 +167,7 @@ In Staff settings, each staff member gains editable payroll fields: the **servic
 - **FR-018**: Selecting a tech's ledger row MUST open a dedicated full-screen detail view for that tech.
 - **FR-019**: The tech detail view MUST provide a "back" control returning to the ledger with its prior scroll and filter state, and previous/next controls to move between techs (disabled at the first/last tech).
 - **FR-020**: The tech detail view MUST show the tech's header with state badge and a prominent "cash to hand over" figure.
-- **FR-021**: The tech detail view MUST show a daily-activity chart with one column per day of the period, depicting service income and card tips, marking closed days, and highlighting the tech's best day.
+- **FR-021**: The tech detail view MUST show a daily-activity chart with one column per day of the period, depicting service income and card tips, marking days with no activity for that tech (zero service income and zero card tips — a per-tech heuristic, not coupled to salon-hours data), and highlighting the tech's best day.
 - **FR-022**: The tech detail view MUST show quick stats: best day, average per working day, and cash tips (noted as not recorded).
 - **FR-023**: The tech detail view MUST show an earnings breakdown: service income with the commission % applied, card tips with the tip % applied, total earned, check portion subtracted, and the resulting cash payment.
 

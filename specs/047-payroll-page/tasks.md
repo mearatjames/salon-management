@@ -72,7 +72,7 @@ Single Next.js App-Router web app. New code under `app/(studio)/payroll/`, `lib/
 - [ ] T015 [P] [US1] Build `components/lacquer/payroll/payroll-ledger.tsx` (full-width table + footer totals row) and `components/lacquer/payroll/payroll-empty-state.tsx`.
 - [ ] T016 [P] [US1] Build client components `components/lacquer/payroll/payroll-filters.client.tsx` (All / To pay / Paid), `payroll-period-switcher.client.tsx`, and `payroll-export.client.tsx` (CSV download).
 - [ ] T017 [US1] Implement `app/(studio)/payroll/page.tsx` — RSC: owner/manager role gate (copy the Report-page guard), parse `?period`/`?offset`/`?filter`, call `loadPayrollLedger`, default to the open period, render header + KPIs + ledger + filters + period switcher + export (depends on T010, T013, T014, T015, T016).
-- [ ] T018 [US1] Create `tests/e2e/payroll.spec.ts` with the `US1:` describe block (worker-fixture-scoped per-tech assertions only — no salon-wide period totals — so it stays parallel-safe in the `main` project, research R11), and add `app/(studio)/payroll/**`, `lib/payroll/**`, `components/lacquer/payroll/**` → `tests/e2e/payroll.spec.ts` to `tests/e2e/_affected-map.mjs`.
+- [ ] T018 [US1] Create `tests/e2e/payroll.spec.ts` with the `US1:` describe block (worker-fixture-scoped per-tech assertions only — no salon-wide period totals — so it stays parallel-safe in the `main` project, research R11; include an assertion that a technician/front-desk role opening `/payroll` is redirected to `/dashboard` — SC-005/FR-002), and add `app/(studio)/payroll/**`, `lib/payroll/**`, `components/lacquer/payroll/**` → `tests/e2e/payroll.spec.ts` to `tests/e2e/_affected-map.mjs`.
 
 **Checkpoint**: Payroll is reachable from the nav and shows an accurate open-period ledger — a working MVP that replaces the spreadsheet's calculation.
 
@@ -90,7 +90,7 @@ Single Next.js App-Router web app. New code under `app/(studio)/payroll/`, `lib/
 
 ### Implementation for User Story 2
 
-- [ ] T020 [US2] Extend `lib/payroll/aggregate.ts` — `DayActivity` grouping from the period's transactions plus `bestDay` / `avgPerWorkingDay` / `workingDayCount`; make T019 pass (depends on T019).
+- [ ] T020 [US2] Extend `lib/payroll/aggregate.ts` — `DayActivity` grouping from the period's transactions (a "closed" day = the tech had zero service income and zero card tips — a per-tech heuristic, not coupled to salon-hours data) plus `bestDay` / `avgPerWorkingDay` / `workingDayCount`; make T019 pass (depends on T019).
 - [ ] T021 [US2] Extend `lib/payroll/queries.ts` — `loadTechDetail` returning `TechDetailModel` (single tech, `days[]`, prev/next ledger-order neighbours) per `contracts/read-model.md` (depends on T020).
 - [ ] T022 [P] [US2] Build `components/lacquer/payroll/tech-detail-header.tsx` (avatar, state badge, "cash to hand over") and `components/lacquer/payroll/tech-breakdown.tsx` (earnings breakdown).
 - [ ] T023 [P] [US2] Build `components/lacquer/payroll/tech-daily-chart.tsx` — the large daily-activity chart (per-day income + card-tip bars, best-day highlight, closed days).
@@ -135,7 +135,7 @@ Single Next.js App-Router web app. New code under `app/(studio)/payroll/`, `lib/
 - [ ] T032 [US4] Extend `lib/payroll/queries.ts` — `loadPayrollHistory` returning closed periods with total paid and closed-by name, per `contracts/read-model.md`.
 - [ ] T033 [P] [US4] Build `components/lacquer/payroll/close-period-dialog.client.tsx` (confirmation that names unpaid techs) and `components/lacquer/payroll/payroll-history.client.tsx`.
 - [ ] T034 [US4] Wire close + history into `app/(studio)/payroll/page.tsx` — Close-period action, History view, and read-only rendering for closed periods (no pay/undo/close); ensure the period switcher reaches closed periods (depends on T031, T032, T033).
-- [ ] T035 [US4] Extend `tests/e2e/payroll.spec.ts` — `US4:` describe block (close period, read-only, history review).
+- [ ] T035 [US4] Extend `tests/e2e/payroll.spec.ts` — `US4:` describe block (close period, read-only, history review; and assert a manager is blocked from closing a period — SC-005/FR-002/FR-029).
 
 **Checkpoint**: Periods can be locked and browsed — the spreadsheet's old tabs are replaced.
 
@@ -158,7 +158,7 @@ Single Next.js App-Router web app. New code under `app/(studio)/payroll/`, `lib/
 - [ ] T037 [US5] Extend `app/(studio)/settings/staff/_validation.ts` — validators for `service_commission_pct`, `tip_split_pct`, `check_portion_cents`; make T036 pass (depends on T036).
 - [ ] T038 [US5] Extend `app/(studio)/settings/staff/actions.ts` `updateStaff` and `app/(studio)/settings/staff/permissions.ts` — parse/diff/UPDATE the three new fields, restrict the rate fields to owners, join them into the `staff.updated` audit diff (FR-035), and `revalidatePath("/payroll")` (depends on T037).
 - [ ] T039 [P] [US5] Build `components/lacquer/staff/payroll-rates-section.client.tsx` (commission %, tip %, check-portion inputs) and wire it into the staff edit panel.
-- [ ] T040 [US5] Extend `tests/e2e/payroll.spec.ts` — `US5:` describe block (edit a rate → the open-period ledger recomputes).
+- [ ] T040 [US5] Extend `tests/e2e/payroll.spec.ts` — `US5:` describe block (edit a rate → the open-period ledger recomputes; and assert a manager is blocked from editing payroll-rate fields — SC-005/FR-002/FR-033).
 
 **Checkpoint**: All five user stories are functional.
 

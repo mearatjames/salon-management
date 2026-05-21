@@ -86,7 +86,7 @@ type DayActivity = {
   date: string;            // "2026-05-17"
   dayOfMonth: number;
   weekday: string;         // "Sat"
-  closed: boolean;         // salon closed / no activity
+  closed: boolean;         // true when the tech had zero service income and zero card tips that day (per-tech no-activity heuristic — not coupled to salon-hours data)
   serviceIncomeCents: number;
   cardTipsCents: number;
   ticketCount: number;
