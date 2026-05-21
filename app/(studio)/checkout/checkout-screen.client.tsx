@@ -98,6 +98,7 @@ import { Totals } from "@/components/lacquer/checkout/totals";
 import { TxHeader } from "@/components/lacquer/checkout/tx-header";
 
 import { computeTotals } from "@/lib/pos/cart";
+import { Spinner } from "@/components/ui/spinner";
 
 type Staff = { id: string; display_name: string; color_token: string };
 
@@ -2051,6 +2052,7 @@ export function CheckoutScreen({
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
+                    gap: "var(--space-2)",
                     height: "var(--space-10)",
                     padding: "0 var(--space-4)",
                     background: chargeButtonEnabled ? "var(--primary)" : "var(--muted)",
@@ -2065,11 +2067,18 @@ export function CheckoutScreen({
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  {hasUnpricedLines
-                    ? "Set price on highlighted items"
-                    : chargeMethodIsCard
-                      ? `Send to Square · ${fmt(totals.totalCents)}`
-                      : `Take cash · ${fmt(totals.totalCents)}`}
+                  {inflight ? (
+                    <>
+                      <Spinner size={20} strokeWidth={2} />
+                      {chargeMethodIsCard ? "Sending to terminal…" : "Charging…"}
+                    </>
+                  ) : hasUnpricedLines ? (
+                    "Set price on highlighted items"
+                  ) : chargeMethodIsCard ? (
+                    `Send to Square · ${fmt(totals.totalCents)}`
+                  ) : (
+                    `Take cash · ${fmt(totals.totalCents)}`
+                  )}
                 </button>
               </div>
             </>
