@@ -2548,6 +2548,107 @@
   border-radius: var(--radius-lg, 12px);
 }
 
+/* ── 047-payroll-page § US5 — Payroll rates section ──────────────────────
+   Mirrors the Pay & deductions card: a card surface with an eyebrow header
+   strip and a stack of flush `.staff-panel-row` rows. The outer
+   `.staff-panel-section--payroll-rates` wrapper stays transparent so the
+   inner card owns the surface (same pattern as pay-deductions above). */
+.staff-panel-section--payroll-rates {
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+.payroll-rates-section {
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+}
+
+/* Header → eyebrow strip. Re-uses the .pay-deductions-section-header look. */
+.payroll-rates-section-header {
+  padding: var(--space-2) var(--space-3);
+  background: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.payroll-rates-section-title {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--muted-foreground);
+  text-transform: uppercase;
+}
+
+/* Trailing input wrap — holds the numeric Input plus a prefix/suffix glyph
+   (`$` for the dollars field, `%` for the percentages). The glyph is drawn
+   via ::before / ::after so it never enters the input's value. */
+.payroll-rates-input-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.payroll-rates-input-wrap[data-suffix]::after {
+  content: attr(data-suffix);
+  position: absolute;
+  right: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.payroll-rates-input-wrap[data-prefix]::before {
+  content: attr(data-prefix);
+  position: absolute;
+  left: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Compact numeric input — fixed width keeps the three rows' inputs aligned.
+   The right padding leaves room for the `%` suffix glyph. */
+.payroll-rates-input {
+  width: calc(var(--space-16) + var(--space-8));
+  text-align: right;
+  padding-right: var(--space-6);
+}
+
+/* The dollars field draws its `$` on the left, so swap the padding side. */
+.payroll-rates-input--money {
+  padding-right: var(--space-3);
+  padding-left: var(--space-6);
+}
+
+/* Owner-only note — shown to a manager in place of the hidden form inputs.
+   Same look as the Pay & deductions section-note (muted bg, top border,
+   leading Info icon). */
+.payroll-rates-section-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--muted);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.payroll-rates-section-note-icon {
+  flex-shrink: 0;
+  margin-top: var(--space-1);
+  color: var(--muted-foreground);
+}
+
 /* Danger zone — destructive lifecycle actions. Matches the canonical
    prototype's stacked-list pattern (Staff Settings.html §
    `.danger-zone` / `.danger-btn`): full-width text-left buttons separated

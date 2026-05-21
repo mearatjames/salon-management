@@ -1,6 +1,7 @@
 // Vitest contract test for the staff audit-diff helper in
 // `app/(studio)/settings/staff/_audit-diff.ts`. Per data-model.md § 2.3 +
-// research § R3 the helper exports `STAFF_DIFF_KEYS` (length 7, ordered) and
+// research § R3 the helper exports `STAFF_DIFF_KEYS` (length 10 after
+// 047-payroll-page § US5 added the three payroll-rate keys, ordered) and
 // `buildChanges(before, after): { before, after, changes }` returning scoped
 // projections of only the changed keys.
 //
@@ -24,11 +25,15 @@ const BASE: StaffSnapshot = {
   card_fee_exempt: false,
   supply_mode: "apply",
   supply_except: [],
+  // 047-payroll-page § US5 — per-tech payroll rates (0–1 fractions / cents).
+  service_commission_pct: 0.6,
+  tip_split_pct: 1,
+  check_portion_cents: 0,
 };
 
 describe("STAFF_DIFF_KEYS", () => {
-  it("has length 7", () => {
-    expect(STAFF_DIFF_KEYS).toHaveLength(7);
+  it("has length 10", () => {
+    expect(STAFF_DIFF_KEYS).toHaveLength(10);
   });
 
   it("is in this exact order", () => {
@@ -40,6 +45,9 @@ describe("STAFF_DIFF_KEYS", () => {
       "card_fee_exempt",
       "supply_mode",
       "supply_except",
+      "service_commission_pct",
+      "tip_split_pct",
+      "check_portion_cents",
     ]);
   });
 });
@@ -107,6 +115,19 @@ describe("buildChanges", () => {
     expect(out.after).toEqual({ supply_mode: "partial", supply_except: [uuid] });
     // The audit payload must carry the raw uuid array, not a name snapshot.
     expect((out.after.supply_except as readonly string[])[0]).toMatch(/^[0-9a-f-]{36}$/i);
+  });
+
+  it("returns scoped projection over the payroll-rate keys (047 § US5)", () => {
+    const after: StaffSnapshot = {
+      ...BASE,
+      service_commission_pct: 0.75,
+      check_portion_cents: 25000,
+    };
+    const out = buildChanges(BASE, after);
+    // Canonical order: service_commission_pct precedes check_portion_cents.
+    expect(out.changes).toEqual(["service_commission_pct", "check_portion_cents"]);
+    expect(out.before).toEqual({ service_commission_pct: 0.6, check_portion_cents: 0 });
+    expect(out.after).toEqual({ service_commission_pct: 0.75, check_portion_cents: 25000 });
   });
 
   it("returns multi-key change in `STAFF_DIFF_KEYS` order", () => {

@@ -225,6 +225,47 @@ export type Database = {
         };
         Relationships: [];
       };
+      pay_periods: {
+        Row: {
+          closed_at: string | null;
+          closed_by_staff_id: string | null;
+          created_at: string;
+          ends_on: string;
+          id: string;
+          pay_date: string;
+          starts_on: string;
+          status: Database["public"]["Enums"]["pay_period_status"];
+        };
+        Insert: {
+          closed_at?: string | null;
+          closed_by_staff_id?: string | null;
+          created_at?: string;
+          ends_on: string;
+          id?: string;
+          pay_date: string;
+          starts_on: string;
+          status?: Database["public"]["Enums"]["pay_period_status"];
+        };
+        Update: {
+          closed_at?: string | null;
+          closed_by_staff_id?: string | null;
+          created_at?: string;
+          ends_on?: string;
+          id?: string;
+          pay_date?: string;
+          starts_on?: string;
+          status?: Database["public"]["Enums"]["pay_period_status"];
+        };
+        Relationships: [
+          {
+            foreignKeyName: "pay_periods_closed_by_staff_id_fkey";
+            columns: ["closed_by_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       payments: {
         Row: {
           amount_cents: number;
@@ -300,6 +341,88 @@ export type Database = {
             columns: ["ticket_id"];
             isOneToOne: false;
             referencedRelation: "tickets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      payroll_payouts: {
+        Row: {
+          card_tips_cents: number;
+          cash_payment_cents: number;
+          check_portion_cents: number;
+          commissionable_cents: number;
+          created_at: string;
+          id: string;
+          income_after_split_cents: number;
+          method: Database["public"]["Enums"]["payout_method"] | null;
+          paid: boolean;
+          paid_at: string | null;
+          paid_on: string | null;
+          pay_period_id: string;
+          recorded_by_staff_id: string | null;
+          service_commission_pct: number;
+          staff_id: string;
+          tip_split_pct: number;
+          tips_after_split_cents: number;
+        };
+        Insert: {
+          card_tips_cents: number;
+          cash_payment_cents: number;
+          check_portion_cents: number;
+          commissionable_cents: number;
+          created_at?: string;
+          id?: string;
+          income_after_split_cents: number;
+          method?: Database["public"]["Enums"]["payout_method"] | null;
+          paid?: boolean;
+          paid_at?: string | null;
+          paid_on?: string | null;
+          pay_period_id: string;
+          recorded_by_staff_id?: string | null;
+          service_commission_pct: number;
+          staff_id: string;
+          tip_split_pct: number;
+          tips_after_split_cents: number;
+        };
+        Update: {
+          card_tips_cents?: number;
+          cash_payment_cents?: number;
+          check_portion_cents?: number;
+          commissionable_cents?: number;
+          created_at?: string;
+          id?: string;
+          income_after_split_cents?: number;
+          method?: Database["public"]["Enums"]["payout_method"] | null;
+          paid?: boolean;
+          paid_at?: string | null;
+          paid_on?: string | null;
+          pay_period_id?: string;
+          recorded_by_staff_id?: string | null;
+          service_commission_pct?: number;
+          staff_id?: string;
+          tip_split_pct?: number;
+          tips_after_split_cents?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "payroll_payouts_pay_period_id_fkey";
+            columns: ["pay_period_id"];
+            isOneToOne: false;
+            referencedRelation: "pay_periods";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payroll_payouts_recorded_by_staff_id_fkey";
+            columns: ["recorded_by_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payroll_payouts_staff_id_fkey";
+            columns: ["staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
             referencedColumns: ["id"];
           },
         ];
@@ -485,8 +608,8 @@ export type Database = {
       staff: {
         Row: {
           active: boolean;
-          // 023-staff-payout-exemptions
           card_fee_exempt: boolean;
+          check_portion_cents: number;
           color_token: string;
           created_at: string;
           display_name: string;
@@ -503,15 +626,17 @@ export type Database = {
           pin_reset_admin_at: string | null;
           removed_at: string | null;
           role: string;
+          service_commission_pct: number;
           state: string;
-          // 023-staff-payout-exemptions
           supply_except: string[];
           supply_mode: string;
+          tip_split_pct: number;
           user_id: string | null;
         };
         Insert: {
           active?: boolean;
           card_fee_exempt?: boolean;
+          check_portion_cents?: number;
           color_token: string;
           created_at?: string;
           display_name: string;
@@ -528,14 +653,17 @@ export type Database = {
           pin_reset_admin_at?: string | null;
           removed_at?: string | null;
           role: string;
+          service_commission_pct?: number;
           state?: string;
           supply_except?: string[];
           supply_mode?: string;
+          tip_split_pct?: number;
           user_id?: string | null;
         };
         Update: {
           active?: boolean;
           card_fee_exempt?: boolean;
+          check_portion_cents?: number;
           color_token?: string;
           created_at?: string;
           display_name?: string;
@@ -552,9 +680,11 @@ export type Database = {
           pin_reset_admin_at?: string | null;
           removed_at?: string | null;
           role?: string;
+          service_commission_pct?: number;
           state?: string;
           supply_except?: string[];
           supply_mode?: string;
+          tip_split_pct?: number;
           user_id?: string | null;
         };
         Relationships: [
@@ -782,6 +912,44 @@ export type Database = {
         Returns: string;
       };
       next_anon_counter: { Args: never; Returns: number };
+      payroll_close_period: {
+        Args: {
+          p_device_user_id: string;
+          p_frozen_rows: Json;
+          p_operator: string;
+          p_pay_period_id: string;
+          p_period_totals: Json;
+        };
+        Returns: undefined;
+      };
+      payroll_record_payout: {
+        Args: {
+          p_card_tips_cents: number;
+          p_cash_payment_cents: number;
+          p_check_portion_cents: number;
+          p_commissionable_cents: number;
+          p_device_user_id: string;
+          p_income_after_split_cents: number;
+          p_method: Database["public"]["Enums"]["payout_method"];
+          p_operator: string;
+          p_paid_on: string;
+          p_pay_period_id: string;
+          p_service_commission_pct: number;
+          p_staff_id: string;
+          p_tip_split_pct: number;
+          p_tips_after_split_cents: number;
+        };
+        Returns: string;
+      };
+      payroll_undo_payout: {
+        Args: {
+          p_device_user_id: string;
+          p_operator: string;
+          p_pay_period_id: string;
+          p_staff_id: string;
+        };
+        Returns: undefined;
+      };
       pos_activate_cash_draft: {
         Args: { p_operator: string; p_payment_id: string };
         Returns: {
@@ -881,9 +1049,11 @@ export type Database = {
       };
     };
     Enums: {
+      pay_period_status: "open" | "closed";
       payment_kind: "payment";
       payment_method: "cash" | "card" | "gift";
       payment_status: "succeeded" | "pending" | "failed" | "draft";
+      payout_method: "cash" | "zelle" | "check";
       ticket_item_kind: "service" | "discount";
       ticket_status: "open" | "paid" | "discarded";
     };
@@ -1014,9 +1184,11 @@ export const Constants = {
   },
   public: {
     Enums: {
+      pay_period_status: ["open", "closed"],
       payment_kind: ["payment"],
       payment_method: ["cash", "card", "gift"],
       payment_status: ["succeeded", "pending", "failed", "draft"],
+      payout_method: ["cash", "zelle", "check"],
       ticket_item_kind: ["service", "discount"],
       ticket_status: ["open", "paid", "discarded"],
     },

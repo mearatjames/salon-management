@@ -31,7 +31,9 @@ import {
 import {
   ValidationError,
   validateColor,
+  validateCheckPortionDollars,
   validateDisplayName,
+  validatePercentField,
   validatePinShape,
   validateRole,
   clearSupplyExceptIfWiped,
@@ -46,6 +48,11 @@ import {
 import type { StaffSupplyMode } from "./_types";
 
 const STAFF_PATH = "/settings/staff";
+
+// 047-payroll-page § US5 — the Payroll page reads per-tech rate columns to
+// compute the open period's pending rows. `updateStaff` revalidates this path
+// alongside the staff roster so a rate edit recomputes the ledger immediately.
+const PAYROLL_PATH = "/payroll";
 
 /**
  * Defense-in-depth role gate. The settings layout (T014) already redirects
@@ -176,15 +183,18 @@ export async function addStaff(formData: FormData): Promise<void> {
 // ── updateStaff ──────────────────────────────────────────────────────────
 //
 // Contract: server-actions.contract.md § 2 + 023-staff-payout-exemptions
-// research § R11. Atomic edit of any of the 7 mutable staff columns:
+// research § R11 + 047-payroll-page § US5. Atomic edit of any of the 10
+// mutable staff columns:
 //   - legacy 4: display_name, role, color_token, active
 //   - 023 trio: card_fee_exempt, supply_mode, supply_except
+//   - 047 trio: service_commission_pct, tip_split_pct, check_portion_cents
 //
 // The Server Action computes the diff against the saved row via the shared
 // `buildChanges` helper (research § R3 — Set-equality for supply_except),
 // evaluates the permission matrix once per changed legacy field PLUS once
 // (`update_pay_deductions`) when any of the 023 trio differ (research § R11),
-// UPDATEs the changed columns in a single statement, and writes one
+// PLUS once (`update_payroll_rates`, owner-only) when any of the 047 trio
+// differ, UPDATEs the changed columns in a single statement, and writes one
 // `staff.updated` audit row with the diff-aware payload `{ before, after,
 // changes }` returned by `buildChanges()`.
 //
@@ -215,6 +225,12 @@ const PAY_DEDUCTION_KEYS: ReadonlyArray<
   keyof Pick<StaffDiffSnapshot, "card_fee_exempt" | "supply_mode" | "supply_except">
 > = ["card_fee_exempt", "supply_mode", "supply_except"];
 
+/** The three 047-payroll-page keys that collapse into one owner-only
+ *  `update_payroll_rates` matrix call (FR-002/FR-033). */
+const PAYROLL_RATE_KEYS: ReadonlyArray<
+  keyof Pick<StaffDiffSnapshot, "service_commission_pct" | "tip_split_pct" | "check_portion_cents">
+> = ["service_commission_pct", "tip_split_pct", "check_portion_cents"];
+
 export async function updateStaff(formData: FormData): Promise<void> {
   // 1 + 2: session + role gate.
   const viewer = await requireStudioSession();
@@ -227,12 +243,12 @@ export async function updateStaff(formData: FormData): Promise<void> {
     redirect(`${STAFF_PATH}?error=not_found`);
   }
 
-  // 4: load the target row (now projects all 7 diff columns).
+  // 4: load the target row (now projects all 10 diff columns).
   const admin = createSupabaseServiceRoleClient();
   const { data: targetRow, error: loadErr } = await admin
     .from("staff")
     .select(
-      "id, display_name, role, color_token, active, card_fee_exempt, supply_mode, supply_except, removed_at"
+      "id, display_name, role, color_token, active, card_fee_exempt, supply_mode, supply_except, service_commission_pct, tip_split_pct, check_portion_cents, removed_at"
     )
     .eq("id", staffId)
     .single();
@@ -251,6 +267,12 @@ export async function updateStaff(formData: FormData): Promise<void> {
       ((targetRow as { supply_mode?: string }).supply_mode as StaffSupplyMode | undefined) ??
       "apply",
     supply_except: (targetRow as { supply_except?: string[] }).supply_except ?? [],
+    // 047-payroll-page § US5 — coerce defaults so the action still works if
+    // the migration hasn't been applied locally.
+    service_commission_pct:
+      (targetRow as { service_commission_pct?: number }).service_commission_pct ?? 0,
+    tip_split_pct: (targetRow as { tip_split_pct?: number }).tip_split_pct ?? 0,
+    check_portion_cents: (targetRow as { check_portion_cents?: number }).check_portion_cents ?? 0,
     removed_at: targetRow!.removed_at,
   };
 
@@ -307,6 +329,29 @@ export async function updateStaff(formData: FormData): Promise<void> {
       validateSupplyExcept(rawSupplyExcept, allowedIds)
     );
 
+    // 5b-ii: parse the 047 payroll-rate trio. The rate inputs are owner-only
+    // — a manager's edit panel renders the section read-only and omits the
+    // inputs entirely, so the fields are absent from a manager's FormData.
+    // When a field is absent we fall back to the target's stored value so the
+    // diff records no change; when present we validate the UI value into its
+    // stored shape. A manager who hand-crafts a POST with a CHANGED rate is
+    // caught by the owner-only `update_payroll_rates` matrix call below.
+    const rawCommission = formData.get("service_commission_pct");
+    const rawTipSplit = formData.get("tip_split_pct");
+    const rawCheckPortion = formData.get("check_portion_cents");
+    const proposedCommissionPct =
+      rawCommission === null
+        ? target.service_commission_pct
+        : validatePercentField(String(rawCommission), "invalid_commission_pct");
+    const proposedTipSplitPct =
+      rawTipSplit === null
+        ? target.tip_split_pct
+        : validatePercentField(String(rawTipSplit), "invalid_tip_split_pct");
+    const proposedCheckPortionCents =
+      rawCheckPortion === null
+        ? target.check_portion_cents
+        : validateCheckPortionDollars(String(rawCheckPortion));
+
     const proposed: StaffDiffSnapshot = {
       display_name: validateDisplayName(String(formData.get("display_name") ?? "")),
       role: validateRole(String(formData.get("role") ?? "")),
@@ -316,6 +361,9 @@ export async function updateStaff(formData: FormData): Promise<void> {
       card_fee_exempt: formData.get("card_fee_exempt") === "on",
       supply_mode: proposedSupplyMode,
       supply_except: proposedSupplyExcept,
+      service_commission_pct: proposedCommissionPct,
+      tip_split_pct: proposedTipSplitPct,
+      check_portion_cents: proposedCheckPortionCents,
     };
 
     // 5c: compute diff via the shared helper (Set-equality for supply_except).
@@ -356,6 +404,21 @@ export async function updateStaff(formData: FormData): Promise<void> {
           isLastOwner,
         },
         "update_pay_deductions"
+      );
+    }
+
+    // 047-payroll-page § US5 — owner-only gate. Fired ONCE if any of the
+    // payroll-rate trio changed; throws PermissionError("forbidden") for a
+    // non-owner operator (FR-002/FR-033).
+    const payrollRatesChanged = PAYROLL_RATE_KEYS.some((k) => changedSet.has(k));
+    if (payrollRatesChanged) {
+      assertMutationAllowed(
+        {
+          operator: viewer.staff,
+          target: { id: target.id, role: target.role, active: target.active },
+          isLastOwner,
+        },
+        "update_payroll_rates"
       );
     }
 
@@ -409,7 +472,10 @@ export async function updateStaff(formData: FormData): Promise<void> {
 
   // 8: revalidate + redirect. If `active` flipped true → false, the redirect
   // surfaces the dedicated "deactivated" toast. Otherwise it's "changes_saved".
+  // 047-payroll-page § US5 — also revalidate /payroll so a rate edit recomputes
+  // the open period's pending rows immediately (FR-033 / acceptance scenario).
   revalidatePath(STAFF_PATH);
+  revalidatePath(PAYROLL_PATH);
 
   const deactivated =
     changedKeyList!.includes("active") && target.active === true && nextSnapshot!.active === false;

@@ -31,6 +31,7 @@ const EXPECTED_NAV_IDS = [
   "walkin",
   "end-of-day",
   "report",
+  "payroll",
   "settings",
 ] as const;
 

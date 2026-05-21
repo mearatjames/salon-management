@@ -29,6 +29,10 @@ const TECH: EditPanelTarget = {
   card_fee_exempt: false,
   supply_mode: "apply",
   supply_except: [],
+  // 047-payroll-page § US5 — per-tech payroll rates.
+  service_commission_pct: 0.6,
+  tip_split_pct: 1,
+  check_portion_cents: 0,
 };
 
 const MANAGER: EditPanelTarget = {
@@ -102,6 +106,21 @@ describe("isDraftDirty — every comparable field flips the flag", () => {
 
   it("returns true when supply_mode changes", () => {
     const draft: EditDraft = { ...draftFromTarget(TECH), supply_mode: "exempt" };
+    expect(isDraftDirty(draft, TECH)).toBe(true);
+  });
+
+  it("returns true when service_commission_pct changes (047 § US5)", () => {
+    const draft: EditDraft = { ...draftFromTarget(TECH), service_commission_pct: 0.75 };
+    expect(isDraftDirty(draft, TECH)).toBe(true);
+  });
+
+  it("returns true when tip_split_pct changes (047 § US5)", () => {
+    const draft: EditDraft = { ...draftFromTarget(TECH), tip_split_pct: 0.5 };
+    expect(isDraftDirty(draft, TECH)).toBe(true);
+  });
+
+  it("returns true when check_portion_cents changes (047 § US5)", () => {
+    const draft: EditDraft = { ...draftFromTarget(TECH), check_portion_cents: 25000 };
     expect(isDraftDirty(draft, TECH)).toBe(true);
   });
 

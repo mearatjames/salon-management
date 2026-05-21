@@ -30,6 +30,10 @@ export type EditPanelTarget = Pick<
   | "card_fee_exempt"
   | "supply_mode"
   | "supply_except"
+  // 047-payroll-page § US5 — per-tech payroll rates.
+  | "service_commission_pct"
+  | "tip_split_pct"
+  | "check_portion_cents"
 >;
 
 export type EditDraft = {
@@ -40,6 +44,11 @@ export type EditDraft = {
   card_fee_exempt: boolean;
   supply_mode: StaffSupplyMode;
   supply_except: readonly string[];
+  // 047-payroll-page § US5 — per-tech payroll rates. Stored shape: *_pct are
+  // 0–1 fractions, check_portion_cents is integer cents.
+  service_commission_pct: number;
+  tip_split_pct: number;
+  check_portion_cents: number;
 };
 
 /** Initial draft for a freshly-selected target — exactly mirrors the target. */
@@ -52,6 +61,9 @@ export function draftFromTarget(target: EditPanelTarget): EditDraft {
     card_fee_exempt: target.card_fee_exempt,
     supply_mode: target.supply_mode,
     supply_except: target.supply_except,
+    service_commission_pct: target.service_commission_pct,
+    tip_split_pct: target.tip_split_pct,
+    check_portion_cents: target.check_portion_cents,
   };
 }
 
@@ -87,7 +99,11 @@ export function isDraftDirty(draft: EditDraft, target: EditPanelTarget): boolean
     draft.card_fee_exempt !== target.card_fee_exempt ||
     draft.supply_mode !== target.supply_mode ||
     (draft.supply_mode === "partial" &&
-      !supplyExceptEqual(draft.supply_except, target.supply_except))
+      !supplyExceptEqual(draft.supply_except, target.supply_except)) ||
+    // 047-payroll-page § US5 — payroll rates participate in the dirty signal.
+    draft.service_commission_pct !== target.service_commission_pct ||
+    draft.tip_split_pct !== target.tip_split_pct ||
+    draft.check_portion_cents !== target.check_portion_cents
   );
 }
 

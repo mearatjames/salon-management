@@ -28,7 +28,7 @@ Single Next.js App-Router web app. New code under `app/(studio)/payroll/`, `lib/
 
 **Purpose**: Make the design source of truth available before any UI work (Constitution I requires UI to adapt a prototype that lives under `design-system/prototypes/`).
 
-- [ ] T001 Vendor the Lacquer payroll prototype into `design-system/prototypes/payroll/` — copy `Payroll.html`, `payroll.css`, `Components.jsx`, `data.jsx`, `PayrollLedger.jsx`, `PayrollStack.jsx`, `PayrollPulse.jsx`, `design-canvas.jsx`, `tweaks-panel.jsx`, `_studio-shell.css`, `lacquer-mark.svg` from the Lacquer "Payroll" handoff (FR-036, research R12).
+- [X] T001 Vendor the Lacquer payroll prototype into `design-system/prototypes/payroll/` — copy `Payroll.html`, `payroll.css`, `Components.jsx`, `data.jsx`, `PayrollLedger.jsx`, `PayrollStack.jsx`, `PayrollPulse.jsx`, `design-canvas.jsx`, `tweaks-panel.jsx`, `_studio-shell.css`, `lacquer-mark.svg` from the Lacquer "Payroll" handoff (FR-036, research R12).
 
 ---
 
@@ -38,12 +38,12 @@ Single Next.js App-Router web app. New code under `app/(studio)/payroll/`, `lib/
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete.
 
-- [ ] T002 Create migration `supabase/migrations/0021_payroll.sql` — enums `pay_period_status` & `payout_method`; `alter table public.staff add column` for `service_commission_pct`, `tip_split_pct`, `check_portion_cents`; tables `pay_periods` and `payroll_payouts` with all constraints and indexes; `select`-only RLS policies; and the three `security definer` RPCs `payroll_record_payout`, `payroll_undo_payout`, `payroll_close_period` — exactly per `data-model.md` and `contracts/database-rpcs.md`.
-- [ ] T003 Apply the migration with `supabase db reset`, then regenerate `lib/db/types.ts` via `npx supabase gen types typescript --local > lib/db/types.ts` (depends on T002).
-- [ ] T004 Extend `supabase/seed.sql` — a guarded `do $$` block keyed to the seeded staff UUIDs: seeded payroll rates on the three seed staff, one open pay period (2026-05-16 – 31), and one closed pay period (2026-05-01 – 15) with a few frozen `payroll_payouts` rows, per data-model.md → "Seed data" (depends on T002).
-- [ ] T005 [P] Extend `lib/auth/audit.ts` — add `payroll.payout_recorded`, `payroll.payout_undone`, `payroll.period_closed` to the `AuditAction` union and map the `payroll.` action prefix to `entity_type = "payroll"` in `deriveEntityType`.
-- [ ] T006 [P] Write failing unit test `tests/unit/payroll/window.test.ts` — semi-monthly pay-period resolution, period labels/short-labels, `pay_date = ends_on + 2 days`, and `parsePayrollParams` (offset clamp, filter parsing).
-- [ ] T007 Implement `lib/payroll/window.ts` — `PayPeriodRef`, `resolvePayPeriod` (wraps `semiMonthlyWindowAt` from `lib/time/period-windows.ts`), `parsePayrollParams`; make T006 pass (depends on T006).
+- [X] T002 Create migration `supabase/migrations/0021_payroll.sql` — enums `pay_period_status` & `payout_method`; `alter table public.staff add column` for `service_commission_pct`, `tip_split_pct`, `check_portion_cents`; tables `pay_periods` and `payroll_payouts` with all constraints and indexes; `select`-only RLS policies; and the three `security definer` RPCs `payroll_record_payout`, `payroll_undo_payout`, `payroll_close_period` — exactly per `data-model.md` and `contracts/database-rpcs.md`.
+- [X] T003 Apply the migration with `supabase db reset`, then regenerate `lib/db/types.ts` via `npx supabase gen types typescript --local > lib/db/types.ts` (depends on T002).
+- [X] T004 Extend `supabase/seed.sql` — a guarded `do $$` block keyed to the seeded staff UUIDs: seeded payroll rates on the three seed staff, one open pay period (2026-05-16 – 31), and one closed pay period (2026-05-01 – 15) with a few frozen `payroll_payouts` rows, per data-model.md → "Seed data" (depends on T002).
+- [X] T005 [P] Extend `lib/auth/audit.ts` — add `payroll.payout_recorded`, `payroll.payout_undone`, `payroll.period_closed` to the `AuditAction` union and map the `payroll.` action prefix to `entity_type = "payroll"` in `deriveEntityType`.
+- [X] T006 [P] Write failing unit test `tests/unit/payroll/window.test.ts` — semi-monthly pay-period resolution, period labels/short-labels, `pay_date = ends_on + 2 days`, and `parsePayrollParams` (offset clamp, filter parsing).
+- [X] T007 Implement `lib/payroll/window.ts` — `PayPeriodRef`, `resolvePayPeriod` (wraps `semiMonthlyWindowAt` from `lib/time/period-windows.ts`), `parsePayrollParams`; make T006 pass (depends on T006).
 
 **Checkpoint**: Schema, types, seed, audit vocabulary, and period resolution are ready — user stories can begin.
 
@@ -59,20 +59,20 @@ Single Next.js App-Router web app. New code under `app/(studio)/payroll/`, `lib/
 
 > Write T008 FIRST and confirm it FAILS before implementing T009 (Constitution IV — money math is test-first).
 
-- [ ] T008 [P] [US1] Write failing unit tests `tests/unit/payroll/aggregate.test.ts` — `applyRates` (commission % and tip % applied to commissionable income / card tips), cash-payment clamp `max(0, incomeAfterSplit + tipsAfterSplit − checkPortion)`, period totals, ledger-row state derivation (`pending`/`paid`/`no_work`/`unpaid_closed`), and the merge of frozen `payroll_payouts` snapshots over live-computed rows.
+- [X] T008 [P] [US1] Write failing unit tests `tests/unit/payroll/aggregate.test.ts` — `applyRates` (commission % and tip % applied to commissionable income / card tips), cash-payment clamp `max(0, incomeAfterSplit + tipsAfterSplit − checkPortion)`, period totals, ledger-row state derivation (`pending`/`paid`/`no_work`/`unpaid_closed`), and the merge of frozen `payroll_payouts` snapshots over live-computed rows.
 
 ### Implementation for User Story 1
 
-- [ ] T009 [US1] Implement `lib/payroll/aggregate.ts` — pure ledger projection: `applyRates`, payout math + clamp, `PayrollLedgerRow` / `PayrollLedgerTotals` / `PayrollLedgerModel` shapes, row-state derivation, and snapshot merge; make T008 pass (depends on T008).
-- [ ] T010 [US1] Implement `lib/payroll/queries.ts` `loadPayrollLedger` — resolve the period, lazily ensure the `pay_periods` row, reuse the Report query + `projectReport()` (`lib/report/`) for the period window to get per-tech `commissionableCents`/`cardTipsCents`, read `payroll_payouts`, and assemble `PayrollLedgerModel` per `contracts/read-model.md` (depends on T009).
-- [ ] T011 [P] [US1] Implement `lib/payroll/csv.ts` `buildPayrollCsv` — header row + one row per tech + a totals row, mirroring `lib/report/csv.ts`.
-- [ ] T012 [P] [US1] Implement `lib/payroll/format.ts` — period-label and pay-date display helpers (reusing `lib/dashboard/format.ts` and `lib/time/format.ts`).
-- [ ] T013 [P] [US1] Add the **Payroll** nav item to `components/lacquer/sidebar/nav-items.ts` — Operations group, a Lucide icon, `href: "/payroll"`, `roles: ["owner", "manager"]` (FR-001).
-- [ ] T014 [P] [US1] Build `components/lacquer/payroll/payroll-header.tsx` (eyebrow, period label, pay date, cash remaining, progress) and `components/lacquer/payroll/payroll-kpis.tsx` (4 KPI cards).
-- [ ] T015 [P] [US1] Build `components/lacquer/payroll/payroll-ledger.tsx` (full-width table + footer totals row) and `components/lacquer/payroll/payroll-empty-state.tsx`.
-- [ ] T016 [P] [US1] Build client components `components/lacquer/payroll/payroll-filters.client.tsx` (All / To pay / Paid), `payroll-period-switcher.client.tsx`, and `payroll-export.client.tsx` (CSV download).
-- [ ] T017 [US1] Implement `app/(studio)/payroll/page.tsx` — RSC: owner/manager role gate (copy the Report-page guard), parse `?period`/`?offset`/`?filter`, call `loadPayrollLedger`, default to the open period, render header + KPIs + ledger + filters + period switcher + export (depends on T010, T013, T014, T015, T016).
-- [ ] T018 [US1] Create `tests/e2e/payroll.spec.ts` with the `US1:` describe block (worker-fixture-scoped per-tech assertions only — no salon-wide period totals — so it stays parallel-safe in the `main` project, research R11; include an assertion that a technician/front-desk role opening `/payroll` is redirected to `/dashboard` — SC-005/FR-002), and add `app/(studio)/payroll/**`, `lib/payroll/**`, `components/lacquer/payroll/**` → `tests/e2e/payroll.spec.ts` to `tests/e2e/_affected-map.mjs`.
+- [X] T009 [US1] Implement `lib/payroll/aggregate.ts` — pure ledger projection: `applyRates`, payout math + clamp, `PayrollLedgerRow` / `PayrollLedgerTotals` / `PayrollLedgerModel` shapes, row-state derivation, and snapshot merge; make T008 pass (depends on T008).
+- [X] T010 [US1] Implement `lib/payroll/queries.ts` `loadPayrollLedger` — resolve the period, lazily ensure the `pay_periods` row, reuse the Report query + `projectReport()` (`lib/report/`) for the period window to get per-tech `commissionableCents`/`cardTipsCents`, read `payroll_payouts`, and assemble `PayrollLedgerModel` per `contracts/read-model.md` (depends on T009).
+- [X] T011 [P] [US1] Implement `lib/payroll/csv.ts` `buildPayrollCsv` — header row + one row per tech + a totals row, mirroring `lib/report/csv.ts`.
+- [X] T012 [P] [US1] Implement `lib/payroll/format.ts` — period-label and pay-date display helpers (reusing `lib/dashboard/format.ts` and `lib/time/format.ts`).
+- [X] T013 [P] [US1] Add the **Payroll** nav item to `components/lacquer/sidebar/nav-items.ts` — Operations group, a Lucide icon, `href: "/payroll"`, `roles: ["owner", "manager"]` (FR-001).
+- [X] T014 [P] [US1] Build `components/lacquer/payroll/payroll-header.tsx` (eyebrow, period label, pay date, cash remaining, progress) and `components/lacquer/payroll/payroll-kpis.tsx` (4 KPI cards).
+- [X] T015 [P] [US1] Build `components/lacquer/payroll/payroll-ledger.tsx` (full-width table + footer totals row) and `components/lacquer/payroll/payroll-empty-state.tsx`.
+- [X] T016 [P] [US1] Build client components `components/lacquer/payroll/payroll-filters.client.tsx` (All / To pay / Paid), `payroll-period-switcher.client.tsx`, and `payroll-export.client.tsx` (CSV download).
+- [X] T017 [US1] Implement `app/(studio)/payroll/page.tsx` — RSC: owner/manager role gate (copy the Report-page guard), parse `?period`/`?offset`/`?filter`, call `loadPayrollLedger`, default to the open period, render header + KPIs + ledger + filters + period switcher + export (depends on T010, T013, T014, T015, T016).
+- [X] T018 [US1] Create `tests/e2e/payroll.spec.ts` with the `US1:` describe block (worker-fixture-scoped per-tech assertions only — no salon-wide period totals — so it stays parallel-safe in the `main` project, research R11; include an assertion that a technician/front-desk role opening `/payroll` is redirected to `/dashboard` — SC-005/FR-002), and add `app/(studio)/payroll/**`, `lib/payroll/**`, `components/lacquer/payroll/**` → `tests/e2e/payroll.spec.ts` to `tests/e2e/_affected-map.mjs`.
 
 **Checkpoint**: Payroll is reachable from the nav and shows an accurate open-period ledger — a working MVP that replaces the spreadsheet's calculation.
 
@@ -86,17 +86,17 @@ Single Next.js App-Router web app. New code under `app/(studio)/payroll/`, `lib/
 
 ### Tests for User Story 2
 
-- [ ] T019 [P] [US2] Extend `tests/unit/payroll/aggregate.test.ts` with failing tests for daily-activity grouping — per-day income/tips/ticket counts, `bestDay`, `avgPerWorkingDay`, `workingDayCount`, closed-day detection.
+- [X] T019 [P] [US2] Extend `tests/unit/payroll/aggregate.test.ts` with failing tests for daily-activity grouping — per-day income/tips/ticket counts, `bestDay`, `avgPerWorkingDay`, `workingDayCount`, closed-day detection.
 
 ### Implementation for User Story 2
 
-- [ ] T020 [US2] Extend `lib/payroll/aggregate.ts` — `DayActivity` grouping from the period's transactions (a "closed" day = the tech had zero service income and zero card tips — a per-tech heuristic, not coupled to salon-hours data) plus `bestDay` / `avgPerWorkingDay` / `workingDayCount`; make T019 pass (depends on T019).
-- [ ] T021 [US2] Extend `lib/payroll/queries.ts` — `loadTechDetail` returning `TechDetailModel` (single tech, `days[]`, prev/next ledger-order neighbours) per `contracts/read-model.md` (depends on T020).
-- [ ] T022 [P] [US2] Build `components/lacquer/payroll/tech-detail-header.tsx` (avatar, state badge, "cash to hand over") and `components/lacquer/payroll/tech-breakdown.tsx` (earnings breakdown).
-- [ ] T023 [P] [US2] Build `components/lacquer/payroll/tech-daily-chart.tsx` — the large daily-activity chart (per-day income + card-tip bars, best-day highlight, closed days).
-- [ ] T024 [P] [US2] Build `components/lacquer/payroll/tech-detail-nav.client.tsx` — back-to-ledger control + prev/next tech controls (disabled at first/last).
-- [ ] T025 [US2] Implement `app/(studio)/payroll/[staffId]/page.tsx` — RSC tech detail: role gate, `loadTechDetail`, render header + chart + breakdown + nav; and make `payroll-ledger.tsx` rows link to `/payroll/[staffId]` carrying the period params (depends on T021, T022, T023, T024).
-- [ ] T026 [US2] Extend `tests/e2e/payroll.spec.ts` — `US2:` describe block (open detail, prev/next, back).
+- [X] T020 [US2] Extend `lib/payroll/aggregate.ts` — `DayActivity` grouping from the period's transactions (a "closed" day = the tech had zero service income and zero card tips — a per-tech heuristic, not coupled to salon-hours data) plus `bestDay` / `avgPerWorkingDay` / `workingDayCount`; make T019 pass (depends on T019).
+- [X] T021 [US2] Extend `lib/payroll/queries.ts` — `loadTechDetail` returning `TechDetailModel` (single tech, `days[]`, prev/next ledger-order neighbours) per `contracts/read-model.md` (depends on T020).
+- [X] T022 [P] [US2] Build `components/lacquer/payroll/tech-detail-header.tsx` (avatar, state badge, "cash to hand over") and `components/lacquer/payroll/tech-breakdown.tsx` (earnings breakdown).
+- [X] T023 [P] [US2] Build `components/lacquer/payroll/tech-daily-chart.tsx` — the large daily-activity chart (per-day income + card-tip bars, best-day highlight, closed days).
+- [X] T024 [P] [US2] Build `components/lacquer/payroll/tech-detail-nav.client.tsx` — back-to-ledger control + prev/next tech controls (disabled at first/last).
+- [X] T025 [US2] Implement `app/(studio)/payroll/[staffId]/page.tsx` — RSC tech detail: role gate, `loadTechDetail`, render header + chart + breakdown + nav; and make `payroll-ledger.tsx` rows link to `/payroll/[staffId]` carrying the period params (depends on T021, T022, T023, T024).
+- [X] T026 [US2] Extend `tests/e2e/payroll.spec.ts` — `US2:` describe block (open detail, prev/next, back).
 
 **Checkpoint**: Ledger + detail screen both work — the full Pulse review surface.
 
@@ -112,10 +112,10 @@ Single Next.js App-Router web app. New code under `app/(studio)/payroll/`, `lib/
 
 ### Implementation for User Story 3
 
-- [ ] T027 [US3] Implement `app/(studio)/payroll/actions.ts` — `recordPayout` and `undoPayout` Server Actions per `contracts/server-actions.md`: owner/manager role gate, recompute the tech's snapshot fresh via `lib/payroll/aggregate` (never trust client figures), call `payroll_record_payout` / `payroll_undo_payout`, map Postgres errors to result codes, `revalidatePath("/payroll")` and `/payroll/[staffId]`.
-- [ ] T028 [P] [US3] Build `components/lacquer/payroll/tech-pay-action.client.tsx` — payment-method tabs (cash / Zelle / check), mark-paid button, undo, and the paid receipt/confirmation.
-- [ ] T029 [US3] Wire `tech-pay-action` into `app/(studio)/payroll/[staffId]/page.tsx`; ensure ledger and detail state badges reflect Paid/Pending and that no pay/undo action is offered for a `no_work` tech or a closed period (depends on T027, T028).
-- [ ] T030 [US3] Extend `tests/e2e/payroll.spec.ts` — `US3:` describe block (mark paid → reload → still paid → undo → pending).
+- [X] T027 [US3] Implement `app/(studio)/payroll/actions.ts` — `recordPayout` and `undoPayout` Server Actions per `contracts/server-actions.md`: owner/manager role gate, recompute the tech's snapshot fresh via `lib/payroll/aggregate` (never trust client figures), call `payroll_record_payout` / `payroll_undo_payout`, map Postgres errors to result codes, `revalidatePath("/payroll")` and `/payroll/[staffId]`.
+- [X] T028 [P] [US3] Build `components/lacquer/payroll/tech-pay-action.client.tsx` — payment-method tabs (cash / Zelle / check), mark-paid button, undo, and the paid receipt/confirmation.
+- [X] T029 [US3] Wire `tech-pay-action` into `app/(studio)/payroll/[staffId]/page.tsx`; ensure ledger and detail state badges reflect Paid/Pending and that no pay/undo action is offered for a `no_work` tech or a closed period (depends on T027, T028).
+- [X] T030 [US3] Extend `tests/e2e/payroll.spec.ts` — `US3:` describe block (mark paid → reload → still paid → undo → pending).
 
 **Checkpoint**: Payouts persist durably — Payroll is now a system of record.
 
@@ -131,11 +131,11 @@ Single Next.js App-Router web app. New code under `app/(studio)/payroll/`, `lib/
 
 ### Implementation for User Story 4
 
-- [ ] T031 [US4] Add the `closePeriod` Server Action to `app/(studio)/payroll/actions.ts` per `contracts/server-actions.md` — owner-only gate, recompute the ledger, build the eligible-unpaid `frozen_rows` + period totals, return an `INVALID` result naming unpaid techs unless `confirmedUnpaid`, then call `payroll_close_period`.
-- [ ] T032 [US4] Extend `lib/payroll/queries.ts` — `loadPayrollHistory` returning closed periods with total paid and closed-by name, per `contracts/read-model.md`.
-- [ ] T033 [P] [US4] Build `components/lacquer/payroll/close-period-dialog.client.tsx` (confirmation that names unpaid techs) and `components/lacquer/payroll/payroll-history.client.tsx`.
-- [ ] T034 [US4] Wire close + history into `app/(studio)/payroll/page.tsx` — Close-period action, History view, and read-only rendering for closed periods (no pay/undo/close); ensure the period switcher reaches closed periods (depends on T031, T032, T033).
-- [ ] T035 [US4] Extend `tests/e2e/payroll.spec.ts` — `US4:` describe block (close period, read-only, history review; and assert a manager is blocked from closing a period — SC-005/FR-002/FR-029).
+- [X] T031 [US4] Add the `closePeriod` Server Action to `app/(studio)/payroll/actions.ts` per `contracts/server-actions.md` — owner-only gate, recompute the ledger, build the eligible-unpaid `frozen_rows` + period totals, return an `INVALID` result naming unpaid techs unless `confirmedUnpaid`, then call `payroll_close_period`.
+- [X] T032 [US4] Extend `lib/payroll/queries.ts` — `loadPayrollHistory` returning closed periods with total paid and closed-by name, per `contracts/read-model.md`.
+- [X] T033 [P] [US4] Build `components/lacquer/payroll/close-period-dialog.client.tsx` (confirmation that names unpaid techs) and `components/lacquer/payroll/payroll-history.client.tsx`.
+- [X] T034 [US4] Wire close + history into `app/(studio)/payroll/page.tsx` — Close-period action, History view, and read-only rendering for closed periods (no pay/undo/close); ensure the period switcher reaches closed periods (depends on T031, T032, T033).
+- [X] T035 [US4] Extend `tests/e2e/payroll.spec.ts` — `US4:` describe block (close period, read-only, history review; and assert a manager is blocked from closing a period — SC-005/FR-002/FR-029).
 
 **Checkpoint**: Periods can be locked and browsed — the spreadsheet's old tabs are replaced.
 
@@ -151,14 +151,14 @@ Single Next.js App-Router web app. New code under `app/(studio)/payroll/`, `lib/
 
 ### Tests for User Story 5
 
-- [ ] T036 [P] [US5] Write failing unit test `tests/unit/staff/payroll-rates-validation.test.ts` — percentage bounds (0–100% in the UI), negative check-portion rejection, non-numeric rejection.
+- [X] T036 [P] [US5] Write failing unit test `tests/unit/staff/payroll-rates-validation.test.ts` — percentage bounds (0–100% in the UI), negative check-portion rejection, non-numeric rejection.
 
 ### Implementation for User Story 5
 
-- [ ] T037 [US5] Extend `app/(studio)/settings/staff/_validation.ts` — validators for `service_commission_pct`, `tip_split_pct`, `check_portion_cents`; make T036 pass (depends on T036).
-- [ ] T038 [US5] Extend `app/(studio)/settings/staff/actions.ts` `updateStaff` and `app/(studio)/settings/staff/permissions.ts` — parse/diff/UPDATE the three new fields, restrict the rate fields to owners, join them into the `staff.updated` audit diff (FR-035), and `revalidatePath("/payroll")` (depends on T037).
-- [ ] T039 [P] [US5] Build `components/lacquer/staff/payroll-rates-section.client.tsx` (commission %, tip %, check-portion inputs) and wire it into the staff edit panel.
-- [ ] T040 [US5] Extend `tests/e2e/payroll.spec.ts` — `US5:` describe block (edit a rate → the open-period ledger recomputes; and assert a manager is blocked from editing payroll-rate fields — SC-005/FR-002/FR-033).
+- [X] T037 [US5] Extend `app/(studio)/settings/staff/_validation.ts` — validators for `service_commission_pct`, `tip_split_pct`, `check_portion_cents`; make T036 pass (depends on T036).
+- [X] T038 [US5] Extend `app/(studio)/settings/staff/actions.ts` `updateStaff` and `app/(studio)/settings/staff/permissions.ts` — parse/diff/UPDATE the three new fields, restrict the rate fields to owners, join them into the `staff.updated` audit diff (FR-035), and `revalidatePath("/payroll")` (depends on T037).
+- [X] T039 [P] [US5] Build `components/lacquer/staff/payroll-rates-section.client.tsx` (commission %, tip %, check-portion inputs) and wire it into the staff edit panel.
+- [X] T040 [US5] Extend `tests/e2e/payroll.spec.ts` — `US5:` describe block (edit a rate → the open-period ledger recomputes; and assert a manager is blocked from editing payroll-rate fields — SC-005/FR-002/FR-033).
 
 **Checkpoint**: All five user stories are functional.
 
@@ -168,10 +168,10 @@ Single Next.js App-Router web app. New code under `app/(studio)/payroll/`, `lib/
 
 **Purpose**: Design fidelity, audit coverage, and the final quality gate.
 
-- [ ] T041 [P] Design-system audit — compare `/payroll` and `/payroll/[staffId]` side by side with `design-system/prototypes/payroll/Payroll.html` (Variation 3 — Pulse); confirm every color, spacing, radius, shadow, and type value traces to `styles/tokens.css` (Constitution I; run the `speckit-design-auditor`).
-- [ ] T042 [P] Verify audit-log coverage — confirm `recordPayout`, `undoPayout`, `closePeriod`, and the rate edit each write an `audit_log` row with the acting user (FR-035); undo's payload carries the full undone snapshot (research R9).
-- [ ] T043 Run the `quickstart.md` manual verification checklist end to end against the seeded local stack.
-- [ ] T044 Run the full quality gate: `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e`.
+- [X] T041 [P] Design-system audit — compare `/payroll` and `/payroll/[staffId]` side by side with `design-system/prototypes/payroll/Payroll.html` (Variation 3 — Pulse); confirm every color, spacing, radius, shadow, and type value traces to `styles/tokens.css` (Constitution I; run the `speckit-design-auditor`).
+- [X] T042 [P] Verify audit-log coverage — confirm `recordPayout`, `undoPayout`, `closePeriod`, and the rate edit each write an `audit_log` row with the acting user (FR-035); undo's payload carries the full undone snapshot (research R9).
+- [X] T043 Run the `quickstart.md` manual verification checklist end to end against the seeded local stack.
+- [X] T044 Run the full quality gate: `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e`.
 
 ---
 

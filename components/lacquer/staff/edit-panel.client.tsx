@@ -30,6 +30,7 @@ import { ChangePinModal } from "@/components/lacquer/staff/change-pin-modal.clie
 import { ColorPicker } from "@/components/lacquer/staff/color-picker";
 import { DangerZone } from "@/components/lacquer/staff/danger-zone.client";
 import { PayDeductionsSection } from "@/components/lacquer/staff/pay-deductions-section.client";
+import { PayrollRatesSection } from "@/components/lacquer/staff/payroll-rates-section.client";
 import { StaffAvatar } from "@/components/lacquer/staff/staff-avatar";
 import { StatusBadges } from "@/components/lacquer/staff/status-badges";
 
@@ -100,6 +101,10 @@ export type EditPanelTarget = Pick<
   | "card_fee_exempt"
   | "supply_mode"
   | "supply_except"
+  // 047-payroll-page § US5 — consumed by <PayrollRatesSection>.
+  | "service_commission_pct"
+  | "tip_split_pct"
+  | "check_portion_cents"
 >;
 
 export type EditPanelProps = {
@@ -430,6 +435,39 @@ export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPa
               }));
             }}
             disabled={!perms.canEditAnyField}
+          />
+        </div>
+
+        {/* ── Payroll rates section (047-payroll-page § US5) ───────────────── */}
+        {/* <PayrollRatesSection> owns its own internal header so the wrapper
+          carries only the data-section attribute for the panel ordering. */}
+        <div
+          className="staff-panel-section staff-panel-section--payroll-rates"
+          data-section="payroll-rates"
+          data-slot="staff-panel-section-payroll-rates"
+        >
+          <PayrollRatesSection
+            target={target}
+            draft={{
+              serviceCommissionPct: draft.service_commission_pct,
+              tipSplitPct: draft.tip_split_pct,
+              checkPortionCents: draft.check_portion_cents,
+            }}
+            onDraftChange={(next) => {
+              setDraft((d) => ({
+                ...d,
+                ...(typeof next.serviceCommissionPct === "number"
+                  ? { service_commission_pct: next.serviceCommissionPct }
+                  : {}),
+                ...(typeof next.tipSplitPct === "number"
+                  ? { tip_split_pct: next.tipSplitPct }
+                  : {}),
+                ...(typeof next.checkPortionCents === "number"
+                  ? { check_portion_cents: next.checkPortionCents }
+                  : {}),
+              }));
+            }}
+            canEdit={perms.canEditPayrollRates}
           />
         </div>
 
