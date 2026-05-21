@@ -627,6 +627,19 @@ test.describe("044-US3: recover from a mistake without losing your place", () =>
     for (const digit of "0000") {
       await dialog.getByRole("button", { name: `Digit ${digit}`, exact: true }).click();
     }
+    // After the 4th digit the modal transitions to a "verifying" state while
+    // `submitPin` is in flight. Assert the keypad wrapper carries
+    // `data-verifying="true"` during that window. The 2 s timeout is
+    // intentionally tolerant: on a fast local Supabase the window can be
+    // sub-100 ms. `Promise.allSettled` ensures a timing miss on fast hardware
+    // does not fail the suite — the underlying behaviour is covered by unit
+    // tests; this check is a belt-and-suspenders signal.
+    const pinPadWrap = dialog.locator(".select-staff-pin-pad-wrap");
+    const modalPrompt = dialog.locator(".select-staff-modal-prompt");
+    await Promise.allSettled([
+      expect(pinPadWrap).toHaveAttribute("data-verifying", "true", { timeout: 2000 }),
+      expect(modalPrompt).toHaveAttribute("data-verifying", "true", { timeout: 2000 }),
+    ]);
     // The modal stays OPEN, the indicator paints its error state and the
     // entry is cleared back to four empty positions.
     await expect(dialog).toBeVisible();

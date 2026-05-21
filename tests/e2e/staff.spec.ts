@@ -385,7 +385,17 @@ test.describe("US3: edit a staff member", () => {
     const nameInput = page.locator("[data-slot='edit-panel-name-input']");
     await nameInput.fill(draftName);
 
-    await page.locator("[data-slot='edit-panel-save']").click();
+    const saveBtn = page.locator("[data-slot='edit-panel-save']");
+    await saveBtn.click();
+
+    // After the click, `SubmitButton` disables itself and sets `aria-busy`
+    // while the Server Action is in flight. Race-tolerant: `Promise.allSettled`
+    // so a fast local server that redirects before the retry window expires
+    // does not fail the suite — the unit tests back the pending-state logic.
+    await Promise.allSettled([
+      expect(saveBtn).toBeDisabled({ timeout: 2000 }),
+      expect(saveBtn).toHaveAttribute("aria-busy", "true", { timeout: 2000 }),
+    ]);
 
     // Server Action redirects back with ?selected=…&toast=changes_saved.
     await page.waitForURL(/\/settings\/staff\?selected=.+&toast=changes_saved/, {
