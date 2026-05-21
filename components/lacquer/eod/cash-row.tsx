@@ -75,17 +75,13 @@ export function CashRow({
   );
 }
 
-// Small inline name pill rendering a tech badge. Mirrors the prototype's
-// `EODTechPill` (initials replaced by display-name pill is overkill for
-// the dense list; we just use the initials avatar-style background
-// colour). Token-only — `colorToken` resolves to a Lacquer avatar var.
+// Small inline name-pill rendering a tech badge in the dense End-of-Day
+// list. Keeps the pill shape (a circular avatar would be heavy for this
+// row) but uses the same color scheme as the app-wide `InitialsAvatar`:
+// a 15% wash of the staff color token behind the token-colored initials.
 function TechNamePill({ tech }: { tech: TechBadge }) {
-  const bg = tech.colorToken
-    ? `color-mix(in oklch, var(${tech.colorToken}) 25%, var(--card))`
-    : "var(--muted)";
-  const color = tech.colorToken
-    ? `color-mix(in oklch, var(${tech.colorToken}) 60%, var(--foreground))`
-    : "var(--muted-foreground)";
+  const bg = tech.colorToken ? `oklch(from var(${tech.colorToken}) l c h / 0.15)` : "var(--muted)";
+  const color = tech.colorToken ? `var(${tech.colorToken})` : "var(--muted-foreground)";
   return (
     <span
       style={{

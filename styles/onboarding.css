@@ -86,6 +86,7 @@
   min-width: calc(var(--space-16) * 4);
   flex: 0 1 auto;
   max-width: calc(var(--space-16) * 6);
+  position: relative;
   transition:
     border-color var(--duration-fast) var(--ease-out),
     box-shadow var(--duration-fast) var(--ease-out);
@@ -99,6 +100,18 @@
 .onb-search-icon {
   flex-shrink: 0;
   color: var(--muted-foreground);
+}
+
+/* Trailing in-place spinner — shown while the useTransition is pending.
+   Absolutely positioned at the inline-end edge, mirroring .onb-search-icon's
+   leading placement, so the input width/layout is unaffected (no reflow). */
+.onb-search-spinner {
+  position: absolute;
+  inset-inline-end: var(--space-3);
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted-foreground);
+  pointer-events: none;
 }
 
 .onb-search-input {

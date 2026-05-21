@@ -27,18 +27,7 @@ export default async function DashboardPage() {
           style={{ paddingBottom: 14, borderBottomColor: "var(--border)" }}
         >
           <div>
-            <div
-              className="muted"
-              style={{
-                fontSize: 11,
-                letterSpacing: "0.04em",
-                textTransform: "uppercase",
-                fontWeight: 500,
-              }}
-            >
-              {data.greeting.eyebrow}
-            </div>
-            <h1 style={{ marginTop: 4 }}>{data.greeting.title}</h1>
+            <h1>{data.greeting.title}</h1>
             <div className="sub" style={{ marginTop: 6 }}>
               {data.greeting.subtitle}
             </div>

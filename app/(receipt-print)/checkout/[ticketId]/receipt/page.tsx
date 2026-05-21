@@ -19,7 +19,7 @@
 //   - no cash payment row exists for the ticket (defensive)
 //
 // `salonName` source: there is no `settings` table in v1 (data-model.md
-// § 8 — Out of Scope). Hardcoded "Tang Nails" per T044 spec. When a
+// § 8 — Out of Scope). Hardcoded "Tang Nails Studio" per T044 spec. When a
 // settings surface ships, swap the literal for a SELECT against
 // `public.settings`.
 
@@ -85,7 +85,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ ticket
   const payment = paymentRes.data;
 
   // Hardcoded per T044 — no `settings` table in v1 (data-model.md § 8).
-  const salonName = "Tang Nails";
+  const salonName = "Tang Nails Studio";
 
   return (
     <ReceiptView

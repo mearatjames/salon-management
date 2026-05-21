@@ -121,9 +121,11 @@ function renderItem(item: NavItem, isActive: boolean) {
   );
 }
 
-// An item is visible to the viewer when it carries no `roles` allow-list, or
-// when its allow-list includes the viewer's role.
-function isVisibleToRole(item: NavItem, role: string): boolean {
+// An item is rendered when it is not `hidden` (its page isn't built yet) AND
+// it is visible to the viewer's role — it carries no `roles` allow-list, or
+// its allow-list includes the viewer's role.
+function isItemVisible(item: NavItem, role: string): boolean {
+  if (item.hidden === true) return false;
   return item.roles === undefined || item.roles.includes(role as never);
 }
 
@@ -171,7 +173,7 @@ export function SidebarShell({ role, children }: SidebarShellProps) {
       </div>
 
       {NAV_CONFIG.top
-        .filter((item) => isVisibleToRole(item, role))
+        .filter((item) => isItemVisible(item, role))
         .map((item) => renderItem(item, isActiveSection(pathname, item.href)))}
 
       <hr className="studio-nav-divider" />
@@ -180,7 +182,7 @@ export function SidebarShell({ role, children }: SidebarShellProps) {
         <div key={group.id}>
           <div className="studio-nav-section">{group.label}</div>
           {group.items
-            .filter((item) => isVisibleToRole(item, role))
+            .filter((item) => isItemVisible(item, role))
             .map((item) => renderItem(item, isActiveSection(pathname, item.href)))}
         </div>
       ))}

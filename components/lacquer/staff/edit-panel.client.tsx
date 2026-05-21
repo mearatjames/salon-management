@@ -26,12 +26,13 @@ import { KeyRound, ShieldCheck } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
+import { SubmitButton } from "@/components/lacquer/submit-button";
 import { ChangePinModal } from "@/components/lacquer/staff/change-pin-modal.client";
 import { ColorPicker } from "@/components/lacquer/staff/color-picker";
 import { DangerZone } from "@/components/lacquer/staff/danger-zone.client";
 import { PayDeductionsSection } from "@/components/lacquer/staff/pay-deductions-section.client";
 import { PayrollRatesSection } from "@/components/lacquer/staff/payroll-rates-section.client";
-import { StaffAvatar } from "@/components/lacquer/staff/staff-avatar";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 import { StatusBadges } from "@/components/lacquer/staff/status-badges";
 
 import type { RosterStaff } from "@/app/(studio)/settings/staff/_types";
@@ -198,7 +199,7 @@ export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPa
         avatar + name + role + added date + status badges sit visually on
         their own surface; the form below carries the editable sections. */}
       <header className="staff-panel-profile-header" data-slot="staff-panel-profile-header">
-        <StaffAvatar
+        <InitialsAvatar
           name={previewName(draft.display_name, target.display_name)}
           colorToken={draft.color_token}
           size={64}
@@ -476,10 +477,10 @@ export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPa
           data-section so the US6 ordering test can locate it between
           Pay & deductions and Danger zone. */}
         <div data-section="save" data-slot="staff-panel-section-save">
-          <button
-            type="submit"
+          <SubmitButton
             data-slot="edit-panel-save"
             disabled={!canSave}
+            pendingLabel="Saving…"
             style={{
               width: "100%",
               padding: "var(--space-2) var(--space-4)",
@@ -496,7 +497,7 @@ export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPa
             }}
           >
             Save changes
-          </button>
+          </SubmitButton>
         </div>
       </form>
 

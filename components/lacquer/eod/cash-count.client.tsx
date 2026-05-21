@@ -28,6 +28,7 @@ import { NumpadButtons, type NumpadKey } from "@/components/lacquer/eod/numpad-b
 import { numpadReduce, type NumpadState } from "@/components/lacquer/eod/numpad-reduce";
 import { closeCashDrawerAction } from "@/app/(studio)/end-of-day/actions";
 import { deriveComparison } from "@/lib/end-of-day/comparison";
+import { Spinner } from "@/components/ui/spinner";
 
 export type CashCountProps = {
   expectedCents: number;
@@ -248,6 +249,7 @@ export function CashCount({ expectedCents }: CashCountProps) {
           type="button"
           data-slot="eod-close-cta"
           disabled={!canSubmit}
+          aria-busy={pending || undefined}
           onClick={submit}
           style={{
             width: "100%",
@@ -262,8 +264,13 @@ export function CashCount({ expectedCents }: CashCountProps) {
             letterSpacing: "-0.005em",
             cursor: canSubmit ? "pointer" : "not-allowed",
             transition: "background 150ms var(--ease-out)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "var(--space-2)",
           }}
         >
+          {pending && <Spinner size={16} strokeWidth={2} />}
           {pending ? "Closing…" : "Close Out Day"}
         </button>
       </div>

@@ -13,7 +13,7 @@
 import { formatCount, formatCurrency, formatPercent } from "@/lib/dashboard/format";
 import type { PayrollLedgerRow } from "@/lib/payroll/aggregate";
 import { formatPaidOn } from "@/lib/payroll/format";
-import { TechAvatar } from "@/components/lacquer/tech-avatar";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 
 export type TechDetailHeaderProps = {
   row: PayrollLedgerRow;
@@ -60,13 +60,12 @@ export function TechDetailHeader({ row }: TechDetailHeaderProps) {
   return (
     <div className="pp-detail-header" data-slot="tech-detail-header">
       <div className="pp-detail-header-l">
-        <TechAvatar
-          tech={{
-            id: row.staffId,
-            displayName: row.displayName,
-            colorToken: row.colorToken,
-          }}
+        <InitialsAvatar
+          name={row.displayName}
+          colorToken={row.colorToken}
           size={56}
+          data-slot="tech-avatar"
+          data-staff-name={row.displayName}
         />
         <div>
           <div className="pp-detail-eyebrow">Tech payroll</div>

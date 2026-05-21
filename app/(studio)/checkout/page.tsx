@@ -90,7 +90,7 @@ export default async function CheckoutEntryPage() {
   ]);
 
   const salonInfo = {
-    name: salonName ?? "Tang Nails",
+    name: salonName ?? "Tang Nails Studio",
     address: salonAddress ?? "",
     phone: salonPhone ?? "",
   };

@@ -36,36 +36,15 @@
 import { useRef, useState, useTransition } from "react";
 
 import { submitPin } from "@/app/(device)/select-staff/actions";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
+import { roleLabel } from "@/components/lacquer/staff/initials";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
 
 import { PinPad } from "./pin-pad";
 import type { StaffRosterEntry } from "./select-staff-screen.client";
 
 const PIN_LENGTH = 4;
-
-// Initials for the modal avatar — first + last initial, or the first two
-// characters of a single-word name. Mirrors `staff-avatar-tile.tsx`.
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-function roleLabel(role: string): string {
-  switch (role) {
-    case "owner":
-      return "Owner";
-    case "manager":
-      return "Manager";
-    case "technician":
-      return "Tech";
-    case "front_desk":
-      return "Front desk";
-    default:
-      return role;
-  }
-}
 
 export type PinEntryModalProps = {
   staff: StaffRosterEntry;
@@ -93,6 +72,9 @@ export function PinEntryModal({ staff, next, onClose }: PinEntryModalProps) {
   // `{ ok: false }` so a retry can submit again, and the whole modal
   // remounts per `selectedStaffId` so a fresh tile always gets a fresh ref.
   const submittedRef = useRef(false);
+  // Focus landing target for when the dialog opens — a non-interactive
+  // container, so no keypad key is focused (see `onOpenAutoFocus` below).
+  const modalRef = useRef<HTMLDivElement>(null);
 
   // Submit the buffered PIN. On success `submitPin` redirects (throws
   // NEXT_REDIRECT) and the runtime navigates away — this modal unmounts
@@ -162,27 +144,45 @@ export function PinEntryModal({ staff, next, onClose }: PinEntryModalProps) {
     if (!open) onClose();
   }
 
-  // Avatar tint idiom (research R8): a 15%-opacity wash of the staff color
-  // token behind the full-opacity token-colored initials.
-  const avatarStyle = {
-    background: `oklch(from var(${staff.color_token}) l c h / 0.15)`,
-    color: `var(${staff.color_token})`,
-  };
-
   return (
     <Dialog open onOpenChange={handleOpenChange}>
-      <DialogContent>
-        <div className="select-staff-modal">
-          <span className="select-staff-modal-avatar" style={avatarStyle} aria-hidden="true">
-            {initials(staff.display_name)}
-          </span>
+      <DialogContent
+        onOpenAutoFocus={(event) => {
+          // Don't let Radix auto-focus the first keypad key. Once the
+          // operator starts typing the PIN on a physical keyboard, the
+          // focused key lights up its `:focus-visible` ring and reads as a
+          // stuck, unrelated selection — PinPad's window keydown listener
+          // handles typing without needing focus on any key. Move focus to
+          // the modal container instead: the dialog stays focus-scoped for
+          // assistive tech, but nothing visibly rings while typing.
+          event.preventDefault();
+          modalRef.current?.focus();
+        }}
+      >
+        <div className="select-staff-modal" ref={modalRef} tabIndex={-1}>
+          <InitialsAvatar
+            name={staff.display_name}
+            colorToken={staff.color_token}
+            size={80}
+            className="select-staff-modal-avatar"
+          />
           <div className="select-staff-modal-identity">
             <DialogTitle className="select-staff-modal-name">{staff.display_name}</DialogTitle>
             <span className="select-staff-modal-role">{roleLabel(staff.role)}</span>
           </div>
 
-          <DialogDescription className="select-staff-modal-prompt">
-            Enter your 4-digit PIN
+          <DialogDescription
+            className="select-staff-modal-prompt"
+            data-verifying={isPending ? "true" : undefined}
+          >
+            {isPending ? (
+              <>
+                <Spinner size={16} />
+                Signing in…
+              </>
+            ) : (
+              "Enter your 4-digit PIN"
+            )}
           </DialogDescription>
 
           {/* 4-position indicator — driven off buffer.length, never the
@@ -207,13 +207,20 @@ export function PinEntryModal({ staff, next, onClose }: PinEntryModalProps) {
 
           {/* Keyed on `attemptCount` so the bufferless keypad remounts on
               every failed attempt — a repeated identical wrong PIN clears
-              deterministically (research R3/R4). */}
-          <PinPad
-            key={attemptCount}
-            onDigit={handleDigit}
-            onClear={handleClear}
-            onBackspace={handleBackspace}
-          />
+              deterministically (research R3/R4). Wrapped in a div so the
+              `data-verifying` attribute can be applied for the CSS dim —
+              PinPad does not forward arbitrary props onto its root element. */}
+          <div
+            className="select-staff-pin-pad-wrap"
+            data-verifying={isPending ? "true" : undefined}
+          >
+            <PinPad
+              key={attemptCount}
+              onDigit={handleDigit}
+              onClear={handleClear}
+              onBackspace={handleBackspace}
+            />
+          </div>
         </div>
       </DialogContent>
     </Dialog>

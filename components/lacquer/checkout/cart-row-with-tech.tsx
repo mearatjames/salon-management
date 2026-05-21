@@ -19,6 +19,7 @@ import { useState } from "react";
 
 import { ChevronDown, X, Edit3 } from "lucide-react";
 
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export type CartLineView = {
@@ -92,13 +93,6 @@ function fmtMoney(cents: number): string {
   // US3: discount-row totals are negative; render as "-$X.XX" not "$-X.XX".
   if (cents < 0) return `-$${(Math.abs(cents) / 100).toFixed(2)}`;
   return `$${(cents / 100).toFixed(2)}`;
-}
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 export function CartRowWithTech({
@@ -300,8 +294,6 @@ export function CartRowWithTech({
                 >
                   {roster.map((candidate) => {
                     const isCurrent = candidate.id === line.assignedStaffId;
-                    const tint = `oklch(from var(${candidate.color_token}) l c h / 0.15)`;
-                    const fg = `var(${candidate.color_token})`;
                     return (
                       <li key={candidate.id} style={{ margin: 0 }}>
                         <button
@@ -342,24 +334,11 @@ export function CartRowWithTech({
                             opacity: isCurrent ? 0.7 : 1,
                           }}
                         >
-                          <span
-                            aria-hidden="true"
-                            style={{
-                              display: "inline-flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              width: "var(--space-6)",
-                              height: "var(--space-6)",
-                              borderRadius: "var(--radius-full)",
-                              background: tint,
-                              color: fg,
-                              fontSize: "var(--text-xs)",
-                              fontWeight: 600,
-                              border: "1px solid var(--border)",
-                            }}
-                          >
-                            {initials(candidate.display_name)}
-                          </span>
+                          <InitialsAvatar
+                            name={candidate.display_name}
+                            colorToken={candidate.color_token}
+                            size={24}
+                          />
                           <span style={{ flex: "1 1 auto" }}>{candidate.display_name}</span>
                           {isCurrent ? (
                             <span

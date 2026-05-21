@@ -30,7 +30,7 @@ import { ChevronDown } from "lucide-react";
 import { formatCurrency } from "@/lib/dashboard/format";
 import type { ReportTransaction, TechnicianReport } from "@/lib/report/aggregate";
 import { MethodPill } from "@/components/lacquer/method-pill";
-import { TechAvatar } from "@/components/lacquer/tech-avatar";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 
 export type TechDetailProps = {
   technician: TechnicianReport;
@@ -164,12 +164,9 @@ export function TechDetail({ technician, expandedTxIds, onToggleTx }: TechDetail
     <div className="dr-detail" data-slot="tech-detail" data-tech-id={technician.staffId}>
       <div className="dr-detail-head">
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-          <TechAvatar
-            tech={{
-              id: technician.staffId,
-              displayName: technician.displayName,
-              colorToken: technician.colorToken,
-            }}
+          <InitialsAvatar
+            name={technician.displayName}
+            colorToken={technician.colorToken}
             size={38}
           />
           <div>

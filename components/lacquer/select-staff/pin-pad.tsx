@@ -24,8 +24,10 @@
 // keydown-listener idiom, but PinPad has BOTH a Clear key AND a Backspace key
 // (12 keys, not 11) and owns no buffer at all.
 //
-// All visuals trace to `select-staff-keypad*` classes in
-// `styles/select-staff.css` (Constitution Principle I — FR-026).
+// All visuals trace to the shared `.keypad*` classes in `styles/keypad.css`
+// — the same stylesheet `numeric-keypad.client.tsx` uses, so the login
+// keypad and the staff-settings Set/Change-PIN keypad render identically
+// (Constitution Principle I — FR-026).
 
 import { useEffect, useRef } from "react";
 
@@ -73,12 +75,12 @@ export function PinPad({ onDigit, onClear, onBackspace }: PinPadProps) {
   }, []);
 
   return (
-    <div className="select-staff-keypad" role="group" aria-label="PIN keypad">
+    <div className="keypad" role="group" aria-label="PIN keypad">
       {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
         <button
           key={d}
           type="button"
-          className="select-staff-keypad-key"
+          className="keypad-key"
           aria-label={`Digit ${d}`}
           onClick={() => onDigit(d)}
         >
@@ -87,7 +89,7 @@ export function PinPad({ onDigit, onClear, onBackspace }: PinPadProps) {
       ))}
       <button
         type="button"
-        className="select-staff-keypad-key select-staff-keypad-key--dim"
+        className="keypad-key keypad-key--dim"
         aria-label="Clear"
         onClick={onClear}
       >
@@ -95,7 +97,7 @@ export function PinPad({ onDigit, onClear, onBackspace }: PinPadProps) {
       </button>
       <button
         type="button"
-        className="select-staff-keypad-key"
+        className="keypad-key"
         aria-label="Digit 0"
         onClick={() => onDigit("0")}
       >
@@ -103,7 +105,7 @@ export function PinPad({ onDigit, onClear, onBackspace }: PinPadProps) {
       </button>
       <button
         type="button"
-        className="select-staff-keypad-key select-staff-keypad-key--dim"
+        className="keypad-key keypad-key--dim"
         aria-label="Backspace"
         onClick={onBackspace}
       >

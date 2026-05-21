@@ -31,7 +31,7 @@ import { formatCurrency } from "@/lib/dashboard/format";
 import type { TransactionDetail } from "@/lib/transactions/aggregate";
 import { formatDayLabel } from "@/lib/transactions/format";
 import { MethodPill } from "@/components/lacquer/method-pill";
-import { TechAvatar } from "@/components/lacquer/tech-avatar";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 import { TechStack } from "@/components/lacquer/tech-stack";
 
 export type ReceiptDrawerProps = {
@@ -155,7 +155,12 @@ export function ReceiptDrawer({ transaction, staff, onClose }: ReceiptDrawerProp
                         {item.category && tech ? <span aria-hidden="true">·</span> : null}
                         {tech ? (
                           <span className="tp-d-tech-chip">
-                            <TechAvatar tech={tech} size={14} /> {firstName(tech.displayName)}
+                            <InitialsAvatar
+                              name={tech.displayName}
+                              colorToken={tech.colorToken}
+                              size={14}
+                            />{" "}
+                            {firstName(tech.displayName)}
                           </span>
                         ) : null}
                         {item.qty > 1 ? <span>· qty {item.qty}</span> : null}

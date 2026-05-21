@@ -25,6 +25,9 @@ import { useState } from "react";
 import { Power, PowerOff, Trash2 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/lacquer/staff/confirm-dialog";
+import { FormPendingSignal } from "@/components/lacquer/form-pending-signal";
+import { SubmitButton } from "@/components/lacquer/submit-button";
+import { Spinner } from "@/components/ui/spinner";
 import {
   deactivateStaff,
   reactivateStaff,
@@ -60,6 +63,7 @@ export function DangerZone({
   // Only one dialog can be open at a time, so a single
   // `confirmOpen: "deactivate" | "remove" | null` suffices.
   const [confirmOpen, setConfirmOpen] = useState<"deactivate" | "remove" | null>(null);
+  const [reactivating, setReactivating] = useState(false);
 
   return (
     <section className="danger-zone" data-section="danger-zone" data-slot="staff-danger-zone">
@@ -82,17 +86,29 @@ export function DangerZone({
         // Reactivate has no confirm dialog — single click per
         // ui.contract.md § Dialog strings. Sibling <form> below. The --safe
         // variant tints neutrally since reactivate isn't destructive.
+        // Plain <button type="submit"> so the form= attribute binding works;
+        // <SubmitButton> cannot see this form's pending state (not a child).
         <button
           type="submit"
           form="staff-reactivate-form"
           data-destructive="true"
           data-slot="danger-zone-reactivate"
-          disabled={!canReactivate}
+          disabled={!canReactivate || reactivating}
+          aria-busy={reactivating || undefined}
           title={tooltips.reactivate}
           className="danger-zone-button danger-zone-button--safe"
         >
-          <Power size={14} strokeWidth={1.5} aria-hidden="true" />
-          <span>Reactivate</span>
+          {reactivating ? (
+            <>
+              <Spinner size={16} strokeWidth={2} aria-hidden="true" />
+              <span>Reactivating…</span>
+            </>
+          ) : (
+            <>
+              <Power size={14} strokeWidth={1.5} aria-hidden="true" />
+              <span>Reactivate</span>
+            </>
+          )}
         </button>
       )}
       <button
@@ -112,7 +128,9 @@ export function DangerZone({
         the parent's updateStaff form so we don't nest forms (invalid HTML).
         The Reactivate button above carries form="staff-reactivate-form" so
         its type=submit dispatches into THIS form. Display:none — the
-        button-form binding works regardless of layout. */}
+        button-form binding works regardless of layout.
+        FormPendingSignal lifts this form's pending state to `reactivating`
+        so the sibling button above can show a spinner while the action runs. */}
       <form
         id="staff-reactivate-form"
         action={reactivateStaff}
@@ -120,6 +138,7 @@ export function DangerZone({
         style={{ display: "none" }}
       >
         <input type="hidden" name="staff_id" value={targetId} />
+        <FormPendingSignal onPendingChange={setReactivating} />
       </form>
 
       <ConfirmDialog
@@ -130,9 +149,13 @@ export function DangerZone({
       >
         <form action={deactivateStaff} data-slot="confirm-dialog-form" data-variant="deactivate">
           <input type="hidden" name="staff_id" value={targetId} />
-          <button type="submit" data-slot="confirm-dialog-submit" style={destructiveButtonStyle}>
+          <SubmitButton
+            data-slot="confirm-dialog-submit"
+            style={destructiveButtonStyle}
+            pendingLabel="Deactivating…"
+          >
             Deactivate
-          </button>
+          </SubmitButton>
         </form>
       </ConfirmDialog>
 
@@ -144,9 +167,13 @@ export function DangerZone({
       >
         <form action={removeStaff} data-slot="confirm-dialog-form" data-variant="remove">
           <input type="hidden" name="staff_id" value={targetId} />
-          <button type="submit" data-slot="confirm-dialog-submit" style={destructiveButtonStyle}>
+          <SubmitButton
+            data-slot="confirm-dialog-submit"
+            style={destructiveButtonStyle}
+            pendingLabel="Removing…"
+          >
             Remove from roster
-          </button>
+          </SubmitButton>
         </form>
       </ConfirmDialog>
     </section>

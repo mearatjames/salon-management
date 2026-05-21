@@ -385,7 +385,17 @@ test.describe("US3: edit a staff member", () => {
     const nameInput = page.locator("[data-slot='edit-panel-name-input']");
     await nameInput.fill(draftName);
 
-    await page.locator("[data-slot='edit-panel-save']").click();
+    const saveBtn = page.locator("[data-slot='edit-panel-save']");
+    await saveBtn.click();
+
+    // After the click, `SubmitButton` disables itself and sets `aria-busy`
+    // while the Server Action is in flight. Race-tolerant: `Promise.allSettled`
+    // so a fast local server that redirects before the retry window expires
+    // does not fail the suite — the unit tests back the pending-state logic.
+    await Promise.allSettled([
+      expect(saveBtn).toBeDisabled({ timeout: 2000 }),
+      expect(saveBtn).toHaveAttribute("aria-busy", "true", { timeout: 2000 }),
+    ]);
 
     // Server Action redirects back with ?selected=…&toast=changes_saved.
     await page.waitForURL(/\/settings\/staff\?selected=.+&toast=changes_saved/, {
@@ -512,14 +522,13 @@ test.describe("US4: set or change PIN", () => {
     await expect(pinBtn).toHaveText("Change");
     await expect(pinBtn).toBeEnabled();
 
-    // Open the modal — title says "Change PIN — <tech displayName>".
+    // Open the modal — title is just "Change PIN" (the staff name lives in
+    // the description, not the title, so a long name can't overflow).
     await pinBtn.click();
     const modal = page.locator("[data-slot='change-pin-modal']");
     await expect(modal).toBeVisible();
     await expect(modal).toHaveAttribute("data-mode", "change");
-    await expect(page.locator("[data-slot='change-pin-title']")).toHaveText(
-      `Change PIN — ${staffFixture.tech.displayName}`
-    );
+    await expect(page.locator("[data-slot='change-pin-title']")).toHaveText("Change PIN");
 
     // Enter phase — tap 1 1 1 1, keypad auto-advances to confirm.
     for (const d of ["1", "1", "1", "1"]) {
@@ -613,14 +622,13 @@ test.describe("US4: set or change PIN", () => {
     await expect(pinBtn).toHaveText("Set PIN");
     await expect(pinBtn).toBeEnabled();
 
-    // Open the modal — title says "Set PIN — <newLanaName>".
+    // Open the modal — title is just "Set PIN" (the staff name lives in the
+    // description, not the title, so a long name can't overflow).
     await pinBtn.click();
     const modal = page.locator("[data-slot='change-pin-modal']");
     await expect(modal).toBeVisible();
     await expect(modal).toHaveAttribute("data-mode", "set");
-    await expect(page.locator("[data-slot='change-pin-title']")).toHaveText(
-      `Set PIN — ${newLanaName}`
-    );
+    await expect(page.locator("[data-slot='change-pin-title']")).toHaveText("Set PIN");
 
     // Enter then confirm 2 2 2 2.
     for (const d of ["2", "2", "2", "2"]) {

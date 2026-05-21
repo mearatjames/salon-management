@@ -1,0 +1,46 @@
+/* Loading-state animations — shared by <Spinner> and <Skeleton>.
+   Canonical reference: design-system/preview/loading.html.
+   Every value traces to a token (Constitution Principle I). */
+
+/* Spinner — Lucide Loader2 arc, 1.2s linear (matches the
+   reconnecting-banner cadence). */
+@keyframes lq-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.lq-spinner {
+  animation: lq-spin 1.2s linear infinite;
+  display: block;
+  flex-shrink: 0;
+}
+
+/* Skeleton — horizontal shimmer sweep. More premium than an opacity
+   pulse (design-system/preview/loading.html). Base --muted, highlight
+   --neutral-300; the 1200px background-size gives a smooth cross-fade. */
+@keyframes lq-shimmer {
+  0% {
+    background-position: -600px 0;
+  }
+  100% {
+    background-position: 600px 0;
+  }
+}
+
+.lq-skeleton {
+  background: linear-gradient(90deg, var(--muted) 0%, var(--neutral-300) 45%, var(--muted) 80%);
+  background-size: 1200px 100%;
+  animation: lq-shimmer 1.6s ease-in-out infinite;
+}
+
+/* Respect reduced-motion: hold a static muted fill / slow the spinner. */
+@media (prefers-reduced-motion: reduce) {
+  .lq-spinner {
+    animation-duration: 2.4s;
+  }
+  .lq-skeleton {
+    animation: none;
+    background: var(--muted);
+  }
+}

@@ -21,6 +21,7 @@
 // the design-system handoff.
 
 import { signInWithGoogle } from "@/app/(auth)/login/actions";
+import { SubmitButton } from "@/components/lacquer/submit-button";
 
 const GOOGLE_ENABLED = process.env.NEXT_PUBLIC_GOOGLE_OAUTH_ENABLED === "true";
 
@@ -55,15 +56,15 @@ export function GoogleSignInButton({ next }: GoogleSignInButtonProps) {
   return (
     <form action={signInWithGoogle}>
       <input type="hidden" name="next" value={next ?? ""} />
-      <button
-        type="submit"
+      <SubmitButton
         className="auth-btn auth-btn-outline"
         data-slot="google-sign-in"
         style={{ gap: "var(--space-3)" }}
+        pendingLabel="Connecting…"
       >
         <GoogleIcon />
         Continue with Google
-      </button>
+      </SubmitButton>
     </form>
   );
 }

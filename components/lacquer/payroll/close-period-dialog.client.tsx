@@ -23,6 +23,7 @@ import { useRouter } from "next/navigation";
 import { Check, Lock } from "lucide-react";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
 import { closePeriod } from "@/app/(studio)/payroll/actions";
 
 export type ClosePeriodDialogProps = {
@@ -150,9 +151,14 @@ export function ClosePeriodDialog({ payPeriodId, periodLabel }: ClosePeriodDialo
                 className="pr-close-btn primary"
                 data-slot="close-period-confirm"
                 disabled={pending}
+                aria-busy={pending || undefined}
                 onClick={() => submit(unpaidWarning !== null)}
               >
-                <Check size={16} strokeWidth={1.5} aria-hidden="true" />
+                {pending ? (
+                  <Spinner size={16} strokeWidth={2} />
+                ) : (
+                  <Check size={16} strokeWidth={1.5} aria-hidden="true" />
+                )}
                 {pending ? "Closing…" : unpaidWarning !== null ? "Close anyway" : "Close period"}
               </button>
             </div>

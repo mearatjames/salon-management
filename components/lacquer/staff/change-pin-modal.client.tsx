@@ -16,7 +16,9 @@
 //   - Backdrop click / Cancel button closes with no state change
 //     (handleOpenChange resets every piece of state on close, identical
 //     pattern to add-staff-wizard.client.tsx).
-//   - Title: "Set PIN — {name}" or "Change PIN — {name}" (mode prop).
+//   - Title: "Set PIN" or "Change PIN" (mode prop). The staff name lives
+//     in the description, not the title, so a long name never overflows
+//     the dialog header.
 //
 // Submit happens server-side via the Server Action: we render a hidden
 // <form action={setStaffPin}> containing the matched FormData and call
@@ -35,6 +37,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { NumericKeypad } from "@/components/lacquer/numeric-keypad.client";
+import { FormPendingSignal } from "@/components/lacquer/form-pending-signal";
+import { Spinner } from "@/components/ui/spinner";
 import { setStaffPin } from "@/app/(studio)/settings/staff/actions";
 import {
   pinKeypadInit,
@@ -61,6 +65,7 @@ export function ChangePinModal({
   mode,
 }: ChangePinModalProps) {
   const [pinState, setPinState] = useState<PinKeypadState>(() => pinKeypadInit());
+  const [submitting, setSubmitting] = useState(false);
 
   const formRef = useRef<HTMLFormElement | null>(null);
   const submittingRef = useRef(false);
@@ -74,6 +79,7 @@ export function ChangePinModal({
       if (!next) {
         setPinState(pinKeypadInit());
         submittingRef.current = false;
+        setSubmitting(false);
       }
       onOpenChange(next);
     },
@@ -103,8 +109,10 @@ export function ChangePinModal({
     [pinState]
   );
 
-  const titleLabel = mode === "change" ? "Change PIN" : "Set PIN";
-  const title = `${titleLabel} — ${staffName}`;
+  // The staff name is intentionally NOT in the title — a long name pushes
+  // into the close button and overflows the header. It stays in the
+  // description below, which wraps freely.
+  const title = mode === "change" ? "Change PIN" : "Set PIN";
   const description =
     pinState.phase === "enter"
       ? `Enter a new 4-digit PIN for ${staffName}.`
@@ -126,14 +134,40 @@ export function ChangePinModal({
             alignItems: "center",
             gap: "var(--space-4)",
             padding: "var(--space-4) 0",
+            position: "relative",
           }}
         >
-          <NumericKeypad
-            step={pinState.phase}
-            errorMessage={pinState.error}
-            onSubmit={handleKeypadSubmit}
-            onCancel={handleClose}
-          />
+          {submitting ? (
+            <div
+              data-slot="change-pin-processing"
+              role="status"
+              aria-live="polite"
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-2)",
+                fontSize: "var(--text-sm)",
+                color: "var(--muted-foreground)",
+              }}
+            >
+              <Spinner size={16} strokeWidth={2} aria-hidden="true" />
+              <span>Saving…</span>
+            </div>
+          ) : null}
+          <div
+            style={{
+              opacity: submitting ? 0.5 : 1,
+              pointerEvents: submitting ? "none" : undefined,
+              transition: "opacity 150ms var(--ease-out)",
+            }}
+          >
+            <NumericKeypad
+              step={pinState.phase}
+              errorMessage={pinState.error}
+              onSubmit={handleKeypadSubmit}
+              onCancel={handleClose}
+            />
+          </div>
         </div>
 
         <DialogFooter>
@@ -159,7 +193,9 @@ export function ChangePinModal({
             keypad confirm handler can call requestSubmit() once both
             buffers match. The raw PIN crosses the wire here (HTTPS-only
             in production); it is hashed by the Server Action before any
-            DB write and is never recorded in audit. */}
+            DB write and is never recorded in audit.
+            FormPendingSignal lifts the form's pending state so the modal
+            body can show a processing indicator while the action runs. */}
         <form
           ref={formRef}
           action={setStaffPin}
@@ -168,6 +204,7 @@ export function ChangePinModal({
         >
           <input type="hidden" name="staff_id" value={staffId} />
           <input type="hidden" name="pin" value={pinState.enterBuf} />
+          <FormPendingSignal onPendingChange={setSubmitting} />
         </form>
       </DialogContent>
     </Dialog>

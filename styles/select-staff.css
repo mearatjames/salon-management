@@ -173,6 +173,13 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Interior padding + matching negative margin: the tiles stay aligned
+     with the search field above, but the scroll container gains room so a
+     hovered tile's lift (`translateY(-2px)`) and shadow aren't clipped at
+     the edges. Without it `overflow-y: auto` slices the top row's raised
+     border on hover. */
+  padding: var(--space-4);
+  margin: calc(var(--space-4) * -1);
 }
 
 /* ---------- Avatar tile ---------- */
@@ -273,6 +280,9 @@
   align-items: center;
   gap: var(--space-5);
   padding: var(--space-3) 0;
+  /* The dialog moves focus here on open (a non-interactive container) so no
+     keypad key is focused; suppress the focus ring on this landing target. */
+  outline: none;
 }
 
 .select-staff-modal-avatar {
@@ -311,6 +321,30 @@
   color: var(--muted-foreground);
 }
 
+/* ---------- PIN verification (processing) ---------- */
+/* Shown in place of the prompt line while `submitPin` is in flight —
+   an inline spinner + "Signing in…". The keypad below is already inert
+   during `isPending`; `data-verifying` dims it so it visibly reads as
+   locked. */
+.select-staff-modal-prompt[data-verifying="true"] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted-foreground);
+}
+/* The wrapper must fill the modal's width so `.keypad`'s `width: 100%`
+   resolves against a definite width. `.select-staff-modal` is a column
+   flex with `align-items: center`, which would otherwise shrink this
+   block to its content's intrinsic width — collapsing the 3-column grid
+   to ~137px and squashing the keys into tall slivers. */
+.select-staff-pin-pad-wrap {
+  width: 100%;
+}
+.select-staff-pin-pad-wrap[data-verifying="true"] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 /* ---------- PIN indicator (4-position) ---------- */
 .select-staff-pin-dots {
   display: flex;
@@ -338,48 +372,7 @@
 }
 
 /* ---------- Keypad (12-key, 3x4 grid) ---------- */
-.select-staff-keypad {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-3);
-  width: 100%;
-  max-width: 320px;
-  margin: 0 auto;
-}
-
-.select-staff-keypad-key {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 72px;
-  background: var(--card);
-  color: var(--card-foreground);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg); /* 12 — card */
-  font-family: var(--font-sans);
-  font-size: var(--text-3xl);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  transition:
-    background var(--duration-fast) var(--ease-out),
-    border-color var(--duration-fast) var(--ease-out);
-}
-.select-staff-keypad-key:hover {
-  background: var(--accent);
-  border-color: var(--ring);
-}
-.select-staff-keypad-key:active {
-  background: var(--muted);
-}
-.select-staff-keypad-key:focus-visible {
-  outline: none;
-  border-color: var(--ring);
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 18%, transparent);
-}
-
-/* The `Clear` / `Backspace` keys read as secondary controls. */
-.select-staff-keypad-key--dim {
-  font-size: var(--text-base);
-  color: var(--muted-foreground);
-}
+/* The keypad now lives in `styles/keypad.css` as the shared `.keypad*`
+   classes so the login keypad and the staff-settings Set/Change-PIN keypad
+   render identically. `pin-pad.tsx` carries the `.keypad` / `.keypad-key`
+   classes directly. */

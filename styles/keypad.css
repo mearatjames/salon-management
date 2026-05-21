@@ -1,0 +1,65 @@
+/* ==========================================================================
+   Tang Nails — Shared numeric keypad (12-key, 3×4 grid).
+
+   ONE keypad look, two surfaces:
+     • the select-staff login keypad — `components/lacquer/select-staff/pin-pad.tsx`
+     • the staff-settings Set / Change PIN keypad — `components/lacquer/numeric-keypad.client.tsx`
+
+   Both render an identical keypad so a staff member sees the same key sizes,
+   radii and layout whether they are logging in or changing a PIN. Keep this
+   the single source of truth — do not re-fork these values inline.
+
+   Imported globally from `styles/globals.css` so it is available on both the
+   `(device)` login route and the `(studio)` settings route.
+
+   Every value resolves to a `var(--*)` from `styles/tokens.css`.
+   Constitution Principle I.
+   ========================================================================== */
+
+/* ---------- Keypad grid ---------- */
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+/* ---------- Keypad key ---------- */
+.keypad-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 72px;
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg); /* 12 — card */
+  font-family: var(--font-sans);
+  font-size: var(--text-3xl);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.keypad-key:hover {
+  background: var(--accent);
+  border-color: var(--ring);
+}
+.keypad-key:active {
+  background: var(--muted);
+}
+.keypad-key:focus-visible {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 18%, transparent);
+}
+
+/* The `Clear` / `Backspace` keys read as secondary controls. */
+.keypad-key--dim {
+  font-size: var(--text-base);
+  color: var(--muted-foreground);
+}

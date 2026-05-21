@@ -15,7 +15,7 @@
 
 import { formatCurrency } from "@/lib/dashboard/format";
 import type { ReportTotals, TechnicianReport } from "@/lib/report/aggregate";
-import { TechAvatar } from "@/components/lacquer/tech-avatar";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 
 export type ReportStaffListProps = {
   technicians: readonly TechnicianReport[];
@@ -76,14 +76,7 @@ export function ReportStaffList({
           const body = (
             <>
               <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-                <TechAvatar
-                  tech={{
-                    id: tech.staffId,
-                    displayName: tech.displayName,
-                    colorToken: tech.colorToken,
-                  }}
-                  size={30}
-                />
+                <InitialsAvatar name={tech.displayName} colorToken={tech.colorToken} size={30} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
                     <span style={{ fontWeight: 600, fontSize: "var(--text-sm)" }}>

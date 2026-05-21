@@ -48,8 +48,8 @@ export function DisconnectButton() {
         <DialogHeader>
           <DialogTitle>Disconnect Square?</DialogTitle>
           <DialogDescription>
-            Tang Nails will stop accepting card payments until you reconnect. Cash payments are
-            unaffected.
+            Tang Nails Studio will stop accepting card payments until you reconnect. Cash payments
+            are unaffected.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -59,7 +59,7 @@ export function DisconnectButton() {
           <Button
             variant="destructive"
             onClick={handleConfirm}
-            disabled={pending}
+            loading={pending}
             data-testid="square-disconnect-confirm"
           >
             {pending ? "Disconnecting…" : "Disconnect"}

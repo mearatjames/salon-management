@@ -52,7 +52,6 @@ export type QuickAction = {
 
 export type DashboardData = {
   greeting: {
-    eyebrow: "Lacquer Studio · Front desk";
     title: "Today at the salon";
     subtitle: string;
   };

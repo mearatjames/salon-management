@@ -18,6 +18,7 @@ import { CheckCircle2 } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import { renameDevice, setDefaultDevice } from "@/app/(studio)/settings/square/actions";
 
 export type DeviceRow = {
@@ -160,6 +161,7 @@ function DeviceRowItem({ device }: { device: DeviceRow }) {
         borderBottom: "1px solid var(--border)",
       }}
       data-testid={`square-device-row-${device.square_device_id}`}
+      aria-busy={pending || undefined}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", minWidth: 0 }}>
         <Input
@@ -213,10 +215,18 @@ function DeviceRowItem({ device }: { device: DeviceRow }) {
           display: "inline-flex",
           alignItems: "center",
           justifyContent: "center",
-          color: device.is_default ? "var(--primary)" : "transparent",
+          color: pending
+            ? "var(--muted-foreground)"
+            : device.is_default
+              ? "var(--primary)"
+              : "transparent",
         }}
       >
-        <CheckCircle2 size={16} strokeWidth={1.5} />
+        {pending ? (
+          <Spinner size={16} strokeWidth={2} />
+        ) : (
+          <CheckCircle2 size={16} strokeWidth={1.5} />
+        )}
       </span>
     </li>
   );

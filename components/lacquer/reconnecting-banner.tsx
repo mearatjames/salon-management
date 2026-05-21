@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { Loader } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 
 const POLL_INTERVAL_MS = 10_000;
 
@@ -56,14 +56,8 @@ export function ReconnectingBanner() {
         fontSize: "var(--text-sm)",
       }}
     >
-      <Loader
-        size={16}
-        strokeWidth={1.5}
-        aria-hidden="true"
-        style={{ animation: `studio-spin 1.2s linear infinite` }}
-      />
+      <Spinner size={16} />
       Reconnecting…
-      <style>{`@keyframes studio-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 }

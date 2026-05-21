@@ -102,33 +102,8 @@
   gap: var(--space-4);
   padding: var(--space-5) var(--space-8) 0;
 }
-.tp-period {
-  display: inline-flex;
-  gap: 2px;
-  padding: var(--space-1);
-  background: var(--muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-}
-.tp-period button {
-  height: 28px;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-xs);
-  background: transparent;
-  border: 0;
-  font: 500 var(--text-xs) var(--font-sans);
-  color: var(--muted-foreground);
-  cursor: pointer;
-  transition: all var(--duration-fast) var(--ease-out);
-}
-.tp-period button:hover {
-  color: var(--foreground);
-}
-.tp-period button.active {
-  background: var(--card);
-  color: var(--foreground);
-  box-shadow: var(--shadow-xs);
-}
+/* The period toggle uses the shared `.tx-period` pill (styles/dashboard.css,
+   loaded app-wide by the studio layout) so it matches the dashboard. */
 
 .tp-range {
   display: inline-flex;
@@ -166,7 +141,12 @@
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-8) 0;
+  /* Bottom padding holds a gap between the KPI cards and the table's sticky
+     header. The header pins to the top of `.tp-table-scroll` (the next
+     sibling); without this gap it kisses the KPI cards once the list is
+     scrolled. The gap is outside the scroll container, so it always shows
+     the page background — scrolling rows never bleed into it. */
+  padding: var(--space-4) var(--space-8);
 }
 .tp-kpi {
   background: var(--card);
@@ -500,6 +480,11 @@
 .tp-day-group {
   margin-top: var(--space-4);
 }
+/* The first group needs no top margin — the KPI strip's bottom padding
+   already spaces it (and its sticky header) off the cards above. */
+.tp-day-group:first-child {
+  margin-top: 0;
+}
 .tp-day-h {
   display: grid;
   grid-template-columns: 1fr auto auto auto;
@@ -535,6 +520,10 @@
 /* ===== Transactions table ===== */
 .tp-table {
   width: 100%;
+  /* Fixed layout so every per-day table renders the identical column grid —
+     without it each <table> auto-sizes to its own day's content and the
+     columns drift between days. */
+  table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
   font-size: var(--text-sm);
@@ -556,6 +545,33 @@
 }
 .tp-table thead th.num {
   text-align: right;
+}
+/* Shared column widths — drive the fixed layout above. The Services column
+   (4th) is left unsized so it absorbs the remaining width; every other
+   column is pinned so the grid is identical across days. */
+.tp-table thead th:nth-child(1) {
+  width: 88px;
+}
+.tp-table thead th:nth-child(2) {
+  width: 96px;
+}
+.tp-table thead th:nth-child(3) {
+  width: 140px;
+}
+.tp-table thead th:nth-child(5) {
+  width: 120px;
+}
+.tp-table thead th:nth-child(6) {
+  width: 116px;
+}
+.tp-table thead th:nth-child(7) {
+  width: 108px;
+}
+.tp-table thead th:nth-child(8) {
+  width: 84px;
+}
+.tp-table thead th:nth-child(9) {
+  width: 100px;
 }
 .tp-table tbody tr {
   cursor: pointer;
@@ -599,7 +615,6 @@
 }
 .tp-table tbody td.services {
   color: var(--muted-foreground);
-  max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

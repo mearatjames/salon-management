@@ -598,6 +598,9 @@
 }
 
 .tx-numkey {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: var(--space-16);
   border-radius: var(--radius-md);
   background: var(--card);

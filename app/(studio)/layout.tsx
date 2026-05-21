@@ -3,8 +3,7 @@ import "@/styles/dashboard.css";
 
 import type { ReactNode } from "react";
 
-import { Sparkles } from "lucide-react";
-
+import { LacquerMark } from "@/components/lacquer/lacquer-mark";
 import { OperatorChip } from "@/components/lacquer/operator-chip";
 import { OperatorMenu } from "@/components/lacquer/operator-menu";
 import { ReconnectingBanner } from "@/components/lacquer/reconnecting-banner";
@@ -40,8 +39,8 @@ export default async function StudioLayout({ children }: Readonly<{ children: Re
         </aside>
         <header className="studio-topbar">
           <div className="studio-topbar-brand">
-            <Sparkles size={20} strokeWidth={1.5} aria-hidden="true" />
-            Tang Nails
+            <LacquerMark size={20} />
+            Tang Nails Studio
           </div>
           <div className="studio-topbar-center">
             <ReconnectingBanner />

@@ -17,7 +17,7 @@
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
-import { StaffAvatar } from "@/components/lacquer/staff/staff-avatar";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 import { StatusDot } from "@/components/lacquer/staff/status-dot";
 
 import type { RosterStaff } from "@/app/(studio)/settings/staff/_types";
@@ -67,7 +67,7 @@ export function StaffRow({ staff, isSelected, href }: StaffRowProps) {
       data-active={staff.active ? "true" : "false"}
     >
       <StatusDot active={staff.active} />
-      <StaffAvatar name={staff.display_name} colorToken={staff.color_token} size={40} />
+      <InitialsAvatar name={staff.display_name} colorToken={staff.color_token} size={40} />
       <span className="staff-row-identity">
         <span className="staff-row-name">{staff.display_name}</span>
         <span className="staff-row-role">{ROLE_LABEL[staff.role]}</span>

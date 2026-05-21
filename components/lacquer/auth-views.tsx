@@ -46,6 +46,7 @@ import {
   GoogleSignInButton,
   isGoogleSignInEnabled,
 } from "@/components/lacquer/google-sign-in-button";
+import { SubmitButton } from "@/components/lacquer/submit-button";
 
 function nextSuffix(next: string | undefined): string {
   return next ? encodeURIComponent(next) : "";
@@ -157,9 +158,9 @@ export function SignInView({ next, error }: SignInViewProps) {
 
           <input type="hidden" name="next" value={next ?? ""} />
 
-          <button type="submit" className="auth-btn auth-btn-primary">
+          <SubmitButton className="auth-btn auth-btn-primary" pendingLabel="Signing in…">
             Sign in
-          </button>
+          </SubmitButton>
         </div>
       </form>
 
@@ -226,9 +227,9 @@ export function ForgotView({ next, error }: ForgotViewProps) {
 
           <input type="hidden" name="next" value={next ?? ""} />
 
-          <button type="submit" className="auth-btn auth-btn-primary">
+          <SubmitButton className="auth-btn auth-btn-primary" pendingLabel="Sending…">
             Send reset link
-          </button>
+          </SubmitButton>
         </div>
       </form>
     </div>
@@ -310,9 +311,9 @@ export function MagicView({ next, error }: MagicViewProps) {
 
           <input type="hidden" name="next" value={next ?? ""} />
 
-          <button type="submit" className="auth-btn auth-btn-primary">
+          <SubmitButton className="auth-btn auth-btn-primary" pendingLabel="Sending…">
             Send link
-          </button>
+          </SubmitButton>
         </div>
       </form>
     </div>

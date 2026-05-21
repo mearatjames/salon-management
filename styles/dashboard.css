@@ -48,7 +48,13 @@
   border-radius: 9999px;
   border: 1px solid var(--border);
 }
-.tx-period button {
+/* Segments are <button> on the dashboard (client toggle) and <a> on the
+   transactions / report pages (URL-param links) — style both identically. */
+.tx-period button,
+.tx-period a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 28px;
   padding: 0 14px;
   border-radius: 9999px;
@@ -59,8 +65,15 @@
   font-weight: 500;
   font-family: var(--font-sans);
   color: var(--muted-foreground);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
 }
-.tx-period button.active {
+.tx-period button:hover,
+.tx-period a:hover {
+  color: var(--foreground);
+}
+.tx-period button.active,
+.tx-period a.active {
   background: var(--card);
   color: var(--foreground);
   box-shadow: var(--shadow-xs);
@@ -138,20 +151,6 @@
   align-items: center;
   justify-content: center;
 }
-/* `.tx-cta-primary .sub` must override the global `.sub { color: var(--muted-
-   foreground) }` rule below — otherwise the sub-line inherits muted gray on
-   the rose CTA and contrast collapses (~2:1, fails WCAG AA). Inherit the
-   CTA's `--primary-foreground` (white) instead. The prototype's
-   `opacity: 0.85` is also dropped: at full opacity the contrast lands at
-   ~4.6:1, just over AA; opacity 0.85 dropped it back below 4:1. */
-.tx-cta-primary .sub {
-  color: inherit;
-  font-size: 12px;
-  font-weight: 400;
-  margin-top: 2px;
-  letter-spacing: 0;
-}
-
 /* ---------- Secondary actions ---------- */
 .tx-secondary-action {
   background: var(--card);
@@ -364,18 +363,6 @@
   gap: 6px;
   flex-wrap: wrap;
 }
-.tx-tech-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 9999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 600;
-  background: var(--neutral-200);
-  color: var(--neutral-700);
-}
 .tx-tech-overflow {
   min-width: 36px;
   height: 36px;
@@ -425,24 +412,6 @@
 }
 .tx-link:hover {
   text-decoration: underline;
-}
-
-/* ---------- Loading-state pulse ---------- */
-/* Ambient 1500ms pulse for the dashboard `loading.tsx` placeholders. The
-   constitution's 150 / 200 / 300 ms reactive-affordance bands govern
-   user-driven feedback; this is a calm in-flight indicator with no
-   relationship to user input, so the longer cadence is intentional. */
-@keyframes tx-skeleton-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-.tx-skeleton {
-  animation: tx-skeleton-pulse 1500ms ease-in-out infinite;
 }
 
 /* ---------- Utilities ---------- */

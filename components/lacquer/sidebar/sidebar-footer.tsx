@@ -16,7 +16,8 @@
 // on-scale value to 26 (the alternative, 32, would visually dominate the
 // 56px collapsed rail).
 
-import { initials, roleLabel } from "@/components/lacquer/staff/initials";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
+import { roleLabel } from "@/components/lacquer/staff/initials";
 
 export type SidebarFooterProps = {
   staff: {
@@ -46,21 +47,16 @@ export function SidebarFooter({ staff, degraded }: SidebarFooterProps) {
     );
   }
 
-  const colorVar = `var(${staff.color_token})`;
   const label = roleLabel(staff.role);
 
   return (
     <div className="studio-sidebar-footer" title={`${staff.display_name} · ${label}`}>
-      <span
-        aria-hidden="true"
+      <InitialsAvatar
+        name={staff.display_name}
+        colorToken={staff.color_token}
+        size={24}
         className="studio-sidebar-footer-avatar"
-        style={{
-          background: colorVar,
-          color: "var(--primary-foreground)",
-        }}
-      >
-        {initials(staff.display_name)}
-      </span>
+      />
       <div className="studio-sidebar-footer-text">
         <div className="studio-sidebar-footer-name">{staff.display_name}</div>
         <div className="studio-sidebar-footer-role">{label}</div>

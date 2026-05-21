@@ -24,7 +24,7 @@ import { useState } from "react";
 import { Banknote, ChevronDown, CreditCard, Gift, Search, X } from "lucide-react";
 
 import type { Technician } from "@/lib/dashboard/aggregate";
-import { TechAvatar } from "@/components/lacquer/tech-avatar";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 // The method filter is "all" or one of the three payment methods. `"split"`
@@ -169,7 +169,7 @@ export function FilterBar({
                     </svg>
                   ) : null}
                 </span>
-                <TechAvatar tech={tech} size={20} />
+                <InitialsAvatar name={tech.displayName} colorToken={tech.colorToken} size={20} />
                 <span style={{ flex: 1 }}>{tech.displayName}</span>
               </div>
             );
@@ -194,7 +194,7 @@ export function FilterBar({
             if (!tech) return null;
             return (
               <span key={id} className="tp-active-pill" data-slot="active-tech-pill">
-                <TechAvatar tech={tech} size={14} />
+                <InitialsAvatar name={tech.displayName} colorToken={tech.colorToken} size={14} />
                 {tech.displayName.split(/\s+/)[0]}
                 <button
                   type="button"

@@ -3,6 +3,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
 
 import { cn } from "@/lib/utils";
+import { Spinner } from "@/components/ui/spinner";
 
 const buttonVariants = cva(
   "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
@@ -46,10 +47,18 @@ function Button({
   variant = "default",
   size = "default",
   asChild = false,
+  loading = false,
+  disabled,
+  style,
+  children,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean;
+    /** When true: disabled + aria-busy, prepends a <Spinner>, and uses
+     *  the design system's 0.72 loading opacity. Not supported with
+     *  asChild (Slot accepts a single child). */
+    loading?: boolean;
   }) {
   const Comp = asChild ? Slot.Root : "button";
 
@@ -58,9 +67,18 @@ function Button({
       data-slot="button"
       data-variant={variant}
       data-size={size}
+      data-loading={loading || undefined}
+      aria-busy={loading || undefined}
+      disabled={disabled || loading}
+      // Inline style beats the cva `disabled:opacity-50` utility, so the
+      // loading state lands on the design system's exact 0.72 opacity.
+      style={loading ? { opacity: 0.72, ...style } : style}
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
-    />
+    >
+      {loading && !asChild ? <Spinner size={16} strokeWidth={2} /> : null}
+      {children}
+    </Comp>
   );
 }
 

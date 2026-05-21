@@ -23,6 +23,7 @@ import { Eye, EyeOff } from "lucide-react";
 import { useState } from "react";
 
 import { updatePassword } from "@/app/(auth)/reset-password/actions";
+import { SubmitButton } from "@/components/lacquer/submit-button";
 
 type Props = {
   type?: "recovery" | "invite";
@@ -102,9 +103,12 @@ export function ResetPasswordForm({ type = "recovery" }: Props) {
             </div>
           </div>
 
-          <button type="submit" className="auth-btn auth-btn-primary">
+          <SubmitButton
+            className="auth-btn auth-btn-primary"
+            pendingLabel={isInvite ? "Setting password…" : "Updating…"}
+          >
             {submitLabel}
-          </button>
+          </SubmitButton>
         </div>
       </form>
     </div>

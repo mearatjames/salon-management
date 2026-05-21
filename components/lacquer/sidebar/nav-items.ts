@@ -54,6 +54,19 @@ export type NavItem = {
   disabled?: boolean;
 
   /**
+   * True when the item is fully configured (valid `href`, icon, label) but
+   * should NOT appear in the sidebar yet — the destination page isn't built.
+   * `SidebarShell` skips it entirely, so it leaves no trace in the DOM. Flip
+   * this to `false` (or delete the field) once the page ships to bring the
+   * item back.
+   *
+   * Distinct from `disabled`: a `disabled` item still renders as a greyed-out
+   * "Coming soon" placeholder and carries `href === null`; a `hidden` item
+   * keeps its real `href` and simply isn't rendered.
+   */
+  hidden?: boolean;
+
+  /**
    * Roles allowed to see this item. Absent ⇒ visible to all roles. The
    * sidebar role-filter (`SidebarShell`) skips any item whose `roles` is set
    * and does not include the viewer's role — UX only; the route's own
@@ -82,9 +95,13 @@ export type NavConfig = {
 };
 
 /**
- * Canonical studio sidebar nav config — matches
- * `specs/007-left-panel-nav/contracts/nav-items.contract.md` § 2 exactly.
+ * Canonical studio sidebar nav config — follows
+ * `specs/007-left-panel-nav/contracts/nav-items.contract.md` § 2.
  * Render order is the array order; do NOT sort.
+ *
+ * Items carrying `hidden: true` (schedule, clients, walk-in) stay in the
+ * config to preserve the IA but are skipped by `SidebarShell` until their
+ * pages are built.
  */
 export const NAV_CONFIG: NavConfig = {
   top: [{ id: "dashboard", label: "Dashboard", icon: Home, href: "/dashboard" }],
@@ -93,8 +110,11 @@ export const NAV_CONFIG: NavConfig = {
       id: "workspace",
       label: "Workspace",
       items: [
-        { id: "schedule", label: "Schedule", icon: Calendar, href: "/calendar" },
-        { id: "clients", label: "Clients", icon: Users, href: "/clients" },
+        // schedule / clients / walk-in are hidden until their pages exist —
+        // the entries stay here (config + IA preserved) so re-enabling them
+        // later is a one-field change. See `NavItem.hidden`.
+        { id: "schedule", label: "Schedule", icon: Calendar, href: "/calendar", hidden: true },
+        { id: "clients", label: "Clients", icon: Users, href: "/clients", hidden: true },
         { id: "services", label: "Services", icon: Sparkles, href: "/services" },
         { id: "checkout", label: "Checkout", icon: DollarSign, href: "/checkout" },
         {
@@ -104,7 +124,7 @@ export const NAV_CONFIG: NavConfig = {
           href: "/transactions",
           roles: ["owner", "manager"],
         },
-        { id: "walkin", label: "Walk-in", icon: Footprints, href: "/walkin" },
+        { id: "walkin", label: "Walk-in", icon: Footprints, href: "/walkin", hidden: true },
       ],
     },
     {
