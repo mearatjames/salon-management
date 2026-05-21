@@ -27,7 +27,7 @@ import { getSalonTimezone } from "@/lib/db/settings";
 import type { Database } from "@/lib/db/types";
 import { formatSubtitle, formatTime } from "@/lib/time/format";
 import { monthWindow, salonNow, todayWindow, weekWindow } from "@/lib/time/period-windows";
-import { Calendar, DollarSign, PersonStanding, Receipt } from "lucide-react";
+import { Banknote, Calendar, FileBarChart, Footprints } from "lucide-react";
 
 export { salonNow };
 
@@ -47,23 +47,23 @@ const QUICK_ACTIONS: readonly QuickAction[] = [
   },
   {
     id: "walkin",
-    label: "Quick walk-in",
+    label: "Walk-in",
     hint: "Skip the appointment book",
-    icon: PersonStanding,
+    icon: Footprints,
     href: "/walkin",
   },
   {
     id: "report",
-    label: "Day report (X-out)",
+    label: "Report",
     hint: "Sales by tech, by service",
-    icon: Receipt,
-    href: "/end-of-day?view=report",
+    icon: FileBarChart,
+    href: "/report",
   },
   {
     id: "cashout",
-    label: "End-of-day cash",
+    label: "End of Day Cash",
     hint: "Reconcile the till",
-    icon: DollarSign,
+    icon: Banknote,
     href: "/end-of-day",
   },
 ];
