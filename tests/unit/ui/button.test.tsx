@@ -21,6 +21,7 @@ describe("<Button loading>", () => {
     expect(btn).toBeDisabled();
     expect(btn).toHaveAttribute("aria-busy", "true");
     expect(btn).toHaveAttribute("data-loading", "true");
+    expect(btn.style.opacity).toBe("0.72");
   });
 
   it("keeps its children visible while loading (caller swaps the label)", () => {
