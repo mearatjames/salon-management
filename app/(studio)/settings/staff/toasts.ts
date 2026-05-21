@@ -16,4 +16,8 @@ export const TOAST = {
   selfEditBlocked: () => "You can't change your own role, deactivate, or remove yourself.",
   notFound: () => "That staff member was removed by another tab.",
   forbidden: () => "Staff settings is restricted to owners and managers.",
+  // Catch-all for any `?error=` code without a dedicated mapping (e.g. a
+  // validation code like `invalid_role`). Defense in depth — a save
+  // failure must never be swallowed silently (issue #112).
+  genericError: () => "Something went wrong. Please try again.",
 } as const;

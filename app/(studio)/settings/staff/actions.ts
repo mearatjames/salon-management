@@ -352,9 +352,19 @@ export async function updateStaff(formData: FormData): Promise<void> {
         ? target.check_portion_cents
         : validateCheckPortionDollars(String(rawCheckPortion));
 
+    // `role` is absent from FormData when the edit panel renders the role
+    // <select> disabled — a self-edit, last-owner, or manager×owner target.
+    // A disabled control is omitted from the submission, so fall back to the
+    // target's stored role (the diff then records no change), exactly as the
+    // payroll-rate trio above handles its read-only case. Without this, a
+    // self-edit of any other field was rejected with `invalid_role` and the
+    // whole save silently failed. Issue #112.
+    const rawRole = formData.get("role");
+    const proposedRole = rawRole === null ? target.role : validateRole(String(rawRole));
+
     const proposed: StaffDiffSnapshot = {
       display_name: validateDisplayName(String(formData.get("display_name") ?? "")),
-      role: validateRole(String(formData.get("role") ?? "")),
+      role: proposedRole,
       color_token: validateColor(String(formData.get("color_token") ?? "")),
       // FormData encodes unchecked switches by omission; "on" means checked.
       active: formData.get("active") === "on",
