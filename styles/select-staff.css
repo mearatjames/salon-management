@@ -321,6 +321,22 @@
   color: var(--muted-foreground);
 }
 
+/* ---------- PIN verification (processing) ---------- */
+/* Shown in place of the prompt line while `submitPin` is in flight —
+   an inline spinner + "Signing in…". The keypad below is already inert
+   during `isPending`; `data-verifying` dims it so it visibly reads as
+   locked. */
+.select-staff-modal-prompt[data-verifying="true"] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted-foreground);
+}
+.select-staff-pin-pad-wrap[data-verifying="true"] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 /* ---------- PIN indicator (4-position) ---------- */
 .select-staff-pin-dots {
   display: flex;

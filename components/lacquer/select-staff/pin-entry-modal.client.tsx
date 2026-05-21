@@ -39,6 +39,7 @@ import { submitPin } from "@/app/(device)/select-staff/actions";
 import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 import { roleLabel } from "@/components/lacquer/staff/initials";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Spinner } from "@/components/ui/spinner";
 
 import { PinPad } from "./pin-pad";
 import type { StaffRosterEntry } from "./select-staff-screen.client";
@@ -170,8 +171,18 @@ export function PinEntryModal({ staff, next, onClose }: PinEntryModalProps) {
             <span className="select-staff-modal-role">{roleLabel(staff.role)}</span>
           </div>
 
-          <DialogDescription className="select-staff-modal-prompt">
-            Enter your 4-digit PIN
+          <DialogDescription
+            className="select-staff-modal-prompt"
+            data-verifying={isPending ? "true" : undefined}
+          >
+            {isPending ? (
+              <>
+                <Spinner size={16} />
+                Signing in…
+              </>
+            ) : (
+              "Enter your 4-digit PIN"
+            )}
           </DialogDescription>
 
           {/* 4-position indicator — driven off buffer.length, never the
@@ -196,13 +207,20 @@ export function PinEntryModal({ staff, next, onClose }: PinEntryModalProps) {
 
           {/* Keyed on `attemptCount` so the bufferless keypad remounts on
               every failed attempt — a repeated identical wrong PIN clears
-              deterministically (research R3/R4). */}
-          <PinPad
-            key={attemptCount}
-            onDigit={handleDigit}
-            onClear={handleClear}
-            onBackspace={handleBackspace}
-          />
+              deterministically (research R3/R4). Wrapped in a div so the
+              `data-verifying` attribute can be applied for the CSS dim —
+              PinPad does not forward arbitrary props onto its root element. */}
+          <div
+            className="select-staff-pin-pad-wrap"
+            data-verifying={isPending ? "true" : undefined}
+          >
+            <PinPad
+              key={attemptCount}
+              onDigit={handleDigit}
+              onClear={handleClear}
+              onBackspace={handleBackspace}
+            />
+          </div>
         </div>
       </DialogContent>
     </Dialog>
