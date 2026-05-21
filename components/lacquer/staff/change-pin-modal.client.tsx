@@ -140,6 +140,8 @@ export function ChangePinModal({
           {submitting ? (
             <div
               data-slot="change-pin-processing"
+              role="status"
+              aria-live="polite"
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -148,13 +150,13 @@ export function ChangePinModal({
                 color: "var(--muted-foreground)",
               }}
             >
-              <Spinner size={16} strokeWidth={2} />
+              <Spinner size={16} strokeWidth={2} aria-hidden="true" />
               <span>Saving…</span>
             </div>
           ) : null}
           <div
             style={{
-              opacity: submitting ? 0.4 : 1,
+              opacity: submitting ? 0.5 : 1,
               pointerEvents: submitting ? "none" : undefined,
               transition: "opacity 150ms var(--ease-out)",
             }}

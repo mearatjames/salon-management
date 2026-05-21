@@ -94,6 +94,7 @@ export function DangerZone({
           data-destructive="true"
           data-slot="danger-zone-reactivate"
           disabled={!canReactivate || reactivating}
+          aria-busy={reactivating || undefined}
           title={tooltips.reactivate}
           className="danger-zone-button danger-zone-button--safe"
         >

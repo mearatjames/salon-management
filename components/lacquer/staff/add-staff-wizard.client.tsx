@@ -556,6 +556,7 @@ function Step3Done({
         onClick={onDone}
         data-slot="wizard-done-button"
         disabled={submitting}
+        aria-busy={submitting || undefined}
         style={{
           marginTop: "var(--space-2)",
           padding: "var(--space-2) var(--space-4)",
@@ -565,8 +566,8 @@ function Step3Done({
           borderRadius: "var(--radius-sm)",
           fontSize: "var(--text-sm)",
           fontWeight: 600,
-          cursor: submitting ? "default" : "pointer",
-          opacity: submitting ? 0.6 : 1,
+          cursor: submitting ? "not-allowed" : "pointer",
+          opacity: submitting ? 0.72 : 1,
           display: "inline-flex",
           alignItems: "center",
           gap: "var(--space-2)",
