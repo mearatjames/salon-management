@@ -414,24 +414,6 @@
   text-decoration: underline;
 }
 
-/* ---------- Loading-state pulse ---------- */
-/* Ambient 1500ms pulse for the dashboard `loading.tsx` placeholders. The
-   constitution's 150 / 200 / 300 ms reactive-affordance bands govern
-   user-driven feedback; this is a calm in-flight indicator with no
-   relationship to user input, so the longer cadence is intentional. */
-@keyframes tx-skeleton-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
-}
-.tx-skeleton {
-  animation: tx-skeleton-pulse 1500ms ease-in-out infinite;
-}
-
 /* ---------- Utilities ---------- */
 .tnum {
   font-variant-numeric: tabular-nums;

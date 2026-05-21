@@ -1,5 +1,7 @@
 import "@/styles/dashboard.css";
 
+import { Skeleton } from "@/components/ui/skeleton";
+
 // Dashboard loading.tsx — rendered by Next.js while the server-side data
 // fetch for `app/(studio)/dashboard/page.tsx` is in flight.
 //
@@ -8,17 +10,9 @@ import "@/styles/dashboard.css";
 // `.tx-stat-card` slots + a two-column-spanning `.tx-stat-card` for the
 // Payment-mix tile, and an empty feed-shell beneath.
 //
-// Every placeholder uses `background: var(--muted)` and a radius from the
-// existing token scale. The `.tx-skeleton` class (defined in
-// `styles/dashboard.css`) carries the 1500ms ambient pulse. The pulse is
-// intentional (it never indicates progress) and so doesn't compete with
-// the 150/200/300ms reactive-affordance bands.
+// Every placeholder uses the shimmer `<Skeleton>` primitive
+// (`styles/loading.css`).
 export default function DashboardLoading() {
-  const placeholder = {
-    background: "var(--muted)",
-    borderRadius: 8,
-  } as const;
-
   return (
     <div className="tx-landing">
       <div
@@ -26,15 +20,9 @@ export default function DashboardLoading() {
         style={{ paddingBottom: 14, borderBottomColor: "var(--border)" }}
       >
         <div style={{ width: "60%" }}>
-          <div className="tx-skeleton" style={{ ...placeholder, width: 160, height: 12 }} />
-          <div
-            className="tx-skeleton"
-            style={{ ...placeholder, width: 220, height: 24, marginTop: 8 }}
-          />
-          <div
-            className="tx-skeleton"
-            style={{ ...placeholder, width: 280, height: 12, marginTop: 8 }}
-          />
+          <Skeleton width={160} height={12} radius="var(--radius-md)" />
+          <Skeleton width={220} height={24} radius="var(--radius-md)" style={{ marginTop: 8 }} />
+          <Skeleton width={280} height={12} radius="var(--radius-md)" style={{ marginTop: 8 }} />
         </div>
         <div
           style={{
@@ -44,14 +32,8 @@ export default function DashboardLoading() {
             gap: 10,
           }}
         >
-          <div
-            className="tx-skeleton"
-            style={{ ...placeholder, width: 180, height: 32, borderRadius: 9999 }}
-          />
-          <div
-            className="tx-skeleton"
-            style={{ ...placeholder, width: 200, height: 56, borderRadius: 12 }}
-          />
+          <Skeleton width={180} height={32} radius="var(--radius-full)" />
+          <Skeleton width={200} height={56} radius="var(--radius-lg)" />
         </div>
       </div>
 
@@ -76,43 +58,24 @@ export default function DashboardLoading() {
         >
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="tx-stat-card" data-slot="stat-card">
-              <div className="tx-skeleton" style={{ ...placeholder, width: 80, height: 12 }} />
-              <div
-                className="tx-skeleton"
-                style={{ ...placeholder, width: 96, height: 24, marginTop: 6 }}
-              />
-              <div
-                className="tx-skeleton"
-                style={{ ...placeholder, width: 60, height: 10, marginTop: 6 }}
-              />
+              <Skeleton width={80} height={12} radius="var(--radius-md)" />
+              <Skeleton width={96} height={24} radius="var(--radius-md)" style={{ marginTop: 6 }} />
+              <Skeleton width={60} height={10} radius="var(--radius-md)" style={{ marginTop: 6 }} />
             </div>
           ))}
           <div style={{ gridColumn: "span 2" }}>
             <div className="tx-stat-card" data-slot="payment-mix-card" style={{ minHeight: 0 }}>
-              <div className="tx-skeleton" style={{ ...placeholder, width: 96, height: 12 }} />
-              <div
-                className="tx-skeleton"
-                style={{
-                  ...placeholder,
-                  width: "100%",
-                  height: 8,
-                  marginTop: 8,
-                  borderRadius: 9999,
-                }}
+              <Skeleton width={96} height={12} radius="var(--radius-md)" />
+              <Skeleton
+                width="100%"
+                height={8}
+                radius="var(--radius-full)"
+                style={{ marginTop: 8 }}
               />
               <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 8 }}>
-                <div
-                  className="tx-skeleton"
-                  style={{ ...placeholder, width: "100%", height: 12 }}
-                />
-                <div
-                  className="tx-skeleton"
-                  style={{ ...placeholder, width: "100%", height: 12 }}
-                />
-                <div
-                  className="tx-skeleton"
-                  style={{ ...placeholder, width: "100%", height: 12 }}
-                />
+                <Skeleton width="100%" height={12} radius="var(--radius-md)" />
+                <Skeleton width="100%" height={12} radius="var(--radius-md)" />
+                <Skeleton width="100%" height={12} radius="var(--radius-md)" />
               </div>
             </div>
           </div>
@@ -123,11 +86,7 @@ export default function DashboardLoading() {
             <div className="muted">Quick actions</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }} aria-hidden="true">
               {[0, 1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="tx-skeleton"
-                  style={{ ...placeholder, height: 56, borderRadius: 10 }}
-                />
+                <Skeleton key={i} height={56} radius="var(--radius-lg)" />
               ))}
             </div>
           </div>
@@ -137,11 +96,7 @@ export default function DashboardLoading() {
             </div>
             <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
               {[0, 1, 2, 3, 4].map((i) => (
-                <div
-                  key={i}
-                  className="tx-skeleton"
-                  style={{ ...placeholder, height: 28, borderRadius: 6 }}
-                />
+                <Skeleton key={i} height={28} radius="var(--radius-sm)" />
               ))}
             </div>
           </div>

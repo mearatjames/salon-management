@@ -6,57 +6,37 @@
 // real content arrives: the `.tp-head` band, the `.tp-period-row`, the
 // five-card `.tp-kpis` strip, and a table-shell beneath.
 //
-// Every placeholder uses `background: var(--muted)` and a token-scale radius.
-// The pulse is the dashboard skeleton's ambient one (no progress semantics) —
-// reuses the `.tx-skeleton` class from `styles/dashboard.css`.
+// Every placeholder uses the shimmer `<Skeleton>` primitive
+// (`styles/loading.css`).
 
 import "@/styles/transactions.css";
-import "@/styles/dashboard.css";
+
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function TransactionsLoading() {
-  const placeholder = {
-    background: "var(--muted)",
-    borderRadius: 8,
-  } as const;
-
   return (
     <div className="tp-page" aria-hidden="true">
       <div className="tp-head">
         <div>
-          <div className="tx-skeleton" style={{ ...placeholder, width: 200, height: 28 }} />
-          <div
-            className="tx-skeleton"
-            style={{ ...placeholder, width: 360, height: 12, marginTop: 8 }}
-          />
+          <Skeleton width={200} height={28} radius="var(--radius-md)" />
+          <Skeleton width={360} height={12} radius="var(--radius-md)" style={{ marginTop: 8 }} />
         </div>
         <div className="actions">
-          <div
-            className="tx-skeleton"
-            style={{ ...placeholder, width: 150, height: 34, borderRadius: 6 }}
-          />
+          <Skeleton width={150} height={34} radius="var(--radius-sm)" />
         </div>
       </div>
 
       <div className="tp-period-row">
-        <div
-          className="tx-skeleton"
-          style={{ ...placeholder, width: 240, height: 30, borderRadius: 8 }}
-        />
-        <div className="tx-skeleton" style={{ ...placeholder, width: 220, height: 26 }} />
+        <Skeleton width={240} height={30} radius="var(--radius-md)" />
+        <Skeleton width={220} height={26} radius="var(--radius-md)" />
       </div>
 
       <div className="tp-kpis">
         {[0, 1, 2, 3, 4].map((i) => (
           <div key={i} className="tp-kpi">
-            <div className="tx-skeleton" style={{ ...placeholder, width: 96, height: 10 }} />
-            <div
-              className="tx-skeleton"
-              style={{ ...placeholder, width: 72, height: 24, marginTop: 6 }}
-            />
-            <div
-              className="tx-skeleton"
-              style={{ ...placeholder, width: 84, height: 10, marginTop: 6 }}
-            />
+            <Skeleton width={96} height={10} radius="var(--radius-md)" />
+            <Skeleton width={72} height={24} radius="var(--radius-md)" style={{ marginTop: 6 }} />
+            <Skeleton width={84} height={10} radius="var(--radius-md)" style={{ marginTop: 6 }} />
           </div>
         ))}
       </div>
@@ -64,18 +44,14 @@ export default function TransactionsLoading() {
       <div className="tp-table-scroll">
         <div className="tp-day-group">
           <div className="tp-day-h">
-            <div className="tx-skeleton" style={{ ...placeholder, width: 200, height: 16 }} />
-            <div className="tx-skeleton" style={{ ...placeholder, width: 48, height: 12 }} />
-            <div className="tx-skeleton" style={{ ...placeholder, width: 72, height: 12 }} />
-            <div className="tx-skeleton" style={{ ...placeholder, width: 64, height: 12 }} />
+            <Skeleton width={200} height={16} radius="var(--radius-md)" />
+            <Skeleton width={48} height={12} radius="var(--radius-md)" />
+            <Skeleton width={72} height={12} radius="var(--radius-md)" />
+            <Skeleton width={64} height={12} radius="var(--radius-md)" />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px 0" }}>
             {[0, 1, 2, 3, 4, 5].map((i) => (
-              <div
-                key={i}
-                className="tx-skeleton"
-                style={{ ...placeholder, height: 36, borderRadius: 6 }}
-              />
+              <Skeleton key={i} height={36} radius="var(--radius-sm)" />
             ))}
           </div>
         </div>
