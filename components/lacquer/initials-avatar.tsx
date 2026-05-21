@@ -11,9 +11,8 @@
 // Client Components. Initials come from the shared `initials()` helper.
 //
 // Sizing is intentionally caller-controlled (`size`, default 40px); only
-// the color scheme is fixed. Pass `separated` for overlapping stacks (adds
-// a 2px card-colored ring so neighbours read apart). Any extra props —
-// `className`, `style`, `data-*` — pass straight through to the span.
+// the color scheme is fixed. Any extra props — `className`, `style`,
+// `data-*` — pass straight through to the span.
 
 import type { CSSProperties, HTMLAttributes } from "react";
 
@@ -27,15 +26,12 @@ export type InitialsAvatarProps = HTMLAttributes<HTMLSpanElement> & {
   colorToken: string | null | undefined;
   /** Box edge in px. Defaults to 40 (10 × the 4px grid unit). */
   size?: number;
-  /** Adds a 2px card-colored ring — for overlapping avatar stacks. */
-  separated?: boolean;
 };
 
 export function InitialsAvatar({
   name,
   colorToken,
   size = 40,
-  separated = false,
   style,
   ...rest
 }: InitialsAvatarProps) {
@@ -59,7 +55,6 @@ export function InitialsAvatar({
     fontSize: `${fontPx}px`,
     letterSpacing: "var(--tracking-wide)",
     userSelect: "none",
-    ...(separated ? { boxShadow: "0 0 0 2px var(--card)" } : null),
     ...style,
   };
 
