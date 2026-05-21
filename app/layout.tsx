@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 import "@/styles/globals.css";
@@ -17,6 +17,13 @@ export const metadata: Metadata = {
   title: "Tang Nails Studio",
   description:
     "Salon management for Tang Nails Studio — checkout, transactions, payroll, and daily reporting.",
+};
+
+// Tints the mobile browser address bar and the installed-app title bar with
+// the app's own warm near-white background, so the chrome blends into the
+// studio surface. Mirrors `theme_color` in `app/manifest.ts`.
+export const viewport: Viewport = {
+  themeColor: "#FCFCF9",
 };
 
 // Studio sidebar collapse preference is persisted in a cookie so the root
