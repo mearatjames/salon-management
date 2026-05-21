@@ -153,6 +153,11 @@ export const AFFECTED_MAP = {
   "components/lacquer/report/**": ["tests/e2e/report.spec.ts"],
   "lib/report/**": ["tests/e2e/report.spec.ts"],
 
+  // Payroll page (feature 047).
+  "app/(studio)/payroll/**": ["tests/e2e/payroll.spec.ts"],
+  "lib/payroll/**": ["tests/e2e/payroll.spec.ts"],
+  "components/lacquer/payroll/**": ["tests/e2e/payroll.spec.ts"],
+
   // Dashboard.
   "app/(studio)/dashboard/**": ["tests/e2e/dashboard.spec.ts"],
   "components/lacquer/period-summary.client.tsx": ["tests/e2e/dashboard.spec.ts"],

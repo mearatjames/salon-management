@@ -96,7 +96,11 @@ export type AuditAction =
   // unexpected state (orphan capture — payment row succeeds, ticket
   // untouched).
   | "payment.captured_after_discard"
-  | "payment.capture_orphaned";
+  | "payment.capture_orphaned"
+  // Added by feature 047 (entity_type "payroll")
+  | "payroll.payout_recorded"
+  | "payroll.payout_undone"
+  | "payroll.period_closed";
 
 export function deriveEntityType(
   action: AuditAction
@@ -110,7 +114,8 @@ export function deriveEntityType(
   | "integration"
   | "gift_card"
   | "cash_drawer"
-  | "supply_type" {
+  | "supply_type"
+  | "payroll" {
   if (action.startsWith("user.")) return "user";
   if (action.startsWith("ticket.")) return "ticket";
   // Feature 018 — gift_card.* verbs (placed before payment.* so the
@@ -132,6 +137,8 @@ export function deriveEntityType(
   if (action.startsWith("integration.")) return "integration";
   // Feature 019 — cash_drawer.closed (lazy-open inside the close RPC).
   if (action.startsWith("cash_drawer.")) return "cash_drawer";
+  // Feature 047 — payroll.payout_recorded / payout_undone / period_closed.
+  if (action.startsWith("payroll.")) return "payroll";
   if (
     action === "staff.added" ||
     action === "staff.updated" ||

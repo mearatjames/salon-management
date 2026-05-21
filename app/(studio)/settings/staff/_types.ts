@@ -30,4 +30,14 @@ export type RosterStaff = {
    *  supply_type ids exempted from deduction. Always `[]` in other modes
    *  (DB CHECK constraint `staff_supply_except_empty_unless_partial_chk`). */
   supply_except: readonly string[];
+  /** 047-payroll-page § US5: share of service income the tech keeps, stored
+   *  as a 0–1 fraction (`numeric(5,4)`). The Payroll ledger applies it to
+   *  commissionable income. */
+  service_commission_pct: number;
+  /** 047-payroll-page § US5: share of the tech's card tips they keep, stored
+   *  as a 0–1 fraction. */
+  tip_split_pct: number;
+  /** 047-payroll-page § US5: the dollar amount paid each period by physical
+   *  check as W-2 wage, stored as integer cents. */
+  check_portion_cents: number;
 };

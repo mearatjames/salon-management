@@ -9,6 +9,7 @@ import {
   Settings,
   Sparkles,
   Users,
+  Wallet,
   type LucideIcon,
 } from "lucide-react";
 
@@ -116,6 +117,13 @@ export const NAV_CONFIG: NavConfig = {
           label: "Report",
           icon: FileBarChart,
           href: "/report",
+          roles: ["owner", "manager"],
+        },
+        {
+          id: "payroll",
+          label: "Payroll",
+          icon: Wallet,
+          href: "/payroll",
           roles: ["owner", "manager"],
         },
         { id: "settings", label: "Settings", icon: Settings, href: "/settings" },

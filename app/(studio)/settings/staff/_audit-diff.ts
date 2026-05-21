@@ -20,10 +20,11 @@ import type { StudioRole } from "@/lib/auth/session";
 import type { StaffSupplyMode } from "./_types";
 
 /**
- * The 7 mutable columns on `staff` that participate in the `changes` audit
+ * The 10 mutable columns on `staff` that participate in the `changes` audit
  * field. Order matches the canonical diff order asserted in the contract
  * test — display_name → role → color_token → active → card_fee_exempt →
- * supply_mode → supply_except.
+ * supply_mode → supply_except → service_commission_pct → tip_split_pct →
+ * check_portion_cents.
  */
 export const STAFF_DIFF_KEYS = [
   "display_name",
@@ -34,6 +35,11 @@ export const STAFF_DIFF_KEYS = [
   "card_fee_exempt",
   "supply_mode",
   "supply_except",
+  // 047-payroll-page § US5 — per-tech payroll rates. Stored values:
+  // *_pct are 0–1 fractions; check_portion_cents is integer cents.
+  "service_commission_pct",
+  "tip_split_pct",
+  "check_portion_cents",
 ] as const;
 
 export type StaffSnapshotKey = (typeof STAFF_DIFF_KEYS)[number];
@@ -47,6 +53,11 @@ export type StaffSnapshot = {
   card_fee_exempt: boolean;
   supply_mode: StaffSupplyMode;
   supply_except: readonly string[];
+  // 047-payroll-page § US5 — per-tech payroll rates. *_pct are stored as
+  // 0–1 fractions; check_portion_cents is integer cents.
+  service_commission_pct: number;
+  tip_split_pct: number;
+  check_portion_cents: number;
 };
 
 export type StaffChanges = {

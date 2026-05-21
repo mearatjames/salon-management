@@ -82,7 +82,7 @@ export default async function StaffSettingsPage({
   const { data, error } = await supabase
     .from("staff")
     .select(
-      "id, display_name, role, color_token, active, created_at, pin_hash, card_fee_exempt, supply_mode, supply_except"
+      "id, display_name, role, color_token, active, created_at, pin_hash, card_fee_exempt, supply_mode, supply_except, service_commission_pct, tip_split_pct, check_portion_cents"
     )
     .is("removed_at", null)
     .order("display_name", { ascending: true });
@@ -107,6 +107,13 @@ export default async function StaffSettingsPage({
       supply_mode:
         ((row as { supply_mode?: string | null }).supply_mode as StaffSupplyMode | null) ?? "apply",
       supply_except: (row as { supply_except?: string[] | null }).supply_except ?? [],
+      // 047-payroll-page § US5 — per-tech payroll rates. Coerce to 0 when the
+      // migration hasn't been applied locally.
+      service_commission_pct:
+        (row as { service_commission_pct?: number | null }).service_commission_pct ?? 0,
+      tip_split_pct: (row as { tip_split_pct?: number | null }).tip_split_pct ?? 0,
+      check_portion_cents:
+        (row as { check_portion_cents?: number | null }).check_portion_cents ?? 0,
     }))
   );
 
@@ -175,6 +182,10 @@ export default async function StaffSettingsPage({
               card_fee_exempt: selectedTarget.card_fee_exempt,
               supply_mode: selectedTarget.supply_mode,
               supply_except: selectedTarget.supply_except,
+              // 047-payroll-page § US5 — per-tech payroll rates.
+              service_commission_pct: selectedTarget.service_commission_pct,
+              tip_split_pct: selectedTarget.tip_split_pct,
+              check_portion_cents: selectedTarget.check_portion_cents,
             }}
             isLastOwner={isLastOwnerForTarget}
             supplyCatalog={supplyCatalog ?? undefined}
@@ -204,6 +215,10 @@ export default async function StaffSettingsPage({
               card_fee_exempt: selectedTarget.card_fee_exempt,
               supply_mode: selectedTarget.supply_mode,
               supply_except: selectedTarget.supply_except,
+              // 047-payroll-page § US5 — per-tech payroll rates.
+              service_commission_pct: selectedTarget.service_commission_pct,
+              tip_split_pct: selectedTarget.tip_split_pct,
+              check_portion_cents: selectedTarget.check_portion_cents,
             }}
             isLastOwner={isLastOwnerForTarget}
             supplyCatalog={supplyCatalog ?? undefined}

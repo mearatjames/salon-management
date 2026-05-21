@@ -460,3 +460,108 @@ begin
   ) on conflict (id) do nothing;
 end
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Feature 047 (Payroll Page) — seeded payroll rates on the three seed staff,
+-- one open pay period (May 16 – 31, 2026) and one closed pay period
+-- (May 1 – 15, 2026) with frozen `payroll_payouts` rows. Guarded on the
+-- seed owner so this NEVER runs against a production database. Fixed UUIDs
+-- in the '70000000-…' range; idempotent via `on conflict do nothing`.
+--
+-- Rates are consistent with design-system/prototypes/payroll/data.jsx:
+--   * Maya (owner)        — 90% commission, 100% tip split, $2,500 check
+--   * Jordan (manager)    — 85% commission, 100% tip split, $1,500 check
+--   * Sam (technician)    — 65% commission,  90% tip split, $1,003 check
+--
+-- Closed-period payouts satisfy `payroll_payouts_paid_consistency_chk` and
+-- the cash clamp `cash = max(0, income_after_split + tips_after_split −
+-- check_portion)`: Maya + Jordan are paid (Zelle / cash), Sam is a frozen
+-- `paid = false` placeholder (closed while unpaid).
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_owner  uuid := '10000000-0000-0000-0000-000000000001';
+  v_jordan uuid := '10000000-0000-0000-0000-000000000002';
+  v_sam    uuid := '10000000-0000-0000-0000-000000000003';
+  v_open_period   uuid := '70000000-0000-0000-0000-000000000001';
+  v_closed_period uuid := '70000000-0000-0000-0000-000000000002';
+begin
+  if not exists (select 1 from public.staff where id = v_owner) then
+    return;
+  end if;
+  if to_regclass('public.pay_periods') is null then
+    return;
+  end if;
+
+  -- 1) Payroll rates on the three seed staff.
+  update public.staff
+     set service_commission_pct = 0.9000, tip_split_pct = 1.0000, check_portion_cents = 250000
+   where id = v_owner;
+  update public.staff
+     set service_commission_pct = 0.8500, tip_split_pct = 1.0000, check_portion_cents = 150000
+   where id = v_jordan;
+  update public.staff
+     set service_commission_pct = 0.6500, tip_split_pct = 0.9000, check_portion_cents = 100300
+   where id = v_sam;
+
+  -- 2) Open pay period: May 16 – 31, 2026, pay date June 2, 2026.
+  insert into public.pay_periods (id, starts_on, ends_on, pay_date, status)
+  values (v_open_period, '2026-05-16', '2026-05-31', '2026-06-02', 'open')
+  on conflict (id) do nothing;
+
+  -- 3) Closed pay period: May 1 – 15, 2026, pay date May 17, 2026.
+  insert into public.pay_periods (
+    id, starts_on, ends_on, pay_date, status, closed_at, closed_by_staff_id
+  ) values (
+    v_closed_period, '2026-05-01', '2026-05-15', '2026-05-17', 'closed',
+    ('2026-05-17'::timestamp + interval '11 hours') at time zone 'America/Los_Angeles',
+    v_owner
+  ) on conflict (id) do nothing;
+
+  -- 4) Frozen payouts for the closed period.
+  --    Maya — paid via Zelle. income_after = round(800000*0.90)=720000;
+  --    tips_after = round(50000*1.00)=50000; cash = 720000+50000-250000 = 520000.
+  insert into public.payroll_payouts (
+    id, pay_period_id, staff_id, paid, method, paid_on,
+    recorded_by_staff_id, paid_at,
+    commissionable_cents, income_after_split_cents,
+    card_tips_cents, tips_after_split_cents,
+    check_portion_cents, cash_payment_cents,
+    service_commission_pct, tip_split_pct
+  ) values (
+    '70000000-0000-0000-0000-000000000101', v_closed_period, v_owner, true, 'zelle',
+    '2026-05-17', v_owner,
+    ('2026-05-17'::timestamp + interval '11 hours') at time zone 'America/Los_Angeles',
+    800000, 720000, 50000, 50000, 250000, 520000, 0.9000, 1.0000
+  ) on conflict (pay_period_id, staff_id) do nothing;
+
+  --    Jordan — paid via cash. income_after = round(600000*0.85)=510000;
+  --    tips_after = round(40000*1.00)=40000; cash = 510000+40000-150000 = 400000.
+  insert into public.payroll_payouts (
+    id, pay_period_id, staff_id, paid, method, paid_on,
+    recorded_by_staff_id, paid_at,
+    commissionable_cents, income_after_split_cents,
+    card_tips_cents, tips_after_split_cents,
+    check_portion_cents, cash_payment_cents,
+    service_commission_pct, tip_split_pct
+  ) values (
+    '70000000-0000-0000-0000-000000000102', v_closed_period, v_jordan, true, 'cash',
+    '2026-05-17', v_owner,
+    ('2026-05-17'::timestamp + interval '11 hours') at time zone 'America/Los_Angeles',
+    600000, 510000, 40000, 40000, 150000, 400000, 0.8500, 1.0000
+  ) on conflict (pay_period_id, staff_id) do nothing;
+
+  --    Sam — frozen unpaid placeholder. income_after = round(450000*0.65)=292500;
+  --    tips_after = round(35000*0.90)=31500; cash = 292500+31500-100300 = 223700.
+  insert into public.payroll_payouts (
+    id, pay_period_id, staff_id, paid,
+    commissionable_cents, income_after_split_cents,
+    card_tips_cents, tips_after_split_cents,
+    check_portion_cents, cash_payment_cents,
+    service_commission_pct, tip_split_pct
+  ) values (
+    '70000000-0000-0000-0000-000000000103', v_closed_period, v_sam, false,
+    450000, 292500, 35000, 31500, 100300, 223700, 0.6500, 0.9000
+  ) on conflict (pay_period_id, staff_id) do nothing;
+end
+$$;

@@ -29,6 +29,10 @@ function mk(
     card_fee_exempt: partial.card_fee_exempt ?? false,
     supply_mode: partial.supply_mode ?? "apply",
     supply_except: partial.supply_except ?? [],
+    // 047-payroll-page § US5 — defaults for the per-tech payroll-rate fields.
+    service_commission_pct: partial.service_commission_pct ?? 0,
+    tip_split_pct: partial.tip_split_pct ?? 0,
+    check_portion_cents: partial.check_portion_cents ?? 0,
   };
 }
 

@@ -31,7 +31,13 @@ export type StaffAction =
   // fields (card_fee_exempt + supply_mode + supply_except) per Clarify Q1 +
   // research § R11. Not in SELF_BLOCKED_ACTIONS — operators may edit their
   // own pay-deduction settings; gated by the existing canEditAnyField matrix.
-  | "update_pay_deductions";
+  | "update_pay_deductions"
+  // 047-payroll-page § US5: one label covers all three per-tech payroll-rate
+  // fields (service_commission_pct + tip_split_pct + check_portion_cents).
+  // OWNER-ONLY per FR-002/FR-033 — a manager attempting to change a rate
+  // field is rejected. Not in SELF_BLOCKED_ACTIONS — an owner may edit their
+  // own rates.
+  | "update_payroll_rates";
 
 export type PermissionContext = {
   operator: { id: string; role: StudioRole };
@@ -44,7 +50,10 @@ export type PermissionErrorCode =
   | "forbidden_target"
   | "self_edit_blocked"
   | "last_owner"
-  | "invalid_role";
+  | "invalid_role"
+  // 047-payroll-page § US5: a non-owner attempted an owner-only action
+  // (editing per-tech payroll rates). FR-002/FR-033.
+  | "forbidden";
 
 export class PermissionError extends Error {
   readonly code: PermissionErrorCode;
@@ -67,6 +76,9 @@ export type StaffTargetPermissions = {
   canDeactivate: boolean;
   canReactivate: boolean;
   canRemove: boolean;
+  /** 047-payroll-page § US5 — per-tech payroll rates are owner-only. The
+   *  edit panel renders the rates section read-only when this is false. */
+  canEditPayrollRates: boolean;
 };
 
 const SETTINGS_OPERATORS: readonly StudioRole[] = ["owner", "manager"];
@@ -109,6 +121,13 @@ export function assertMutationAllowed(
   // 1. Operator-role gate.
   if (!SETTINGS_OPERATORS.includes(operator.role)) {
     throw new PermissionError("forbidden_target");
+  }
+
+  // 1b. Owner-only gate (047-payroll-page § US5). Editing per-tech payroll
+  //     rates is restricted to owners — a manager (otherwise a valid settings
+  //     operator) is rejected before any target evaluation. FR-002/FR-033.
+  if (action === "update_payroll_rates" && operator.role !== "owner") {
+    throw new PermissionError("forbidden");
   }
 
   // 2. Role-asymmetry gate: manager × owner → forbidden_target.
@@ -195,6 +214,10 @@ export function computeTargetPermissions(ctx: PermissionContext): StaffTargetPer
   const canDeactivate = canToggleActive && (target?.active ?? false);
   const canReactivate = !isManagerOnOwner && !(target?.active ?? false) && target !== null;
 
+  // 047-payroll-page § US5 — payroll rates are owner-only, independent of the
+  // manager×owner axis (a manager can't edit them on ANY target).
+  const canEditPayrollRates = operator.role === "owner" && !isManagerOnOwner;
+
   return {
     isSelf: Boolean(isSelf),
     isLastOwner,
@@ -207,5 +230,6 @@ export function computeTargetPermissions(ctx: PermissionContext): StaffTargetPer
     canDeactivate,
     canReactivate,
     canRemove,
+    canEditPayrollRates,
   };
 }

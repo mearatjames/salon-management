@@ -18,7 +18,11 @@ export type ValidationErrorCode =
   | "invalid_pin_shape"
   // 023-staff-payout-exemptions
   | "invalid_supply_mode"
-  | "invalid_supply_except_shape";
+  | "invalid_supply_except_shape"
+  // 047-payroll-page § US5 — per-tech payroll rate fields.
+  | "invalid_commission_pct"
+  | "invalid_tip_split_pct"
+  | "invalid_check_portion";
 
 export class ValidationError extends Error {
   readonly code: ValidationErrorCode;
@@ -150,4 +154,62 @@ export function validateSupplyExcept(
     if (cleaned.length >= SUPPLY_EXCEPT_MAX) break;
   }
   return cleaned;
+}
+
+// ── 047-payroll-page § US5 — per-tech payroll rates ──────────────────────
+//
+// The staff edit panel gains three payroll fields. The UI submits
+// human-friendly values (percentages 0–100, dollars); the validators below
+// convert them to the storage shape and reject anything out of range or
+// non-numeric. Permission scoping (owner-only) lives in `permissions.ts` and
+// `actions.ts` — this file is purely shape/format validation per the module
+// contract above.
+
+/**
+ * Parse a strict decimal number from a raw FormData string. Returns the
+ * finite number on success or `null` for anything that is not a plain decimal
+ * literal — empty/whitespace, `NaN`/`Infinity`, currency/grouping symbols, or
+ * exponent notation. Stricter than `Number()` so `"1e2"`, `"1,000"`, `"$10"`
+ * and `"  "` all fail rather than silently coercing.
+ */
+function parseStrictDecimal(input: string): number | null {
+  const trimmed = (input ?? "").trim();
+  // Plain decimal: optional sign, digits, optional fractional part. No
+  // exponent, no thousands separators, no currency symbols.
+  if (!/^-?\d*\.?\d+$/.test(trimmed)) {
+    return null;
+  }
+  const value = Number(trimmed);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Validate one of the two percentage rate fields (`service_commission_pct`,
+ * `tip_split_pct`). The UI submits a 0–100 percentage; this returns the value
+ * as a 0–1 fraction for storage (`numeric(5,4)`). Rejects non-numeric input
+ * and values outside the 0–100 range with the caller-supplied error code.
+ */
+export function validatePercentField(
+  input: string,
+  code: Extract<ValidationErrorCode, "invalid_commission_pct" | "invalid_tip_split_pct">
+): number {
+  const value = parseStrictDecimal(input);
+  if (value === null || value < 0 || value > 100) {
+    throw new ValidationError(code);
+  }
+  return value / 100;
+}
+
+/**
+ * Validate the check-portion field. The UI submits a dollars amount; this
+ * returns the value as non-negative integer cents (rounded to the nearest
+ * cent). Rejects non-numeric input and negative amounts with
+ * `invalid_check_portion`.
+ */
+export function validateCheckPortionDollars(input: string): number {
+  const dollars = parseStrictDecimal(input);
+  if (dollars === null || dollars < 0) {
+    throw new ValidationError("invalid_check_portion");
+  }
+  return Math.round(dollars * 100);
 }
