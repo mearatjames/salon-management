@@ -332,6 +332,14 @@
   gap: var(--space-2);
   color: var(--muted-foreground);
 }
+/* The wrapper must fill the modal's width so `.keypad`'s `width: 100%`
+   resolves against a definite width. `.select-staff-modal` is a column
+   flex with `align-items: center`, which would otherwise shrink this
+   block to its content's intrinsic width — collapsing the 3-column grid
+   to ~137px and squashing the keys into tall slivers. */
+.select-staff-pin-pad-wrap {
+  width: 100%;
+}
 .select-staff-pin-pad-wrap[data-verifying="true"] {
   opacity: 0.5;
   pointer-events: none;
