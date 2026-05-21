@@ -121,7 +121,7 @@ export function TechAvatarRow({ staff, selectedStaffId, onPick, onClear }: TechA
       >
         Assign a tech to start
       </span>
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-4)" }}>
         {staff.map((s) => {
           return (
             <button
