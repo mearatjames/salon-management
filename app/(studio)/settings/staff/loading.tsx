@@ -4,8 +4,9 @@
 //
 // Mirrors the live page's `.settings-staff-grid` chrome so the layout
 // doesn't shift when real content arrives: the two-column grid with the
-// roster column on the left (page header + chip bar + table rows) and
-// the edit-panel column on the right (empty-state).
+// roster column on the left (page header + one horizontal control bar
+// [filter chips on the left, search input + Add Staff button on the right]
+// + table rows) and the edit-panel column on the right (empty-state).
 //
 // Every placeholder uses the shimmer `<Skeleton>` primitive
 // (`styles/loading.css`).
@@ -25,21 +26,40 @@ export default function StaffSettingsLoading() {
           <Skeleton width={220} height={12} radius="var(--radius-md)" style={{ marginTop: 6 }} />
         </div>
 
-        {/* Control bar: search + chip bar + Add Staff button */}
+        {/* Control bar: filter chips (left) + search input + Add Staff button (right).
+            Mirrors the real StaffTable control bar — one horizontal flex row
+            with justifyContent space-between, matching the live layout exactly. */}
         <div
           style={{
             display: "flex",
-            flexDirection: "column",
+            alignItems: "center",
             gap: "var(--space-3)",
+            flexWrap: "wrap",
+            justifyContent: "space-between",
           }}
         >
-          {/* Search input */}
-          <Skeleton height={36} radius="var(--radius-xs)" />
-          {/* Filter chip bar: All · Active · Inactive */}
+          {/* Filter chip bar: Active · Inactive · All */}
           <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-            {[72, 60, 72].map((w, i) => (
+            {[60, 72, 44].map((w, i) => (
               <Skeleton key={i} width={w} height={28} radius="var(--radius-full)" />
             ))}
+          </div>
+          {/* Right group: search input + Add Staff button */}
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: "var(--space-3)",
+              flex: "1 1 auto",
+              justifyContent: "flex-end",
+            }}
+          >
+            <Skeleton
+              height={36}
+              radius="var(--radius-xs)"
+              style={{ flex: "1 1 auto", maxWidth: 240 }}
+            />
+            <Skeleton width={100} height={36} radius="var(--radius-sm)" />
           </div>
         </div>
 

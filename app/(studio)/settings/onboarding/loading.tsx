@@ -21,7 +21,7 @@ function OnbSectionSkeleton({ rowCount }: { rowCount: number }) {
     <div className="onb-section">
       {/* Section head: icon + title + count chip + sub */}
       <div className="onb-section-head">
-        <Skeleton width={16} height={16} radius="var(--radius-sm)" style={{ marginTop: 2 }} />
+        <Skeleton width={16} height={16} radius="var(--radius-sm)" style={{ marginTop: 4 }} />
         <div className="onb-section-text">
           <Skeleton width={120} height={14} radius="var(--radius-md)" />
           <Skeleton width={280} height={10} radius="var(--radius-md)" style={{ marginTop: 4 }} />
@@ -94,7 +94,7 @@ export default function OnboardingSettingsLoading() {
 
       {/* Owners-only notice */}
       <div className="onb-notice">
-        <Skeleton width={16} height={16} radius="var(--radius-sm)" style={{ marginTop: 2 }} />
+        <Skeleton width={16} height={16} radius="var(--radius-sm)" style={{ marginTop: 4 }} />
         <Skeleton width={380} height={10} radius="var(--radius-md)" />
       </div>
 
