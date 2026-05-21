@@ -26,6 +26,7 @@ import { KeyRound, ShieldCheck } from "lucide-react";
 
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
+import { SubmitButton } from "@/components/lacquer/submit-button";
 import { ChangePinModal } from "@/components/lacquer/staff/change-pin-modal.client";
 import { ColorPicker } from "@/components/lacquer/staff/color-picker";
 import { DangerZone } from "@/components/lacquer/staff/danger-zone.client";
@@ -476,10 +477,10 @@ export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPa
           data-section so the US6 ordering test can locate it between
           Pay & deductions and Danger zone. */}
         <div data-section="save" data-slot="staff-panel-section-save">
-          <button
-            type="submit"
+          <SubmitButton
             data-slot="edit-panel-save"
             disabled={!canSave}
+            pendingLabel="Saving…"
             style={{
               width: "100%",
               padding: "var(--space-2) var(--space-4)",
@@ -496,7 +497,7 @@ export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPa
             }}
           >
             Save changes
-          </button>
+          </SubmitButton>
         </div>
       </form>
 

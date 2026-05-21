@@ -25,6 +25,7 @@ import { useState } from "react";
 import { Power, PowerOff, Trash2 } from "lucide-react";
 
 import { ConfirmDialog } from "@/components/lacquer/staff/confirm-dialog";
+import { SubmitButton } from "@/components/lacquer/submit-button";
 import {
   deactivateStaff,
   reactivateStaff,
@@ -82,18 +83,18 @@ export function DangerZone({
         // Reactivate has no confirm dialog — single click per
         // ui.contract.md § Dialog strings. Sibling <form> below. The --safe
         // variant tints neutrally since reactivate isn't destructive.
-        <button
-          type="submit"
+        <SubmitButton
           form="staff-reactivate-form"
           data-destructive="true"
           data-slot="danger-zone-reactivate"
           disabled={!canReactivate}
           title={tooltips.reactivate}
           className="danger-zone-button danger-zone-button--safe"
+          pendingLabel="Reactivating…"
         >
           <Power size={14} strokeWidth={1.5} aria-hidden="true" />
           <span>Reactivate</span>
-        </button>
+        </SubmitButton>
       )}
       <button
         type="button"
@@ -130,9 +131,13 @@ export function DangerZone({
       >
         <form action={deactivateStaff} data-slot="confirm-dialog-form" data-variant="deactivate">
           <input type="hidden" name="staff_id" value={targetId} />
-          <button type="submit" data-slot="confirm-dialog-submit" style={destructiveButtonStyle}>
+          <SubmitButton
+            data-slot="confirm-dialog-submit"
+            style={destructiveButtonStyle}
+            pendingLabel="Deactivating…"
+          >
             Deactivate
-          </button>
+          </SubmitButton>
         </form>
       </ConfirmDialog>
 
@@ -144,9 +149,13 @@ export function DangerZone({
       >
         <form action={removeStaff} data-slot="confirm-dialog-form" data-variant="remove">
           <input type="hidden" name="staff_id" value={targetId} />
-          <button type="submit" data-slot="confirm-dialog-submit" style={destructiveButtonStyle}>
+          <SubmitButton
+            data-slot="confirm-dialog-submit"
+            style={destructiveButtonStyle}
+            pendingLabel="Removing…"
+          >
             Remove from roster
-          </button>
+          </SubmitButton>
         </form>
       </ConfirmDialog>
     </section>
