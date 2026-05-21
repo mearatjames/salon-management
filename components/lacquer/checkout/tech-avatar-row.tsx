@@ -13,6 +13,8 @@
 // All visuals trace to Lacquer tokens. No emoji in chrome; the colored
 // dot in the chip is a `<span>` background, not a glyph (Principle I).
 
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
+
 type ActiveStaff = {
   id: string;
   display_name: string;
@@ -29,13 +31,6 @@ export type TechAvatarRowProps = {
   /** Called when the operator taps "Change" in the post-pick chip. */
   onClear: () => void;
 };
-
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
 
 // First name only — labels each avatar in the pre-pick picker so techs
 // are identifiable at a glance. Mirrors the prototype's
@@ -128,8 +123,6 @@ export function TechAvatarRow({ staff, selectedStaffId, onPick, onClear }: TechA
       </span>
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
         {staff.map((s) => {
-          const tint = `oklch(from var(${s.color_token}) l c h / 0.15)`;
-          const fg = `var(${s.color_token})`;
           return (
             <button
               key={s.id}
@@ -152,24 +145,7 @@ export function TechAvatarRow({ staff, selectedStaffId, onPick, onClear }: TechA
             >
               {/* Initials swatch — decorative; the button's aria-label
                   and the name span below carry the accessible meaning. */}
-              <span
-                aria-hidden="true"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: "var(--space-8)",
-                  height: "var(--space-8)",
-                  borderRadius: "var(--radius-full)",
-                  background: tint,
-                  color: fg,
-                  fontWeight: 600,
-                  fontSize: "var(--text-xs)",
-                  border: "1px solid var(--border)",
-                }}
-              >
-                {initials(s.display_name)}
-              </span>
+              <InitialsAvatar name={s.display_name} colorToken={s.color_token} size={32} />
               <span
                 style={{
                   maxWidth: "var(--space-16)",

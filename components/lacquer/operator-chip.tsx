@@ -8,7 +8,8 @@ import type { ButtonHTMLAttributes } from "react";
 
 import { ChevronDown } from "lucide-react";
 
-import { initials, roleLabel } from "@/components/lacquer/staff/initials";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
+import { roleLabel } from "@/components/lacquer/staff/initials";
 
 type StaffShape = {
   display_name: string;
@@ -21,8 +22,6 @@ export type OperatorChipProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 };
 
 export function OperatorChip({ staff, ...buttonProps }: OperatorChipProps) {
-  const colorVar = `var(${staff.color_token})`;
-
   return (
     <button
       type="button"
@@ -42,24 +41,7 @@ export function OperatorChip({ staff, ...buttonProps }: OperatorChipProps) {
         ...(buttonProps.style ?? {}),
       }}
     >
-      <span
-        aria-hidden="true"
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: "var(--space-8)",
-          height: "var(--space-8)",
-          borderRadius: "var(--radius-full)",
-          background: colorVar,
-          color: "var(--primary-foreground)",
-          fontSize: "var(--text-xs)",
-          fontWeight: 600,
-          letterSpacing: "var(--tracking-wide)",
-        }}
-      >
-        {initials(staff.display_name)}
-      </span>
+      <InitialsAvatar name={staff.display_name} colorToken={staff.color_token} size={32} />
       <span style={{ fontWeight: 500 }}>{staff.display_name}</span>
       <span
         style={{

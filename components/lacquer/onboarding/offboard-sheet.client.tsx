@@ -22,7 +22,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { StaffAvatar } from "@/components/lacquer/staff/staff-avatar";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 import { roleLabel } from "@/components/lacquer/staff/initials";
 import { offboardUser } from "@/app/(studio)/settings/onboarding/actions";
 
@@ -81,7 +81,7 @@ export function OffboardSheet({ open, onOpenChange, target, isLastOwner }: Offbo
           </SheetDescription>
 
           <div className="onb-offb-person-card" data-slot="offb-person-card">
-            <StaffAvatar name={target.display_name} colorToken={target.color_token} size={40} />
+            <InitialsAvatar name={target.display_name} colorToken={target.color_token} size={40} />
             <div className="onb-offb-person-text">
               <div className="onb-offb-person-name">{target.display_name}</div>
               <div className="onb-offb-person-meta">

@@ -40,7 +40,7 @@ import {
   DEFAULT_COLOR_TOKEN,
   STAFF_COLOR_OPTIONS,
 } from "@/components/lacquer/staff/color-picker";
-import { StaffAvatar } from "@/components/lacquer/staff/staff-avatar";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 import { roleOptionsFor, type StudioRole } from "@/app/(studio)/settings/staff/permissions";
 import { addStaff } from "@/app/(studio)/settings/staff/actions";
 import {
@@ -258,7 +258,7 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
             data-slot="add-staff-wizard-preview"
             aria-label="Roster preview"
           >
-            <StaffAvatar name={previewName} colorToken={colorToken} size={40} />
+            <InitialsAvatar name={previewName} colorToken={colorToken} size={40} />
             <div className="add-staff-wizard-preview-text">
               <span className="add-staff-wizard-preview-name">{previewName}</span>
               <span className="add-staff-wizard-preview-subtitle">
@@ -530,7 +530,7 @@ function Step3Done({
           width: "100%",
         }}
       >
-        <StaffAvatar name={displayName} colorToken={colorToken} size={40} />
+        <InitialsAvatar name={displayName} colorToken={colorToken} size={40} />
         <div style={{ display: "flex", flexDirection: "column", textAlign: "left" }}>
           <span style={{ fontSize: "var(--text-sm)", fontWeight: 500 }}>{displayName}</span>
           <span style={{ fontSize: "var(--text-xs)", color: "var(--muted-foreground)" }}>

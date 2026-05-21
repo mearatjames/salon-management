@@ -36,36 +36,14 @@
 import { useRef, useState, useTransition } from "react";
 
 import { submitPin } from "@/app/(device)/select-staff/actions";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
+import { roleLabel } from "@/components/lacquer/staff/initials";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 
 import { PinPad } from "./pin-pad";
 import type { StaffRosterEntry } from "./select-staff-screen.client";
 
 const PIN_LENGTH = 4;
-
-// Initials for the modal avatar — first + last initial, or the first two
-// characters of a single-word name. Mirrors `staff-avatar-tile.tsx`.
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-function roleLabel(role: string): string {
-  switch (role) {
-    case "owner":
-      return "Owner";
-    case "manager":
-      return "Manager";
-    case "technician":
-      return "Tech";
-    case "front_desk":
-      return "Front desk";
-    default:
-      return role;
-  }
-}
 
 export type PinEntryModalProps = {
   staff: StaffRosterEntry;
@@ -162,20 +140,16 @@ export function PinEntryModal({ staff, next, onClose }: PinEntryModalProps) {
     if (!open) onClose();
   }
 
-  // Avatar tint idiom (research R8): a 15%-opacity wash of the staff color
-  // token behind the full-opacity token-colored initials.
-  const avatarStyle = {
-    background: `oklch(from var(${staff.color_token}) l c h / 0.15)`,
-    color: `var(${staff.color_token})`,
-  };
-
   return (
     <Dialog open onOpenChange={handleOpenChange}>
       <DialogContent>
         <div className="select-staff-modal">
-          <span className="select-staff-modal-avatar" style={avatarStyle} aria-hidden="true">
-            {initials(staff.display_name)}
-          </span>
+          <InitialsAvatar
+            name={staff.display_name}
+            colorToken={staff.color_token}
+            size={80}
+            className="select-staff-modal-avatar"
+          />
           <div className="select-staff-modal-identity">
             <DialogTitle className="select-staff-modal-name">{staff.display_name}</DialogTitle>
             <span className="select-staff-modal-role">{roleLabel(staff.role)}</span>

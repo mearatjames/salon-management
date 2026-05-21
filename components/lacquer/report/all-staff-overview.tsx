@@ -16,7 +16,7 @@ import { Info } from "lucide-react";
 
 import { formatCurrency } from "@/lib/dashboard/format";
 import type { ReportTotals, TechnicianReport } from "@/lib/report/aggregate";
-import { TechAvatar } from "@/components/lacquer/tech-avatar";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 
 export type AllStaffOverviewProps = {
   technicians: readonly TechnicianReport[];
@@ -82,12 +82,9 @@ export function AllStaffOverview({ technicians, totals }: AllStaffOverviewProps)
               <tr key={tech.staffId} className="dr-staff-row" data-tech-id={tech.staffId}>
                 <td>
                   <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-                    <TechAvatar
-                      tech={{
-                        id: tech.staffId,
-                        displayName: tech.displayName,
-                        colorToken: tech.colorToken,
-                      }}
+                    <InitialsAvatar
+                      name={tech.displayName}
+                      colorToken={tech.colorToken}
                       size={26}
                     />
                     <div>

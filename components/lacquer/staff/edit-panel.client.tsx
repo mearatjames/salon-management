@@ -31,7 +31,7 @@ import { ColorPicker } from "@/components/lacquer/staff/color-picker";
 import { DangerZone } from "@/components/lacquer/staff/danger-zone.client";
 import { PayDeductionsSection } from "@/components/lacquer/staff/pay-deductions-section.client";
 import { PayrollRatesSection } from "@/components/lacquer/staff/payroll-rates-section.client";
-import { StaffAvatar } from "@/components/lacquer/staff/staff-avatar";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 import { StatusBadges } from "@/components/lacquer/staff/status-badges";
 
 import type { RosterStaff } from "@/app/(studio)/settings/staff/_types";
@@ -198,7 +198,7 @@ export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPa
         avatar + name + role + added date + status badges sit visually on
         their own surface; the form below carries the editable sections. */}
       <header className="staff-panel-profile-header" data-slot="staff-panel-profile-header">
-        <StaffAvatar
+        <InitialsAvatar
           name={previewName(draft.display_name, target.display_name)}
           colorToken={draft.color_token}
           size={64}

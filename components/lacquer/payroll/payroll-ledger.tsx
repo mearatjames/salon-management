@@ -16,7 +16,7 @@ import Link from "next/link";
 
 import { formatCount, formatCurrency, formatPercent } from "@/lib/dashboard/format";
 import type { PayrollLedgerModel, PayrollLedgerRow } from "@/lib/payroll/aggregate";
-import { TechAvatar } from "@/components/lacquer/tech-avatar";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 
 export type PayrollLedgerProps = {
   model: PayrollLedgerModel;
@@ -94,14 +94,7 @@ export function PayrollLedger({ model, rows, periodQuery }: PayrollLedgerProps) 
                     aria-label={`Open ${row.displayName}'s payroll detail`}
                     data-slot="ledger-row-link"
                   />
-                  <TechAvatar
-                    tech={{
-                      id: row.staffId,
-                      displayName: row.displayName,
-                      colorToken: row.colorToken,
-                    }}
-                    size={30}
-                  />
+                  <InitialsAvatar name={row.displayName} colorToken={row.colorToken} size={30} />
                   <div className="pl-person-text">
                     <div className="pl-person-name">{row.displayName}</div>
                     <div className="pl-person-rate">

@@ -1,5 +1,5 @@
 import type { Technician } from "@/lib/dashboard/aggregate";
-import { TechAvatar } from "@/components/lacquer/tech-avatar";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 
 export type TechStackProps = {
   staff: readonly Technician[];
@@ -27,7 +27,12 @@ export function TechStack({ staff, ids, size = 20, max = 3 }: TechStackProps) {
         if (!tech) return null;
         return (
           <span key={id} style={{ marginLeft: index === 0 ? 0 : -overlapPx }}>
-            <TechAvatar tech={tech} size={size} />
+            <InitialsAvatar
+              name={tech.displayName}
+              colorToken={tech.colorToken}
+              size={size}
+              separated
+            />
           </span>
         );
       })}

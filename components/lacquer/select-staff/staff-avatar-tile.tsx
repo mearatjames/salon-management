@@ -19,6 +19,8 @@
 
 import { Info } from "lucide-react";
 
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
+import { roleLabel } from "@/components/lacquer/staff/initials";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 import type { StaffRosterEntry } from "./select-staff-screen.client";
@@ -27,45 +29,12 @@ import type { StaffRosterEntry } from "./select-staff-screen.client";
 // tooltip text and the badge's accessible label.
 const PIN_RESET_NOTICE = "Your PIN was reset by an owner. Try your new PIN.";
 
-// Initials for the avatar: first + last initial, or the first two characters
-// of a single-word name. Mirrors the deleted `staff-tile.tsx` helper.
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return "?";
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-// Human-readable role label. Mirrors the deleted `staff-tile.tsx` helper.
-function roleLabel(role: string): string {
-  switch (role) {
-    case "owner":
-      return "Owner";
-    case "manager":
-      return "Manager";
-    case "technician":
-      return "Tech";
-    case "front_desk":
-      return "Front desk";
-    default:
-      return role;
-  }
-}
-
 export type StaffAvatarTileProps = {
   staff: StaffRosterEntry;
   onSelect: (staffId: string) => void;
 };
 
 export function StaffAvatarTile({ staff, onSelect }: StaffAvatarTileProps) {
-  // Avatar tint idiom (research R8): a 15%-opacity wash of the staff color
-  // token behind the full-opacity token-colored initials. `oklch(from …)`
-  // derives the wash from whichever `--avatar-*` token the row carries.
-  const avatarStyle = {
-    background: `oklch(from var(${staff.color_token}) l c h / 0.15)`,
-    color: `var(${staff.color_token})`,
-  };
-
   const pinResetNotice = staff.pin_reset_admin_at !== null;
 
   return (
@@ -75,9 +44,12 @@ export function StaffAvatarTile({ staff, onSelect }: StaffAvatarTileProps) {
       data-staff-id={staff.id}
       onClick={() => onSelect(staff.id)}
     >
-      <span className="select-staff-tile-avatar" style={avatarStyle} aria-hidden="true">
-        {initials(staff.display_name)}
-      </span>
+      <InitialsAvatar
+        name={staff.display_name}
+        colorToken={staff.color_token}
+        size={56}
+        className="select-staff-tile-avatar"
+      />
       <span className="select-staff-tile-name">{staff.display_name}</span>
       <span className="select-staff-tile-role">{roleLabel(staff.role)}</span>
       {pinResetNotice && (

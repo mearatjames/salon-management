@@ -6,13 +6,13 @@
 // page can compose the right client island per bucket without forcing
 // every row through the client boundary.
 //
-// Avatar uses the shared StaffAvatar (tinted by color_token). Status
+// Avatar uses the shared InitialsAvatar (tinted by color_token). Status
 // badge color tracks the lifecycle state. Person + role + status +
 // metadata grid mirrors `design-system/prototypes/onboarding/Components.jsx`.
 
 import type { ReactNode } from "react";
 
-import { StaffAvatar } from "@/components/lacquer/staff/staff-avatar";
+import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 import { roleLabel } from "@/components/lacquer/staff/initials";
 
 import type { OnboardingUser } from "@/app/(studio)/settings/onboarding/_types";
@@ -44,7 +44,7 @@ export function UserRow({ user, meta, menu }: Props) {
       data-state={user.state}
     >
       <div className="onb-person">
-        <StaffAvatar name={user.display_name} colorToken={user.color_token} size={32} />
+        <InitialsAvatar name={user.display_name} colorToken={user.color_token} size={32} />
         <div className="onb-person-text">
           <div className="onb-person-name">
             {user.display_name}
