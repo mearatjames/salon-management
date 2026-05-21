@@ -46,7 +46,7 @@ export function ReportPeriodControls({ window }: ReportPeriodControlsProps) {
   // a week/semi-monthly offset has no meaning under a new granularity.
   return (
     <div className="tp-period-row" data-slot="period-controls">
-      <div className="tp-period" role="group" aria-label="Period">
+      <div className="tx-period" role="group" aria-label="Period">
         {PERIOD_TABS.map((tab) => {
           const active = window.granularity === tab.granularity;
           return (

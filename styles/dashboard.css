@@ -48,7 +48,13 @@
   border-radius: 9999px;
   border: 1px solid var(--border);
 }
-.tx-period button {
+/* Segments are <button> on the dashboard (client toggle) and <a> on the
+   transactions / report pages (URL-param links) — style both identically. */
+.tx-period button,
+.tx-period a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   height: 28px;
   padding: 0 14px;
   border-radius: 9999px;
@@ -59,8 +65,15 @@
   font-weight: 500;
   font-family: var(--font-sans);
   color: var(--muted-foreground);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
 }
-.tx-period button.active {
+.tx-period button:hover,
+.tx-period a:hover {
+  color: var(--foreground);
+}
+.tx-period button.active,
+.tx-period a.active {
   background: var(--card);
   color: var(--foreground);
   box-shadow: var(--shadow-xs);
