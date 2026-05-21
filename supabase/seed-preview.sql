@@ -23,6 +23,8 @@
 --     verbatim from the design prototype
 --     design-system/prototypes/transaction/data.jsx — the shared catalog
 --     the "New transaction — tablet (front desk)" flow consumes.
+--   * a "Cat Eye" supply type attached to the "Cat eyes" add-on service
+--     as a $3 tech-borne supply deduction (Report / Payroll subtract it).
 --   * ~200-260 paid tickets spanning the last 30 salon-local days. Every
 --     ticket has one primary service (Manicure / Pedicure / Enhancement /
 --     Waxing) plus 0-2 add-on lines, all referencing the catalog above,
@@ -57,6 +59,7 @@ declare
   v_sec_prices   int[];
   v_sec_names    text[];
   v_nsec         int;
+  v_supply_type  uuid;     -- the "Cat Eye" supply type (resolved or created)
 
   v_d            int;
   v_i            int;
@@ -273,6 +276,42 @@ begin
   on conflict (id) do nothing;
 
   get diagnostics v_svc_count = row_count;
+
+  -- ------------------------------------------------------------------
+  -- Supply deduction — the "Cat Eye" supply type, attached to the
+  -- "Cat eyes" add-on service as a $3.00 tech-borne material cost.
+  --
+  -- The Report / Payroll read models derive supply deductions live from
+  -- services.supply_amount_cents (lib/report/aggregate.ts), so attaching
+  -- it here makes every seeded ticket with a "Cat eyes" line carry the
+  -- deduction in the open period's computed payout — no payroll_payouts
+  -- or pay_periods rows are seeded (the app creates the period lazily).
+  --
+  -- Resolve an existing "Cat Eye" type by canonical name first (the demo
+  -- may already have one created via the UI); only insert when absent.
+  -- The UPDATE is guarded on `supply_type_id is null` so a re-run — or a
+  -- supply amount later changed in the UI — is left untouched.
+  -- ------------------------------------------------------------------
+  select id into v_supply_type
+    from public.supply_types
+    where name_canonical = 'cat eye' and archived = false;
+
+  if v_supply_type is null then
+    insert into public.supply_types (id, name)
+    values (md5('preview-seed:supply-type:cat-eye')::uuid, 'Cat Eye')
+    on conflict do nothing;
+    select id into v_supply_type
+      from public.supply_types
+      where name_canonical = 'cat eye' and archived = false;
+  end if;
+
+  if v_supply_type is not null then
+    update public.services
+       set supply_type_id      = v_supply_type,
+           supply_amount_cents = 300
+     where id = md5('preview-seed:service:addon-cat-eyes')::uuid
+       and supply_type_id is null;
+  end if;
 
   -- ------------------------------------------------------------------
   -- Service pools. Every ticket gets one primary-pool line + 0-2
