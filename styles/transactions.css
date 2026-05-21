@@ -141,7 +141,12 @@
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-8) 0;
+  /* Bottom padding holds a gap between the KPI cards and the table's sticky
+     header. The header pins to the top of `.tp-table-scroll` (the next
+     sibling); without this gap it kisses the KPI cards once the list is
+     scrolled. The gap is outside the scroll container, so it always shows
+     the page background — scrolling rows never bleed into it. */
+  padding: var(--space-4) var(--space-8);
 }
 .tp-kpi {
   background: var(--card);
@@ -474,6 +479,11 @@
 }
 .tp-day-group {
   margin-top: var(--space-4);
+}
+/* The first group needs no top margin — the KPI strip's bottom padding
+   already spaces it (and its sticky header) off the cards above. */
+.tp-day-group:first-child {
+  margin-top: 0;
 }
 .tp-day-h {
   display: grid;
