@@ -13,12 +13,13 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
+import { Spinner } from "@/components/ui/spinner";
 
 export function OnboardingSearch({ initial = "" }: { initial?: string }) {
   const router = useRouter();
   const params = useSearchParams();
   const [value, setValue] = useState(initial);
-  const [, startTransition] = useTransition();
+  const [isSearching, startTransition] = useTransition();
 
   // Note: browser back/forward changes `?q=` and re-runs the Server
   // Component with a new `initial`, but React preserves this island's
@@ -59,6 +60,7 @@ export function OnboardingSearch({ initial = "" }: { initial?: string }) {
         onChange={(e) => setValue(e.target.value)}
         aria-label="Search users"
       />
+      {isSearching ? <Spinner size={16} className="onb-search-spinner" /> : null}
     </div>
   );
 }
