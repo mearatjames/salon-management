@@ -27,6 +27,9 @@ import { useCallback, useMemo, useRef, useState } from "react";
 
 import { Check, X } from "lucide-react";
 
+import { FormPendingSignal } from "@/components/lacquer/form-pending-signal";
+import { Spinner } from "@/components/ui/spinner";
+
 import {
   Sheet,
   SheetContent,
@@ -101,6 +104,8 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
   // entered-buffer, and the mismatch-error string.
   const [pinState, setPinState] = useState<PinKeypadState>(() => pinKeypadInit());
 
+  const [submitting, setSubmitting] = useState(false);
+
   const formRef = useRef<HTMLFormElement | null>(null);
   const submittingRef = useRef(false);
 
@@ -118,6 +123,7 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
         setColorToken(DEFAULT_COLOR_TOKEN);
         setPinState(pinKeypadInit());
         submittingRef.current = false;
+        setSubmitting(false);
       }
       onOpenChange(next);
     },
@@ -247,6 +253,7 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
               role={role}
               colorToken={colorToken}
               onDone={handleClose}
+              submitting={submitting}
             />
           ) : null}
 
@@ -310,7 +317,9 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
         </div>
 
         {/* Hidden form that posts to addStaff. Rendered always so the
-           keypad confirm handler can call requestSubmit() reliably. */}
+           keypad confirm handler can call requestSubmit() reliably.
+           FormPendingSignal lifts the form's pending state up so the
+           visible Step3Done button can show a processing indicator. */}
         <form
           ref={formRef}
           action={addStaff}
@@ -321,6 +330,7 @@ export function AddStaffWizard({ operatorRole, open, onOpenChange }: AddStaffWiz
           <input type="hidden" name="role" value={role} />
           <input type="hidden" name="color_token" value={colorToken} />
           <input type="hidden" name="pin" value={pinState.enterBuf} />
+          <FormPendingSignal onPendingChange={setSubmitting} />
         </form>
       </SheetContent>
     </Sheet>
@@ -462,11 +472,13 @@ function Step3Done({
   role,
   colorToken,
   onDone,
+  submitting,
 }: {
   displayName: string;
   role: StudioRole;
   colorToken: string;
   onDone: () => void;
+  submitting: boolean;
 }) {
   return (
     <div
@@ -543,6 +555,7 @@ function Step3Done({
         type="button"
         onClick={onDone}
         data-slot="wizard-done-button"
+        disabled={submitting}
         style={{
           marginTop: "var(--space-2)",
           padding: "var(--space-2) var(--space-4)",
@@ -552,10 +565,22 @@ function Step3Done({
           borderRadius: "var(--radius-sm)",
           fontSize: "var(--text-sm)",
           fontWeight: 600,
-          cursor: "pointer",
+          cursor: submitting ? "default" : "pointer",
+          opacity: submitting ? 0.6 : 1,
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "var(--space-2)",
+          transition: "opacity 150ms var(--ease-out)",
         }}
       >
-        Done
+        {submitting ? (
+          <>
+            <Spinner size={16} strokeWidth={2} />
+            Adding…
+          </>
+        ) : (
+          "Done"
+        )}
       </button>
     </div>
   );
