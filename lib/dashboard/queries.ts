@@ -306,7 +306,6 @@ export async function loadDashboard(supabase: AnySupabase): Promise<DashboardDat
 
   return {
     greeting: {
-      eyebrow: "Lacquer Studio · Front desk",
       title: "Today at the salon",
       subtitle,
     },
