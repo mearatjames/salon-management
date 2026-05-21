@@ -103,7 +103,7 @@ test.describe("US4: printable receipt", () => {
     await expect(page.locator("[data-slot='receipt-page']")).toBeVisible({ timeout: 10_000 });
 
     // Salon name
-    await expect(page.locator("[data-slot='receipt-salon-name']")).toHaveText("Tang Nails");
+    await expect(page.locator("[data-slot='receipt-salon-name']")).toHaveText("Tang Nails Studio");
 
     // At least one line item with name_snapshot of the Classic manicure.
     const items = page.locator("[data-slot='receipt-item']");

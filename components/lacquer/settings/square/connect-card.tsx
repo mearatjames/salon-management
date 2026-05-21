@@ -79,7 +79,7 @@ export function ConnectCard({ connected, merchantName, environment }: ConnectCar
               }}
             >
               {connected
-                ? "Tang Nails can accept card payments through your paired Square Terminals."
+                ? "Tang Nails Studio can accept card payments through your paired Square Terminals."
                 : "Sign in to your Square account to pair terminals and start taking card payments."}
             </p>
           </div>
