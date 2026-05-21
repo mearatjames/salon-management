@@ -1,0 +1,9 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Tang Nails favicon — Lacquer "C · Squircle, light" direction.
+       Two-tone rose polish drop on a rose-50 squircle. Colours are the
+       sRGB equivalents of the Lacquer rose tokens: rose-50 / rose-500 /
+       rose-300 (styles/tokens.css). -->
+  <rect width="64" height="64" rx="14" fill="#FDF2F3" />
+  <path d="M32 10c-7.2 0-12.8 5.6-12.8 14.4 0 6.4 2.4 11.2 4.8 17.6 1.6 4.8 3.2 9.6 3.2 12.8 0 0 1.6 0 4.8 0s4.8 0 4.8 0c0-3.2 1.6-8 3.2-12.8 2.4-6.4 4.8-11.2 4.8-17.6C44.8 15.6 39.2 10 32 10z" fill="#AB505F" />
+  <path d="M32 10c-7.2 0-12.8 5.6-12.8 14.4 0 3.2 0.8 6.4 1.6 8.8 3.2-2.4 7.2-4 11.2-4s8 1.6 11.2 4c0.8-2.4 1.6-5.6 1.6-8.8C44.8 15.6 39.2 10 32 10z" fill="#DA9FA5" />
+</svg>
