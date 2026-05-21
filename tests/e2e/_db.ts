@@ -10,6 +10,7 @@
 // the Supabase reachability probe in `auth.spec.ts`.
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Page } from "@playwright/test";
 
 let cached: SupabaseClient | null = null;
 
@@ -123,4 +124,30 @@ export async function getAuthUserByEmail(email: string): Promise<{ id: string }>
     throw new Error(`auth user not found for email "${email}"`);
   }
   return { id: user.id };
+}
+
+/**
+ * Wait for a Next.js `loading.tsx` route skeleton to clear after a
+ * `page.goto(...)` call.
+ *
+ * WHY: Next.js can serve the loading.tsx shell immediately when the page
+ * loads, then stream in the real RSC content. `page.goto()` resolves on
+ * the `load` event, which fires while the skeleton is still in the DOM and
+ * before React hydration completes. Non-retrying snapshot queries
+ * (`.innerText()`, `.count()`) or keyboard actions (`.press("Enter")`)
+ * that run immediately after `goto` may hit the skeleton DOM rather than
+ * the real hydrated content, causing assertions to read wrong values or
+ * keyboard events to target un-hydrated links.
+ *
+ * Resolves immediately when no `.lq-skeleton` is present (i.e. the route
+ * has no loading.tsx, or the real content streamed in fast enough that the
+ * skeleton already detached). The `.catch` swallows the 5s timeout that
+ * Playwright uses when the locator was never found in the DOM at all.
+ */
+export async function waitForRouteSkeleton(page: Page): Promise<void> {
+  await page
+    .locator(".lq-skeleton")
+    .first()
+    .waitFor({ state: "detached", timeout: 5_000 })
+    .catch(() => {});
 }

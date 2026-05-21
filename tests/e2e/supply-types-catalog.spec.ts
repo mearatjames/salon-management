@@ -18,6 +18,7 @@ import { expect, test } from "./_fixtures";
 import { createClient } from "@supabase/supabase-js";
 
 import { canonicalizeName } from "@/lib/policy/canonicalize-name";
+import { waitForRouteSkeleton } from "./_db";
 
 test.use({
   storageState: async ({ authState }, provide) => {
@@ -179,6 +180,7 @@ test.describe("022 supply types catalog", () => {
       page,
     }) => {
       await page.goto("/services");
+      await waitForRouteSkeleton(page);
 
       // Open the backfilled service.
       const row = page.locator(
@@ -397,6 +399,7 @@ test.describe("022 supply types catalog", () => {
       page,
     }) => {
       await page.goto("/services");
+      await waitForRouteSkeleton(page);
 
       const sharedCanonical = canonicalizeName("Backfilled gel");
       const expectedTypeId = canonicalToTypeId.get(sharedCanonical);
@@ -507,6 +510,7 @@ test.describe("022 supply types catalog", () => {
       page,
     }) => {
       await page.goto("/services");
+      await waitForRouteSkeleton(page);
 
       await page.locator("[data-slot='services-edit-policy-button']").click();
       const sheet = page.locator("[data-slot='edit-policy-sheet']");
@@ -549,6 +553,7 @@ test.describe("022 supply types catalog", () => {
 
       // Open Gel polish, turn Supply on, open the picker.
       await page.goto(`/services?selected=${GEL_POLISH_ID}`);
+      await waitForRouteSkeleton(page);
       await page.locator("[data-slot='deductions-supply-toggle']").click();
       await page.locator("[data-slot='supply-type-picker-trigger']").click();
 
@@ -612,6 +617,7 @@ test.describe("022 supply types catalog", () => {
       page,
     }) => {
       await page.goto("/services");
+      await waitForRouteSkeleton(page);
       await page.locator("[data-slot='services-edit-policy-button']").click();
       const sheet = page.locator("[data-slot='edit-policy-sheet']");
       await expect(sheet).toBeVisible();
@@ -635,6 +641,7 @@ test.describe("022 supply types catalog", () => {
       page,
     }) => {
       await page.goto("/services");
+      await waitForRouteSkeleton(page);
       await page.locator("[data-slot='services-edit-policy-button']").click();
       const sheet = page.locator("[data-slot='edit-policy-sheet']");
       await expect(sheet).toBeVisible();
@@ -674,6 +681,7 @@ test.describe("022 supply types catalog", () => {
       page,
     }) => {
       await page.goto("/services");
+      await waitForRouteSkeleton(page);
       await page.locator("[data-slot='services-edit-policy-button']").click();
       const sheet = page.locator("[data-slot='edit-policy-sheet']");
       await expect(sheet).toBeVisible();
@@ -712,6 +720,7 @@ test.describe("022 supply types catalog", () => {
 
     test("(d) usage_count reflects DB state on each sheet open", async ({ page }) => {
       await page.goto("/services");
+      await waitForRouteSkeleton(page);
 
       // First open: badge shows "2 services".
       await page.locator("[data-slot='services-edit-policy-button']").click();

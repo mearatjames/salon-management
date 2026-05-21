@@ -30,6 +30,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { test as base, expect, type Page } from "@playwright/test";
 
 import { provisionAuthState, type AuthStatePaths } from "./_auth-state";
+import { waitForRouteSkeleton } from "./_db";
 
 // --------------------------------------------------------------------------
 // Service-role client. Same pattern as `_db.ts`'s internal client(): cached
@@ -459,14 +460,5 @@ export async function signInAs(
     timeout: 10_000,
   });
   // Wait for any route loading.tsx skeleton to clear before returning.
-  // Next.js can serve the loading.tsx shell first and then stream in real
-  // content; non-retrying snapshot queries (.count(), .textContent()) that
-  // run immediately after this helper would read the skeleton DOM — which
-  // has no real data-slot/data-staff-id attributes — and return wrong values.
-  // Resolves immediately when no .lq-skeleton is present.
-  await page
-    .locator(".lq-skeleton")
-    .first()
-    .waitFor({ state: "detached" })
-    .catch(() => {});
+  await waitForRouteSkeleton(page);
 }
