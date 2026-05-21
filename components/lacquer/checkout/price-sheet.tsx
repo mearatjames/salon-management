@@ -22,7 +22,7 @@
 // callback can be passed verbatim to `setLinePrice({...,
 // unitPriceCents})`.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // `Delete` is Lucide's backspace-key glyph (the prototype calls it
 // "Backspace"; Lucide's name for that shape is `Delete`).
@@ -164,6 +164,53 @@ export function PriceSheet({
     setVal("");
     setFresh(true);
   }
+
+  // Physical-keyboard support. The sheet invites the operator to "type new
+  // amount" — bind a window keydown listener while the numpad is open so
+  // digits / "." / Backspace work without tapping the on-screen keys (Enter
+  // saves, Escape cancels). The handler is read through a ref, written in an
+  // effect (no ref writes during render), so the listener binds once per open.
+  const keyHandlerRef = useRef<(event: KeyboardEvent) => void>(() => {});
+  useEffect(() => {
+    keyHandlerRef.current = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (/^[0-9]$/.test(event.key)) {
+        event.preventDefault();
+        press(event.key);
+        return;
+      }
+      if (event.key === ".") {
+        event.preventDefault();
+        press(".");
+        return;
+      }
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        press("back");
+        return;
+      }
+      if (event.key === "Enter") {
+        if (cents > 0) {
+          event.preventDefault();
+          onSave(cents);
+        }
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCancel();
+      }
+    };
+  });
+
+  useEffect(() => {
+    if (!pad) return;
+    function onKeyDown(event: KeyboardEvent) {
+      keyHandlerRef.current(event);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [pad]);
 
   return (
     <div
