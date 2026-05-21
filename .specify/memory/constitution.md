@@ -1,6 +1,34 @@
 <!--
 SYNC IMPACT REPORT
 ==================
+Version change: 1.0.3 → 1.0.4
+Bump rationale: PATCH — keeps the Principle V deferred-items enumeration
+  honest. The maintainer approved a documented scope change — Spec Kit
+  feature 047, the Payroll page (`specs/047-payroll-page/`) — that adds
+  payroll to v1. This amendment removes "payroll reporting" from the
+  deferred list in § V "Scope Discipline & Cost Restraint" and, in the
+  same change set, moves the matching "Payroll/commissions reporting"
+  bullet in `docs/system-design.md` out of "Out (deferred)" into the v1
+  "In" scope list. No principle, section, or governance rule changed;
+  Principle V's substance — scope discipline and amendment-gated scope
+  changes — is unchanged. This amendment IS the mechanism Principle V
+  prescribes for moving a deferred item into scope.
+
+Modified principles: none renamed or redefined. Principle V — Scope
+  Discipline & Cost Restraint — deferred-items enumeration edited only.
+
+Added sections: none. Removed sections: none.
+
+Templates requiring updates: none — no Spec Kit template enumerates
+  deferred scope (verified). docs/system-design.md is updated in the same
+  change set; CLAUDE.md carries no deferred-scope list, so it stays
+  aligned. specs/047-payroll-page/plan.md — its Constitution Check is
+  refreshed to record that this amendment resolves the former Principle V
+  deviation.
+
+Follow-up TODOs: none.
+
+--- Prior entry (1.0.3) -------------------------------------------------------
 Version change: 1.0.2 → 1.0.3
 Bump rationale: PATCH — closes a schema-drift hole exposed by the
   007-left-panel-nav preview. The Supabase migration set on `main` was
@@ -163,9 +191,9 @@ expensive and erode salon trust; the design doc's verification plan is the contr
 v1 is exactly the scope in `docs/system-design.md` — no more, no less.
 
 - Deferred items (customer self-booking, SMS/email, multi-tenant, inventory/products,
-  gift-card issuance, tax computation, payroll reporting, native wrappers) MUST stay
-  deferred. Adding any of them requires a constitution amendment or an explicit,
-  documented scope change approved by the maintainer.
+  gift-card issuance, tax computation, native wrappers) MUST stay deferred. Adding any
+  of them requires a constitution amendment or an explicit, documented scope change
+  approved by the maintainer.
 - Schema reservations (`tax_cents`, `services.taxable`, reserved `settings` rows) are
   honored in the data model but MUST have no compute path or UI in v1.
 - Infrastructure MUST stay on free tiers during the build; production cost MUST stay in
@@ -250,4 +278,4 @@ creep is the primary risk to shipping a single integrated tool the salon can ado
 - **Runtime guidance.** Use `CLAUDE.md` and `docs/system-design.md` for day-to-day
   implementation guidance; this constitution is the stable layer above them.
 
-**Version**: 1.0.3 | **Ratified**: 2026-05-13 | **Last Amended**: 2026-05-16
+**Version**: 1.0.4 | **Ratified**: 2026-05-13 | **Last Amended**: 2026-05-20

@@ -18,6 +18,7 @@ In:
 - **Checkout / POS** with **Square Terminal** for cards, **Square Gift Card redemption** for e-gift, in-app cash handling, **split tender**, **voids**, and **refunds** (manager-PIN inline override)
 - **Walk-in / Waitlist + iPad kiosk** with phone-number lookup (phone + name required; always creates/resolves a client)
 - **End of Day** report + salon-wide cash drawer reconciliation + tip-allocation review
+- **Payroll** — twice-monthly per-tech payout ledger (service commission + tip split applied to completed-ticket income, net of deductions), recording payouts (cash/Zelle/check), period close, and payroll history
 - **Auth**: device login (email/password or Google) + per-staff PIN "act-as" overlay (the *operator* at the device); the staff who *performed* a transaction is selected per-line in the Checkout avatar picker
 - **Realtime sync** across devices for walk-ins, calendar, and ticket status
 - **Installable PWA** (home-screen icon, full-screen) — no offline writes; service worker scope is `/(studio)` only
@@ -29,7 +30,6 @@ Out (deferred):
 - Inventory management & product sales (`ticket_items.kind='product'` not in v1)
 - Selling/issuing gift cards (redemption only in v1)
 - Tax computation (schema reserves `tax_cents` + `services.taxable` + a settings row; no compute or UI in v1)
-- Payroll/commissions reporting (read-only commission calc only)
 - Native iOS/Android wrappers
 
 ## Design system — source of truth
