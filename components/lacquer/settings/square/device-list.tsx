@@ -161,6 +161,7 @@ function DeviceRowItem({ device }: { device: DeviceRow }) {
         borderBottom: "1px solid var(--border)",
       }}
       data-testid={`square-device-row-${device.square_device_id}`}
+      aria-busy={pending || undefined}
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", minWidth: 0 }}>
         <Input

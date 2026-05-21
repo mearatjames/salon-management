@@ -124,6 +124,7 @@ export function TechPayAction({ payPeriodId, row, payDateLabel }: TechPayActionP
             className="pp-pay-undo"
             data-slot="undo-payout"
             disabled={pending}
+            aria-busy={pending || undefined}
             onClick={onUndo}
           >
             {pending ? (
@@ -159,6 +160,7 @@ export function TechPayAction({ payPeriodId, row, payDateLabel }: TechPayActionP
             className="pp-pay-cta"
             data-slot="mark-paid"
             disabled={pending}
+            aria-busy={pending || undefined}
             onClick={onMarkPaid}
           >
             {pending ? (

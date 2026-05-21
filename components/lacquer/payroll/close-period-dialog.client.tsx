@@ -151,6 +151,7 @@ export function ClosePeriodDialog({ payPeriodId, periodLabel }: ClosePeriodDialo
                 className="pr-close-btn primary"
                 data-slot="close-period-confirm"
                 disabled={pending}
+                aria-busy={pending || undefined}
                 onClick={() => submit(unpaidWarning !== null)}
               >
                 {pending ? (

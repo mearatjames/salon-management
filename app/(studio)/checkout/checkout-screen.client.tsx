@@ -2047,6 +2047,7 @@ export function CheckoutScreen({
                   onClick={chargeMethodIsCard ? handleSendCard : handleTakeCash}
                   disabled={!chargeButtonEnabled}
                   data-slot={chargeMethodIsCard ? "send-to-terminal-button" : "take-cash-button"}
+                  aria-busy={inflight || undefined}
                   style={{
                     flex: "1 1 auto",
                     display: "inline-flex",

@@ -245,6 +245,7 @@ export function EditForm({
           type="button"
           data-slot="eod-save-cta"
           disabled={!canSubmit}
+          aria-busy={pending || undefined}
           onClick={submit}
           style={{
             width: "100%",

@@ -249,6 +249,7 @@ export function CashCount({ expectedCents }: CashCountProps) {
           type="button"
           data-slot="eod-close-cta"
           disabled={!canSubmit}
+          aria-busy={pending || undefined}
           onClick={submit}
           style={{
             width: "100%",
