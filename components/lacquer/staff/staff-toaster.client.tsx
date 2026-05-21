@@ -24,6 +24,11 @@
 //   not_found         → TOAST.notFound()              — toast.error
 //   forbidden         → TOAST.forbidden()             — toast.error
 //   no_changes        → silent (clear URL only, no toast)
+//   <anything else>   → TOAST.genericError()          — toast.error (catch-all)
+//
+// The catch-all guarantees an unmapped `?error=` code (e.g. a validation
+// code like `invalid_role`) still surfaces — a save failure must never be
+// swallowed silently (issue #112).
 //
 // Ref guard: fires once per unique `toast`+`name`+`error` triple. If the user
 // navigates again with the same triple (rare; only happens on a back-button
@@ -137,9 +142,16 @@ export function StaffToaster() {
       if (message) toast.success(message);
     }
 
-    if (isErrorCode(errorCode)) {
-      const message = buildErrorMessage(errorCode);
-      if (message) toast.error(message);
+    if (errorCode) {
+      if (isErrorCode(errorCode)) {
+        const message = buildErrorMessage(errorCode);
+        if (message) toast.error(message);
+      } else {
+        // Catch-all (issue #112): a `?error=` code with no dedicated mapping
+        // — e.g. a validation code like `invalid_role` — must still surface.
+        // Without this branch the save failure was swallowed silently.
+        toast.error(TOAST.genericError());
+      }
     }
 
     // Strip the consumed params via window.history.replaceState (a pure URL

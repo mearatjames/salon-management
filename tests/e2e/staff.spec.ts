@@ -417,6 +417,52 @@ test.describe("US3: edit a staff member", () => {
   // US3(e) draft discard on row switch → moved to `tests/unit/staff/save-gate.test.ts`
   //   (`draftFromTarget` returns a fresh non-dirty state for the new target,
   //   matching the `key={target.id}` remount semantics).
+
+  test("(f) owner can save edits to their own record despite the disabled role select (#112)", async ({
+    page,
+    staffFixture,
+  }) => {
+    // Regression for #112. Editing your own staff record: the role select
+    // is (correctly) disabled for a self-edit — you can't change your own
+    // role — but a disabled <select> is omitted from the submitted
+    // FormData. `updateStaff` then saw no `role`, rejected the entire save
+    // with `invalid_role`, and (because the toaster had no mapping for that
+    // code) failed completely silently — display name and every other field
+    // on the form silently failed to persist. `updateStaff` now falls back
+    // to the stored role when the field is absent, so a self-edit of the
+    // other fields still saves.
+    await signInAsOwner(page, staffFixture);
+    await page.goto(`/settings/staff?selected=${staffFixture.owner.id}`);
+
+    // The role select stays disabled — that's the expected self-edit rule.
+    await expect(page.locator("[data-slot='edit-panel-role-select']")).toBeDisabled();
+
+    const ownerName = staffFixture.owner.displayName;
+    const draftName = `${ownerName} EDITED`;
+    await page.locator("[data-slot='edit-panel-name-input']").fill(draftName);
+
+    await page.locator("[data-slot='edit-panel-save']").click();
+
+    // The save now succeeds: the redirect carries ?toast=changes_saved.
+    // Before the fix it redirected to ?error=invalid_role and nothing
+    // persisted.
+    await page.waitForURL(/\/settings\/staff\?selected=.+&toast=changes_saved/, {
+      timeout: 10_000,
+    });
+
+    // Table row reflects the new name on next paint.
+    await expect(
+      page.locator(`[data-slot='staff-table'] [data-staff-id='${staffFixture.owner.id}']`)
+    ).toContainText(draftName);
+
+    // Audit: exactly the display_name change persisted — `role` was carried
+    // through unchanged, so it does not appear in `changes`.
+    const rows = await getAuditLogRowsSince(auditCursor, "staff.updated");
+    expect(rows).toHaveLength(1);
+    const payload = (rows[0].payload ?? {}) as Record<string, unknown>;
+    expect(payload.changes as readonly string[]).toEqual(["display_name"]);
+    expect(payload.after).toMatchObject({ display_name: draftName });
+  });
 });
 
 test.describe("US4: set or change PIN", () => {
