@@ -138,20 +138,6 @@
   align-items: center;
   justify-content: center;
 }
-/* `.tx-cta-primary .sub` must override the global `.sub { color: var(--muted-
-   foreground) }` rule below — otherwise the sub-line inherits muted gray on
-   the rose CTA and contrast collapses (~2:1, fails WCAG AA). Inherit the
-   CTA's `--primary-foreground` (white) instead. The prototype's
-   `opacity: 0.85` is also dropped: at full opacity the contrast lands at
-   ~4.6:1, just over AA; opacity 0.85 dropped it back below 4:1. */
-.tx-cta-primary .sub {
-  color: inherit;
-  font-size: 12px;
-  font-weight: 400;
-  margin-top: 2px;
-  letter-spacing: 0;
-}
-
 /* ---------- Secondary actions ---------- */
 .tx-secondary-action {
   background: var(--card);

@@ -19,7 +19,7 @@ export function EmptyFeedState() {
         fontSize: 12,
       }}
     >
-      No sales yet today.
+      No transactions yet today.
     </div>
   );
 }

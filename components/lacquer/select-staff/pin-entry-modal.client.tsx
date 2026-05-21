@@ -71,6 +71,9 @@ export function PinEntryModal({ staff, next, onClose }: PinEntryModalProps) {
   // `{ ok: false }` so a retry can submit again, and the whole modal
   // remounts per `selectedStaffId` so a fresh tile always gets a fresh ref.
   const submittedRef = useRef(false);
+  // Focus landing target for when the dialog opens — a non-interactive
+  // container, so no keypad key is focused (see `onOpenAutoFocus` below).
+  const modalRef = useRef<HTMLDivElement>(null);
 
   // Submit the buffered PIN. On success `submitPin` redirects (throws
   // NEXT_REDIRECT) and the runtime navigates away — this modal unmounts
@@ -142,8 +145,20 @@ export function PinEntryModal({ staff, next, onClose }: PinEntryModalProps) {
 
   return (
     <Dialog open onOpenChange={handleOpenChange}>
-      <DialogContent>
-        <div className="select-staff-modal">
+      <DialogContent
+        onOpenAutoFocus={(event) => {
+          // Don't let Radix auto-focus the first keypad key. Once the
+          // operator starts typing the PIN on a physical keyboard, the
+          // focused key lights up its `:focus-visible` ring and reads as a
+          // stuck, unrelated selection — PinPad's window keydown listener
+          // handles typing without needing focus on any key. Move focus to
+          // the modal container instead: the dialog stays focus-scoped for
+          // assistive tech, but nothing visibly rings while typing.
+          event.preventDefault();
+          modalRef.current?.focus();
+        }}
+      >
+        <div className="select-staff-modal" ref={modalRef} tabIndex={-1}>
           <InitialsAvatar
             name={staff.display_name}
             colorToken={staff.color_token}

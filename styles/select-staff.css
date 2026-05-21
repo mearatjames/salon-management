@@ -173,6 +173,13 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Interior padding + matching negative margin: the tiles stay aligned
+     with the search field above, but the scroll container gains room so a
+     hovered tile's lift (`translateY(-2px)`) and shadow aren't clipped at
+     the edges. Without it `overflow-y: auto` slices the top row's raised
+     border on hover. */
+  padding: var(--space-4);
+  margin: calc(var(--space-4) * -1);
 }
 
 /* ---------- Avatar tile ---------- */
@@ -273,6 +280,9 @@
   align-items: center;
   gap: var(--space-5);
   padding: var(--space-3) 0;
+  /* The dialog moves focus here on open (a non-interactive container) so no
+     keypad key is focused; suppress the focus ring on this landing target. */
+  outline: none;
 }
 
 .select-staff-modal-avatar {
