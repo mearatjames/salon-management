@@ -239,7 +239,12 @@
 .dr-summary {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  border-bottom: 1px solid var(--border);
+  /* A full 1px border on every side — the strip reads as its own card,
+     matching the `.dr-body` card below it. `overflow: hidden` clips the
+     inner `.dr-stat` column dividers to the rounded corners. */
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
   background: var(--card);
   flex-shrink: 0;
 }
@@ -836,6 +841,13 @@
   width: 248px;
 }
 
+/* The summary strip is its own card — gutter-aligned (left/right) with the
+ * body card below it, held off the period row above with a clear gap, and
+ * spaced from the body card below by the body's own top margin. */
+.dr-app-page .dr-summary {
+  margin: var(--space-5) var(--space-8) 0;
+}
+
 /* The body fills remaining space and gets the chrome's left/right gutter,
  * wrapped in a card so it reads as a single cohesive surface (matching
  * the visual rhythm of the Transactions table). */
@@ -916,6 +928,13 @@
   .dr-app-page .dr-body {
     margin: 0;
     border: 0;
+    border-radius: 0;
+  }
+  /* The summary card likewise flattens for print — gutter and rounding
+   * removed, just a hairline rule under it separating it from the body. */
+  .dr-app-page .dr-summary {
+    margin: 0;
+    border-width: 0 0 1px;
     border-radius: 0;
   }
   .dr-app-page .dr-left {
