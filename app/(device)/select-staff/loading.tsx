@@ -43,16 +43,7 @@ export default function SelectStaffLoading() {
         {/* Avatar tile grid — 8 placeholder tiles */}
         <div className="select-staff-grid">
           {[0, 1, 2, 3, 4, 5, 6, 7].map((i) => (
-            <div
-              key={i}
-              className="select-staff-tile"
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "var(--space-3)",
-              }}
-            >
+            <div key={i} className="select-staff-tile">
               {/* Circular avatar */}
               <Skeleton width={56} height={56} radius="var(--radius-full)" />
               {/* Name line */}
