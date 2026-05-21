@@ -16,7 +16,9 @@
 //   - Backdrop click / Cancel button closes with no state change
 //     (handleOpenChange resets every piece of state on close, identical
 //     pattern to add-staff-wizard.client.tsx).
-//   - Title: "Set PIN — {name}" or "Change PIN — {name}" (mode prop).
+//   - Title: "Set PIN" or "Change PIN" (mode prop). The staff name lives
+//     in the description, not the title, so a long name never overflows
+//     the dialog header.
 //
 // Submit happens server-side via the Server Action: we render a hidden
 // <form action={setStaffPin}> containing the matched FormData and call
@@ -103,8 +105,10 @@ export function ChangePinModal({
     [pinState]
   );
 
-  const titleLabel = mode === "change" ? "Change PIN" : "Set PIN";
-  const title = `${titleLabel} — ${staffName}`;
+  // The staff name is intentionally NOT in the title — a long name pushes
+  // into the close button and overflows the header. It stays in the
+  // description below, which wraps freely.
+  const title = mode === "change" ? "Change PIN" : "Set PIN";
   const description =
     pinState.phase === "enter"
       ? `Enter a new 4-digit PIN for ${staffName}.`

@@ -4,10 +4,15 @@
 //   1. Add staff wizard step 2 (Enter → Confirm sub-flow).
 //   2. Set / Change PIN modal (Enter → Confirm sub-flow).
 //
-// Owns its own digit buffer + the on-screen 3×4 keypad + a `window.keydown`
-// listener (digits, Backspace, Enter, Escape). When the buffer fills to
-// `length` (4), the keypad calls `onSubmit(digits)`. The component does NOT
-// own form state, does NOT import any Server Action, does NOT post.
+// Owns its own digit buffer + the on-screen 12-key 3×4 keypad + a
+// `window.keydown` listener (digits, Backspace, Enter, Escape). When the
+// buffer fills to `length` (4), the keypad calls `onSubmit(digits)`. The
+// component does NOT own form state, does NOT import any Server Action,
+// does NOT post.
+//
+// The keypad uses the shared `.keypad*` classes in `styles/keypad.css` —
+// the same stylesheet the select-staff login keypad (`PinPad`) uses — so a
+// staff member sees an identical keypad whether logging in or changing a PIN.
 //
 // Adapted from `components/lacquer/pin-keypad.tsx` (which auto-submits a
 // form via the `submitPin` Server Action); that file is left untouched —
@@ -81,6 +86,10 @@ export function NumericKeypad({
 
   const removeLast = useCallback(() => {
     setDigits((current) => (current.length === 0 ? current : current.slice(0, -1)));
+  }, []);
+
+  const clearAll = useCallback(() => {
+    setDigits("");
   }, []);
 
   useEffect(() => {
@@ -177,75 +186,45 @@ export function NumericKeypad({
         </div>
       ) : null}
 
-      {/* 3×4 keypad grid: 1-9 + (empty, 0, Delete). */}
-      <div
-        role="group"
-        aria-label="PIN keypad"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(3, var(--space-12))",
-          gap: "var(--space-2)",
-        }}
-      >
+      {/* 12-key 3×4 keypad: 1-9, Clear, 0, Backspace. Uses the shared
+          `.keypad*` classes from `styles/keypad.css` so this renders
+          identically to the select-staff login keypad (`PinPad`). */}
+      <div className="keypad" role="group" aria-label="PIN keypad">
         {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
           <button
             key={d}
             type="button"
+            className="keypad-key"
             onClick={() => append(d)}
             aria-label={`Digit ${d}`}
-            style={{
-              height: "var(--space-12)",
-              borderRadius: "var(--radius-sm)",
-              border: "1px solid var(--border)",
-              background: "var(--card)",
-              color: "var(--foreground)",
-              fontSize: "var(--text-lg, 18px)",
-              fontWeight: 500,
-              fontVariantNumeric: "tabular-nums",
-              cursor: "pointer",
-              transition: "background 150ms var(--ease-out, ease-out)",
-            }}
           >
             {d}
           </button>
         ))}
-        {/* Row 4: empty cell, 0, backspace. */}
-        <span aria-hidden="true" />
+        {/* Row 4: Clear, 0, Backspace. */}
         <button
           type="button"
+          className="keypad-key keypad-key--dim"
+          onClick={clearAll}
+          aria-label="Clear"
+        >
+          Clear
+        </button>
+        <button
+          type="button"
+          className="keypad-key"
           onClick={() => append("0")}
           aria-label="Digit 0"
-          style={{
-            height: "var(--space-12)",
-            borderRadius: "var(--radius-sm)",
-            border: "1px solid var(--border)",
-            background: "var(--card)",
-            color: "var(--foreground)",
-            fontSize: "var(--text-lg, 18px)",
-            fontWeight: 500,
-            fontVariantNumeric: "tabular-nums",
-            cursor: "pointer",
-          }}
         >
           0
         </button>
         <button
           type="button"
+          className="keypad-key keypad-key--dim"
           onClick={removeLast}
           aria-label="Backspace"
-          style={{
-            height: "var(--space-12)",
-            borderRadius: "var(--radius-sm)",
-            border: "1px solid var(--border)",
-            background: "var(--card)",
-            color: "var(--muted-foreground)",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
         >
-          <Delete size={16} strokeWidth={1.5} aria-hidden="true" />
+          <Delete size={20} strokeWidth={1.5} aria-hidden="true" />
         </button>
       </div>
     </div>

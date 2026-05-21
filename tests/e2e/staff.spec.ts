@@ -466,14 +466,13 @@ test.describe("US4: set or change PIN", () => {
     await expect(pinBtn).toHaveText("Change");
     await expect(pinBtn).toBeEnabled();
 
-    // Open the modal — title says "Change PIN — <tech displayName>".
+    // Open the modal — title is just "Change PIN" (the staff name lives in
+    // the description, not the title, so a long name can't overflow).
     await pinBtn.click();
     const modal = page.locator("[data-slot='change-pin-modal']");
     await expect(modal).toBeVisible();
     await expect(modal).toHaveAttribute("data-mode", "change");
-    await expect(page.locator("[data-slot='change-pin-title']")).toHaveText(
-      `Change PIN — ${staffFixture.tech.displayName}`
-    );
+    await expect(page.locator("[data-slot='change-pin-title']")).toHaveText("Change PIN");
 
     // Enter phase — tap 1 1 1 1, keypad auto-advances to confirm.
     for (const d of ["1", "1", "1", "1"]) {
@@ -567,14 +566,13 @@ test.describe("US4: set or change PIN", () => {
     await expect(pinBtn).toHaveText("Set PIN");
     await expect(pinBtn).toBeEnabled();
 
-    // Open the modal — title says "Set PIN — <newLanaName>".
+    // Open the modal — title is just "Set PIN" (the staff name lives in the
+    // description, not the title, so a long name can't overflow).
     await pinBtn.click();
     const modal = page.locator("[data-slot='change-pin-modal']");
     await expect(modal).toBeVisible();
     await expect(modal).toHaveAttribute("data-mode", "set");
-    await expect(page.locator("[data-slot='change-pin-title']")).toHaveText(
-      `Set PIN — ${newLanaName}`
-    );
+    await expect(page.locator("[data-slot='change-pin-title']")).toHaveText("Set PIN");
 
     // Enter then confirm 2 2 2 2.
     for (const d of ["2", "2", "2", "2"]) {
