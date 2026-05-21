@@ -16,6 +16,14 @@ The page presents every tech for the open pay period as a single full-width ledg
 
 The design source is the **Lacquer "Payroll" handoff** from Claude Design; the implemented layout follows **Variation 3 — "Pulse"** (full-width ledger + dedicated per-tech detail screen), which is where the design conversation landed.
 
+## Clarifications
+
+### Session 2026-05-20
+
+- Q: What income should a tech's service commission % be applied to? → A: Commissionable service income — gross service revenue net of supply and card-processing-fee deductions, honoring staff payout exemptions (spec 023), reusing the Report page's per-tech deduction math.
+- Q: Which payroll actions should managers (not just owners) be allowed to perform? → A: Managers can view periods, record payouts (mark paid / undo), and export; editing per-tech pay rates and closing a pay period are restricted to owners.
+- Q: After a tech is marked paid in an open period, what happens to their payout figure if a rate changes or a ticket is edited/refunded? → A: The payout freezes a snapshot of its computed figures at the moment of payment; later rate or ticket changes never alter a paid payout's recorded amount. Only techs still pending recompute live.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Review the open pay period's payroll ledger (Priority: P1)
@@ -56,7 +64,7 @@ From the ledger, the owner clicks any tech's row. The whole view switches to a d
 
 ### User Story 3 - Mark a tech paid and record the payment method (Priority: P3)
 
-On a tech's detail screen, the owner chooses a payment method — cash, Zelle, or check — and marks the tech paid. The payout is recorded durably: method, pay date, and who recorded it. The tech's state becomes "Paid" everywhere it appears, a confirmation/receipt is shown, and the period's progress and cash-remaining figures update. The owner can undo a payout, returning the tech to "Pending".
+On a tech's detail screen, an owner or manager chooses a payment method — cash, Zelle, or check — and marks the tech paid. The payout is recorded durably: method, pay date, and who recorded it. The tech's state becomes "Paid" everywhere it appears, a confirmation/receipt is shown, and the period's progress and cash-remaining figures update. An owner or manager can undo a payout, returning the tech to "Pending".
 
 **Why this priority**: Recording who has been paid, how, and when is what makes this a system of record rather than a calculator. It is the action the twice-monthly routine is built around, and it must survive reloads and be visible to anyone who opens the period later.
 
@@ -114,7 +122,7 @@ In Staff settings, each staff member gains editable payroll fields: the **servic
 - **Check portion exceeds earnings**: the cash payment is clamped to zero (never negative); the breakdown still shows the full check portion.
 - **Tech added mid-period**: they appear in the open period's ledger with figures for the days they worked.
 - **A counted ticket is later refunded or voided**: the open period's figures reflect the current state of tickets; once a period is closed its figures are frozen regardless of later ticket changes.
-- **Rate changed after some techs in an open period are already paid**: already-paid payouts keep their recorded amount; the warning/recompute behavior for an already-paid tech whose rate changed is surfaced to the owner.
+- **Rate or ticket change after a tech is already paid**: a paid payout's figures are snapshotted at the moment of payment and never change; only techs still pending recompute live. Closing the period then freezes the pending techs' figures as well.
 - **Closing a period with unpaid techs**: allowed only after an explicit confirmation that names the unpaid techs.
 - **Two managers acting on the same tech at once**: the last write wins and the resulting state is consistent on the next load for both users.
 - **Viewing a closed/historical period**: all pay, undo, and close actions are disabled; the view is read-only.
@@ -128,7 +136,7 @@ In Staff settings, each staff member gains editable payroll fields: the **servic
 **Navigation & access**
 
 - **FR-001**: The side navigation MUST include a dedicated **Payroll** item (in the Operations group, alongside End of Day Cash and Report) that opens the Payroll page.
-- **FR-002**: The Payroll page and every payroll action MUST be restricted to owner and manager roles; other roles attempting to reach it MUST be denied access and redirected, consistent with the Report and Transactions pages.
+- **FR-002**: The Payroll page MUST be restricted to owner and manager roles; other roles attempting to reach it MUST be denied access and redirected, consistent with the Report and Transactions pages. Within the page, managers MAY view periods, record payouts (mark paid / undo), and export; **editing per-tech pay rates and closing a pay period MUST be restricted to owners**.
 
 **Pay periods**
 
@@ -139,15 +147,15 @@ In Staff settings, each staff member gains editable payroll fields: the **servic
 
 **Earnings calculation**
 
-- **FR-007**: For each tech and pay period, the system MUST derive gross service income and card tips from completed (paid) tickets in that period attributed to the tech.
-- **FR-008**: The system MUST compute a tech's earnings as `(service income × service commission %) + (card tips × tip split %)`.
+- **FR-007**: For each tech and pay period, the system MUST derive the tech's **commissionable service income** and card tips from completed (paid) tickets in that period attributed to the tech. Commissionable service income is gross service revenue less supply and card-processing-fee deductions, honoring that tech's payout exemptions (per spec 023), reusing the Report page's per-tech deduction math.
+- **FR-008**: The system MUST compute a tech's earnings as `(commissionable service income × service commission %) + (card tips × tip split %)`.
 - **FR-009**: The system MUST compute the cash payment as `total earnings − check portion`, clamped so it is never negative.
 - **FR-010**: The system MUST NOT include cash tips in any payroll figure (cash tips are handed directly from client to tech and are not recorded).
 - **FR-011**: A tech whose computed earnings for the period are zero (no tickets, or on leave) MUST be shown with a "No work" state and excluded from the count of techs still to pay.
 
 **Ledger view**
 
-- **FR-012**: The Payroll page MUST present a full-width ledger with one row per active tech showing: name and avatar, role, service commission % and tip split %, ticket count, gross service income, income after split, card tips, tips after split, check portion, cash payment, and a state badge (Pending, Paid, or No work).
+- **FR-012**: The Payroll page MUST present a full-width ledger with one row per active tech showing: name and avatar, role, service commission % and tip split %, ticket count, commissionable service income (net of supply and card-fee deductions), income after split, card tips, tips after split, check portion, cash payment, and a state badge (Pending, Paid, or No work).
 - **FR-013**: The ledger MUST include a footer row totaling every numeric column for the period.
 - **FR-014**: The page MUST display KPI summary cards for the period: gross service income (with ticket count), card tips collected, amount owed to techs (split into check and cash), and progress (techs paid out of techs eligible).
 - **FR-015**: The page header MUST show the period label, pay date, total cash still to hand out, and the paid/eligible tech count.
@@ -165,22 +173,22 @@ In Staff settings, each staff member gains editable payroll fields: the **servic
 
 **Recording payouts**
 
-- **FR-024**: From a tech's detail view, the owner MUST be able to mark that tech paid, selecting a payment method of cash, Zelle, or check.
-- **FR-025**: A recorded payout MUST persist the payment method, the pay date, and the user who recorded it, and MUST survive page reloads and be visible to other owners/managers.
+- **FR-024**: From a tech's detail view, an owner or manager MUST be able to mark that tech paid, selecting a payment method of cash, Zelle, or check.
+- **FR-025**: A recorded payout MUST persist the payment method, the pay date, the user who recorded it, and a snapshot of the tech's computed payroll figures (commissionable income, after-split amounts, check portion, cash payment) taken at the moment of payment. These recorded figures MUST NOT change in response to later rate changes or ticket edits/refunds — only techs still pending recompute live. The payout MUST survive page reloads and be visible to other owners/managers.
 - **FR-026**: Marking a tech paid MUST show a confirmation/receipt and update the tech's state to "Paid" everywhere it appears, along with the period's progress and cash-remaining figures.
-- **FR-027**: The owner MUST be able to undo a payout, returning the tech to "Pending" and updating the period figures.
+- **FR-027**: An owner or manager MUST be able to undo a payout, returning the tech to "Pending" — discarding the payment snapshot so the tech recomputes live again — and updating the period figures.
 - **FR-028**: No pay or undo action MUST be offered for a tech in the "No work" state, or for any tech in a closed period.
 
 **Closing a period**
 
-- **FR-029**: The owner MUST be able to close the open pay period; closing MUST set its status to "closed", make its figures and payouts read-only, and record the closing user and timestamp.
+- **FR-029**: Closing the open pay period MUST be restricted to owners; closing MUST set its status to "closed", make its figures and payouts read-only, and record the closing user and timestamp.
 - **FR-030**: If techs remain unpaid when the owner attempts to close a period, the system MUST warn — naming the unpaid techs — and require explicit confirmation before closing.
 - **FR-031**: A closed period MUST display the same figures and payout records it had at the moment of close, regardless of later changes to tickets or rates.
 
 **Per-tech rate configuration**
 
 - **FR-032**: Each staff member MUST have configurable payroll fields: service commission %, tip split %, and check portion.
-- **FR-033**: The owner MUST be able to edit a staff member's payroll fields from Staff settings, with validation that percentages fall within 0–100% and the check portion is not negative.
+- **FR-033**: Editing a staff member's payroll fields in Staff settings MUST be restricted to owners, with validation that percentages fall within 0–100% and the check portion is not negative.
 - **FR-034**: A change to a tech's rates MUST update the open period's computed figures, while closed periods retain the rates that were in effect when they were closed.
 
 **Auditability**
@@ -194,7 +202,7 @@ In Staff settings, each staff member gains editable payroll fields: the **servic
 ### Key Entities *(include if feature involves data)*
 
 - **Pay period**: a twice-monthly payroll window (1st–15th or 16th–end of month). Attributes: label, start date, end date, pay date, status (open / closed), and — once closed — the closing user and timestamp.
-- **Tech payout**: one tech's payroll outcome for one pay period. Attributes: the tech, the period, the computed figures (service income, income after split, card tips, tips after split, check portion, cash payment), state (Pending / Paid / No work), and — once paid — the payment method, pay date, and recording user. Closed periods hold a frozen snapshot of these figures.
+- **Tech payout**: one tech's payroll outcome for one pay period. Attributes: the tech, the period, the computed figures (commissionable service income, income after split, card tips, tips after split, check portion, cash payment), state (Pending / Paid / No work), and — once paid — the payment method, pay date, recording user, and a frozen snapshot of the computed figures taken at payment. Pending payouts recompute live; closing the period freezes any still-pending figures as well.
 - **Per-tech pay rates**: the compensation terms held against each staff member — service commission %, tip split %, and check portion — used to compute that tech's payouts.
 - **Tech daily activity**: per-day service income, card tips, and ticket count for a tech within a period, derived from completed tickets and used to render the daily-activity chart and quick stats.
 
@@ -206,7 +214,7 @@ In Staff settings, each staff member gains editable payroll fields: the **servic
 - **SC-002**: For any given pay period, every per-tech figure and every period total shown on the page matches an independent hand calculation to the cent.
 - **SC-003**: An owner can review and mark every tech paid for a pay period in under 5 minutes — a clear improvement over the spreadsheet routine.
 - **SC-004**: 100% of recorded payouts (method, pay date, recording user) remain correct and visible after a page reload, after the period is closed, and on a later visit by a different owner/manager.
-- **SC-005**: 100% of attempts to reach the Payroll page or perform a payroll action by a non-owner/non-manager are denied.
+- **SC-005**: 100% of attempts to reach the Payroll page by a non-owner/non-manager are denied, and 100% of attempts by a manager to edit a pay rate or close a period are denied.
 - **SC-006**: After a period is closed, reopening it for review shows figures identical to those at the moment of close, even after subsequent ticket or rate changes.
 - **SC-007**: Changing a tech's service commission % or tip split % in Staff settings is reflected in the open period's computed figures with no further action beyond saving.
 
@@ -216,7 +224,7 @@ In Staff settings, each staff member gains editable payroll fields: the **servic
 - **Persistence**: Payroll is a full system of record — pay periods, payouts, period closes, and history persist durably. Confirmed with the requester.
 - **Rate home**: Per-tech rates live on each staff member and are edited in Staff settings. Confirmed with the requester.
 - **Pay cycle**: Pay periods are semi-monthly (1st–15th and 16th–end of month), matching the salon's existing practice; the pay date is shortly after the period ends.
-- **Income basis**: The "service income" feeding the commission calculation is the gross service revenue from completed tickets attributed to the tech, matching the design prototype. Supply and card-processing-fee deductions (handled on the Report page) are **not** applied within payroll for v1.
+- **Income basis**: The "service income" feeding the commission calculation is **commissionable service income** — gross service revenue from completed tickets attributed to the tech, less supply and card-processing-fee deductions and honoring that tech's payout exemptions (spec 023) — reusing the Report page's per-tech deduction math. (Clarified 2026-05-20.) The salon-level "Gross service income" KPI remains a gross top-line figure.
 - **Card tips per tech**: Card tips are attributed to techs from existing per-payment tip-split data; cash tips are never recorded.
 - **Seeded rates before US5**: User Stories 1–4 are demonstrable with seeded per-tech rate values; User Story 5 makes those rates owner-editable. The page does not block on US5.
 - **Pay stubs**: The prototype references pay stubs ("stub sent automatically", "resend pay stub"). Generating and emailing actual pay stubs is **out of scope for v1**; the in-app paid confirmation/receipt is in scope.
@@ -227,6 +235,7 @@ In Staff settings, each staff member gains editable payroll fields: the **servic
 ## Dependencies
 
 - Existing completed-ticket, payment, and per-payment tip-split data, which supply per-tech service income and card tips for any date range.
+- The Report page's per-tech deduction logic (supply and card-processing-fee deductions, staff payout exemptions), reused to derive commissionable service income.
 - Existing staff records and the owner/manager/tech role model.
 - The existing Staff settings surface, extended with the per-tech payroll rate fields.
 - The Lacquer design system and the existing side-navigation, Report, and Transactions page patterns, reused for layout and access control.
