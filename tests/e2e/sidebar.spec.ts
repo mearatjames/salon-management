@@ -16,19 +16,17 @@ test.use({
 });
 
 // The nav items in render order — matches `NAV_CONFIG` in
-// `components/lacquer/sidebar/nav-items.ts` and the table in
-// `contracts/nav-items.contract.md` § 2. `transactions` is owner/manager
+// `components/lacquer/sidebar/nav-items.ts`. `transactions` is owner/manager
 // only (feature 045); `report` is owner/manager only (feature 046) and sits
 // in the Operations group before `settings`. This spec runs as owner so both
-// role-gated items are present.
+// role-gated items are present. `schedule`, `clients` and `walkin` carry
+// `hidden: true` in NAV_CONFIG — their pages aren't built yet, so they are
+// not rendered (covered by test (2)).
 const EXPECTED_NAV_IDS = [
   "dashboard",
-  "schedule",
-  "clients",
   "services",
   "checkout",
   "transactions",
-  "walkin",
   "end-of-day",
   "report",
   "payroll",
@@ -59,29 +57,27 @@ test.describe("Studio left navigation panel", () => {
     expect(renderedIds).toEqual([...EXPECTED_NAV_IDS]);
   });
 
-  test("(2) clicking Schedule navigates to /calendar; URL-driven active state highlights one item", async ({
+  test("(2) not-yet-built sections (schedule, clients, walk-in) are hidden from the sidebar", async ({
     page,
   }) => {
     await page.goto("/dashboard");
 
-    // Click "Schedule" — the link must fire navigation to /calendar.
-    await page.locator('[data-nav-id="schedule"]').click();
-    await page.waitForURL(/\/calendar(\?|$)/);
-    expect(new URL(page.url()).pathname).toBe("/calendar");
+    const aside = page.locator('aside[aria-label="Studio navigation"]');
+    await expect(aside).toBeVisible();
 
-    // Active-state assertion is decoupled from `/calendar` because that route
-    // has no `page.tsx` yet (placeholder per dashboard.spec.ts) and the
-    // Next.js 404 fallback does not render the (studio) layout, so the
-    // sidebar disappears once we land there. To keep the active-state check
-    // anchored on a real (studio) page while still exercising the URL → item
-    // mapping, navigate directly to `/dashboard` and assert exactly one item
-    // is active. The `isActiveSection` helper is unit-tested for every
-    // pathname/href combination in `tests/unit/sidebar/is-active-section.test.ts`.
-    await page.goto("/dashboard");
+    // These items remain in NAV_CONFIG (marked `hidden: true`) so re-enabling
+    // them later is a one-field change, but the renderer skips them entirely
+    // while their destination pages don't exist — no trace in the DOM.
+    for (const id of ["schedule", "clients", "walkin"]) {
+      await expect(aside.locator(`[data-nav-id="${id}"]`)).toHaveCount(0);
+    }
+
+    // Exactly one item is active on /dashboard — the URL-driven active state.
+    // `isActiveSection` is unit-tested for every pathname/href combination in
+    // `tests/unit/sidebar/is-active-section.test.ts`.
     await expect(page.locator('[data-nav-id="dashboard"]')).toHaveAttribute("data-active", "true");
-
-    const activeIds = await page
-      .locator('aside[aria-label="Studio navigation"] [data-nav-id][data-active="true"]')
+    const activeIds = await aside
+      .locator('[data-nav-id][data-active="true"]')
       .evaluateAll((els) => els.map((el) => el.getAttribute("data-nav-id")));
     expect(activeIds).toEqual(["dashboard"]);
   });
