@@ -26,6 +26,7 @@ import { NumpadButtons, type NumpadKey } from "@/components/lacquer/eod/numpad-b
 import { numpadReduce, type NumpadState } from "@/components/lacquer/eod/numpad-reduce";
 import { editCashDrawerAction } from "@/app/(studio)/end-of-day/history/actions";
 import { deriveComparison } from "@/lib/end-of-day/comparison";
+import { Spinner } from "@/components/ui/spinner";
 
 export type EditFormProps = {
   sessionId: string;
@@ -258,8 +259,13 @@ export function EditForm({
             letterSpacing: "-0.005em",
             cursor: canSubmit ? "pointer" : "not-allowed",
             transition: "background 150ms var(--ease-out)",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "var(--space-2)",
           }}
         >
+          {pending && <Spinner size={16} strokeWidth={2} />}
           {pending ? "Saving…" : "Save changes"}
         </button>
         <button

@@ -29,6 +29,7 @@ import { formatCurrency } from "@/lib/dashboard/format";
 import type { PayrollLedgerRow } from "@/lib/payroll/aggregate";
 import { formatPaidOn } from "@/lib/payroll/format";
 import { recordPayout, undoPayout } from "@/app/(studio)/payroll/actions";
+import { Spinner } from "@/components/ui/spinner";
 
 type Method = "cash" | "zelle" | "check";
 
@@ -125,7 +126,11 @@ export function TechPayAction({ payPeriodId, row, payDateLabel }: TechPayActionP
             disabled={pending}
             onClick={onUndo}
           >
-            <RefreshCcw size={16} strokeWidth={1.5} aria-hidden="true" />
+            {pending ? (
+              <Spinner size={16} strokeWidth={2} />
+            ) : (
+              <RefreshCcw size={16} strokeWidth={1.5} aria-hidden="true" />
+            )}
             {pending ? "Undoing…" : "Undo payout"}
           </button>
         </>
@@ -156,7 +161,11 @@ export function TechPayAction({ payPeriodId, row, payDateLabel }: TechPayActionP
             disabled={pending}
             onClick={onMarkPaid}
           >
-            <Check size={16} strokeWidth={1.5} aria-hidden="true" />
+            {pending ? (
+              <Spinner size={16} strokeWidth={2} />
+            ) : (
+              <Check size={16} strokeWidth={1.5} aria-hidden="true" />
+            )}
             {pending
               ? "Recording…"
               : `Mark ${formatCurrency(row.cashPaymentCents / 100)} paid by ${methodLabel(methodDraft)}`}

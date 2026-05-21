@@ -59,7 +59,7 @@ export function DisconnectButton() {
           <Button
             variant="destructive"
             onClick={handleConfirm}
-            disabled={pending}
+            loading={pending}
             data-testid="square-disconnect-confirm"
           >
             {pending ? "Disconnecting…" : "Disconnect"}

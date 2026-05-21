@@ -29,7 +29,7 @@ export function ConnectButton() {
   };
 
   return (
-    <Button onClick={handleClick} disabled={pending} data-testid="square-connect-button">
+    <Button onClick={handleClick} loading={pending} data-testid="square-connect-button">
       {pending ? "Opening Square…" : "Connect Square"}
     </Button>
   );
