@@ -46,10 +46,19 @@ export function SubmitButton({
       {...props}
     >
       {pending ? (
-        <>
+        // .lq-spinner is display:block; an inline-flex wrapper keeps it on one
+        // line with the label whatever chrome the caller's button carries (#124).
+        <span
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "var(--space-2)",
+          }}
+        >
           <Spinner size={16} strokeWidth={2} />
           {pendingLabel}
-        </>
+        </span>
       ) : (
         children
       )}
