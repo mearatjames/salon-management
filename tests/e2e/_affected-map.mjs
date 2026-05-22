@@ -131,8 +131,17 @@ export const AFFECTED_MAP = {
   // The /set-pin route group + the reset-password redirect change
   // (048-invitee-self-set-pin) are exercised by the set-pin spec.
   "app/(auth)/set-pin/**": ["tests/e2e/set-pin.spec.ts"],
-  "app/(auth)/reset-password/actions.ts": ["tests/e2e/auth.spec.ts", "tests/e2e/set-pin.spec.ts"],
-  "app/auth/**": ["tests/e2e/auth.spec.ts"],
+  // The reset-password form is the surface every recovery / invite flow ends
+  // on, so a change there pulls all three round-trip specs.
+  "app/(auth)/reset-password/**": [
+    "tests/e2e/auth.spec.ts",
+    "tests/e2e/set-pin.spec.ts",
+    "tests/e2e/recovery-callback.spec.ts",
+  ],
+  // `/auth/recovery-callback` is the admin-password-reset landing page
+  // (issue #126); `/auth/invite-callback` and `/auth/callback` also live
+  // here. The recovery-callback spec guards the new route directly.
+  "app/auth/**": ["tests/e2e/auth.spec.ts", "tests/e2e/recovery-callback.spec.ts"],
   "lib/auth/**": [
     "tests/e2e/auth.spec.ts",
     "tests/e2e/onboarding.spec.ts",

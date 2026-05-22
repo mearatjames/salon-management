@@ -36,12 +36,9 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import { headers } from "next/headers";
-
 import { recordAudit } from "@/lib/auth/audit";
 import { hashPin } from "@/lib/auth/pin";
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
-import { createSupabaseServerClient } from "@/lib/db/server";
 import { requireStudioSession, type StudioRole, type StudioViewer } from "@/lib/auth/session";
 
 import { getNextAnonPlaceholder } from "@/lib/onboarding/anon-counter";
@@ -50,7 +47,7 @@ import {
   deleteInviteUser,
   generateMagicLinkInvite,
   inviteOrigin,
-  sendInviteSignInLink,
+  sendImplicitFlowResetEmail,
   sendPasswordInvite,
 } from "@/lib/onboarding/invite";
 
@@ -455,27 +452,30 @@ export async function resetUserPin(formData: FormData): Promise<void> {
 
 // ── sendUserPasswordReset ──────────────────────────────────────────────────
 //
-// Owner-initiated recovery email for a user. Per server-actions.contract.md
-// § 8:
+// Owner-initiated recovery email for an active user. Per
+// server-actions.contract.md § 8:
 //   1. session + owner gate.
 //   2. load target — must be state='active' AND email IS NOT NULL.
-//   3. (await createSupabaseServerClient()).auth.resetPasswordForEmail(
-//        target.email, { redirectTo: '<origin>/auth/callback' })
-//   4. AuthRetryableFetchError → ?error=network.
+//   3. sendImplicitFlowResetEmail(target.email,
+//        '<origin>/auth/recovery-callback').
+//   4. AuthRetryableFetchError → ?error=network; any other failure →
+//      ?error=server_error.
 //   5. NO DB mutation.
 //   6. audit device.password_reset { method: 'recovery', actor: 'admin', by }.
 //      entity_id = null, entity_type = "auth".
 //   7. revalidate + redirect ?toast=password_reset_sent&name=…
 //
-// Uses the cookie-aware SSR client (not service-role): resetPasswordForEmail
-// is on the regular client and carries the user's session correctly.
-
-async function deriveOrigin(): Promise<string> {
-  const h = await headers();
-  const proto = h.get("x-forwarded-proto") ?? "https";
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  return `${proto}://${host}`;
-}
+// CRITICAL — this is an *admin-initiated, cross-user* reset (issue #126): the
+// owner triggers it, but the TARGET opens the link, in a different browser.
+// The link MUST therefore use the implicit flow (tokens in the URL hash), NOT
+// PKCE. A PKCE link's `code_verifier` is persisted to the owner's cookie
+// store, so the target's browser has nothing to complete the exchange with.
+// `sendImplicitFlowResetEmail` builds a dedicated implicit-flow anon client;
+// the link lands on the `/auth/recovery-callback` client page, which reads
+// the hash. (The earlier implementation routed `resetPasswordForEmail`
+// through the cookie-aware SSR client — PKCE by default — and pointed
+// `redirectTo` at the server `/auth/callback` route: that combination made
+// this path completely non-functional.)
 
 export async function sendUserPasswordReset(formData: FormData): Promise<void> {
   const viewer = await requireStudioSession();
@@ -503,15 +503,13 @@ export async function sendUserPasswordReset(formData: FormData): Promise<void> {
     redirect(`${ONB_PATH}?error=not_found`);
   }
 
-  // Use the cookie-aware client — resetPasswordForEmail is on the regular
-  // SDK surface, not the admin one.
-  const ssr = await createSupabaseServerClient();
-  const origin = await deriveOrigin();
-
+  // Send via the implicit-flow client so the link works in the target's
+  // browser (see the header note). It lands on `/auth/recovery-callback`.
   try {
-    await ssr.auth.resetPasswordForEmail(target.email, {
-      redirectTo: `${origin}/auth/callback`,
-    });
+    await sendImplicitFlowResetEmail(
+      target.email,
+      `${await inviteOrigin()}/auth/recovery-callback`
+    );
   } catch (err) {
     // The SDK throws AuthRetryableFetchError for transient network blips.
     // We detect by name (the class is exported but importing it inflates
@@ -694,8 +692,8 @@ export async function removeUser(formData: FormData): Promise<void> {
 //   2. load target — must be state='invited' AND removed_at IS NULL; else
 //      ?error=not_found. Also email IS NOT NULL.
 //   3. re-send a fresh sign-in link to the invitee's EXISTING auth user via
-//      `sendInviteSignInLink`. The original invite already created the auth
-//      user, so resend must NOT delete + re-create it:
+//      `sendImplicitFlowResetEmail`. The original invite already created the
+//      auth user, so resend must NOT delete + re-create it:
 //        - `inviteUserByEmail` rejects an already-confirmed address with
 //          `email_exists`, and an invitee is confirmed the moment they open
 //          any invite link; and
@@ -703,10 +701,11 @@ export async function removeUser(formData: FormData): Promise<void> {
 //          staff row has pin_hash = NULL, so the FK ON DELETE SET NULL
 //          cascade would null staff.user_id and violate the
 //          staff_pin_or_user CHECK ("Database error deleting user").
-//      `sendInviteSignInLink` (resetPasswordForEmail on an implicit-flow
-//      client) reaches any existing user without touching the auth row. The
-//      redirect carries `?method=password` for password invites so the
-//      callback routes to password setup; magic-link invites omit it.
+//      `sendImplicitFlowResetEmail` (resetPasswordForEmail on an
+//      implicit-flow client) reaches any existing user without touching the
+//      auth row. The redirect carries `?method=password` for password
+//      invites so the callback routes to password setup; magic-link invites
+//      omit it.
 //   4. UPDATE staff `invited_at = now()` — the auth user is untouched, so
 //      user_id is never rotated.
 //   5. audit `user.invite_resent { email, method, by }` BEFORE the redirect
@@ -748,9 +747,9 @@ export async function resendInvite(formData: FormData): Promise<void> {
   // 3: re-send a fresh sign-in link to the EXISTING invitee. See the header
   // note — resend cannot delete + re-create the auth user (the FK SET NULL
   // cascade violates staff_pin_or_user on a pin-less invited row), so it
-  // reaches the existing user with sendInviteSignInLink instead. The link
-  // lands on /auth/invite-callback; password invites add ?method=password
-  // so the callback routes to password setup.
+  // reaches the existing user with sendImplicitFlowResetEmail instead. The
+  // link lands on /auth/invite-callback; password invites add
+  // ?method=password so the callback routes to password setup.
   const method: InviteMethod = (target.invite_method as InviteMethod) ?? "magic_link";
   const origin = await inviteOrigin();
   const redirectTo =
@@ -758,7 +757,7 @@ export async function resendInvite(formData: FormData): Promise<void> {
       ? `${origin}/auth/invite-callback?method=password`
       : `${origin}/auth/invite-callback`;
   try {
-    await sendInviteSignInLink(target.email as string, redirectTo);
+    await sendImplicitFlowResetEmail(target.email as string, redirectTo);
   } catch (err) {
     console.error("resendInvite: re-send failed", err);
     redirect(`${ONB_PATH}?error=invite_failed`);

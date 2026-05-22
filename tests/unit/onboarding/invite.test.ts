@@ -22,7 +22,7 @@ vi.mock("@/lib/auth/request-origin", () => ({
   getRequestOrigin: vi.fn(async () => "http://localhost:3000"),
 }));
 
-// `sendInviteSignInLink` builds its own anon client straight from
+// `sendImplicitFlowResetEmail` builds its own anon client straight from
 // `@supabase/supabase-js` (not the service-role factory) — mock the SDK
 // entry point so the resend path can be exercised without a network call.
 vi.mock("@supabase/supabase-js", () => ({
@@ -36,7 +36,7 @@ import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 import {
   deleteInviteUser,
   generateMagicLinkInvite,
-  sendInviteSignInLink,
+  sendImplicitFlowResetEmail,
   sendPasswordInvite,
 } from "@/lib/onboarding/invite";
 
@@ -176,7 +176,7 @@ describe("deleteInviteUser", () => {
   });
 });
 
-describe("sendInviteSignInLink", () => {
+describe("sendImplicitFlowResetEmail", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://localhost:54321");
@@ -187,26 +187,40 @@ describe("sendInviteSignInLink", () => {
     vi.restoreAllMocks();
   });
 
-  it("re-sends a link to the existing invitee via an implicit-flow client", async () => {
+  it("sends the link via an implicit-flow client (invite-callback redirect)", async () => {
     const resetPasswordForEmail = vi.fn().mockResolvedValue({ data: {}, error: null });
     (createClient as unknown as Mocked<() => unknown>).mockReturnValue({
       auth: { resetPasswordForEmail },
     });
 
     await expect(
-      sendInviteSignInLink("invitee@tang.dev", "https://app.test/auth/invite-callback")
+      sendImplicitFlowResetEmail("invitee@tang.dev", "https://app.test/auth/invite-callback")
     ).resolves.toBeUndefined();
 
     // The client MUST be pinned to the implicit flow — the link has to carry
     // its tokens in the URL hash. A PKCE link would be unusable: the code
-    // verifier lives in the owner's browser, not the invitee's.
+    // verifier lives in the triggering user's browser, not the recipient's.
     const createArgs = (createClient as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
     expect((createArgs[2] as { auth: { flowType: string } }).auth.flowType).toBe("implicit");
     // resetPasswordForEmail reaches an EXISTING user (confirmed or not)
-    // without deleting the auth row — the resend path can't delete it (the
-    // FK SET NULL cascade would violate the staff_pin_or_user CHECK).
+    // without deleting the auth row.
     expect(resetPasswordForEmail).toHaveBeenCalledWith("invitee@tang.dev", {
       redirectTo: "https://app.test/auth/invite-callback",
+    });
+  });
+
+  it("forwards the recovery-callback redirect verbatim (admin password reset)", async () => {
+    const resetPasswordForEmail = vi.fn().mockResolvedValue({ data: {}, error: null });
+    (createClient as unknown as Mocked<() => unknown>).mockReturnValue({
+      auth: { resetPasswordForEmail },
+    });
+
+    await sendImplicitFlowResetEmail("staff@tang.dev", "https://app.test/auth/recovery-callback");
+
+    const createArgs = (createClient as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect((createArgs[2] as { auth: { flowType: string } }).auth.flowType).toBe("implicit");
+    expect(resetPasswordForEmail).toHaveBeenCalledWith("staff@tang.dev", {
+      redirectTo: "https://app.test/auth/recovery-callback",
     });
   });
 
@@ -219,7 +233,7 @@ describe("sendInviteSignInLink", () => {
     });
 
     await expect(
-      sendInviteSignInLink("invitee@tang.dev", "https://app.test/auth/invite-callback")
+      sendImplicitFlowResetEmail("invitee@tang.dev", "https://app.test/auth/invite-callback")
     ).rejects.toBeDefined();
   });
 });

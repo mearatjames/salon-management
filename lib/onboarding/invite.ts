@@ -121,33 +121,41 @@ export async function deleteInviteUser(userId: string): Promise<void> {
 }
 
 /**
- * Re-send path for the Onboard "Resend invite" action. The invitee already
- * has an auth user (the original invite created it), so a fresh invite
- * cannot go through `inviteUserByEmail` — it rejects an already-confirmed
- * address with `email_exists`, and an invitee's auth user is confirmed the
- * moment they open any invite link. Deleting + re-creating the auth user is
- * impossible too: an invited magic-link staff row has `pin_hash = NULL`, so
- * the FK `ON DELETE SET NULL` cascade would null `staff.user_id` and violate
- * the `staff_pin_or_user` CHECK — Supabase surfaces that as "Database error
- * deleting user".
+ * Send a Supabase `resetPasswordForEmail` link through a dedicated
+ * **implicit-flow** anon client. Two cross-browser flows share this helper —
+ * in both, one user triggers the email and a *different* user opens the link:
  *
- * `resetPasswordForEmail` delivers a fresh link to ANY existing user —
- * confirmed or not — without touching the auth row. The client is pinned to
- * the implicit flow so the link returns its tokens in the URL hash, which
- * the `/auth/invite-callback` page completes — the same shape the admin
- * `inviteUserByEmail` link produced. A PKCE link would be unusable here: its
- * code verifier lives in the owner's browser, not the invitee's.
+ *   - **Resend invite** (`resendInvite`) — re-delivers a sign-in link to an
+ *     existing invitee's auth user. A fresh invite cannot go through
+ *     `inviteUserByEmail`: it rejects an already-confirmed address with
+ *     `email_exists`, and an invitee's auth user is confirmed the moment they
+ *     open any invite link. Deleting + re-creating the auth user is
+ *     impossible too — an invited magic-link staff row has `pin_hash = NULL`,
+ *     so the FK `ON DELETE SET NULL` cascade would null `staff.user_id` and
+ *     violate the `staff_pin_or_user` CHECK ("Database error deleting user").
+ *     `resetPasswordForEmail` reaches ANY existing user without touching the
+ *     auth row.
+ *   - **Admin password reset** (`sendUserPasswordReset`) — an owner sends a
+ *     password-reset link to another user from Settings → Onboarding.
  *
- * This is NOT the admin client — `resetPasswordForEmail` is on the regular
- * SDK surface — so it builds its own anon client straight from
- * `@supabase/supabase-js` (the cookie-aware SSR client defaults to PKCE).
+ * Both are inherently cross-browser, so the link MUST use the implicit flow:
+ * implicit-flow links return their tokens in the URL **hash**, which works
+ * regardless of which browser opens them. A PKCE link would be unusable —
+ * its `code_verifier` is persisted to the *triggering* user's cookie store,
+ * not the recipient's (issue #126). That is why this builds its own anon
+ * client straight from `@supabase/supabase-js`: the cookie-aware SSR client
+ * defaults to `flowType: 'pkce'`.
+ *
+ * `redirectTo` MUST point at a client page that can read the URL hash — a
+ * server route handler never receives it. Invite links land on
+ * `/auth/invite-callback`; recovery links on `/auth/recovery-callback`.
  */
-export async function sendInviteSignInLink(email: string, redirectTo: string): Promise<void> {
+export async function sendImplicitFlowResetEmail(email: string, redirectTo: string): Promise<void> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anonKey) {
     throw new Error(
-      "sendInviteSignInLink: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY not set"
+      "sendImplicitFlowResetEmail: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY not set"
     );
   }
   const client = createClient(url, anonKey, {

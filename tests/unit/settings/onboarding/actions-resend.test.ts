@@ -5,7 +5,7 @@
 // throw, per-module mocks).
 //
 // Implementation model: resend re-sends a fresh sign-in link to the
-// invitee's EXISTING auth user via `sendInviteSignInLink` (a
+// invitee's EXISTING auth user via `sendImplicitFlowResetEmail` (a
 // resetPasswordForEmail call on an implicit-flow client). It does NOT
 // delete + re-create the auth user:
 //   - inviteUserByEmail rejects an already-confirmed address with
@@ -20,14 +20,14 @@
 // bumps `invited_at`.
 //
 // Coverage matrix:
-//   - Magic-link path → sendInviteSignInLink(email, '<origin>/auth/invite-
+//   - Magic-link path → sendImplicitFlowResetEmail(email, '<origin>/auth/invite-
 //     callback') → UPDATE invited_at → audit `user.invite_resent
 //     { email, method: 'magic_link', by }` → redirect ?toast=resent.
-//   - Password path → sendInviteSignInLink(email, '<origin>/auth/invite-
+//   - Password path → sendImplicitFlowResetEmail(email, '<origin>/auth/invite-
 //     callback?method=password') → audit payload.method='password'.
 //   - Non-invited target (state='active' / 'offboarded' / removed_at
 //     non-null / missing / email null) → ?error=not_found, no re-send.
-//   - sendInviteSignInLink throws → ?error=invite_failed. No UPDATE, no
+//   - sendImplicitFlowResetEmail throws → ?error=invite_failed. No UPDATE, no
 //     audit.
 //   - UPDATE failure → ?error=server_error. No audit.
 //   - Non-owner viewer → /dashboard?error=forbidden.
@@ -68,7 +68,7 @@ vi.mock("@/lib/db/admin", () => ({
 // stubbed so `actions.ts`'s other server actions still import cleanly.
 vi.mock("@/lib/onboarding/invite", () => ({
   inviteOrigin: vi.fn(async () => "http://localhost:3000"),
-  sendInviteSignInLink: vi.fn(async () => undefined),
+  sendImplicitFlowResetEmail: vi.fn(async () => undefined),
   deleteInviteUser: vi.fn(),
   generateMagicLinkInvite: vi.fn(),
   sendPasswordInvite: vi.fn(),
@@ -79,7 +79,7 @@ vi.mock("@/lib/onboarding/invite", () => ({
 import { recordAudit } from "@/lib/auth/audit";
 import { requireStudioSession, type StudioViewer } from "@/lib/auth/session";
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
-import { sendInviteSignInLink } from "@/lib/onboarding/invite";
+import { sendImplicitFlowResetEmail } from "@/lib/onboarding/invite";
 
 import { resendInvite } from "@/app/(studio)/settings/onboarding/actions";
 
@@ -196,7 +196,9 @@ describe("resendInvite", () => {
     (requireStudioSession as unknown as Mocked<() => Promise<StudioViewer>>).mockResolvedValue(
       OWNER_VIEWER
     );
-    (sendInviteSignInLink as unknown as Mocked<() => Promise<void>>).mockResolvedValue(undefined);
+    (sendImplicitFlowResetEmail as unknown as Mocked<() => Promise<void>>).mockResolvedValue(
+      undefined
+    );
   });
 
   afterEach(() => {
@@ -217,8 +219,8 @@ describe("resendInvite", () => {
 
     // 1. the existing invitee gets a fresh link on the magic-link
     //    /auth/invite-callback redirect (no `?method`).
-    expect(sendInviteSignInLink).toHaveBeenCalledTimes(1);
-    expect(sendInviteSignInLink).toHaveBeenCalledWith(
+    expect(sendImplicitFlowResetEmail).toHaveBeenCalledTimes(1);
+    expect(sendImplicitFlowResetEmail).toHaveBeenCalledWith(
       "hana@tangnails.com",
       "http://localhost:3000/auth/invite-callback"
     );
@@ -260,7 +262,7 @@ describe("resendInvite", () => {
       thrown = err;
     }
 
-    expect(sendInviteSignInLink).toHaveBeenCalledWith(
+    expect(sendImplicitFlowResetEmail).toHaveBeenCalledWith(
       "hana@tangnails.com",
       "http://localhost:3000/auth/invite-callback?method=password"
     );
@@ -291,7 +293,7 @@ describe("resendInvite", () => {
 
     const url = redirectUrlFrom(thrown);
     expect(url).toContain("error=not_found");
-    expect(sendInviteSignInLink).not.toHaveBeenCalled();
+    expect(sendImplicitFlowResetEmail).not.toHaveBeenCalled();
     expect(lastUpdate.current).toBeNull();
     expect(recordAudit).not.toHaveBeenCalled();
   });
@@ -346,9 +348,9 @@ describe("resendInvite", () => {
 
   // ── Supabase failure ───────────────────────────────────────────────────
 
-  it("sendInviteSignInLink throws → ?error=invite_failed (no UPDATE, no audit)", async () => {
+  it("sendImplicitFlowResetEmail throws → ?error=invite_failed (no UPDATE, no audit)", async () => {
     const { lastUpdate } = mockAdminClient();
-    (sendInviteSignInLink as unknown as Mocked<() => Promise<void>>).mockRejectedValueOnce(
+    (sendImplicitFlowResetEmail as unknown as Mocked<() => Promise<void>>).mockRejectedValueOnce(
       new Error("supabase boom")
     );
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -402,7 +404,7 @@ describe("resendInvite", () => {
     const url = redirectUrlFrom(thrown);
     expect(url).toContain("/dashboard");
     expect(url).toContain("error=forbidden");
-    expect(sendInviteSignInLink).not.toHaveBeenCalled();
+    expect(sendImplicitFlowResetEmail).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalled();
   });
 });
