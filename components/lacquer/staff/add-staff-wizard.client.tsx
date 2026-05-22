@@ -50,7 +50,7 @@ import {
   pinKeypadInit,
   pinKeypadSubmit,
   type PinKeypadState,
-} from "@/app/(studio)/settings/staff/_pin-keypad-state";
+} from "@/lib/auth/pin-keypad";
 
 const ROLE_LABEL: Record<StudioRole, string> = {
   owner: "Owner",

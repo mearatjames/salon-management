@@ -15,7 +15,7 @@ import {
   PIN_MISMATCH_MESSAGE,
   pinKeypadInit,
   pinKeypadSubmit,
-} from "@/app/(studio)/settings/staff/_pin-keypad-state";
+} from "@/lib/auth/pin-keypad";
 
 describe("pinKeypadInit", () => {
   it("starts in the enter phase with an empty buffer and no error", () => {

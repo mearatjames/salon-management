@@ -44,7 +44,7 @@ import {
   pinKeypadInit,
   pinKeypadSubmit,
   type PinKeypadState,
-} from "@/app/(studio)/settings/staff/_pin-keypad-state";
+} from "@/lib/auth/pin-keypad";
 
 export type ChangePinModalMode = "set" | "change";
 

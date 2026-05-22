@@ -34,7 +34,7 @@ Single Next.js app at repository root. New route in the `(auth)` group:
 
 **Purpose**: Confirm the working baseline before any change.
 
-- [ ] T001 Confirm work is on branch `048-invitee-self-set-pin` (`git rev-parse --abbrev-ref HEAD`). No new dependencies are required — the feature reuses `bcryptjs` (`hashPin`) and existing primitives. Verify the untouched baseline is green with `npm run typecheck`.
+- [X] T001 Confirm work is on branch `048-invitee-self-set-pin` (`git rev-parse --abbrev-ref HEAD`). No new dependencies are required — the feature reuses `bcryptjs` (`hashPin`) and existing primitives. Verify the untouched baseline is green with `npm run typecheck`.
 
 ---
 
@@ -45,8 +45,8 @@ helper and a new audit-action value. No user-facing behavior yet.
 
 **⚠️ CRITICAL**: Complete before starting Phase 3.
 
-- [ ] T002 [P] Relocate the pure keypad reducer: create `lib/auth/pin-keypad.ts` containing `pinKeypadInit`, `pinKeypadSubmit`, and the `PinKeypadState` / `PinKeypadResult` types copied verbatim from `app/(studio)/settings/staff/_pin-keypad-state.ts`; delete `app/(studio)/settings/staff/_pin-keypad-state.ts`; update the import in `components/lacquer/staff/change-pin-modal.client.tsx` to `@/lib/auth/pin-keypad`. Verify `npm run typecheck` stays green (pure mechanical move).
-- [ ] T003 [P] Add `"user.pin_set"` to the `AuditAction` union in `lib/auth/audit.ts` (place it near `"user.pin_reset"`). Confirm `deriveEntityType` already maps `user.*` → `"user"` — no change needed there.
+- [X] T002 [P] Relocate the pure keypad reducer: create `lib/auth/pin-keypad.ts` containing `pinKeypadInit`, `pinKeypadSubmit`, and the `PinKeypadState` / `PinKeypadResult` types copied verbatim from `app/(studio)/settings/staff/_pin-keypad-state.ts`; delete `app/(studio)/settings/staff/_pin-keypad-state.ts`; update the import in `components/lacquer/staff/change-pin-modal.client.tsx` to `@/lib/auth/pin-keypad`. Verify `npm run typecheck` stays green (pure mechanical move).
+- [X] T003 [P] Add `"user.pin_set"` to the `AuditAction` union in `lib/auth/audit.ts` (place it near `"user.pin_reset"`). Confirm `deriveEntityType` already maps `user.*` → `"user"` — no change needed there.
 
 **Checkpoint**: Shared helper and audit vocabulary ready — user story work can begin.
 
