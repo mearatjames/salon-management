@@ -692,15 +692,19 @@ export async function removeUser(formData: FormData): Promise<void> {
 //   1. session + owner gate.
 //   2. load target — must be state='invited' AND removed_at IS NULL; else
 //      ?error=not_found. Also email IS NOT NULL.
-//   3. re-issue via admin.generateLink (magic_link) OR inviteUserByEmail
-//      (password). Either primitive rotates the prior token server-side, so
-//      the original link becomes invalid as a side-effect. We DELIBERATELY
-//      do NOT route through `generateMagicLinkInvite` from
-//      `lib/onboarding/invite.ts`, because that helper calls
-//      `admin.createUser` first — on resend the auth user already exists,
-//      so it would always hit the duplicate-sentinel branch and waste a
-//      roundtrip. The simpler model goes straight to the rotation primitive.
-//   4. UPDATE staff `invited_at = now()`.
+//   3. delete the stale auth user, then re-invite via the method-appropriate
+//      helper (generateMagicLinkInvite / sendPasswordInvite, both of which
+//      call inviteUserByEmail so Supabase actually SENDS the email). The
+//      original invite already created an auth user — and the moment the
+//      invitee clicks any invite/magic link that user becomes CONFIRMED.
+//      inviteUserByEmail rejects a confirmed address with `email_exists`, so
+//      a plain re-invite fails for anyone who has clicked their link once
+//      (even if the staff row never left `invited`). Deleting first frees
+//      the email unconditionally — the FK ON DELETE SET NULL also clears
+//      staff.user_id — so the re-invite always lands with a fresh token.
+//      The staff row is still state='invited': the invitee never signed in,
+//      so no audit chain references their user_id and rotating it is safe.
+//   4. UPDATE staff `user_id = <rotated id>`, `invited_at = now()`.
 //   5. audit `user.invite_resent { email, method, by }` BEFORE the redirect
 //      (Constitution III).
 //   6. revalidate + redirect ?toast=resent&name=<display_name>.
@@ -723,7 +727,7 @@ export async function resendInvite(formData: FormData): Promise<void> {
   const admin = createSupabaseServiceRoleClient();
   const { data: target, error: loadErr } = await admin
     .from("staff")
-    .select("id, user_id, email, display_name, state, invite_method, removed_at")
+    .select("id, user_id, email, display_name, role, state, invite_method, removed_at")
     .eq("id", staffId)
     .single();
 
@@ -737,44 +741,50 @@ export async function resendInvite(formData: FormData): Promise<void> {
     redirect(`${ONB_PATH}?error=not_found`);
   }
 
-  // 3: re-send the invite via inviteUserByEmail. Supabase sends a fresh
-  // invite email and invalidates the prior token server-side as a side-effect
-  // — that's the documented UX caveat in quickstart.md (Copy link & Resend
-  // both invalidate the prior URL). Both invite methods route through
-  // inviteUserByEmail because it is the only admin primitive that actually
-  // SENDS the email; `generateLink` merely generates a link, which was the
-  // original delivery bug. The redirect differs — password invites carry
-  // `?type=invite` so the callback routes to the password-setup form;
-  // magic-link invites omit it and land on /select-staff.
+  // 3: delete the stale auth user, then re-invite. `inviteUserByEmail` rejects
+  // an already-confirmed address with `email_exists`, and an invitee's auth
+  // user is confirmed the moment they click any invite/magic link — so a plain
+  // re-invite fails for anyone who has clicked their link once. Deleting first
+  // frees the email unconditionally; the helper then sends a fresh email with
+  // a fresh token. generateMagicLinkInvite / sendPasswordInvite carry the
+  // method-appropriate /auth/invite-callback redirect (the password variant
+  // adds ?method=password so the callback routes to password setup).
   const method: InviteMethod = (target.invite_method as InviteMethod) ?? "magic_link";
-  try {
-    const adminAuth = (admin as unknown as { auth?: { admin?: unknown } }).auth?.admin as
-      | {
-          inviteUserByEmail?: (
-            email: string,
-            options?: { redirectTo?: string; data?: Record<string, unknown> }
-          ) => Promise<{ error: { message: string } | null }>;
-        }
-      | undefined;
-    if (!adminAuth?.inviteUserByEmail) {
-      throw new Error("supabase admin.inviteUserByEmail unavailable");
+
+  // Best-effort pre-delete: the auth user may already be gone (deleted out of
+  // band). A genuine failure here is harmless — if the email is still occupied
+  // the re-invite below returns the duplicate sentinel, mapped to invite_failed.
+  if (target.user_id) {
+    try {
+      await deleteInviteUser(target.user_id as string);
+    } catch (delErr) {
+      console.error("resendInvite: pre-delete failed (continuing)", delErr);
     }
-    const origin = await inviteOrigin();
-    const redirectTo =
+  }
+
+  const inviteMetadata = {
+    display_name: target.display_name as string,
+    role: target.role as string,
+    invited_by: viewer.staff.id,
+  };
+  let rotatedUserId: string | null = null;
+  try {
+    const result =
       method === "password"
-        ? `${origin}/auth/invite-callback?method=password`
-        : `${origin}/auth/invite-callback`;
-    const { error } = await adminAuth.inviteUserByEmail(target.email as string, { redirectTo });
-    if (error) throw error;
+        ? await sendPasswordInvite(target.email as string, inviteMetadata)
+        : await generateMagicLinkInvite(target.email as string, inviteMetadata);
+    rotatedUserId = result.user_id;
   } catch (err) {
-    console.error("resendInvite: rotation failed", err);
+    console.error("resendInvite: re-invite failed", err);
+  }
+  if (!rotatedUserId) {
     redirect(`${ONB_PATH}?error=invite_failed`);
   }
 
-  // 4: bump invited_at.
+  // 4: repoint the staff row at the rotated auth user + bump invited_at.
   const { error: updateErr } = await admin
     .from("staff")
-    .update({ invited_at: new Date().toISOString() })
+    .update({ user_id: rotatedUserId, invited_at: new Date().toISOString() })
     .eq("id", target.id as string);
 
   if (updateErr) {

@@ -6,30 +6,33 @@
 // § Phase 7 / US5 / T070):
 //
 //   - Magic-link path: target state='invited', invite_method='magic_link' →
-//     calls admin.auth.admin.inviteUserByEmail(email, { redirectTo:
-//     '<origin>/auth/callback' }) → Supabase sends a fresh invite email and
-//     invalidates the prior token → UPDATE staff `invited_at = now()` → audit
+//     deletes the stale auth user → generateMagicLinkInvite → inviteUserByEmail
+//     on the '<origin>/auth/invite-callback' redirect → UPDATE staff
+//     `user_id = <rotated>`, `invited_at = now()` → audit
 //     `user.invite_resent { email, method: 'magic_link', by }` → redirect
 //     ?toast=resent&name=<display_name>.
-//   - Password path: target invite_method='password' → calls admin.auth.admin.
-//     inviteUserByEmail(email, { redirectTo: '<origin>/auth/callback?type=
-//     invite' }) → UPDATE invited_at → audit payload.method='password' →
+//   - Password path: target invite_method='password' → sendPasswordInvite →
+//     inviteUserByEmail on '<origin>/auth/invite-callback?method=password' →
+//     UPDATE user_id + invited_at → audit payload.method='password' →
 //     redirect ?toast=resent&name=…
+//   - Confirmed invitee (clicked the link once): the stale auth user is
+//     deleted first so the re-invite is not rejected with `email_exists`.
 //   - Non-invited target (state='active' / 'offboarded' / removed_at non-null
 //     / missing) → ?error=not_found.
-//   - Supabase failure (inviteUserByEmail throws) → ?error=invite_failed. NO
-//     audit row written.
+//   - Supabase failure (re-invite throws) → ?error=invite_failed. NO audit
+//     row written.
 //   - UPDATE failure → ?error=server_error. NO audit row written.
 //   - Non-owner viewer → /dashboard?error=forbidden.
 //
-// Implementation model choice: resend uses admin.inviteUserByEmail DIRECTLY —
-// NOT generateMagicLinkInvite — because the auth user already exists, so the
-// duplicate-sentinel roundtrip generateMagicLinkInvite would pay for is dead
-// weight here. Both invite methods resolve to inviteUserByEmail: it is the
-// only admin primitive that actually SENDS the invite email — `generateLink`
-// merely generates a link, and routing resend through it was the original
-// delivery bug. inviteUserByEmail re-sends to the still-unconfirmed
-// (state='invited') user and rotates the prior token as a side-effect.
+// Implementation model: resend DELETES the stale auth user, then re-invites
+// via generateMagicLinkInvite / sendPasswordInvite (both call
+// inviteUserByEmail — the only admin primitive that actually SENDS the email).
+// The delete is required because the invitee's auth user is CONFIRMED the
+// moment they click any invite/magic link, and inviteUserByEmail rejects a
+// confirmed address with `email_exists`. Deleting first frees the email
+// unconditionally; the staff row is then repointed at the rotated user id.
+// `generateLink` is never used — routing resend through it was the original
+// delivery bug.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -144,16 +147,22 @@ type AdminMockOpts = {
   target?: Partial<TargetRow> | null;
   updateError?: { code?: string; message?: string } | null;
   inviteUserByEmailError?: Error | null;
+  // When true the mock models a Supabase invitee whose auth user is already
+  // CONFIRMED (clicked an invite/magic link once): inviteUserByEmail rejects
+  // it with `email_exists` until the stale auth user is deleted.
+  existingUserConfirmed?: boolean;
 };
 
 function mockAdminClient(opts: AdminMockOpts = {}): {
   lastUpdate: { current: Record<string, unknown> | null };
   generateLinkCalls: Array<{ type: string; email: string; options?: unknown }>;
   inviteUserByEmailCalls: Array<{ email: string; options?: unknown }>;
+  deletedUserIds: string[];
 } {
   const lastUpdate = { current: null as Record<string, unknown> | null };
   const generateLinkCalls: Array<{ type: string; email: string; options?: unknown }> = [];
   const inviteUserByEmailCalls: Array<{ email: string; options?: unknown }> = [];
+  const deletedUserIds: string[] = [];
 
   const targetRow: TargetRow | null =
     opts.target === null ? null : { ...DEFAULT_TARGET, ...(opts.target ?? {}) };
@@ -197,16 +206,32 @@ function mockAdminClient(opts: AdminMockOpts = {}): {
             error: null,
           };
         },
+        deleteUser: async (uid: string) => {
+          deletedUserIds.push(uid);
+          return { data: { user: null }, error: null };
+        },
         inviteUserByEmail: async (email: string, options?: unknown) => {
           inviteUserByEmailCalls.push({ email, options });
           if (opts.inviteUserByEmailError) throw opts.inviteUserByEmailError;
-          return { data: { user: { id: "auth-user-target-1" } }, error: null };
+          // Supabase rejects a re-invite to an already-confirmed address with
+          // `email_exists` — resend must delete the stale auth user first.
+          if (
+            opts.existingUserConfirmed &&
+            targetRow?.user_id &&
+            !deletedUserIds.includes(targetRow.user_id)
+          ) {
+            throw Object.assign(
+              new Error("A user with this email address has already been registered"),
+              { name: "AuthApiError", status: 422, code: "email_exists" }
+            );
+          }
+          return { data: { user: { id: "auth-user-rotated-1" } }, error: null };
         },
       },
     },
   });
 
-  return { lastUpdate, generateLinkCalls, inviteUserByEmailCalls };
+  return { lastUpdate, generateLinkCalls, inviteUserByEmailCalls, deletedUserIds };
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -297,6 +322,38 @@ describe("resendInvite", () => {
       by: OWNER_VIEWER.deviceUserId,
     });
 
+    const url = redirectUrlFrom(thrown);
+    expect(url).toContain("toast=resent");
+  });
+
+  // ── Confirmed invitee: stale auth user must be rotated ─────────────────
+
+  it("re-invites a confirmed invitee: deletes the stale auth user first, then inviteUserByEmail succeeds", async () => {
+    // An invitee who clicked their invite link even once has a CONFIRMED
+    // auth user, even when the staff row never left `invited` (e.g. the
+    // accept callback failed). inviteUserByEmail rejects a confirmed email
+    // with `email_exists`; resend must delete the stale auth user first so
+    // the re-invite goes through and the staff row repoints at the fresh id.
+    const { lastUpdate, deletedUserIds, inviteUserByEmailCalls } = mockAdminClient({
+      existingUserConfirmed: true,
+    });
+
+    let thrown: unknown;
+    try {
+      await resendInvite(resendForm());
+    } catch (err) {
+      thrown = err;
+    }
+
+    // 1. the stale auth user is deleted before the re-invite.
+    expect(deletedUserIds).toContain("auth-user-target-1");
+    // 2. the re-invite goes through (would have thrown email_exists otherwise).
+    expect(inviteUserByEmailCalls).toHaveLength(1);
+    // 3. the staff row repoints at the rotated auth user + bumps invited_at.
+    expect(lastUpdate.current?.user_id).toBe("auth-user-rotated-1");
+    expect(typeof lastUpdate.current?.invited_at).toBe("string");
+    // 4. audit + success toast.
+    expect(recordAudit).toHaveBeenCalledTimes(1);
     const url = redirectUrlFrom(thrown);
     expect(url).toContain("toast=resent");
   });
