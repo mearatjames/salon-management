@@ -136,10 +136,13 @@ export async function sendPasswordReset(formData: FormData): Promise<void> {
   }
 
   const origin = await getOrigin();
-  // Re-use the existing /auth/callback PKCE plumbing. Supabase appends
-  // `?type=recovery` to this URL automatically; the callback's recovery
-  // branch (T035) then forwards to /reset-password.
-  const redirectTo = `${origin}/auth/callback?next=${encodeNext(next)}`;
+  // Re-use the existing /auth/callback PKCE plumbing. We put `type=recovery`
+  // on the URL ourselves — Supabase's PKCE verify redirect only appends
+  // `?code=<pkce>`, it does NOT add `type` (that surfaces only in the
+  // implicit flow's URL hash). The callback's recovery branch (T035) reads
+  // this `type` and forwards to /reset-password; without it the callback
+  // treats the link as a plain sign-in and drops the user on /select-staff.
+  const redirectTo = `${origin}/auth/callback?type=recovery&next=${encodeNext(next)}`;
 
   const supabase = await createSupabaseServerClient();
 

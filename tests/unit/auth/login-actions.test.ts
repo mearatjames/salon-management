@@ -335,7 +335,7 @@ describe("sendPasswordReset — FR-015 / Invariant 6: always redirect to ?reset_
     });
   }
 
-  it("calls supabase.auth.resetPasswordForEmail with redirectTo pointing at /auth/callback and carrying ?next=", async () => {
+  it("calls supabase.auth.resetPasswordForEmail with redirectTo pointing at /auth/callback?type=recovery and carrying ?next=", async () => {
     const { resetPasswordForEmail } = mockSupabaseReset();
 
     try {
@@ -350,7 +350,13 @@ describe("sendPasswordReset — FR-015 / Invariant 6: always redirect to ?reset_
       { redirectTo?: string },
     ];
     expect(email).toBe("owner@tangnails.dev");
-    expect(options.redirectTo).toMatch(/^http:\/\/localhost:3000\/auth\/callback\?next=/);
+    // `type=recovery` MUST be on the URL we hand Supabase — its PKCE verify
+    // redirect only appends `?code=<pkce>`, never `type`. Without it the
+    // callback can't tell a recovery link from a plain sign-in and drops
+    // the user on /select-staff instead of /reset-password.
+    expect(options.redirectTo).toMatch(
+      /^http:\/\/localhost:3000\/auth\/callback\?type=recovery&next=/
+    );
     expect(options.redirectTo).toContain(encodeURIComponent("/dashboard"));
   });
 });
