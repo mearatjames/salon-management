@@ -10,9 +10,12 @@
 // SDK failure. Genuine failures throw so the action's catch can map them
 // to `?error=invite_failed` per the routes contract.
 //
-// `getOrigin()` mirrors the existing `lib/auth/next-url.ts` pattern —
-// configurable via `NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_APP_URL`, falls
-// back to the local dev origin.
+// `getOrigin()` builds the callback origin from environment variables,
+// following Supabase's documented pattern for Vercel deployments
+// (https://supabase.com/docs/guides/auth/redirect-urls):
+// `NEXT_PUBLIC_SITE_URL` (set for production) → `NEXT_PUBLIC_VERCEL_URL`
+// (injected automatically by Vercel on every deployment, previews included)
+// → localhost.
 
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 
@@ -44,18 +47,28 @@ function isDuplicateError(message: string | undefined): boolean {
   return typeof message === "string" && /already\b[^.]*\b(?:registered|exists)/i.test(message);
 }
 
+/**
+ * Resolve the deployment origin for invite/callback links, per Supabase's
+ * documented Vercel pattern (see the file header). `NEXT_PUBLIC_VERCEL_URL`
+ * carries no scheme, so prepend `https://` when one is absent. Returned
+ * without a trailing slash — every caller appends an `/auth/callback` path.
+ */
 function getOrigin(): string {
-  return (
-    process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
-  );
+  let url =
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    process.env.NEXT_PUBLIC_VERCEL_URL ??
+    "http://localhost:3000";
+  if (!url.startsWith("http")) url = `https://${url}`;
+  return url.replace(/\/+$/, "");
 }
 
 /**
  * Public alias for `getOrigin()` so other modules in the onboarding feature
- * (resendInvite / getInviteLink in `app/(studio)/settings/onboarding/actions.ts`)
- * can resolve the same callback origin without duplicating the env-var
- * fallback ladder. Keep the underlying function private — callers should
- * import this exported name to keep the contract explicit.
+ * (resendInvite / reactivateUser / getInviteLink in
+ * `app/(studio)/settings/onboarding/actions.ts`) can resolve the same
+ * callback origin without duplicating the env-var fallback ladder. Keep the
+ * underlying function private — callers should import this exported name to
+ * keep the contract explicit.
  */
 export function inviteOrigin(): string {
   return getOrigin();
