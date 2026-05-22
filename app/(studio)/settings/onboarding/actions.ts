@@ -50,6 +50,7 @@ import {
   deleteInviteUser,
   generateMagicLinkInvite,
   inviteOrigin,
+  sendInviteSignInLink,
   sendPasswordInvite,
 } from "@/lib/onboarding/invite";
 
@@ -692,19 +693,22 @@ export async function removeUser(formData: FormData): Promise<void> {
 //   1. session + owner gate.
 //   2. load target — must be state='invited' AND removed_at IS NULL; else
 //      ?error=not_found. Also email IS NOT NULL.
-//   3. delete the stale auth user, then re-invite via the method-appropriate
-//      helper (generateMagicLinkInvite / sendPasswordInvite, both of which
-//      call inviteUserByEmail so Supabase actually SENDS the email). The
-//      original invite already created an auth user — and the moment the
-//      invitee clicks any invite/magic link that user becomes CONFIRMED.
-//      inviteUserByEmail rejects a confirmed address with `email_exists`, so
-//      a plain re-invite fails for anyone who has clicked their link once
-//      (even if the staff row never left `invited`). Deleting first frees
-//      the email unconditionally — the FK ON DELETE SET NULL also clears
-//      staff.user_id — so the re-invite always lands with a fresh token.
-//      The staff row is still state='invited': the invitee never signed in,
-//      so no audit chain references their user_id and rotating it is safe.
-//   4. UPDATE staff `user_id = <rotated id>`, `invited_at = now()`.
+//   3. re-send a fresh sign-in link to the invitee's EXISTING auth user via
+//      `sendInviteSignInLink`. The original invite already created the auth
+//      user, so resend must NOT delete + re-create it:
+//        - `inviteUserByEmail` rejects an already-confirmed address with
+//          `email_exists`, and an invitee is confirmed the moment they open
+//          any invite link; and
+//        - deleting the auth user is impossible — an invited magic-link
+//          staff row has pin_hash = NULL, so the FK ON DELETE SET NULL
+//          cascade would null staff.user_id and violate the
+//          staff_pin_or_user CHECK ("Database error deleting user").
+//      `sendInviteSignInLink` (resetPasswordForEmail on an implicit-flow
+//      client) reaches any existing user without touching the auth row. The
+//      redirect carries `?method=password` for password invites so the
+//      callback routes to password setup; magic-link invites omit it.
+//   4. UPDATE staff `invited_at = now()` — the auth user is untouched, so
+//      user_id is never rotated.
 //   5. audit `user.invite_resent { email, method, by }` BEFORE the redirect
 //      (Constitution III).
 //   6. revalidate + redirect ?toast=resent&name=<display_name>.
@@ -727,7 +731,7 @@ export async function resendInvite(formData: FormData): Promise<void> {
   const admin = createSupabaseServiceRoleClient();
   const { data: target, error: loadErr } = await admin
     .from("staff")
-    .select("id, user_id, email, display_name, role, state, invite_method, removed_at")
+    .select("id, email, display_name, state, invite_method, removed_at")
     .eq("id", staffId)
     .single();
 
@@ -741,50 +745,29 @@ export async function resendInvite(formData: FormData): Promise<void> {
     redirect(`${ONB_PATH}?error=not_found`);
   }
 
-  // 3: delete the stale auth user, then re-invite. `inviteUserByEmail` rejects
-  // an already-confirmed address with `email_exists`, and an invitee's auth
-  // user is confirmed the moment they click any invite/magic link — so a plain
-  // re-invite fails for anyone who has clicked their link once. Deleting first
-  // frees the email unconditionally; the helper then sends a fresh email with
-  // a fresh token. generateMagicLinkInvite / sendPasswordInvite carry the
-  // method-appropriate /auth/invite-callback redirect (the password variant
-  // adds ?method=password so the callback routes to password setup).
+  // 3: re-send a fresh sign-in link to the EXISTING invitee. See the header
+  // note — resend cannot delete + re-create the auth user (the FK SET NULL
+  // cascade violates staff_pin_or_user on a pin-less invited row), so it
+  // reaches the existing user with sendInviteSignInLink instead. The link
+  // lands on /auth/invite-callback; password invites add ?method=password
+  // so the callback routes to password setup.
   const method: InviteMethod = (target.invite_method as InviteMethod) ?? "magic_link";
-
-  // Best-effort pre-delete: the auth user may already be gone (deleted out of
-  // band). A genuine failure here is harmless — if the email is still occupied
-  // the re-invite below returns the duplicate sentinel, mapped to invite_failed.
-  if (target.user_id) {
-    try {
-      await deleteInviteUser(target.user_id as string);
-    } catch (delErr) {
-      console.error("resendInvite: pre-delete failed (continuing)", delErr);
-    }
-  }
-
-  const inviteMetadata = {
-    display_name: target.display_name as string,
-    role: target.role as string,
-    invited_by: viewer.staff.id,
-  };
-  let rotatedUserId: string | null = null;
+  const origin = await inviteOrigin();
+  const redirectTo =
+    method === "password"
+      ? `${origin}/auth/invite-callback?method=password`
+      : `${origin}/auth/invite-callback`;
   try {
-    const result =
-      method === "password"
-        ? await sendPasswordInvite(target.email as string, inviteMetadata)
-        : await generateMagicLinkInvite(target.email as string, inviteMetadata);
-    rotatedUserId = result.user_id;
+    await sendInviteSignInLink(target.email as string, redirectTo);
   } catch (err) {
-    console.error("resendInvite: re-invite failed", err);
-  }
-  if (!rotatedUserId) {
+    console.error("resendInvite: re-send failed", err);
     redirect(`${ONB_PATH}?error=invite_failed`);
   }
 
-  // 4: repoint the staff row at the rotated auth user + bump invited_at.
+  // 4: bump invited_at. The auth user is untouched — no user_id rotation.
   const { error: updateErr } = await admin
     .from("staff")
-    .update({ user_id: rotatedUserId, invited_at: new Date().toISOString() })
+    .update({ invited_at: new Date().toISOString() })
     .eq("id", target.id as string);
 
   if (updateErr) {

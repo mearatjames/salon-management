@@ -2,37 +2,35 @@
 // `app/(studio)/settings/onboarding/actions.ts`.
 //
 // Mirrors `actions-offboard.test.ts` for the mocking pattern (redirect-as-
-// throw, per-module mocks). Coverage matrix per dispatch (012-user-onboarding
-// § Phase 7 / US5 / T070):
+// throw, per-module mocks).
 //
-//   - Magic-link path: target state='invited', invite_method='magic_link' →
-//     deletes the stale auth user → generateMagicLinkInvite → inviteUserByEmail
-//     on the '<origin>/auth/invite-callback' redirect → UPDATE staff
-//     `user_id = <rotated>`, `invited_at = now()` → audit
-//     `user.invite_resent { email, method: 'magic_link', by }` → redirect
-//     ?toast=resent&name=<display_name>.
-//   - Password path: target invite_method='password' → sendPasswordInvite →
-//     inviteUserByEmail on '<origin>/auth/invite-callback?method=password' →
-//     UPDATE user_id + invited_at → audit payload.method='password' →
-//     redirect ?toast=resent&name=…
-//   - Confirmed invitee (clicked the link once): the stale auth user is
-//     deleted first so the re-invite is not rejected with `email_exists`.
-//   - Non-invited target (state='active' / 'offboarded' / removed_at non-null
-//     / missing) → ?error=not_found.
-//   - Supabase failure (re-invite throws) → ?error=invite_failed. NO audit
-//     row written.
-//   - UPDATE failure → ?error=server_error. NO audit row written.
+// Implementation model: resend re-sends a fresh sign-in link to the
+// invitee's EXISTING auth user via `sendInviteSignInLink` (a
+// resetPasswordForEmail call on an implicit-flow client). It does NOT
+// delete + re-create the auth user:
+//   - inviteUserByEmail rejects an already-confirmed address with
+//     `email_exists`, and an invitee is confirmed the moment they open any
+//     invite link; and
+//   - deleting the auth user is impossible — an invited magic-link staff
+//     row has pin_hash = NULL, so the FK ON DELETE SET NULL cascade would
+//     null staff.user_id and violate the staff_pin_or_user CHECK
+//     ("Database error deleting user").
+// resetPasswordForEmail reaches any existing user without touching the
+// auth row, so the staff row's user_id is never rotated — resend only
+// bumps `invited_at`.
+//
+// Coverage matrix:
+//   - Magic-link path → sendInviteSignInLink(email, '<origin>/auth/invite-
+//     callback') → UPDATE invited_at → audit `user.invite_resent
+//     { email, method: 'magic_link', by }` → redirect ?toast=resent.
+//   - Password path → sendInviteSignInLink(email, '<origin>/auth/invite-
+//     callback?method=password') → audit payload.method='password'.
+//   - Non-invited target (state='active' / 'offboarded' / removed_at
+//     non-null / missing / email null) → ?error=not_found, no re-send.
+//   - sendInviteSignInLink throws → ?error=invite_failed. No UPDATE, no
+//     audit.
+//   - UPDATE failure → ?error=server_error. No audit.
 //   - Non-owner viewer → /dashboard?error=forbidden.
-//
-// Implementation model: resend DELETES the stale auth user, then re-invites
-// via generateMagicLinkInvite / sendPasswordInvite (both call
-// inviteUserByEmail — the only admin primitive that actually SENDS the email).
-// The delete is required because the invitee's auth user is CONFIRMED the
-// moment they click any invite/magic link, and inviteUserByEmail rejects a
-// confirmed address with `email_exists`. Deleting first frees the email
-// unconditionally; the staff row is then repointed at the rotated user id.
-// `generateLink` is never used — routing resend through it was the original
-// delivery bug.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -51,13 +49,7 @@ vi.mock("next/cache", () => ({
 }));
 
 vi.mock("next/headers", () => ({
-  headers: vi.fn(async () => ({
-    get: (k: string) => {
-      if (k === "x-forwarded-proto") return "http";
-      if (k === "host") return "localhost:3000";
-      return null;
-    },
-  })),
+  headers: vi.fn(async () => ({ get: () => null })),
 }));
 
 vi.mock("@/lib/auth/session", () => ({
@@ -72,11 +64,22 @@ vi.mock("@/lib/db/admin", () => ({
   createSupabaseServiceRoleClient: vi.fn(),
 }));
 
+// resend reaches Supabase only through these two helpers; the rest are
+// stubbed so `actions.ts`'s other server actions still import cleanly.
+vi.mock("@/lib/onboarding/invite", () => ({
+  inviteOrigin: vi.fn(async () => "http://localhost:3000"),
+  sendInviteSignInLink: vi.fn(async () => undefined),
+  deleteInviteUser: vi.fn(),
+  generateMagicLinkInvite: vi.fn(),
+  sendPasswordInvite: vi.fn(),
+}));
+
 // ── Imports of the SUT and the mocked modules ──────────────────────────────
 
 import { recordAudit } from "@/lib/auth/audit";
 import { requireStudioSession, type StudioViewer } from "@/lib/auth/session";
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
+import { sendInviteSignInLink } from "@/lib/onboarding/invite";
 
 import { resendInvite } from "@/app/(studio)/settings/onboarding/actions";
 
@@ -125,7 +128,6 @@ function redirectUrlFrom(err: unknown): string {
 
 type TargetRow = {
   id: string;
-  user_id: string | null;
   email: string | null;
   display_name: string;
   state: "active" | "invited" | "offboarded";
@@ -135,7 +137,6 @@ type TargetRow = {
 
 const DEFAULT_TARGET: TargetRow = {
   id: "staff-target-1",
-  user_id: "auth-user-target-1",
   email: "hana@tangnails.com",
   display_name: "Hana Soto",
   state: "invited",
@@ -146,24 +147,12 @@ const DEFAULT_TARGET: TargetRow = {
 type AdminMockOpts = {
   target?: Partial<TargetRow> | null;
   updateError?: { code?: string; message?: string } | null;
-  inviteUserByEmailError?: Error | null;
-  // When true the mock models a Supabase invitee whose auth user is already
-  // CONFIRMED (clicked an invite/magic link once): inviteUserByEmail rejects
-  // it with `email_exists` until the stale auth user is deleted.
-  existingUserConfirmed?: boolean;
 };
 
 function mockAdminClient(opts: AdminMockOpts = {}): {
   lastUpdate: { current: Record<string, unknown> | null };
-  generateLinkCalls: Array<{ type: string; email: string; options?: unknown }>;
-  inviteUserByEmailCalls: Array<{ email: string; options?: unknown }>;
-  deletedUserIds: string[];
 } {
   const lastUpdate = { current: null as Record<string, unknown> | null };
-  const generateLinkCalls: Array<{ type: string; email: string; options?: unknown }> = [];
-  const inviteUserByEmailCalls: Array<{ email: string; options?: unknown }> = [];
-  const deletedUserIds: string[] = [];
-
   const targetRow: TargetRow | null =
     opts.target === null ? null : { ...DEFAULT_TARGET, ...(opts.target ?? {}) };
 
@@ -194,44 +183,9 @@ function mockAdminClient(opts: AdminMockOpts = {}): {
 
   (createSupabaseServiceRoleClient as unknown as Mocked<() => unknown>).mockReturnValue({
     from: fromImpl,
-    auth: {
-      admin: {
-        // `resendInvite` no longer calls generateLink at all — the mock keeps
-        // it only so the `generateLinkCalls).toHaveLength(0)` assertions stay
-        // a live regression guard against routing resend back through it.
-        generateLink: async (args: { type: string; email: string; options?: unknown }) => {
-          generateLinkCalls.push(args);
-          return {
-            data: { properties: { action_link: "https://example.test/auth/callback?token=abc" } },
-            error: null,
-          };
-        },
-        deleteUser: async (uid: string) => {
-          deletedUserIds.push(uid);
-          return { data: { user: null }, error: null };
-        },
-        inviteUserByEmail: async (email: string, options?: unknown) => {
-          inviteUserByEmailCalls.push({ email, options });
-          if (opts.inviteUserByEmailError) throw opts.inviteUserByEmailError;
-          // Supabase rejects a re-invite to an already-confirmed address with
-          // `email_exists` — resend must delete the stale auth user first.
-          if (
-            opts.existingUserConfirmed &&
-            targetRow?.user_id &&
-            !deletedUserIds.includes(targetRow.user_id)
-          ) {
-            throw Object.assign(
-              new Error("A user with this email address has already been registered"),
-              { name: "AuthApiError", status: 422, code: "email_exists" }
-            );
-          }
-          return { data: { user: { id: "auth-user-rotated-1" } }, error: null };
-        },
-      },
-    },
   });
 
-  return { lastUpdate, generateLinkCalls, inviteUserByEmailCalls, deletedUserIds };
+  return { lastUpdate };
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -242,6 +196,7 @@ describe("resendInvite", () => {
     (requireStudioSession as unknown as Mocked<() => Promise<StudioViewer>>).mockResolvedValue(
       OWNER_VIEWER
     );
+    (sendInviteSignInLink as unknown as Mocked<() => Promise<void>>).mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -250,8 +205,8 @@ describe("resendInvite", () => {
 
   // ── Happy path: magic-link ─────────────────────────────────────────────
 
-  it("magic_link path: inviteUserByEmail re-sends the invite, UPDATE invited_at, audit payload.method='magic_link', redirect ?toast=resent", async () => {
-    const { lastUpdate, generateLinkCalls, inviteUserByEmailCalls } = mockAdminClient();
+  it("magic_link path: re-sends the sign-in link, UPDATE invited_at, audit method='magic_link', redirect ?toast=resent", async () => {
+    const { lastUpdate } = mockAdminClient();
 
     let thrown: unknown;
     try {
@@ -260,22 +215,21 @@ describe("resendInvite", () => {
       thrown = err;
     }
 
-    // 1. inviteUserByEmail re-sends the invite email to the target's address
-    //    on the magic-link /auth/invite-callback redirect (no `?method`).
-    //    generateLink is NOT used — it only generates a link, never sends one,
-    //    which was the original delivery bug.
-    expect(inviteUserByEmailCalls).toHaveLength(1);
-    expect(inviteUserByEmailCalls[0].email).toBe("hana@tangnails.com");
-    expect((inviteUserByEmailCalls[0].options as { redirectTo?: string }).redirectTo).toMatch(
-      /\/auth\/invite-callback$/
+    // 1. the existing invitee gets a fresh link on the magic-link
+    //    /auth/invite-callback redirect (no `?method`).
+    expect(sendInviteSignInLink).toHaveBeenCalledTimes(1);
+    expect(sendInviteSignInLink).toHaveBeenCalledWith(
+      "hana@tangnails.com",
+      "http://localhost:3000/auth/invite-callback"
     );
-    expect(generateLinkCalls).toHaveLength(0);
 
-    // 2. UPDATE bumps invited_at; no other lifecycle columns touched.
+    // 2. UPDATE bumps invited_at only — the auth user is untouched, so
+    //    user_id is NOT rotated.
     expect(lastUpdate.current).not.toBeNull();
     expect(typeof lastUpdate.current?.invited_at).toBe("string");
+    expect(lastUpdate.current).not.toHaveProperty("user_id");
 
-    // 3. Audit BEFORE redirect (Constitution III).
+    // 3. audit BEFORE redirect (Constitution III).
     expect(recordAudit).toHaveBeenCalledTimes(1);
     const auditCall = (recordAudit as unknown as Mocked<() => unknown>).mock.calls[0];
     expect(auditCall[0]).toBe("user.invite_resent");
@@ -287,7 +241,7 @@ describe("resendInvite", () => {
       by: OWNER_VIEWER.deviceUserId,
     });
 
-    // 4. Redirect → ?toast=resent&name=<display_name>.
+    // 4. redirect → ?toast=resent&name=<display_name>.
     const url = redirectUrlFrom(thrown);
     expect(url).toContain("/settings/onboarding");
     expect(url).toContain("toast=resent");
@@ -296,10 +250,8 @@ describe("resendInvite", () => {
 
   // ── Happy path: password ───────────────────────────────────────────────
 
-  it("password path: inviteUserByEmail rotates the link, UPDATE invited_at, audit payload.method='password'", async () => {
-    const { lastUpdate, generateLinkCalls, inviteUserByEmailCalls } = mockAdminClient({
-      target: { invite_method: "password" },
-    });
+  it("password path: re-sends on the ?method=password redirect, audit method='password'", async () => {
+    mockAdminClient({ target: { invite_method: "password" } });
 
     let thrown: unknown;
     try {
@@ -308,11 +260,10 @@ describe("resendInvite", () => {
       thrown = err;
     }
 
-    expect(inviteUserByEmailCalls).toHaveLength(1);
-    expect(inviteUserByEmailCalls[0].email).toBe("hana@tangnails.com");
-    expect(generateLinkCalls).toHaveLength(0);
-
-    expect(typeof lastUpdate.current?.invited_at).toBe("string");
+    expect(sendInviteSignInLink).toHaveBeenCalledWith(
+      "hana@tangnails.com",
+      "http://localhost:3000/auth/invite-callback?method=password"
+    );
 
     expect(recordAudit).toHaveBeenCalledTimes(1);
     const auditCall = (recordAudit as unknown as Mocked<() => unknown>).mock.calls[0];
@@ -326,42 +277,10 @@ describe("resendInvite", () => {
     expect(url).toContain("toast=resent");
   });
 
-  // ── Confirmed invitee: stale auth user must be rotated ─────────────────
-
-  it("re-invites a confirmed invitee: deletes the stale auth user first, then inviteUserByEmail succeeds", async () => {
-    // An invitee who clicked their invite link even once has a CONFIRMED
-    // auth user, even when the staff row never left `invited` (e.g. the
-    // accept callback failed). inviteUserByEmail rejects a confirmed email
-    // with `email_exists`; resend must delete the stale auth user first so
-    // the re-invite goes through and the staff row repoints at the fresh id.
-    const { lastUpdate, deletedUserIds, inviteUserByEmailCalls } = mockAdminClient({
-      existingUserConfirmed: true,
-    });
-
-    let thrown: unknown;
-    try {
-      await resendInvite(resendForm());
-    } catch (err) {
-      thrown = err;
-    }
-
-    // 1. the stale auth user is deleted before the re-invite.
-    expect(deletedUserIds).toContain("auth-user-target-1");
-    // 2. the re-invite goes through (would have thrown email_exists otherwise).
-    expect(inviteUserByEmailCalls).toHaveLength(1);
-    // 3. the staff row repoints at the rotated auth user + bumps invited_at.
-    expect(lastUpdate.current?.user_id).toBe("auth-user-rotated-1");
-    expect(typeof lastUpdate.current?.invited_at).toBe("string");
-    // 4. audit + success toast.
-    expect(recordAudit).toHaveBeenCalledTimes(1);
-    const url = redirectUrlFrom(thrown);
-    expect(url).toContain("toast=resent");
-  });
-
   // ── Target-shape gates ─────────────────────────────────────────────────
 
-  it("target.state='active' → ?error=not_found (no rotation, no UPDATE, no audit)", async () => {
-    const { lastUpdate, generateLinkCalls } = mockAdminClient({ target: { state: "active" } });
+  it("target.state='active' → ?error=not_found (no re-send, no UPDATE, no audit)", async () => {
+    const { lastUpdate } = mockAdminClient({ target: { state: "active" } });
 
     let thrown: unknown;
     try {
@@ -372,7 +291,7 @@ describe("resendInvite", () => {
 
     const url = redirectUrlFrom(thrown);
     expect(url).toContain("error=not_found");
-    expect(generateLinkCalls).toHaveLength(0);
+    expect(sendInviteSignInLink).not.toHaveBeenCalled();
     expect(lastUpdate.current).toBeNull();
     expect(recordAudit).not.toHaveBeenCalled();
   });
@@ -386,8 +305,7 @@ describe("resendInvite", () => {
     } catch (err) {
       thrown = err;
     }
-    const url = redirectUrlFrom(thrown);
-    expect(url).toContain("error=not_found");
+    expect(redirectUrlFrom(thrown)).toContain("error=not_found");
   });
 
   it("target.removed_at non-null → ?error=not_found", async () => {
@@ -399,8 +317,7 @@ describe("resendInvite", () => {
     } catch (err) {
       thrown = err;
     }
-    const url = redirectUrlFrom(thrown);
-    expect(url).toContain("error=not_found");
+    expect(redirectUrlFrom(thrown)).toContain("error=not_found");
   });
 
   it("target missing entirely → ?error=not_found", async () => {
@@ -412,8 +329,7 @@ describe("resendInvite", () => {
     } catch (err) {
       thrown = err;
     }
-    const url = redirectUrlFrom(thrown);
-    expect(url).toContain("error=not_found");
+    expect(redirectUrlFrom(thrown)).toContain("error=not_found");
   });
 
   it("target.email is null → ?error=not_found", async () => {
@@ -425,37 +341,16 @@ describe("resendInvite", () => {
     } catch (err) {
       thrown = err;
     }
-    const url = redirectUrlFrom(thrown);
-    expect(url).toContain("error=not_found");
+    expect(redirectUrlFrom(thrown)).toContain("error=not_found");
   });
 
   // ── Supabase failure ───────────────────────────────────────────────────
 
-  it("magic-link inviteUserByEmail throws → ?error=invite_failed (no UPDATE, no audit)", async () => {
-    const { lastUpdate } = mockAdminClient({
-      inviteUserByEmailError: new Error("supabase boom"),
-    });
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-    let thrown: unknown;
-    try {
-      await resendInvite(resendForm());
-    } catch (err) {
-      thrown = err;
-    }
-
-    const url = redirectUrlFrom(thrown);
-    expect(url).toContain("error=invite_failed");
-    expect(lastUpdate.current).toBeNull();
-    expect(recordAudit).not.toHaveBeenCalled();
-    errSpy.mockRestore();
-  });
-
-  it("inviteUserByEmail throws (password path) → ?error=invite_failed", async () => {
-    const { lastUpdate } = mockAdminClient({
-      target: { invite_method: "password" },
-      inviteUserByEmailError: new Error("supabase boom"),
-    });
+  it("sendInviteSignInLink throws → ?error=invite_failed (no UPDATE, no audit)", async () => {
+    const { lastUpdate } = mockAdminClient();
+    (sendInviteSignInLink as unknown as Mocked<() => Promise<void>>).mockRejectedValueOnce(
+      new Error("supabase boom")
+    );
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     let thrown: unknown;
@@ -474,7 +369,7 @@ describe("resendInvite", () => {
 
   // ── UPDATE failure ─────────────────────────────────────────────────────
 
-  it("UPDATE failure → ?error=server_error (rotation already happened; audit NOT written)", async () => {
+  it("UPDATE failure → ?error=server_error (re-send already happened; audit NOT written)", async () => {
     mockAdminClient({ updateError: { code: "XX000", message: "transient" } });
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
@@ -507,6 +402,7 @@ describe("resendInvite", () => {
     const url = redirectUrlFrom(thrown);
     expect(url).toContain("/dashboard");
     expect(url).toContain("error=forbidden");
+    expect(sendInviteSignInLink).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalled();
   });
 });

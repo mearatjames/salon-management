@@ -14,6 +14,8 @@
 // `getRequestOrigin`) so they point at the actual deployment — localhost in
 // dev, the Vercel URL in preview/prod — without per-environment env config.
 
+import { createClient } from "@supabase/supabase-js";
+
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 import { getRequestOrigin } from "@/lib/auth/request-origin";
 
@@ -115,5 +117,42 @@ export async function deleteInviteUser(userId: string): Promise<void> {
   // Hard-delete (shouldSoftDelete=false) so the email is freed immediately
   // for re-invite. The SDK default is version-dependent.
   const { error } = await supabase.auth.admin.deleteUser(userId, false);
+  if (error) throw error;
+}
+
+/**
+ * Re-send path for the Onboard "Resend invite" action. The invitee already
+ * has an auth user (the original invite created it), so a fresh invite
+ * cannot go through `inviteUserByEmail` — it rejects an already-confirmed
+ * address with `email_exists`, and an invitee's auth user is confirmed the
+ * moment they open any invite link. Deleting + re-creating the auth user is
+ * impossible too: an invited magic-link staff row has `pin_hash = NULL`, so
+ * the FK `ON DELETE SET NULL` cascade would null `staff.user_id` and violate
+ * the `staff_pin_or_user` CHECK — Supabase surfaces that as "Database error
+ * deleting user".
+ *
+ * `resetPasswordForEmail` delivers a fresh link to ANY existing user —
+ * confirmed or not — without touching the auth row. The client is pinned to
+ * the implicit flow so the link returns its tokens in the URL hash, which
+ * the `/auth/invite-callback` page completes — the same shape the admin
+ * `inviteUserByEmail` link produced. A PKCE link would be unusable here: its
+ * code verifier lives in the owner's browser, not the invitee's.
+ *
+ * This is NOT the admin client — `resetPasswordForEmail` is on the regular
+ * SDK surface — so it builds its own anon client straight from
+ * `@supabase/supabase-js` (the cookie-aware SSR client defaults to PKCE).
+ */
+export async function sendInviteSignInLink(email: string, redirectTo: string): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    throw new Error(
+      "sendInviteSignInLink: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY not set"
+    );
+  }
+  const client = createClient(url, anonKey, {
+    auth: { flowType: "implicit", persistSession: false, autoRefreshToken: false },
+  });
+  const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo });
   if (error) throw error;
 }
