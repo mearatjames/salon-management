@@ -40,11 +40,7 @@ import { NumericKeypad } from "@/components/lacquer/numeric-keypad.client";
 import { FormPendingSignal } from "@/components/lacquer/form-pending-signal";
 import { Spinner } from "@/components/ui/spinner";
 import { setStaffPin } from "@/app/(studio)/settings/staff/actions";
-import {
-  pinKeypadInit,
-  pinKeypadSubmit,
-  type PinKeypadState,
-} from "@/app/(studio)/settings/staff/_pin-keypad-state";
+import { pinKeypadInit, pinKeypadSubmit, type PinKeypadState } from "@/lib/auth/pin-keypad";
 
 export type ChangePinModalMode = "set" | "change";
 

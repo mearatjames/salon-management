@@ -263,5 +263,5 @@ Spec Kit (`/speckit-specify`, `/speckit-plan`, etc.) inside the worktree
 instead of trying to ship it in one PR.
 
 <!-- SPECKIT START -->
-Active plan: `specs/047-payroll-page/plan.md`
+Active plan: `specs/048-invitee-self-set-pin/plan.md`
 <!-- SPECKIT END -->

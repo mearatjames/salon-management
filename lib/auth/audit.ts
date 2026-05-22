@@ -63,6 +63,7 @@ export type AuditAction =
   | "user.reactivated"
   | "user.removed"
   | "user.pin_reset"
+  | "user.pin_set"
   // Added by feature 013 (entity_type "ticket")
   | "line.price_set"
   | "discount.added"

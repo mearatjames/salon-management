@@ -104,8 +104,12 @@ export async function updatePassword(formData: FormData): Promise<void> {
   // <input name="method"> and is normalised above.
   await recordAuth("device.password_reset", userId, null, { method });
 
-  // Reset complete. Hand off to /select-staff so the operator pins in.
-  // The `next` query is not propagated here — the reset flow is
-  // terminal w.r.t. the user's original navigation intent.
-  redirect("/select-staff");
+  // Reset complete. Recovery resets go straight to /select-staff so the
+  // operator pins in. Invite-method users (012-user-onboarding) route to
+  // the new /set-pin step (048-invitee-self-set-pin): that page gates on
+  // `staff.pin_hash` — a no-PIN invitee sets one, an owner-set invitee
+  // skips straight through to /select-staff.
+  // The `next` query is not propagated here — the reset flow is terminal
+  // w.r.t. the user's original navigation intent.
+  redirect(method === "invite" ? "/set-pin" : "/select-staff");
 }
