@@ -109,7 +109,13 @@ export const config = {
   // /select-staff before they can submit the new password. The routes
   // contract (specs/010-login-redesign/contracts/routes.contract.md
   // § Cross-route invariants) anticipates this exemption.
+  //
+  // `set-pin` is added by 048-invitee-self-set-pin: an invitee lands on
+  // /set-pin straight after setting their password — they hold a Supabase
+  // session but, exactly like the recovery case above, have NOT yet set
+  // the operator cookie. Without this exemption the proxy bounces them to
+  // /select-staff before they can choose their PIN.
   matcher: [
-    "/((?!login|select-staff|reset-password|auth/.*|kiosk/.*|api/webhooks/.*|_next/.*|favicon.ico|.*\\..*).*)",
+    "/((?!login|select-staff|reset-password|set-pin|auth/.*|kiosk/.*|api/webhooks/.*|_next/.*|favicon.ico|.*\\..*).*)",
   ],
 };

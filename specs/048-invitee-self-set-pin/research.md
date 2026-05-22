@@ -91,11 +91,12 @@ groups — rejected, breaks the folder-private convention. (b) Duplicate the
 correctness hazard for an auth path. (c) Leave it and reimplement entry/confirm
 inline in `SetPinForm` — rejected, same duplication risk.
 
-## D5 — `/set-pin` lives in the `(auth)` route group; no middleware change
+## D5 — `/set-pin` lives in the `(auth)` route group; proxy matcher must exempt it
 
 **Decision**: New files `app/(auth)/set-pin/page.tsx` and
 `app/(auth)/set-pin/actions.ts`. The route renders inside the existing
-`(auth)/layout.tsx` `AuthShell`.
+`(auth)/layout.tsx` `AuthShell`. The repo's edge proxy (`proxy.ts`) matcher is
+extended to exempt `/set-pin`, exactly as it already exempts `/reset-password`.
 
 **Rationale**: At the PIN step the invitee holds only a Supabase auth session
 (established when they set their password) — no operator cookie. The `(studio)`
@@ -103,10 +104,19 @@ group calls `requireStudioSession()`, which checks the operator cookie and would
 reject them. The `(device)` group is the full-bleed counter UI. The `(auth)`
 group is exactly the right home: it already hosts `/reset-password` (same
 session shape, same invite-only nature) and its `AuthShell` two-panel
-centered-card layout fits a single focused step. There is no `middleware.ts` in
-the repo (confirmed: `middleware-manifest.json` is empty) — session enforcement
-is done in-page via `supabase.auth.getUser()`, exactly as `/reset-password/page.tsx`
-does. So no middleware change is needed.
+centered-card layout fits a single focused step. Session enforcement is also
+done in-page via `supabase.auth.getUser()`, exactly as `/reset-password/page.tsx`
+does.
+
+**Correction (caught during implementation)**: The repo DOES have an edge
+proxy — Next.js 16 renamed `middleware.ts` to `proxy.ts`, so the original
+"no `middleware.ts`" check missed it. The proxy redirects any request with a
+Supabase session but no operator cookie to `/select-staff`; its matcher carries
+an explicit exemption list (`login`, `select-staff`, `reset-password`,
+`auth/*`, …). `/set-pin` MUST be added to that list — the invitee reaching it
+has a session but no operator cookie, the exact case `/reset-password` is
+already exempted for. Without the exemption the proxy bounces the invitee to
+`/select-staff` before the page can render.
 
 **Alternatives considered**: A second step inside the existing `/reset-password`
 form (the issue left route-vs-step to the implementer). Rejected — a distinct

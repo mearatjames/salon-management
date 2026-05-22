@@ -112,6 +112,29 @@ describe("updatePassword — happy path", () => {
       method: "recovery",
     });
   });
+
+  // 048-invitee-self-set-pin: when no `method` field is supplied (or it is
+  // "recovery"), the recovery leg still lands on /select-staff — the PIN
+  // step is invite-only (FR-013, SC-006).
+  it("method=recovery (default) redirects to /select-staff, never /set-pin", async () => {
+    mockSupabase();
+
+    let thrown: unknown;
+    try {
+      await updatePassword(
+        formData({
+          password: "tang-nails-dev-new",
+          confirm: "tang-nails-dev-new",
+          method: "recovery",
+        })
+      );
+    } catch (err) {
+      thrown = err;
+    }
+    const url = redirectUrlFrom(thrown);
+    expect(url).toMatch(/^\/select-staff(\?|$)/);
+    expect(url).not.toContain("/set-pin");
+  });
 });
 
 describe("updatePassword — validation branches", () => {
@@ -164,9 +187,10 @@ describe("updatePassword — method=invite leg (012-user-onboarding)", () => {
     vi.restoreAllMocks();
   });
 
-  it("tags the audit row with payload.method='invite' when the form supplies method=invite", async () => {
+  it("tags the audit row with payload.method='invite' and redirects to /set-pin when the form supplies method=invite", async () => {
     mockSupabase();
 
+    let thrown: unknown;
     try {
       await updatePassword(
         formData({
@@ -175,13 +199,18 @@ describe("updatePassword — method=invite leg (012-user-onboarding)", () => {
           method: "invite",
         })
       );
-    } catch {
-      // expected NEXT_REDIRECT to /select-staff
+    } catch (err) {
+      thrown = err;
     }
 
     expect(recordAuth).toHaveBeenCalledWith("device.password_reset", "user-123", null, {
       method: "invite",
     });
+
+    // 048-invitee-self-set-pin: the invite leg routes to the new /set-pin
+    // step instead of straight to /select-staff.
+    const url = redirectUrlFrom(thrown);
+    expect(url).toMatch(/^\/set-pin(\?|$)/);
   });
 
   it("defaults payload.method to 'recovery' when no method field is present", async () => {

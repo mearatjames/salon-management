@@ -128,6 +128,10 @@ export const AFFECTED_MAP = {
 
   // Auth / sign-in.
   "app/(auth)/**": ["tests/e2e/auth.spec.ts"],
+  // The /set-pin route group + the reset-password redirect change
+  // (048-invitee-self-set-pin) are exercised by the set-pin spec.
+  "app/(auth)/set-pin/**": ["tests/e2e/set-pin.spec.ts"],
+  "app/(auth)/reset-password/actions.ts": ["tests/e2e/auth.spec.ts", "tests/e2e/set-pin.spec.ts"],
   "app/auth/**": ["tests/e2e/auth.spec.ts"],
   "lib/auth/**": [
     "tests/e2e/auth.spec.ts",
