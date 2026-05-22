@@ -475,12 +475,56 @@ async function getStaffWithPinResetAt(
   return data as { id: string; pin_reset_admin_at: string | null };
 }
 
+// ── Mailpit (local email sink) ─────────────────────────────────────────────
+//
+// `supabase start` boots Mailpit alongside Postgres/Auth (the config.toml
+// section is still keyed `[inbucket]` for back-compat, but recent Supabase
+// CLI ships Mailpit). Auth emails land there instead of being delivered, so
+// polling it is what lets the e2e assert an invite email was actually SENT —
+// the bug this guards against was the magic-link invite calling
+// `generateLink`, which only generates a link and never sends an email.
+
+const MAILPIT_BASE = "http://127.0.0.1:54324";
+
+async function mailpitIsReachable(): Promise<boolean> {
+  try {
+    return (await fetch(`${MAILPIT_BASE}/api/v1/info`)).ok;
+  } catch {
+    return false;
+  }
+}
+
+// Poll Mailpit until an email addressed to `toAddress` appears. Returns true
+// once one lands, false if none arrives before the deadline — Supabase
+// enqueues mail synchronously, so false means "nothing was sent".
+async function waitForEmailTo(toAddress: string, timeoutMs = 10_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  const target = toAddress.toLowerCase();
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${MAILPIT_BASE}/api/v1/messages?limit=200`);
+      if (res.ok) {
+        const data = (await res.json()) as { messages?: { To?: { Address?: string }[] }[] };
+        const hit = (data.messages ?? []).some((m) =>
+          (m.To ?? []).some((t) => (t.Address ?? "").toLowerCase() === target)
+        );
+        if (hit) return true;
+      }
+    } catch {
+      // Swallow and retry until the deadline.
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
+}
+
 // ── US5: Pending invite actions ───────────────────────────────────────────
 //
 // Resend and Cancel server-action paths (token rotation, audit shape,
 // freed-email re-invite) are unit-covered by `actions-resend.test.ts`
-// and `actions-cancel.test.ts`. The only browser-only contract that
-// remains is the Copy invite link clipboard-write path.
+// and `actions-cancel.test.ts`. The browser-only contracts that remain are
+// the Copy invite link clipboard-write path and the invite-email delivery
+// regression guard below.
 
 test.describe("US5: Pending invite actions", () => {
   let supabaseUp = false;
@@ -548,6 +592,32 @@ test.describe("US5: Pending invite actions", () => {
     // Read the clipboard and assert it looks like a magic link URL.
     const clipText = await page.evaluate(() => navigator.clipboard.readText());
     expect(clipText).toMatch(/token=|\/auth\/callback/);
+  });
+
+  test("Quick invite delivers an email to the invitee (regression: magic-link invite must SEND)", async ({
+    page,
+    staffFixture,
+  }) => {
+    // Mailpit boots with `supabase start`; skip cleanly if it isn't up so
+    // this never false-fails where Docker is unavailable.
+    test.skip(
+      !(await mailpitIsReachable()),
+      "Mailpit not reachable at 127.0.0.1:54324 — skipping delivery check."
+    );
+
+    await signInAsOwner(page, staffFixture);
+    await page.goto("/settings/onboarding");
+    await page.waitForURL(/\/settings\/onboarding(\?|$)/);
+
+    const email = `invite.delivery.${Date.now()}@tangnails.test`;
+    await quickInvite(page, { name: "Invite Delivery", email });
+
+    // The "Invite sent" toast only proves the server action returned — the
+    // real contract is an email that reaches the invitee. The delivery bug
+    // routed the magic-link invite through `generateLink`, which generates a
+    // link but never sends one, so no message was ever addressed to them.
+    const delivered = await waitForEmailTo(email);
+    expect(delivered, `no invite email was delivered to ${email}`).toBe(true);
   });
 });
 

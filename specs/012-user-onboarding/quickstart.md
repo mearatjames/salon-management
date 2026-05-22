@@ -41,13 +41,13 @@ To verify locally:
 5. Open Inbucket (`http://127.0.0.1:54324` or whatever `supabase status` shows under "Inbucket URL").
 6. Click the new email → click the magic link → land on `/select-staff` signed in as the invitee.
 
-## Production bootstrap (no change from 010)
+## Production bootstrap
 
-This feature uses the same Supabase auth infrastructure 010 wired up. Specifically:
+This feature builds on the Supabase auth infrastructure 010 wired up. Specifically:
 
 - The **Site URL allowlist** must include `<origin>/auth/callback` so that magic-link and recovery emails redirect correctly. This was added to both preview and prod Supabase projects in `010-login-redesign` (per its `quickstart.md`). No change needed for this feature.
 - The **redirect URL allowlist** must also include `<origin>/reset-password` (for the password-method invite leg). Already configured by 010.
-- No new SMTP setup — the Supabase default sender carries invites in production.
+- **Custom SMTP is required in production.** Supabase's built-in email service only delivers to addresses on the Supabase project's own team — every other recipient fails with `Email address not authorized`, so invites, magic links, and password resets silently never arrive. Configure a custom SMTP provider (e.g. Resend) under **Authentication → Emails → SMTP Settings** on *both* the preview and prod Supabase projects. See <https://supabase.com/docs/guides/auth/auth-smtp>.
 
 If a new operator is bootstrapping the production Supabase project from scratch, see `specs/010-login-redesign/quickstart.md § Production bootstrap` for the SQL recipe to seed the first owner with `email_confirmed_at = now()`. This feature inherits that requirement (no extra steps).
 

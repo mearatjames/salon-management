@@ -6,31 +6,30 @@
 // § Phase 7 / US5 / T070):
 //
 //   - Magic-link path: target state='invited', invite_method='magic_link' →
-//     calls admin.auth.admin.generateLink({ type: 'magiclink', email, options:
-//     { redirectTo: '<origin>/auth/callback' } }) → rotates the prior token →
-//     UPDATE staff `invited_at = now()` → audit `user.invite_resent { email,
-//     method: 'magic_link', by }` → redirect ?toast=resent&name=<display_name>.
+//     calls admin.auth.admin.inviteUserByEmail(email, { redirectTo:
+//     '<origin>/auth/callback' }) → Supabase sends a fresh invite email and
+//     invalidates the prior token → UPDATE staff `invited_at = now()` → audit
+//     `user.invite_resent { email, method: 'magic_link', by }` → redirect
+//     ?toast=resent&name=<display_name>.
 //   - Password path: target invite_method='password' → calls admin.auth.admin.
 //     inviteUserByEmail(email, { redirectTo: '<origin>/auth/callback?type=
 //     invite' }) → UPDATE invited_at → audit payload.method='password' →
 //     redirect ?toast=resent&name=…
 //   - Non-invited target (state='active' / 'offboarded' / removed_at non-null
 //     / missing) → ?error=not_found.
-//   - Supabase failure (generateLink / inviteUserByEmail throws) →
-//     ?error=invite_failed. NO audit row written.
+//   - Supabase failure (inviteUserByEmail throws) → ?error=invite_failed. NO
+//     audit row written.
 //   - UPDATE failure → ?error=server_error. NO audit row written.
 //   - Non-owner viewer → /dashboard?error=forbidden.
 //
-// Implementation model choice (per T070 dispatch note): resend uses
-// admin.generateLink / inviteUserByEmail DIRECTLY — NOT
-// generateMagicLinkInvite — because the auth user already exists; we just
-// rotate the link token. Supabase invalidates the prior token server-side as
-// a side-effect of the rotation. This sidesteps the "duplicate" sentinel
-// concern documented in `lib/onboarding/invite.ts`: a duplicate on resend is
-// the EXPECTED state, so going through generateMagicLinkInvite (which calls
-// createUser first) would always hit the duplicate branch and fall through
-// — we'd be paying for a roundtrip we don't need. The simpler model goes
-// straight to the token-rotation primitive.
+// Implementation model choice: resend uses admin.inviteUserByEmail DIRECTLY —
+// NOT generateMagicLinkInvite — because the auth user already exists, so the
+// duplicate-sentinel roundtrip generateMagicLinkInvite would pay for is dead
+// weight here. Both invite methods resolve to inviteUserByEmail: it is the
+// only admin primitive that actually SENDS the invite email — `generateLink`
+// merely generates a link, and routing resend through it was the original
+// delivery bug. inviteUserByEmail re-sends to the still-unconfirmed
+// (state='invited') user and rotates the prior token as a side-effect.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -144,7 +143,6 @@ const DEFAULT_TARGET: TargetRow = {
 type AdminMockOpts = {
   target?: Partial<TargetRow> | null;
   updateError?: { code?: string; message?: string } | null;
-  generateLinkError?: Error | null;
   inviteUserByEmailError?: Error | null;
 };
 
@@ -189,9 +187,11 @@ function mockAdminClient(opts: AdminMockOpts = {}): {
     from: fromImpl,
     auth: {
       admin: {
+        // `resendInvite` no longer calls generateLink at all — the mock keeps
+        // it only so the `generateLinkCalls).toHaveLength(0)` assertions stay
+        // a live regression guard against routing resend back through it.
         generateLink: async (args: { type: string; email: string; options?: unknown }) => {
           generateLinkCalls.push(args);
-          if (opts.generateLinkError) throw opts.generateLinkError;
           return {
             data: { properties: { action_link: "https://example.test/auth/callback?token=abc" } },
             error: null,
@@ -225,7 +225,7 @@ describe("resendInvite", () => {
 
   // ── Happy path: magic-link ─────────────────────────────────────────────
 
-  it("magic_link path: generateLink rotates the token, UPDATE invited_at, audit payload.method='magic_link', redirect ?toast=resent", async () => {
+  it("magic_link path: inviteUserByEmail re-sends the invite, UPDATE invited_at, audit payload.method='magic_link', redirect ?toast=resent", async () => {
     const { lastUpdate, generateLinkCalls, inviteUserByEmailCalls } = mockAdminClient();
 
     let thrown: unknown;
@@ -235,12 +235,16 @@ describe("resendInvite", () => {
       thrown = err;
     }
 
-    // 1. generateLink called once with the target's email + magiclink type.
-    //    inviteUserByEmail NOT called (the auth user already exists).
-    expect(generateLinkCalls).toHaveLength(1);
-    expect(generateLinkCalls[0].type).toBe("magiclink");
-    expect(generateLinkCalls[0].email).toBe("hana@tangnails.com");
-    expect(inviteUserByEmailCalls).toHaveLength(0);
+    // 1. inviteUserByEmail re-sends the invite email to the target's address
+    //    on the magic-link /auth/callback redirect (no `?type=invite`).
+    //    generateLink is NOT used — it only generates a link, never sends one,
+    //    which was the original delivery bug.
+    expect(inviteUserByEmailCalls).toHaveLength(1);
+    expect(inviteUserByEmailCalls[0].email).toBe("hana@tangnails.com");
+    expect((inviteUserByEmailCalls[0].options as { redirectTo?: string }).redirectTo).toMatch(
+      /\/auth\/callback$/
+    );
+    expect(generateLinkCalls).toHaveLength(0);
 
     // 2. UPDATE bumps invited_at; no other lifecycle columns touched.
     expect(lastUpdate.current).not.toBeNull();
@@ -370,9 +374,9 @@ describe("resendInvite", () => {
 
   // ── Supabase failure ───────────────────────────────────────────────────
 
-  it("generateLink throws → ?error=invite_failed (no UPDATE, no audit)", async () => {
+  it("magic-link inviteUserByEmail throws → ?error=invite_failed (no UPDATE, no audit)", async () => {
     const { lastUpdate } = mockAdminClient({
-      generateLinkError: new Error("supabase boom"),
+      inviteUserByEmailError: new Error("supabase boom"),
     });
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 

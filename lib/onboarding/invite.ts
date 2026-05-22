@@ -19,15 +19,16 @@ import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 type InviteMetadata = Record<string, unknown>;
 
 /**
- * Result of `generateMagicLinkInvite`. On the happy path both `user_id`
- * and `link` are populated. On a duplicate-email collision the function
- * returns the typed sentinel so the caller can react with the contract's
- * `was_offboarded` / `already_invited` etc. code (set by the prior
- * conflict-check stage; this branch is a defense-in-depth fallback).
+ * Result of `generateMagicLinkInvite`. On the happy path `user_id` is the id
+ * of the freshly-invited auth user and Supabase has already sent the invite
+ * email. On a duplicate-email collision the function returns the typed
+ * sentinel so the caller can react with the contract's `was_offboarded` /
+ * `already_invited` etc. code (set by the prior conflict-check stage; this
+ * branch is a defense-in-depth fallback).
  */
 export type MagicLinkResult =
-  | { user_id: string; link: string; error?: undefined }
-  | { user_id: null; link: null; error: "duplicate" };
+  | { user_id: string; error?: undefined }
+  | { user_id: null; error: "duplicate" };
 
 /** Result of `sendPasswordInvite`. Same duplicate-sentinel shape. */
 export type PasswordInviteResult =
@@ -66,42 +67,30 @@ export async function generateMagicLinkInvite(
   metadata: InviteMetadata = {}
 ): Promise<MagicLinkResult> {
   const supabase = createSupabaseServiceRoleClient();
-  const { data: created, error: createErr } = await supabase.auth.admin.createUser({
-    email,
-    email_confirm: false,
-    user_metadata: metadata,
+  // `inviteUserByEmail` creates the auth user AND sends the invite email
+  // through Supabase's mailer (Inbucket in local dev; custom SMTP in
+  // production). It replaces the previous `createUser` → `generateLink` pair:
+  // `generateLink` only GENERATES a link — it never sends an email — so the
+  // magic-link invite never actually reached the invitee's inbox.
+  //
+  // The redirect omits `?type=invite` so `/auth/callback` routes the accepted
+  // invitee straight to /select-staff — a magic-link invite is passwordless,
+  // with no password-setup detour. `sendPasswordInvite` keeps the
+  // `?type=invite` suffix for the password-setup variant.
+  const { data: invited, error } = await supabase.auth.admin.inviteUserByEmail(email, {
+    redirectTo: `${getOrigin()}/auth/callback`,
+    data: metadata,
   });
-  if (createErr) {
-    if (isDuplicateError(createErr.message)) {
-      return { user_id: null, link: null, error: "duplicate" };
+  if (error) {
+    if (isDuplicateError(error.message)) {
+      return { user_id: null, error: "duplicate" };
     }
-    throw createErr;
+    throw error;
   }
-  if (!created?.user) {
-    throw new Error("createUser returned no user");
+  if (!invited?.user) {
+    throw new Error("inviteUserByEmail returned no user");
   }
-  const userId = created.user.id;
-  const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
-    type: "magiclink",
-    email,
-    options: { redirectTo: `${getOrigin()}/auth/callback` },
-  });
-  if (linkErr) {
-    // Roll back the auth user so a retry can succeed cleanly. Best-effort:
-    // a delete failure here only means the orphan will be cleaned up on
-    // re-invite when the conflict-check catches it.
-    try {
-      // Hard-delete so a retry of the same email finds no residue.
-      await supabase.auth.admin.deleteUser(userId, false);
-    } catch {
-      // swallow — original linkErr is the meaningful failure
-    }
-    throw linkErr;
-  }
-  return {
-    user_id: userId,
-    link: linkData?.properties?.action_link ?? "",
-  };
+  return { user_id: invited.user.id };
 }
 
 export async function sendPasswordInvite(

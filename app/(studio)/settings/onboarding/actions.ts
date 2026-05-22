@@ -737,50 +737,34 @@ export async function resendInvite(formData: FormData): Promise<void> {
     redirect(`${ONB_PATH}?error=not_found`);
   }
 
-  // 3: rotate the link via the method-appropriate primitive. The auth user
-  // already exists, so we skip the createUser step that
-  // `generateMagicLinkInvite` would do. Supabase invalidates the prior
-  // token server-side as a side-effect of the rotation — that's the
-  // documented UX caveat in quickstart.md (Copy link & Resend both
-  // invalidate the prior URL).
+  // 3: re-send the invite via inviteUserByEmail. Supabase sends a fresh
+  // invite email and invalidates the prior token server-side as a side-effect
+  // — that's the documented UX caveat in quickstart.md (Copy link & Resend
+  // both invalidate the prior URL). Both invite methods route through
+  // inviteUserByEmail because it is the only admin primitive that actually
+  // SENDS the email; `generateLink` merely generates a link, which was the
+  // original delivery bug. The redirect differs — password invites carry
+  // `?type=invite` so the callback routes to the password-setup form;
+  // magic-link invites omit it and land on /select-staff.
   const method: InviteMethod = (target.invite_method as InviteMethod) ?? "magic_link";
   try {
-    if (method === "password") {
-      const adminAuth = (admin as unknown as { auth?: { admin?: unknown } }).auth?.admin as
-        | {
-            inviteUserByEmail?: (
-              email: string,
-              options?: { redirectTo?: string; data?: Record<string, unknown> }
-            ) => Promise<{ error: { message: string } | null }>;
-          }
-        | undefined;
-      if (!adminAuth?.inviteUserByEmail) {
-        throw new Error("supabase admin.inviteUserByEmail unavailable");
-      }
-      const { error } = await adminAuth.inviteUserByEmail(target.email as string, {
-        redirectTo: `${inviteOrigin()}/auth/callback?type=invite`,
-      });
-      if (error) throw error;
-    } else {
-      const adminAuth = (admin as unknown as { auth?: { admin?: unknown } }).auth?.admin as
-        | {
-            generateLink?: (args: {
-              type: string;
-              email: string;
-              options?: { redirectTo?: string };
-            }) => Promise<{ error: { message: string } | null }>;
-          }
-        | undefined;
-      if (!adminAuth?.generateLink) {
-        throw new Error("supabase admin.generateLink unavailable");
-      }
-      const { error } = await adminAuth.generateLink({
-        type: "magiclink",
-        email: target.email as string,
-        options: { redirectTo: `${inviteOrigin()}/auth/callback` },
-      });
-      if (error) throw error;
+    const adminAuth = (admin as unknown as { auth?: { admin?: unknown } }).auth?.admin as
+      | {
+          inviteUserByEmail?: (
+            email: string,
+            options?: { redirectTo?: string; data?: Record<string, unknown> }
+          ) => Promise<{ error: { message: string } | null }>;
+        }
+      | undefined;
+    if (!adminAuth?.inviteUserByEmail) {
+      throw new Error("supabase admin.inviteUserByEmail unavailable");
     }
+    const redirectTo =
+      method === "password"
+        ? `${inviteOrigin()}/auth/callback?type=invite`
+        : `${inviteOrigin()}/auth/callback`;
+    const { error } = await adminAuth.inviteUserByEmail(target.email as string, { redirectTo });
+    if (error) throw error;
   } catch (err) {
     console.error("resendInvite: rotation failed", err);
     redirect(`${ONB_PATH}?error=invite_failed`);

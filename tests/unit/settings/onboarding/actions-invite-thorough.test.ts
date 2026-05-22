@@ -52,7 +52,6 @@ vi.mock("@/lib/onboarding/email-conflict", () => ({
 vi.mock("@/lib/onboarding/invite", () => ({
   generateMagicLinkInvite: vi.fn(async () => ({
     user_id: "auth-user-ml",
-    link: "https://example.test/magic",
   })),
   sendPasswordInvite: vi.fn(async () => ({
     user_id: "auth-user-pw",

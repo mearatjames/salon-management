@@ -57,45 +57,40 @@ describe("generateMagicLinkInvite", () => {
     vi.restoreAllMocks();
   });
 
-  it("creates the user (no confirm) then generates a magiclink and returns { user_id, link }", async () => {
+  it("invites via inviteUserByEmail (Supabase sends the email) and returns { user_id }", async () => {
     const m = mockAdmin();
-    m.auth.admin.createUser.mockResolvedValueOnce({
+    m.auth.admin.inviteUserByEmail.mockResolvedValueOnce({
       data: { user: { id: "user-1" } },
-      error: null,
-    });
-    m.auth.admin.generateLink.mockResolvedValueOnce({
-      data: { properties: { action_link: "https://example.test/magic" } },
       error: null,
     });
 
     const result = await generateMagicLinkInvite("new@tang.dev", { display_name: "Ada" });
 
-    expect(m.auth.admin.createUser).toHaveBeenCalledTimes(1);
-    expect(m.auth.admin.createUser).toHaveBeenCalledWith({
-      email: "new@tang.dev",
-      email_confirm: false,
-      user_metadata: { display_name: "Ada" },
-    });
-    expect(m.auth.admin.generateLink).toHaveBeenCalledTimes(1);
-    const linkCall = m.auth.admin.generateLink.mock.calls[0][0];
-    expect(linkCall.type).toBe("magiclink");
-    expect(linkCall.email).toBe("new@tang.dev");
-    expect(result).toEqual({
-      user_id: "user-1",
-      link: "https://example.test/magic",
-    });
+    expect(m.auth.admin.inviteUserByEmail).toHaveBeenCalledTimes(1);
+    const [emailArg, opts] = m.auth.admin.inviteUserByEmail.mock.calls[0];
+    expect(emailArg).toBe("new@tang.dev");
+    // Magic-link invites land on /auth/callback WITHOUT `?type=invite`, so the
+    // callback routes the accepted invitee straight to /select-staff with no
+    // password-setup detour.
+    expect(opts.redirectTo).toMatch(/\/auth\/callback$/);
+    expect(opts.data).toEqual({ display_name: "Ada" });
+    expect(result).toEqual({ user_id: "user-1" });
+    // `generateLink` only GENERATES a link — it never sends an email — so the
+    // invite must NOT route through it (that was the delivery bug). Likewise
+    // `createUser` is redundant: `inviteUserByEmail` creates the user itself.
+    expect(m.auth.admin.generateLink).not.toHaveBeenCalled();
+    expect(m.auth.admin.createUser).not.toHaveBeenCalled();
   });
 
-  it("returns the duplicate sentinel when createUser reports 'already registered'", async () => {
+  it("returns the duplicate sentinel when inviteUserByEmail reports 'already registered'", async () => {
     const m = mockAdmin();
-    m.auth.admin.createUser.mockResolvedValueOnce({
+    m.auth.admin.inviteUserByEmail.mockResolvedValueOnce({
       data: null,
       error: { message: "A user with this email already registered" },
     });
 
     const result = await generateMagicLinkInvite("dup@tang.dev");
-    expect(result).toEqual({ user_id: null, link: null, error: "duplicate" });
-    expect(m.auth.admin.generateLink).not.toHaveBeenCalled();
+    expect(result).toEqual({ user_id: null, error: "duplicate" });
   });
 });
 

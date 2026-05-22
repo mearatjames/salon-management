@@ -54,7 +54,6 @@ vi.mock("@/lib/onboarding/email-conflict", () => ({
 vi.mock("@/lib/onboarding/invite", () => ({
   generateMagicLinkInvite: vi.fn(async () => ({
     user_id: "auth-user-new",
-    link: "https://example.test/magic",
   })),
   deleteInviteUser: vi.fn(async () => undefined),
 }));
