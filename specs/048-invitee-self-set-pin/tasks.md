@@ -97,7 +97,7 @@ directly on `/select-staff`.
 **Note**: The skip behavior is the `pin_hash`-non-null branch of the `/set-pin`
 page gate built in T008. This phase verifies it; no new production code.
 
-- [ ] T013 [US2] Add the US2 scenario to `tests/e2e/set-pin.spec.ts`: provision an `invited`-state staff row with `pin_hash` already set (owner-set, thorough mode) and a linked auth user; drive accept-invite → set password → assert the flow lands **directly** on `/select-staff` and the `/set-pin` keypad is never shown; assert the invitee can pin in with the owner-set PIN. Also assert the direct-navigation idempotency guard: visiting `/set-pin` while authenticated as a staff member who already has a PIN redirects to `/select-staff`.
+- [X] T013 [US2] Add the US2 scenario to `tests/e2e/set-pin.spec.ts`: provision an `invited`-state staff row with `pin_hash` already set (owner-set, thorough mode) and a linked auth user; drive accept-invite → set password → assert the flow lands **directly** on `/select-staff` and the `/set-pin` keypad is never shown; assert the invitee can pin in with the owner-set PIN. Also assert the direct-navigation idempotency guard: visiting `/set-pin` while authenticated as a staff member who already has a PIN redirects to `/select-staff`.
 
 **Checkpoint**: US1 and US2 both verified — both branches of the gate behave correctly.
 

@@ -16,6 +16,7 @@
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
+import { hashPin } from "../../lib/auth/pin";
 import { getAuditLogRowsSince, newAuditCursor } from "./_db";
 import { test, expect } from "./_fixtures";
 
@@ -68,6 +69,9 @@ type Invitee = {
 async function provisionInvitee(opts: {
   displayName: string;
   invitedBy: string;
+  /** When set, the staff row is provisioned with this PIN hash already in
+   *  place — the thorough-mode (owner-set-PIN) invite. Defaults to null. */
+  pinHash?: string | null;
 }): Promise<{ invitee: Invitee; verifyLink: string }> {
   const c = admin();
   const email = `invitee.${Date.now()}.${Math.random().toString(36).slice(2, 8)}${INVITEE_TEST_EMAIL_SUFFIX}`;
@@ -85,7 +89,8 @@ async function provisionInvitee(opts: {
   }
   const userId = invited.user.id;
 
-  // Insert the invited staff row — quick mode: no PIN, password method.
+  // Insert the invited staff row — password method; `pin_hash` is null
+  // (quick mode) unless `opts.pinHash` supplies an owner-set PIN.
   const { data: staffRow, error: staffErr } = await c
     .from("staff")
     .insert({
@@ -94,7 +99,7 @@ async function provisionInvitee(opts: {
       email,
       role: "technician",
       color_token: "--avatar-teal",
-      pin_hash: null,
+      pin_hash: opts.pinHash ?? null,
       state: "invited",
       active: false,
       invited_at: new Date().toISOString(),
@@ -244,5 +249,78 @@ test.describe("US1: invitee without a PIN sets their own", () => {
     // 10. Constitution III — the raw PIN never appears anywhere in the
     //     audit row (payload, ids, or any column).
     expect(JSON.stringify(row)).not.toContain(chosenPin);
+  });
+});
+
+test.describe("US2: invitee whose PIN was set by the owner skips the step", () => {
+  let supabaseUp = false;
+
+  test.beforeAll(async () => {
+    supabaseUp = await supabaseIsReachable();
+    if (!supabaseUp) {
+      test.skip(
+        true,
+        "Supabase not reachable at 127.0.0.1:54321 — skipping US2 set-pin specs (Docker unavailable)."
+      );
+      return;
+    }
+    await cleanupInvitees();
+  });
+
+  test.afterAll(async () => {
+    if (!supabaseUp) return;
+    await cleanupInvitees();
+  });
+
+  test("(US2) owner-set PIN → password step lands straight on /select-staff, no PIN step", async ({
+    page,
+    staffFixture,
+  }) => {
+    // The owner picked this PIN at invite time (thorough mode), so the
+    // invitee's staff row is provisioned with `pin_hash` already set.
+    const ownerSetPin = "4729";
+    const { invitee, verifyLink } = await provisionInvitee({
+      displayName: `Owner Pin Invitee ${Date.now()}`,
+      invitedBy: staffFixture.owner.id,
+      pinHash: await hashPin(ownerSetPin),
+    });
+
+    // 1. Accept the invite and set a password — same handshake as US1.
+    await page.goto(verifyLink);
+    await page.waitForURL(/\/reset-password\?type=invite/, { timeout: 20_000 });
+    const newPassword = "set-pin-e2e-password";
+    await page.locator("#reset-password").fill(newPassword);
+    await page.locator("#reset-confirm").fill(newPassword);
+    await page.getByRole("button", { name: "Set password and continue" }).click();
+
+    // 2. `updatePassword` redirects an invite-method user to /set-pin, which
+    //    sees `pin_hash` already set and bounces straight to /select-staff.
+    //    The "Set your PIN" keypad is never shown.
+    await page.waitForURL(/\/select-staff($|\?)/, { timeout: 15_000 });
+    expect(new URL(page.url()).pathname).toBe("/select-staff");
+    await expect(page.getByRole("heading", { name: "Set your PIN" })).toHaveCount(0);
+
+    // 3. Direct-navigation idempotency guard — opening /set-pin while
+    //    authenticated as a staff member who already has a PIN redirects
+    //    straight back to /select-staff (no overwrite, no keypad).
+    //    Navigate same-origin: the invite flow runs on 127.0.0.1 (the
+    //    verify link's redirect_to), which differs from the Playwright
+    //    config baseURL — a bare relative goto would drop the cookie.
+    await page.goto(new URL("/set-pin", page.url()).href);
+    await page.waitForURL(/\/select-staff($|\?)/, { timeout: 15_000 });
+    expect(new URL(page.url()).pathname).toBe("/select-staff");
+    await expect(page.getByRole("heading", { name: "Set your PIN" })).toHaveCount(0);
+
+    // 4. The invitee is on the roster and pins in with the owner-set PIN.
+    const inviteeTile = page.locator(`[data-staff-id="${invitee.staffId}"]`);
+    await expect(inviteeTile).toBeVisible();
+    await inviteeTile.click();
+    const modal = page.getByRole("dialog");
+    await modal.waitFor({ state: "visible" });
+    for (const d of ownerSetPin) {
+      await modal.getByRole("button", { name: `Digit ${d}`, exact: true }).click();
+    }
+    // A correct PIN routes off /select-staff (to /dashboard, the default).
+    await page.waitForURL(/\/dashboard($|\?)/, { timeout: 15_000 });
   });
 });
