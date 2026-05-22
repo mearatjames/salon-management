@@ -494,28 +494,42 @@ async function mailpitIsReachable(): Promise<boolean> {
   }
 }
 
-// Poll Mailpit until an email addressed to `toAddress` appears. Returns true
-// once one lands, false if none arrives before the deadline — Supabase
-// enqueues mail synchronously, so false means "nothing was sent".
-async function waitForEmailTo(toAddress: string, timeoutMs = 10_000): Promise<boolean> {
+// Poll Mailpit until an email addressed to `toAddress` appears; returns the
+// message's Mailpit ID, or null if none arrives before the deadline —
+// Supabase enqueues mail synchronously, so null means "nothing was sent".
+async function waitForMessageTo(toAddress: string, timeoutMs = 10_000): Promise<string | null> {
   const deadline = Date.now() + timeoutMs;
   const target = toAddress.toLowerCase();
   while (Date.now() < deadline) {
     try {
       const res = await fetch(`${MAILPIT_BASE}/api/v1/messages?limit=200`);
       if (res.ok) {
-        const data = (await res.json()) as { messages?: { To?: { Address?: string }[] }[] };
-        const hit = (data.messages ?? []).some((m) =>
+        const data = (await res.json()) as {
+          messages?: { ID: string; To?: { Address?: string }[] }[];
+        };
+        const hit = (data.messages ?? []).find((m) =>
           (m.To ?? []).some((t) => (t.Address ?? "").toLowerCase() === target)
         );
-        if (hit) return true;
+        if (hit) return hit.ID;
       }
     } catch {
       // Swallow and retry until the deadline.
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  return false;
+  return null;
+}
+
+// Pull the Supabase `/auth/v1/verify` link out of a Mailpit-captured invite
+// email. The default invite template embeds it as `{{ .ConfirmationURL }}`;
+// HTML-encoded `&amp;` separators are decoded so the URL is navigable.
+async function extractVerifyLink(messageId: string): Promise<string | null> {
+  const res = await fetch(`${MAILPIT_BASE}/api/v1/message/${messageId}`);
+  if (!res.ok) return null;
+  const data = (await res.json()) as { HTML?: string; Text?: string };
+  const body = `${data.HTML ?? ""} ${data.Text ?? ""}`.replace(/&amp;/g, "&");
+  const match = body.match(/https?:\/\/[^\s"'<>]+\/auth\/v1\/verify\?[^\s"'<>]+/);
+  return match ? match[0] : null;
 }
 
 // ── US5: Pending invite actions ───────────────────────────────────────────
@@ -594,9 +608,10 @@ test.describe("US5: Pending invite actions", () => {
     expect(clipText).toMatch(/token=|\/auth\/callback/);
   });
 
-  test("Quick invite delivers an email to the invitee (regression: magic-link invite must SEND)", async ({
+  test("Quick invite: the email is sent and clicking the link signs the invitee in", async ({
     page,
     staffFixture,
+    browser,
   }) => {
     // Mailpit boots with `supabase start`; skip cleanly if it isn't up so
     // this never false-fails where Docker is unavailable.
@@ -612,12 +627,30 @@ test.describe("US5: Pending invite actions", () => {
     const email = `invite.delivery.${Date.now()}@tangnails.test`;
     await quickInvite(page, { name: "Invite Delivery", email });
 
-    // The "Invite sent" toast only proves the server action returned — the
-    // real contract is an email that reaches the invitee. The delivery bug
-    // routed the magic-link invite through `generateLink`, which generates a
-    // link but never sends one, so no message was ever addressed to them.
-    const delivered = await waitForEmailTo(email);
-    expect(delivered, `no invite email was delivered to ${email}`).toBe(true);
+    // 1. The "Invite sent" toast only proves the server action returned — the
+    //    real contract is an email that reaches the invitee. The delivery bug
+    //    routed the magic-link invite through `generateLink`, which generates
+    //    a link but never sends one.
+    const messageId = await waitForMessageTo(email);
+    expect(messageId, `no invite email was delivered to ${email}`).not.toBeNull();
+
+    const verifyLink = await extractVerifyLink(messageId as string);
+    expect(verifyLink, "invite email contained no /auth/v1/verify link").not.toBeNull();
+
+    // 2. Open the link in a *fresh* browser context — the invitee clicks it
+    //    in their own browser, with none of the owner's cookies. This is the
+    //    cross-browser case the implicit-flow callback must handle: Supabase
+    //    returns the session in the URL hash, and `/auth/invite-callback`
+    //    completes it client-side. The invitee lands signed in on the staff
+    //    picker (a magic-link invite is passwordless).
+    const inviteeContext = await browser.newContext();
+    try {
+      const inviteePage = await inviteeContext.newPage();
+      await inviteePage.goto(verifyLink as string);
+      await inviteePage.waitForURL(/\/select-staff/, { timeout: 15_000 });
+    } finally {
+      await inviteeContext.close();
+    }
   });
 });
 

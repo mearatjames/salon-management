@@ -759,10 +759,11 @@ export async function resendInvite(formData: FormData): Promise<void> {
     if (!adminAuth?.inviteUserByEmail) {
       throw new Error("supabase admin.inviteUserByEmail unavailable");
     }
+    const origin = await inviteOrigin();
     const redirectTo =
       method === "password"
-        ? `${inviteOrigin()}/auth/callback?type=invite`
-        : `${inviteOrigin()}/auth/callback`;
+        ? `${origin}/auth/invite-callback?method=password`
+        : `${origin}/auth/invite-callback`;
     const { error } = await adminAuth.inviteUserByEmail(target.email as string, { redirectTo });
     if (error) throw error;
   } catch (err) {
@@ -906,7 +907,7 @@ export async function cancelInvite(formData: FormData): Promise<void> {
 //   3. (no email-conflict check needed — the email is still on this row;
 //      we're rotating a fresh token for the same auth user.)
 //   4. admin.generateLink({ type:'magiclink', email: target.email, options:
-//      { redirectTo: '<origin>/auth/callback' } }) — issues a fresh token;
+//      { redirectTo: '<origin>/auth/invite-callback' } }) — issues a token;
 //      Supabase invalidates any prior token as a side-effect. Always
 //      magic_link in v1 per FR-061, regardless of the prior invite_method.
 //   5. UPDATE staff SET state='invited', active=false, offboarded_at=NULL,
@@ -978,7 +979,7 @@ export async function reactivateUser(formData: FormData): Promise<void> {
     const { error } = await adminAuth.generateLink({
       type: "magiclink",
       email: target.email as string,
-      options: { redirectTo: `${inviteOrigin()}/auth/callback` },
+      options: { redirectTo: `${await inviteOrigin()}/auth/invite-callback` },
     });
     if (error) throw error;
   } catch (err) {
@@ -1107,14 +1108,15 @@ export async function getInviteLink(
     if (!adminAuth?.generateLink) {
       throw new Error("supabase admin.generateLink unavailable");
     }
+    const origin = await inviteOrigin();
     const { data, error } = await adminAuth.generateLink({
       type: method === "password" ? "invite" : "magiclink",
       email: target.email as string,
       options: {
         redirectTo:
           method === "password"
-            ? `${inviteOrigin()}/auth/callback?type=invite`
-            : `${inviteOrigin()}/auth/callback`,
+            ? `${origin}/auth/invite-callback?method=password`
+            : `${origin}/auth/invite-callback`,
       },
     });
     if (error) throw error;

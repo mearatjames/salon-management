@@ -16,6 +16,12 @@ vi.mock("@/lib/db/admin", () => ({
   createSupabaseServiceRoleClient: vi.fn(),
 }));
 
+// The invite helpers resolve the redirect origin from request headers via
+// `getRequestOrigin`; pin it to a stable value so redirectTo is assertable.
+vi.mock("@/lib/auth/request-origin", () => ({
+  getRequestOrigin: vi.fn(async () => "http://localhost:3000"),
+}));
+
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 
 import {
@@ -69,10 +75,10 @@ describe("generateMagicLinkInvite", () => {
     expect(m.auth.admin.inviteUserByEmail).toHaveBeenCalledTimes(1);
     const [emailArg, opts] = m.auth.admin.inviteUserByEmail.mock.calls[0];
     expect(emailArg).toBe("new@tang.dev");
-    // Magic-link invites land on /auth/callback WITHOUT `?type=invite`, so the
-    // callback routes the accepted invitee straight to /select-staff with no
+    // Magic-link invites land on /auth/invite-callback WITHOUT `?method`, so
+    // the page routes the accepted invitee straight to /select-staff with no
     // password-setup detour.
-    expect(opts.redirectTo).toMatch(/\/auth\/callback$/);
+    expect(opts.redirectTo).toMatch(/\/auth\/invite-callback$/);
     expect(opts.data).toEqual({ display_name: "Ada" });
     expect(result).toEqual({ user_id: "user-1" });
     // `generateLink` only GENERATES a link — it never sends an email — so the
@@ -114,7 +120,7 @@ describe("sendPasswordInvite", () => {
     expect(m.auth.admin.inviteUserByEmail).toHaveBeenCalledTimes(1);
     const [emailArg, opts] = m.auth.admin.inviteUserByEmail.mock.calls[0];
     expect(emailArg).toBe("inv@tang.dev");
-    expect(opts.redirectTo).toMatch(/\/auth\/callback\?type=invite$/);
+    expect(opts.redirectTo).toMatch(/\/auth\/invite-callback\?method=password$/);
     expect(opts.data).toEqual({ display_name: "Bea" });
     expect(result).toEqual({ user_id: "user-2" });
   });

@@ -10,11 +10,12 @@
 // SDK failure. Genuine failures throw so the action's catch can map them
 // to `?error=invite_failed` per the routes contract.
 //
-// `getOrigin()` mirrors the existing `lib/auth/next-url.ts` pattern —
-// configurable via `NEXT_PUBLIC_SITE_URL` / `NEXT_PUBLIC_APP_URL`, falls
-// back to the local dev origin.
+// Invite redirect URLs resolve the origin from the request headers (see
+// `getRequestOrigin`) so they point at the actual deployment — localhost in
+// dev, the Vercel URL in preview/prod — without per-environment env config.
 
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
+import { getRequestOrigin } from "@/lib/auth/request-origin";
 
 type InviteMetadata = Record<string, unknown>;
 
@@ -45,21 +46,14 @@ function isDuplicateError(message: string | undefined): boolean {
   return typeof message === "string" && /already\b[^.]*\b(?:registered|exists)/i.test(message);
 }
 
-function getOrigin(): string {
-  return (
-    process.env.NEXT_PUBLIC_SITE_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"
-  );
-}
-
 /**
- * Public alias for `getOrigin()` so other modules in the onboarding feature
- * (resendInvite / getInviteLink in `app/(studio)/settings/onboarding/actions.ts`)
- * can resolve the same callback origin without duplicating the env-var
- * fallback ladder. Keep the underlying function private — callers should
- * import this exported name to keep the contract explicit.
+ * Resolve the callback origin for invite redirect URLs. Delegates to the
+ * shared header-based resolver and is re-exported under this name so the
+ * onboarding server actions (resendInvite / getInviteLink / reactivateUser)
+ * build the same origin without each importing the resolver directly.
  */
-export function inviteOrigin(): string {
-  return getOrigin();
+export function inviteOrigin(): Promise<string> {
+  return getRequestOrigin();
 }
 
 export async function generateMagicLinkInvite(
@@ -68,17 +62,17 @@ export async function generateMagicLinkInvite(
 ): Promise<MagicLinkResult> {
   const supabase = createSupabaseServiceRoleClient();
   // `inviteUserByEmail` creates the auth user AND sends the invite email
-  // through Supabase's mailer (Inbucket in local dev; custom SMTP in
+  // through Supabase's mailer (Mailpit in local dev; custom SMTP in
   // production). It replaces the previous `createUser` → `generateLink` pair:
   // `generateLink` only GENERATES a link — it never sends an email — so the
   // magic-link invite never actually reached the invitee's inbox.
   //
-  // The redirect omits `?type=invite` so `/auth/callback` routes the accepted
-  // invitee straight to /select-staff — a magic-link invite is passwordless,
-  // with no password-setup detour. `sendPasswordInvite` keeps the
-  // `?type=invite` suffix for the password-setup variant.
+  // The link lands on `/auth/invite-callback`: admin invites come back via
+  // the implicit flow (tokens in the URL hash), which a server route can't
+  // read, so that page completes the session client-side. No `?method`
+  // param → it routes the accepted invitee straight to /select-staff.
   const { data: invited, error } = await supabase.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${getOrigin()}/auth/callback`,
+    redirectTo: `${await inviteOrigin()}/auth/invite-callback`,
     data: metadata,
   });
   if (error) {
@@ -98,8 +92,10 @@ export async function sendPasswordInvite(
   metadata: InviteMetadata = {}
 ): Promise<PasswordInviteResult> {
   const supabase = createSupabaseServiceRoleClient();
+  // `?method=password` tells /auth/invite-callback to route the accepted
+  // invitee to the password-setup form instead of /select-staff.
   const { data: invited, error } = await supabase.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${getOrigin()}/auth/callback?type=invite`,
+    redirectTo: `${await inviteOrigin()}/auth/invite-callback?method=password`,
     data: metadata,
   });
   if (error) {

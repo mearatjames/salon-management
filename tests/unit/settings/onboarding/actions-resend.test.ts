@@ -236,13 +236,13 @@ describe("resendInvite", () => {
     }
 
     // 1. inviteUserByEmail re-sends the invite email to the target's address
-    //    on the magic-link /auth/callback redirect (no `?type=invite`).
+    //    on the magic-link /auth/invite-callback redirect (no `?method`).
     //    generateLink is NOT used — it only generates a link, never sends one,
     //    which was the original delivery bug.
     expect(inviteUserByEmailCalls).toHaveLength(1);
     expect(inviteUserByEmailCalls[0].email).toBe("hana@tangnails.com");
     expect((inviteUserByEmailCalls[0].options as { redirectTo?: string }).redirectTo).toMatch(
-      /\/auth\/callback$/
+      /\/auth\/invite-callback$/
     );
     expect(generateLinkCalls).toHaveLength(0);
 
