@@ -28,9 +28,9 @@ supabase migration up  # apply 0004 + any prior un-applied migrations
 
 After migration, every existing staff row has `state='active'` (backfill is idempotent — re-running the migration is safe).
 
-## Email capture (Inbucket)
+## Email capture (Mailpit)
 
-Magic-link and invite emails land in the existing local Inbucket inbox (port `54324` by default; check `supabase status` for the resolved URL). The e2e suite already polls Inbucket via the helpers set up in 003 for magic-link and extended in 010 for recovery — the new invite template lands in the same inbox under the same recipient address.
+Magic-link and invite emails land in the local mail sink that `supabase start` boots (port `54324` by default; check `supabase status` for the resolved URL). Recent Supabase CLI ships **Mailpit** — the `config.toml` section is still keyed `[inbucket]` for back-compat, but the running service and its API are Mailpit's.
 
 To verify locally:
 
@@ -38,16 +38,15 @@ To verify locally:
 2. Sign in as the seeded owner (Priya).
 3. Go to `/settings/onboarding` → click `Onboard user`.
 4. In Quick mode, enter a name + a unique email + role, click `Send invite`.
-5. Open Inbucket (`http://127.0.0.1:54324` or whatever `supabase status` shows under "Inbucket URL").
-6. Click the new email → click the magic link → land on `/select-staff` signed in as the invitee.
+5. Open Mailpit (`http://127.0.0.1:54324` or whatever `supabase status` shows for the mail sink).
+6. Click the new email → click the invite link → land on `/select-staff` signed in as the invitee.
 
-## Production bootstrap (no change from 010)
+## Production bootstrap
 
-This feature uses the same Supabase auth infrastructure 010 wired up. Specifically:
+This feature builds on the Supabase auth infrastructure 010 wired up. Specifically:
 
-- The **Site URL allowlist** must include `<origin>/auth/callback` so that magic-link and recovery emails redirect correctly. This was added to both preview and prod Supabase projects in `010-login-redesign` (per its `quickstart.md`). No change needed for this feature.
-- The **redirect URL allowlist** must also include `<origin>/reset-password` (for the password-method invite leg). Already configured by 010.
-- No new SMTP setup — the Supabase default sender carries invites in production.
+- The **redirect URL allowlist** on both the preview and prod Supabase projects (Authentication → URL Configuration) must include the deployment origin's `/auth/callback`, `/auth/invite-callback`, and `/reset-password` paths. `/auth/callback` and `/reset-password` were configured in `010-login-redesign`; **`/auth/invite-callback` is new for this feature** — admin invites return via the OAuth implicit flow (tokens in the URL hash) and land on that client page. The local stack's allowlist lives in `supabase/config.toml`.
+- **Custom SMTP is required in production.** Supabase's built-in email service only delivers to addresses on the Supabase project's own team — every other recipient fails with `Email address not authorized`, so invites, magic links, and password resets silently never arrive. Configure a custom SMTP provider (e.g. Resend) under **Authentication → Emails → SMTP Settings** on *both* the preview and prod Supabase projects. See <https://supabase.com/docs/guides/auth/auth-smtp>.
 
 If a new operator is bootstrapping the production Supabase project from scratch, see `specs/010-login-redesign/quickstart.md § Production bootstrap` for the SQL recipe to seed the first owner with `email_confirmed_at = now()`. This feature inherits that requirement (no extra steps).
 

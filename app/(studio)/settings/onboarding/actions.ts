@@ -50,6 +50,7 @@ import {
   deleteInviteUser,
   generateMagicLinkInvite,
   inviteOrigin,
+  sendInviteSignInLink,
   sendPasswordInvite,
 } from "@/lib/onboarding/invite";
 
@@ -692,15 +693,22 @@ export async function removeUser(formData: FormData): Promise<void> {
 //   1. session + owner gate.
 //   2. load target — must be state='invited' AND removed_at IS NULL; else
 //      ?error=not_found. Also email IS NOT NULL.
-//   3. re-issue via admin.generateLink (magic_link) OR inviteUserByEmail
-//      (password). Either primitive rotates the prior token server-side, so
-//      the original link becomes invalid as a side-effect. We DELIBERATELY
-//      do NOT route through `generateMagicLinkInvite` from
-//      `lib/onboarding/invite.ts`, because that helper calls
-//      `admin.createUser` first — on resend the auth user already exists,
-//      so it would always hit the duplicate-sentinel branch and waste a
-//      roundtrip. The simpler model goes straight to the rotation primitive.
-//   4. UPDATE staff `invited_at = now()`.
+//   3. re-send a fresh sign-in link to the invitee's EXISTING auth user via
+//      `sendInviteSignInLink`. The original invite already created the auth
+//      user, so resend must NOT delete + re-create it:
+//        - `inviteUserByEmail` rejects an already-confirmed address with
+//          `email_exists`, and an invitee is confirmed the moment they open
+//          any invite link; and
+//        - deleting the auth user is impossible — an invited magic-link
+//          staff row has pin_hash = NULL, so the FK ON DELETE SET NULL
+//          cascade would null staff.user_id and violate the
+//          staff_pin_or_user CHECK ("Database error deleting user").
+//      `sendInviteSignInLink` (resetPasswordForEmail on an implicit-flow
+//      client) reaches any existing user without touching the auth row. The
+//      redirect carries `?method=password` for password invites so the
+//      callback routes to password setup; magic-link invites omit it.
+//   4. UPDATE staff `invited_at = now()` — the auth user is untouched, so
+//      user_id is never rotated.
 //   5. audit `user.invite_resent { email, method, by }` BEFORE the redirect
 //      (Constitution III).
 //   6. revalidate + redirect ?toast=resent&name=<display_name>.
@@ -723,7 +731,7 @@ export async function resendInvite(formData: FormData): Promise<void> {
   const admin = createSupabaseServiceRoleClient();
   const { data: target, error: loadErr } = await admin
     .from("staff")
-    .select("id, user_id, email, display_name, state, invite_method, removed_at")
+    .select("id, email, display_name, state, invite_method, removed_at")
     .eq("id", staffId)
     .single();
 
@@ -737,56 +745,26 @@ export async function resendInvite(formData: FormData): Promise<void> {
     redirect(`${ONB_PATH}?error=not_found`);
   }
 
-  // 3: rotate the link via the method-appropriate primitive. The auth user
-  // already exists, so we skip the createUser step that
-  // `generateMagicLinkInvite` would do. Supabase invalidates the prior
-  // token server-side as a side-effect of the rotation — that's the
-  // documented UX caveat in quickstart.md (Copy link & Resend both
-  // invalidate the prior URL).
+  // 3: re-send a fresh sign-in link to the EXISTING invitee. See the header
+  // note — resend cannot delete + re-create the auth user (the FK SET NULL
+  // cascade violates staff_pin_or_user on a pin-less invited row), so it
+  // reaches the existing user with sendInviteSignInLink instead. The link
+  // lands on /auth/invite-callback; password invites add ?method=password
+  // so the callback routes to password setup.
   const method: InviteMethod = (target.invite_method as InviteMethod) ?? "magic_link";
+  const origin = await inviteOrigin();
+  const redirectTo =
+    method === "password"
+      ? `${origin}/auth/invite-callback?method=password`
+      : `${origin}/auth/invite-callback`;
   try {
-    if (method === "password") {
-      const adminAuth = (admin as unknown as { auth?: { admin?: unknown } }).auth?.admin as
-        | {
-            inviteUserByEmail?: (
-              email: string,
-              options?: { redirectTo?: string; data?: Record<string, unknown> }
-            ) => Promise<{ error: { message: string } | null }>;
-          }
-        | undefined;
-      if (!adminAuth?.inviteUserByEmail) {
-        throw new Error("supabase admin.inviteUserByEmail unavailable");
-      }
-      const { error } = await adminAuth.inviteUserByEmail(target.email as string, {
-        redirectTo: `${inviteOrigin()}/auth/callback?type=invite`,
-      });
-      if (error) throw error;
-    } else {
-      const adminAuth = (admin as unknown as { auth?: { admin?: unknown } }).auth?.admin as
-        | {
-            generateLink?: (args: {
-              type: string;
-              email: string;
-              options?: { redirectTo?: string };
-            }) => Promise<{ error: { message: string } | null }>;
-          }
-        | undefined;
-      if (!adminAuth?.generateLink) {
-        throw new Error("supabase admin.generateLink unavailable");
-      }
-      const { error } = await adminAuth.generateLink({
-        type: "magiclink",
-        email: target.email as string,
-        options: { redirectTo: `${inviteOrigin()}/auth/callback` },
-      });
-      if (error) throw error;
-    }
+    await sendInviteSignInLink(target.email as string, redirectTo);
   } catch (err) {
-    console.error("resendInvite: rotation failed", err);
+    console.error("resendInvite: re-send failed", err);
     redirect(`${ONB_PATH}?error=invite_failed`);
   }
 
-  // 4: bump invited_at.
+  // 4: bump invited_at. The auth user is untouched — no user_id rotation.
   const { error: updateErr } = await admin
     .from("staff")
     .update({ invited_at: new Date().toISOString() })
@@ -922,7 +900,7 @@ export async function cancelInvite(formData: FormData): Promise<void> {
 //   3. (no email-conflict check needed — the email is still on this row;
 //      we're rotating a fresh token for the same auth user.)
 //   4. admin.generateLink({ type:'magiclink', email: target.email, options:
-//      { redirectTo: '<origin>/auth/callback' } }) — issues a fresh token;
+//      { redirectTo: '<origin>/auth/invite-callback' } }) — issues a token;
 //      Supabase invalidates any prior token as a side-effect. Always
 //      magic_link in v1 per FR-061, regardless of the prior invite_method.
 //   5. UPDATE staff SET state='invited', active=false, offboarded_at=NULL,
@@ -994,7 +972,7 @@ export async function reactivateUser(formData: FormData): Promise<void> {
     const { error } = await adminAuth.generateLink({
       type: "magiclink",
       email: target.email as string,
-      options: { redirectTo: `${inviteOrigin()}/auth/callback` },
+      options: { redirectTo: `${await inviteOrigin()}/auth/invite-callback` },
     });
     if (error) throw error;
   } catch (err) {
@@ -1123,14 +1101,15 @@ export async function getInviteLink(
     if (!adminAuth?.generateLink) {
       throw new Error("supabase admin.generateLink unavailable");
     }
+    const origin = await inviteOrigin();
     const { data, error } = await adminAuth.generateLink({
       type: method === "password" ? "invite" : "magiclink",
       email: target.email as string,
       options: {
         redirectTo:
           method === "password"
-            ? `${inviteOrigin()}/auth/callback?type=invite`
-            : `${inviteOrigin()}/auth/callback`,
+            ? `${origin}/auth/invite-callback?method=password`
+            : `${origin}/auth/invite-callback`,
       },
     });
     if (error) throw error;

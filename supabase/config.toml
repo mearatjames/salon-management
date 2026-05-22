@@ -156,13 +156,17 @@ site_url = "http://127.0.0.1:3000"
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
 # `/auth/callback` is the magic-link + OAuth + recovery handshake endpoint (003-login-flow,
-# extended by 010-login-redesign T035). `/reset-password` is the recovery landing page
-# (010-login-redesign T036) — also see the corresponding operator action T002 for the hosted
-# preview/prod projects.
+# extended by 010-login-redesign T035). `/auth/invite-callback` is the staff-invite landing
+# page — admin invites return via the implicit flow (tokens in the URL hash) so they need a
+# client page rather than the server `/auth/callback` route. `/reset-password` is the recovery
+# landing page (010-login-redesign T036). The hosted preview/prod projects must carry the same
+# entries for their own origins.
 additional_redirect_urls = [
   "https://127.0.0.1:3000",
   "http://127.0.0.1:3000/auth/callback",
   "http://localhost:3000/auth/callback",
+  "http://127.0.0.1:3000/auth/invite-callback",
+  "http://localhost:3000/auth/invite-callback",
   "http://127.0.0.1:3000/reset-password",
   "http://localhost:3000/reset-password",
 ]

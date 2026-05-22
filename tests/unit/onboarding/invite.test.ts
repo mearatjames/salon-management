@@ -16,11 +16,27 @@ vi.mock("@/lib/db/admin", () => ({
   createSupabaseServiceRoleClient: vi.fn(),
 }));
 
+// The invite helpers resolve the redirect origin from request headers via
+// `getRequestOrigin`; pin it to a stable value so redirectTo is assertable.
+vi.mock("@/lib/auth/request-origin", () => ({
+  getRequestOrigin: vi.fn(async () => "http://localhost:3000"),
+}));
+
+// `sendInviteSignInLink` builds its own anon client straight from
+// `@supabase/supabase-js` (not the service-role factory) — mock the SDK
+// entry point so the resend path can be exercised without a network call.
+vi.mock("@supabase/supabase-js", () => ({
+  createClient: vi.fn(),
+}));
+
+import { createClient } from "@supabase/supabase-js";
+
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 
 import {
   deleteInviteUser,
   generateMagicLinkInvite,
+  sendInviteSignInLink,
   sendPasswordInvite,
 } from "@/lib/onboarding/invite";
 
@@ -57,45 +73,40 @@ describe("generateMagicLinkInvite", () => {
     vi.restoreAllMocks();
   });
 
-  it("creates the user (no confirm) then generates a magiclink and returns { user_id, link }", async () => {
+  it("invites via inviteUserByEmail (Supabase sends the email) and returns { user_id }", async () => {
     const m = mockAdmin();
-    m.auth.admin.createUser.mockResolvedValueOnce({
+    m.auth.admin.inviteUserByEmail.mockResolvedValueOnce({
       data: { user: { id: "user-1" } },
-      error: null,
-    });
-    m.auth.admin.generateLink.mockResolvedValueOnce({
-      data: { properties: { action_link: "https://example.test/magic" } },
       error: null,
     });
 
     const result = await generateMagicLinkInvite("new@tang.dev", { display_name: "Ada" });
 
-    expect(m.auth.admin.createUser).toHaveBeenCalledTimes(1);
-    expect(m.auth.admin.createUser).toHaveBeenCalledWith({
-      email: "new@tang.dev",
-      email_confirm: false,
-      user_metadata: { display_name: "Ada" },
-    });
-    expect(m.auth.admin.generateLink).toHaveBeenCalledTimes(1);
-    const linkCall = m.auth.admin.generateLink.mock.calls[0][0];
-    expect(linkCall.type).toBe("magiclink");
-    expect(linkCall.email).toBe("new@tang.dev");
-    expect(result).toEqual({
-      user_id: "user-1",
-      link: "https://example.test/magic",
-    });
+    expect(m.auth.admin.inviteUserByEmail).toHaveBeenCalledTimes(1);
+    const [emailArg, opts] = m.auth.admin.inviteUserByEmail.mock.calls[0];
+    expect(emailArg).toBe("new@tang.dev");
+    // Magic-link invites land on /auth/invite-callback WITHOUT `?method`, so
+    // the page routes the accepted invitee straight to /select-staff with no
+    // password-setup detour.
+    expect(opts.redirectTo).toMatch(/\/auth\/invite-callback$/);
+    expect(opts.data).toEqual({ display_name: "Ada" });
+    expect(result).toEqual({ user_id: "user-1" });
+    // `generateLink` only GENERATES a link — it never sends an email — so the
+    // invite must NOT route through it (that was the delivery bug). Likewise
+    // `createUser` is redundant: `inviteUserByEmail` creates the user itself.
+    expect(m.auth.admin.generateLink).not.toHaveBeenCalled();
+    expect(m.auth.admin.createUser).not.toHaveBeenCalled();
   });
 
-  it("returns the duplicate sentinel when createUser reports 'already registered'", async () => {
+  it("returns the duplicate sentinel when inviteUserByEmail reports 'already registered'", async () => {
     const m = mockAdmin();
-    m.auth.admin.createUser.mockResolvedValueOnce({
+    m.auth.admin.inviteUserByEmail.mockResolvedValueOnce({
       data: null,
       error: { message: "A user with this email already registered" },
     });
 
     const result = await generateMagicLinkInvite("dup@tang.dev");
-    expect(result).toEqual({ user_id: null, link: null, error: "duplicate" });
-    expect(m.auth.admin.generateLink).not.toHaveBeenCalled();
+    expect(result).toEqual({ user_id: null, error: "duplicate" });
   });
 });
 
@@ -119,7 +130,7 @@ describe("sendPasswordInvite", () => {
     expect(m.auth.admin.inviteUserByEmail).toHaveBeenCalledTimes(1);
     const [emailArg, opts] = m.auth.admin.inviteUserByEmail.mock.calls[0];
     expect(emailArg).toBe("inv@tang.dev");
-    expect(opts.redirectTo).toMatch(/\/auth\/callback\?type=invite$/);
+    expect(opts.redirectTo).toMatch(/\/auth\/invite-callback\?method=password$/);
     expect(opts.data).toEqual({ display_name: "Bea" });
     expect(result).toEqual({ user_id: "user-2" });
   });
@@ -162,5 +173,53 @@ describe("deleteInviteUser", () => {
       error: { message: "boom" },
     });
     await expect(deleteInviteUser("user-4")).rejects.toBeDefined();
+  });
+});
+
+describe("sendInviteSignInLink", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "http://localhost:54321");
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon-test-key");
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("re-sends a link to the existing invitee via an implicit-flow client", async () => {
+    const resetPasswordForEmail = vi.fn().mockResolvedValue({ data: {}, error: null });
+    (createClient as unknown as Mocked<() => unknown>).mockReturnValue({
+      auth: { resetPasswordForEmail },
+    });
+
+    await expect(
+      sendInviteSignInLink("invitee@tang.dev", "https://app.test/auth/invite-callback")
+    ).resolves.toBeUndefined();
+
+    // The client MUST be pinned to the implicit flow — the link has to carry
+    // its tokens in the URL hash. A PKCE link would be unusable: the code
+    // verifier lives in the owner's browser, not the invitee's.
+    const createArgs = (createClient as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect((createArgs[2] as { auth: { flowType: string } }).auth.flowType).toBe("implicit");
+    // resetPasswordForEmail reaches an EXISTING user (confirmed or not)
+    // without deleting the auth row — the resend path can't delete it (the
+    // FK SET NULL cascade would violate the staff_pin_or_user CHECK).
+    expect(resetPasswordForEmail).toHaveBeenCalledWith("invitee@tang.dev", {
+      redirectTo: "https://app.test/auth/invite-callback",
+    });
+  });
+
+  it("throws when resetPasswordForEmail returns an error", async () => {
+    const resetPasswordForEmail = vi
+      .fn()
+      .mockResolvedValue({ data: null, error: { message: "rate limited" } });
+    (createClient as unknown as Mocked<() => unknown>).mockReturnValue({
+      auth: { resetPasswordForEmail },
+    });
+
+    await expect(
+      sendInviteSignInLink("invitee@tang.dev", "https://app.test/auth/invite-callback")
+    ).rejects.toBeDefined();
   });
 });
