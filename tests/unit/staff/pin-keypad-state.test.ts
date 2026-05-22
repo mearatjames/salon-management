@@ -11,11 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import {
-  PIN_MISMATCH_MESSAGE,
-  pinKeypadInit,
-  pinKeypadSubmit,
-} from "@/lib/auth/pin-keypad";
+import { PIN_MISMATCH_MESSAGE, pinKeypadInit, pinKeypadSubmit } from "@/lib/auth/pin-keypad";
 
 describe("pinKeypadInit", () => {
   it("starts in the enter phase with an empty buffer and no error", () => {

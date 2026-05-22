@@ -116,7 +116,7 @@ complete the new-password screen, and confirm the flow lands directly on
 change (unchanged behavior). T005 already asserts it at the unit level; this
 phase confirms no e2e regression.
 
-- [ ] T014 [US3] Confirm recovery is unaffected: verify `tests/unit/auth/reset-password.test.ts` has an explicit `method === "recovery"` → `/select-staff` assertion (added in T005), and run the existing recovery flow in `tests/e2e/auth.spec.ts` to confirm it still lands on `/select-staff` and never reaches `/set-pin`. If `auth.spec.ts` has no recovery-redirect assertion, add one.
+- [X] T014 [US3] Confirm recovery is unaffected: verify `tests/unit/auth/reset-password.test.ts` has an explicit `method === "recovery"` → `/select-staff` assertion (added in T005), and run the existing recovery flow in `tests/e2e/auth.spec.ts` to confirm it still lands on `/select-staff` and never reaches `/set-pin`. If `auth.spec.ts` has no recovery-redirect assertion, add one.
 
 **Checkpoint**: All three user stories verified — the PIN step is invite-only.
 
@@ -126,9 +126,9 @@ phase confirms no e2e regression.
 
 **Purpose**: Manual validation and the full pre-push gate.
 
-- [ ] T015 Run the `specs/048-invitee-self-set-pin/quickstart.md` walkthrough (Scenarios A, B, C + edge checks) against a local Supabase stack; confirm each scenario passes and the `user.pin_set` audit row carries no raw PIN.
-- [ ] T016 Run the full pre-push gate set in order — `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e` — all five green (CLAUDE.md "Pre-push quality gates"; fix and re-run on any failure).
-- [ ] T017 Commit, push the `048-invitee-self-set-pin` branch, and open a PR with `Closes #122` in the body (summary + test plan per CLAUDE.md "Working on a GitHub issue").
+- [X] T015 Run the `specs/048-invitee-self-set-pin/quickstart.md` walkthrough (Scenarios A, B, C + edge checks) against a local Supabase stack; confirm each scenario passes and the `user.pin_set` audit row carries no raw PIN.
+- [X] T016 Run the full pre-push gate set in order — `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e` — all five green (CLAUDE.md "Pre-push quality gates"; fix and re-run on any failure).
+- [X] T017 Commit, push the `048-invitee-self-set-pin` branch, and open a PR with `Closes #122` in the body (summary + test plan per CLAUDE.md "Working on a GitHub issue").
 
 ---
 

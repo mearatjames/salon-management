@@ -46,11 +46,7 @@ import {
 import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 import { roleOptionsFor, type StudioRole } from "@/app/(studio)/settings/staff/permissions";
 import { addStaff } from "@/app/(studio)/settings/staff/actions";
-import {
-  pinKeypadInit,
-  pinKeypadSubmit,
-  type PinKeypadState,
-} from "@/lib/auth/pin-keypad";
+import { pinKeypadInit, pinKeypadSubmit, type PinKeypadState } from "@/lib/auth/pin-keypad";
 
 const ROLE_LABEL: Record<StudioRole, string> = {
   owner: "Owner",
