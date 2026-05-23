@@ -9,8 +9,9 @@ import { filterStaff, type RosterStaff } from "@/app/(studio)/settings/staff/_fi
 
 const ROLES: RosterStaff["role"][] = ["owner", "manager", "technician", "front_desk"];
 
-// 023-staff-payout-exemptions + 047-payroll-page — defaults for the six
-// payout/payroll RosterStaff fields so existing fixtures stay compact.
+// 023-staff-payout-exemptions + 047-payroll-page + 129-remove-app-user —
+// defaults for the eight payout/payroll/identity RosterStaff fields so
+// existing fixtures stay compact.
 const NO_EXEMPTIONS = {
   card_fee_exempt: false as const,
   supply_mode: "apply" as const,
@@ -18,6 +19,8 @@ const NO_EXEMPTIONS = {
   service_commission_pct: 0,
   tip_split_pct: 0,
   check_portion_cents: 0,
+  is_app_user: false as const,
+  email: null as string | null,
 };
 
 function makeRoster(size: number): RosterStaff[] {

@@ -2718,6 +2718,17 @@
   background: var(--accent);
 }
 
+/* Issue #129 — sub-button helper text describing the consequence of
+   Remove. Sits directly under the destructive button so the operator
+   sees what removal does before clicking. */
+.danger-zone-helper {
+  margin: var(--space-2) 0 0;
+  padding: 0 var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  line-height: 1.5;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    023-staff-payout-exemptions § US7 — Add-staff wizard sheet chrome
    ═══════════════════════════════════════════════════════════════════════

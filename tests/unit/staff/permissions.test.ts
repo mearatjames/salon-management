@@ -17,6 +17,10 @@ import {
 import type { StudioRole } from "@/lib/auth/session";
 
 const ALL_ROLES: StudioRole[] = ["owner", "manager", "technician", "front_desk"];
+// `remove_app_user` and `update_payroll_rates` are deliberately omitted —
+// both gate on `operator.role === "owner"` BEFORE the role-asymmetry gate
+// (forbidden vs forbidden_target collide on the manager × owner row). They
+// each have dedicated describe blocks below.
 const ALL_ACTIONS: StaffAction[] = [
   "add",
   "update_name",
@@ -26,7 +30,7 @@ const ALL_ACTIONS: StaffAction[] = [
   "set_pin",
   "deactivate",
   "reactivate",
-  "remove",
+  "remove_pin_only",
   "update_pay_deductions",
 ];
 
@@ -82,7 +86,7 @@ describe("permissions matrix — owner operator (no extra constraints)", () => {
   });
 });
 
-describe("permissions matrix — manager × owner is read-only across all 9 actions", () => {
+describe("permissions matrix — manager × owner is read-only across all actions", () => {
   it.each(ALL_ACTIONS)("manager attempts %s on an owner row → forbidden_target", (action) => {
     const c = ctx({
       operatorRole: "manager",
@@ -165,13 +169,18 @@ describe("permissions matrix — self-edit gate", () => {
     }
   });
 
-  it("blocks update_active / deactivate / remove on self", () => {
+  it("blocks update_active / deactivate / remove on self (both remove variants)", () => {
     const c = ctx({
       operatorRole: "owner",
       operatorId: "same",
       target: { role: "owner", id: "same" },
     });
-    for (const action of ["update_active", "deactivate", "remove"] as StaffAction[]) {
+    for (const action of [
+      "update_active",
+      "deactivate",
+      "remove_pin_only",
+      "remove_app_user",
+    ] as StaffAction[]) {
       try {
         assertMutationAllowed(c, action);
         throw new Error("expected throw");
@@ -211,14 +220,14 @@ describe("permissions matrix — last-owner gate", () => {
     }
   });
 
-  it("blocks deactivate/remove of the last owner", () => {
+  it("blocks deactivate / remove_pin_only / remove_app_user of the last owner", () => {
     const c = ctx({
       operatorRole: "owner",
       operatorId: "op-A",
       target: { role: "owner", id: "tgt-B" },
       isLastOwner: true,
     });
-    for (const action of ["deactivate", "remove"] as StaffAction[]) {
+    for (const action of ["deactivate", "remove_pin_only", "remove_app_user"] as StaffAction[]) {
       try {
         assertMutationAllowed(c, action);
         throw new Error("expected throw");
@@ -328,6 +337,60 @@ describe("permissions matrix — update_pay_deductions (023 feature)", () => {
   });
 });
 
+// Issue #129 — `remove_app_user` is owner-only because it deletes the
+// Supabase auth user and anonymizes the staff row (same gravity as
+// Onboarding's `removeUser`). `remove_pin_only` keeps the existing
+// owner+manager semantics because no auth user is touched.
+describe("permissions matrix — remove_app_user (issue #129)", () => {
+  it("owner removing an app-user tech → allowed", () => {
+    const c = ctx({
+      operatorRole: "owner",
+      operatorId: "op-A",
+      target: { role: "technician", id: "tgt-B" },
+    });
+    expect(() => assertMutationAllowed(c, "remove_app_user")).not.toThrow();
+  });
+
+  it("manager removing an app-user tech → forbidden (owner-only)", () => {
+    const c = ctx({
+      operatorRole: "manager",
+      operatorId: "op-A",
+      target: { role: "technician", id: "tgt-B" },
+    });
+    try {
+      assertMutationAllowed(c, "remove_app_user");
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(PermissionError);
+      expect((err as PermissionError).code).toBe("forbidden");
+    }
+  });
+
+  it("manager removing a PIN-only tech via remove_pin_only → allowed", () => {
+    const c = ctx({
+      operatorRole: "manager",
+      operatorId: "op-A",
+      target: { role: "technician", id: "tgt-B" },
+    });
+    expect(() => assertMutationAllowed(c, "remove_pin_only")).not.toThrow();
+  });
+
+  it("owner removing self via remove_app_user → self_edit_blocked", () => {
+    const c = ctx({
+      operatorRole: "owner",
+      operatorId: "same",
+      target: { role: "owner", id: "same" },
+    });
+    try {
+      assertMutationAllowed(c, "remove_app_user");
+      throw new Error("expected throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(PermissionError);
+      expect((err as PermissionError).code).toBe("self_edit_blocked");
+    }
+  });
+});
+
 describe("roleOptionsFor", () => {
   it("owner sees all four roles", () => {
     expect(roleOptionsFor("owner")).toEqual(["owner", "manager", "technician", "front_desk"]);
@@ -390,6 +453,44 @@ describe("computeTargetPermissions", () => {
     expect(perms.canToggleActive).toBe(false);
     expect(perms.canDeactivate).toBe(false);
     expect(perms.canRemove).toBe(false);
+  });
+
+  it("targetIsAppUser=false (default) → removeAction=remove_pin_only, manager can remove tech", () => {
+    const perms = computeTargetPermissions(
+      ctx({
+        operatorRole: "manager",
+        operatorId: "op-A",
+        target: { role: "technician", id: "tgt-B" },
+      })
+    );
+    expect(perms.removeAction).toBe("remove_pin_only");
+    expect(perms.canRemove).toBe(true);
+  });
+
+  it("targetIsAppUser=true → removeAction=remove_app_user, manager CANNOT remove (owner-only)", () => {
+    const perms = computeTargetPermissions(
+      ctx({
+        operatorRole: "manager",
+        operatorId: "op-A",
+        target: { role: "technician", id: "tgt-B" },
+      }),
+      true
+    );
+    expect(perms.removeAction).toBe("remove_app_user");
+    expect(perms.canRemove).toBe(false);
+  });
+
+  it("targetIsAppUser=true + owner operator → removeAction=remove_app_user, can remove", () => {
+    const perms = computeTargetPermissions(
+      ctx({
+        operatorRole: "owner",
+        operatorId: "op-A",
+        target: { role: "technician", id: "tgt-B" },
+      }),
+      true
+    );
+    expect(perms.removeAction).toBe("remove_app_user");
+    expect(perms.canRemove).toBe(true);
   });
 
   it("canDeactivate gates on target.active=true; canReactivate gates on target.active=false", () => {

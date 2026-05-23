@@ -22,6 +22,17 @@ export type RosterStaff = {
   created_at: string;
   /** Derived in the page Server Component: `pin_hash !== null`. */
   pin_set: boolean;
+  /** Issue #129 — `user_id !== null` distinguishes a logged-in staff member
+   *  (app-user) from a kiosk-only tech (PIN-only). The Edit panel's
+   *  DangerZone uses this to pick the right "Remove from roster" ceremony:
+   *  owner-only rich confirm + auth-user delete for app-users, single
+   *  confirm + soft-delete for PIN-only. The page Server Component derives
+   *  it from `staff.user_id IS NOT NULL`. */
+  is_app_user: boolean;
+  /** Issue #129 — surfaced in the app-user confirm dialog so the operator
+   *  can verify which account they're about to delete. Null when the staff
+   *  row has no associated email (PIN-only). */
+  email: string | null;
   /** 023-staff-payout-exemptions: tech keeps full payout on card-paid services. */
   card_fee_exempt: boolean;
   /** 023-staff-payout-exemptions: per-staff supply-deduction posture. */
