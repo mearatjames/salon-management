@@ -109,7 +109,7 @@ Shared prelude is documented in `./README.md`. Per-action details follow.
 3. Validate.
 4. Load target. Must be `state='offboarded'` AND `removed_at IS NULL` (i.e. not a hard-removed row); else `redirect(?error=not_found)`.
 5. (No conflict check — the email is still on this row's email column; reactivation does not change the email.)
-6. `admin.generateLink({ type: 'magiclink', email: target.email })` (R1; always magic_link on reactivate per spec FR-061). UPDATE `staff` SET `state='invited'`, `active=false`, `offboarded_at=NULL`, `offboarded_by=NULL`, `offboard_reason=NULL`, `invited_at=now()`, `invited_by=viewer.staff.id`, `invite_method='magic_link'`, `pin_hash=NULL`. On Supabase failure → `redirect(?error=invite_failed)`.
+6. `sendImplicitFlowResetEmail(target.email, '<origin>/auth/invite-callback')` — re-sends a fresh sign-in link to the EXISTING auth user (always magic_link on reactivate per spec FR-061). An offboarded user is already email-confirmed, so neither `inviteUserByEmail` (rejects `email_exists`) nor `admin.generateLink` (only generates a token; does not send the email) can deliver. `resetPasswordForEmail` on an implicit-flow client reaches the existing user without touching the auth row — `staff.user_id` is preserved. UPDATE `staff` SET `state='invited'`, `active=false`, `offboarded_at=NULL`, `offboarded_by=NULL`, `offboard_reason=NULL`, `invited_at=now()`, `invited_by=viewer.staff.id`, `invite_method='magic_link'`, `pin_hash=NULL`. On Supabase failure → `redirect(?error=invite_failed)`. (Issue #116.)
 7. `recordAudit("user.reactivated", viewer.deviceUserId, staff_id, { method: 'magic_link', by }, viewer.staff.id)`.
 8. `revalidatePath` + `redirect("/settings/onboarding?toast=reactivated&name=<display_name>")`.
 
