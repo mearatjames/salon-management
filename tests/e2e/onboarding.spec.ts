@@ -850,3 +850,245 @@ test.describe("US7: Search", () => {
     await expect(page.getByText("No offboarded users.")).toBeVisible();
   });
 });
+
+// ── Issue #120 regression: pin-less rows survive cancel + hard remove ──────
+//
+// cancelInvite + removeUser both `admin.auth.admin.deleteUser` on a staff
+// row that can legitimately have pin_hash = NULL — magic-link invitees
+// (always pin-less) and offboarded rows (offboardUser explicitly nulls
+// pin_hash). Before #120, the 0001 staff_pin_or_user CHECK
+// (pin_hash NOT NULL OR user_id NOT NULL) aborted those auth-delete
+// transactions: the FK ON DELETE SET NULL cascade nulled staff.user_id and
+// the row's pin_hash was already null → CHECK violation, surfaced by GoTrue
+// as "Database error deleting user", server action redirects to
+// ?error=server_error. The two existing unit suites mock the Supabase
+// client so the real CHECK never runs; the existing e2e "Hard remove" path
+// only covered PIN-bearing rows. These two regressions exercise the real
+// Postgres trip wire end-to-end.
+//
+// Both reuse the worker-scoped staffFixture trio but provision their own
+// disposable subject staff so they don't interfere with other specs.
+
+test.describe("#120 regression: pin-less cancel + hard remove", () => {
+  let supabaseUp = false;
+
+  test.beforeAll(async () => {
+    supabaseUp = await supabaseIsReachable();
+    if (!supabaseUp) {
+      test.skip(
+        true,
+        "Supabase not reachable at 127.0.0.1:54321 — skipping #120 regression specs."
+      );
+      return;
+    }
+  });
+
+  test.beforeEach(async ({ staffFixture }) => {
+    if (!supabaseUp) return;
+    await staffFixture.reset();
+    await deleteTangnailsTestStaff();
+  });
+
+  // Seeds an invited row with pin_hash=NULL backed by a real auth user.
+  // Returns the IDs the test asserts on after the cancel.
+  async function seedInvitedPinless(opts: {
+    name: string;
+    email: string;
+    invitedBy: string;
+  }): Promise<{ staffId: string; userId: string }> {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) throw new Error("SUPABASE env vars missing — required for #120 regression");
+    const c = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+
+    const { data: created, error: authErr } = await c.auth.admin.createUser({
+      email: opts.email,
+      email_confirm: true,
+    });
+    if (authErr) throw new Error(`auth user create failed: ${authErr.message}`);
+    const userId = created.user?.id;
+    if (!userId) throw new Error("created auth user has no id");
+
+    const { data: staffRow, error: insErr } = await c
+      .from("staff")
+      .insert({
+        user_id: userId,
+        display_name: opts.name,
+        email: opts.email,
+        role: "technician",
+        color_token: "--avatar-rose",
+        active: false,
+        state: "invited",
+        pin_hash: null, // explicit — this is the regression condition
+        invited_at: new Date().toISOString(),
+        invited_by: opts.invitedBy,
+        invite_method: "magic_link",
+      })
+      .select("id")
+      .single();
+    if (insErr || !staffRow) throw new Error(`staff insert failed: ${insErr?.message}`);
+    return { staffId: (staffRow as { id: string }).id, userId };
+  }
+
+  // Seeds an offboarded row with pin_hash=NULL backed by a real auth user.
+  // Mirrors what offboardUser leaves behind in production.
+  async function seedOffboardedPinless(opts: {
+    name: string;
+    email: string;
+    offboardedBy: string;
+  }): Promise<{ staffId: string; userId: string }> {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) throw new Error("SUPABASE env vars missing — required for #120 regression");
+    const c = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+
+    const { data: created, error: authErr } = await c.auth.admin.createUser({
+      email: opts.email,
+      email_confirm: true,
+    });
+    if (authErr) throw new Error(`auth user create failed: ${authErr.message}`);
+    const userId = created.user?.id;
+    if (!userId) throw new Error("created auth user has no id");
+
+    const { data: staffRow, error: insErr } = await c
+      .from("staff")
+      .insert({
+        user_id: userId,
+        display_name: opts.name,
+        email: opts.email,
+        role: "technician",
+        color_token: "--avatar-amber",
+        active: false,
+        state: "offboarded",
+        pin_hash: null, // explicit — offboardUser nulls this in real flows
+        offboarded_at: new Date().toISOString(),
+        offboarded_by: opts.offboardedBy,
+        offboard_reason: "Performance",
+      })
+      .select("id")
+      .single();
+    if (insErr || !staffRow) throw new Error(`staff insert failed: ${insErr?.message}`);
+    return { staffId: (staffRow as { id: string }).id, userId };
+  }
+
+  // Returns true iff the auth.users row for `userId` no longer exists.
+  async function authUserGone(userId: string): Promise<boolean> {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) throw new Error("SUPABASE env vars missing");
+    const c = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data, error } = await c.auth.admin.getUserById(userId);
+    if (error) {
+      // user_not_found is the success signal we're after.
+      const status = (error as { status?: number }).status;
+      return status === 404;
+    }
+    return !data?.user;
+  }
+
+  test("cancelInvite on a pin-less magic-link invitee succeeds (toast=cancelled, staff row gone, auth user gone)", async ({
+    page,
+    staffFixture,
+  }) => {
+    const email = `cancel.pinless.${Date.now()}@tangnails.test`;
+    const { staffId, userId } = await seedInvitedPinless({
+      name: "Pinless Cancel",
+      email,
+      invitedBy: staffFixture.owner.id,
+    });
+
+    await signInAsOwner(page, staffFixture);
+    await page.goto("/settings/onboarding");
+    await page.waitForURL(/\/settings\/onboarding(\?|$)/);
+
+    // Open the pending row's menu and submit Cancel invite. The pending
+    // variant's destructive item is inside a <form action={cancelInvite}>
+    // bound to a hidden submit button (Radix DropdownMenuItem asChild).
+    // Playwright's real click on the menu item double-fires the submit
+    // (native button click + Radix onSelect → btn.click() both submit
+    // the same form), so we submit via JS-requestSubmit instead — this
+    // exercises the action with one POST, the way a real user's single
+    // click intends.
+    const row = page.locator(".onb-row", { hasText: "Pinless Cancel" });
+    await row.locator("[data-slot='user-row-menu-trigger']").click();
+    await expect(page.locator("[data-slot='user-row-menu-content']")).toBeVisible();
+    await page.evaluate(() => {
+      const btn = document.querySelector(
+        "[data-slot='user-row-menu-cancel-btn']"
+      ) as HTMLButtonElement | null;
+      const form = btn?.closest("form") as HTMLFormElement | null;
+      form?.requestSubmit();
+    });
+
+    // Regression assertion: lands on ?toast=cancelled, NOT ?error=server_error.
+    await page.waitForURL(/\/settings\/onboarding\?(.*&)?toast=cancelled(&|$)/, { timeout: 5_000 });
+
+    // Staff row is gone (DELETE happens first now).
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const c = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data: staffAfter } = await c.from("staff").select("id").eq("id", staffId).maybeSingle();
+    expect(staffAfter).toBeNull();
+
+    // Auth user is gone — the CHECK no longer blocks the cascade target,
+    // because there is no longer any cascade target.
+    expect(await authUserGone(userId)).toBe(true);
+  });
+
+  test("removeUser on a pin-less offboarded user succeeds (toast=removed, row anonymized, auth user gone)", async ({
+    page,
+    staffFixture,
+  }) => {
+    const email = `remove.pinless.${Date.now()}@tangnails.test`;
+    const displayName = "Pinless Remove";
+    const { staffId, userId } = await seedOffboardedPinless({
+      name: displayName,
+      email,
+      offboardedBy: staffFixture.owner.id,
+    });
+
+    await signInAsOwner(page, staffFixture);
+    await page.goto("/settings/onboarding");
+    await page.waitForURL(/\/settings\/onboarding(\?|$)/);
+
+    // Open the offboarded row's menu → Remove permanently.
+    const offSection = page
+      .locator(".onb-section")
+      .filter({ has: page.getByRole("heading", { name: /^Offboarded/ }) });
+    const row = offSection.locator(".onb-row", { hasText: displayName });
+    await row.locator("[data-slot='user-row-menu-trigger']").click();
+    await page.locator("[data-slot='user-row-menu-item-remove']").click();
+    await expect(page.locator("[data-slot='remove-sheet']")).toBeVisible();
+
+    // Three-gate: check both acks, type the name.
+    await page.locator("[data-slot='remove-ack-history']").click();
+    await page.locator("[data-slot='remove-typed-name']").fill(displayName);
+    await page.locator("[data-slot='remove-ack-irreversible']").click();
+    await page.locator("[data-slot='remove-confirm']").click();
+
+    // Regression assertion: lands on ?toast=removed, NOT ?error=server_error.
+    await page.waitForURL(/\/settings\/onboarding\?(.*&)?toast=removed(&|$)/, { timeout: 5_000 });
+
+    // Staff row persists as the anonymized archive shape per data-model.md
+    // Invariant D — but with user_id nulled by the cascade.
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+    const c = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+    const { data: staffAfter } = await c
+      .from("staff")
+      .select("id, display_name, email, user_id, removed_at, pin_hash")
+      .eq("id", staffId)
+      .single();
+    expect(staffAfter).not.toBeNull();
+    expect((staffAfter as { display_name: string }).display_name).toMatch(/^Former staff #\d+$/);
+    expect((staffAfter as { email: string | null }).email).toBeNull();
+    expect((staffAfter as { user_id: string | null }).user_id).toBeNull();
+    expect((staffAfter as { removed_at: string | null }).removed_at).not.toBeNull();
+    expect((staffAfter as { pin_hash: string | null }).pin_hash).toBeNull();
+
+    // Auth user is gone — the auth.admin.deleteUser call no longer aborts
+    // on the staff_pin_or_user CHECK because migration 0022 accepts the
+    // cascade-driven user_id=NULL when removed_at is non-null.
+    expect(await authUserGone(userId)).toBe(true);
+  });
+});

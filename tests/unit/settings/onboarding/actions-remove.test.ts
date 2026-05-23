@@ -3,24 +3,34 @@
 //
 // Mirrors `actions-offboard.test.ts` for the mocking pattern
 // (redirect-as-throw, per-module mocks). Coverage matrix per dispatch
-// (012-user-onboarding § Phase 6 / US4):
+// (012-user-onboarding § Phase 6 / US4, refined by issue #120):
 //   - Three-gate validation order (first-fail wins):
 //       missing ack_history                  → ?error=ack_required
 //       both acks present, typed name wrong  → ?error=confirm_name_mismatch
 //       typed name correct, ack_irreversible missing → ?error=ack_required
 //   - Case-insensitive trim on the typed-name comparison.
 //   - All gates pass:
-//       admin.auth.admin.deleteUser(target.user_id) called
 //       getNextAnonPlaceholder() called → "Former staff #1"
 //       UPDATE staff with display_name='Former staff #1', email=null,
 //         color_token='--avatar-slate', pin_hash=null, removed_at=<iso>
+//       THEN admin.auth.admin.deleteUser(target.user_id) called — issue
+//         #120 reordering: the FK cascade running on a row that still
+//         had pin_hash=NULL and user_id pointing at the auth user would
+//         otherwise abort the auth delete via staff_pin_or_user CHECK.
+//         Migration 0022 relaxes the CHECK to accept removed_at non-null
+//         rows, and setting removed_at first means the cascade-driven
+//         user_id=NULL no longer trips it.
 //       audit user.removed { display_name_at_removal, email_at_removal,
 //         role_at_removal, by } written BEFORE redirect (Constitution III)
 //       redirect → ?toast=removed&name=<encoded original display_name>
 //   - Target not state='offboarded' (active / invited) → ?error=not_found.
 //   - Target removed_at non-null → ?error=not_found.
 //   - Target missing → ?error=not_found.
-//   - Last-owner trigger (PG 23514 / P0001) on the UPDATE → ?error=last_owner.
+//   - Last-owner trigger (PG 23514 / P0001) on the UPDATE → ?error=last_owner;
+//     auth user is NOT deleted (the trigger fires before the auth delete now).
+//   - deleteUser fails after UPDATE succeeded → ?error=server_error, no audit
+//     (anonymized row persists; orphan auth user is recoverable via the
+//     re-invite path's email-conflict cleanup).
 //   - Non-owner viewer → /dashboard?error=forbidden.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -206,7 +216,7 @@ describe("removeUser", () => {
 
   // ── Happy path ─────────────────────────────────────────────────────────
 
-  it("happy path: deleteUser → getNextAnonPlaceholder → UPDATE anonymized → audit → redirect ?toast=removed&name=<original>", async () => {
+  it("happy path: getNextAnonPlaceholder → UPDATE anonymized → deleteUser → audit → redirect ?toast=removed&name=<original>", async () => {
     const { lastUpdate, deleteUserCalls } = mockAdminClient();
 
     let thrown: unknown;
@@ -216,13 +226,11 @@ describe("removeUser", () => {
       thrown = err;
     }
 
-    // 1. deleteUser called once with the target's auth user id.
-    expect(deleteUserCalls).toEqual(["auth-user-target-1"]);
-
-    // 2. getNextAnonPlaceholder called once after deleteUser.
+    // 1. getNextAnonPlaceholder called once before any mutation.
     expect(getNextAnonPlaceholder).toHaveBeenCalledTimes(1);
 
-    // 3. UPDATE rewrites the row to the anonymized shape.
+    // 2. UPDATE rewrites the row to the anonymized shape (sets removed_at
+    //    BEFORE the auth deleteUser cascade — issue #120).
     expect(lastUpdate.current).toMatchObject({
       display_name: "Former staff #1",
       email: null,
@@ -230,6 +238,12 @@ describe("removeUser", () => {
       pin_hash: null,
     });
     expect(typeof lastUpdate.current?.removed_at).toBe("string");
+
+    // 3. deleteUser called once with the target's auth user id, AFTER the
+    //    anonymize UPDATE. The relaxed staff_pin_or_user CHECK (migration
+    //    0022) accepts the user_id=NULL cascade because removed_at is now
+    //    non-null.
+    expect(deleteUserCalls).toEqual(["auth-user-target-1"]);
 
     // 4. Audit row written BEFORE redirect (Constitution III).
     expect(recordAudit).toHaveBeenCalledTimes(1);
@@ -375,8 +389,10 @@ describe("removeUser", () => {
   // ── Last-owner trigger ─────────────────────────────────────────────────
 
   for (const code of ["23514", "P0001"] as const) {
-    it(`last-owner trigger ${code} on UPDATE → ?error=last_owner`, async () => {
-      mockAdminClient({ updateError: { code, message: "owner_required" } });
+    it(`last-owner trigger ${code} on UPDATE → ?error=last_owner (auth user NOT deleted)`, async () => {
+      const { deleteUserCalls } = mockAdminClient({
+        updateError: { code, message: "owner_required" },
+      });
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
       let thrown: unknown;
@@ -388,10 +404,45 @@ describe("removeUser", () => {
 
       const url = redirectUrlFrom(thrown);
       expect(url).toContain("error=last_owner");
+      // The trigger fires on the anonymize UPDATE, which runs BEFORE the
+      // auth deleteUser (issue #120). So a blocked last-owner removal
+      // never touches the auth user — important: the operator can fix
+      // the trigger condition and retry without the user being gone.
+      expect(deleteUserCalls).toEqual([]);
       expect(recordAudit).not.toHaveBeenCalled();
       errSpy.mockRestore();
     });
   }
+
+  // ── Auth deleteUser failure (after the staff UPDATE succeeded) ─────────
+
+  it("deleteUser throws after UPDATE → ?error=server_error (anonymized staff row persists; orphan auth user recoverable via re-invite)", async () => {
+    const { lastUpdate } = mockAdminClient({
+      deleteUserError: new Error("supabase boom"),
+    });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    let thrown: unknown;
+    try {
+      await removeUser(removeForm());
+    } catch (err) {
+      thrown = err;
+    }
+
+    const url = redirectUrlFrom(thrown);
+    expect(url).toContain("error=server_error");
+    // The anonymize UPDATE succeeded — the staff row is already in its
+    // post-remove archived shape — and that's an acceptable trade for
+    // the half-failed path (the alternative is leaving the user
+    // un-anonymized in the offboarded bucket).
+    expect(lastUpdate.current).toMatchObject({
+      display_name: "Former staff #1",
+      email: null,
+      pin_hash: null,
+    });
+    expect(recordAudit).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
 
   // ── Owner gate ─────────────────────────────────────────────────────────
 
