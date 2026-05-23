@@ -111,19 +111,21 @@ function ActiveMenu({ target, isLastOwner }: { target: UserRowMenuTarget; isLast
             asChild
             data-slot="user-row-menu-item-send-reset"
             onSelect={(e) => {
-              // Find the inline form inside this item and submit it. asChild
-              // composes onto the form's button below.
+              // Issue #125: single-submission path. `asChild` composes the
+              // menuitem props onto the <form> below, so `currentTarget`
+              // IS the form. Calling `requestSubmit()` fires the action
+              // exactly once whether the user clicks the inner button or
+              // activates the menu via keyboard. preventDefault keeps the
+              // menu open long enough for React to capture the action
+              // before Radix's default close unmounts the form.
               e.preventDefault();
-              const btn = (e.currentTarget as HTMLElement).querySelector(
-                "button[type='submit']"
-              ) as HTMLButtonElement | null;
-              btn?.click();
+              (e.currentTarget as HTMLFormElement).requestSubmit();
             }}
           >
             <form action={sendUserPasswordReset} className="onb-row-menu-form">
               <input type="hidden" name="staff_id" value={target.id} />
               <button
-                type="submit"
+                type="button"
                 className="onb-row-menu-form-btn"
                 data-slot="user-row-menu-send-reset-btn"
               >
@@ -214,17 +216,16 @@ function OffboardedMenu({
             asChild
             data-slot="user-row-menu-item-reactivate"
             onSelect={(e) => {
+              // Issue #125: single-submission path — see the matching
+              // comment in `Send password reset` above.
               e.preventDefault();
-              const btn = (e.currentTarget as HTMLElement).querySelector(
-                "button[type='submit']"
-              ) as HTMLButtonElement | null;
-              btn?.click();
+              (e.currentTarget as HTMLFormElement).requestSubmit();
             }}
           >
             <form action={reactivateUser} className="onb-row-menu-form">
               <input type="hidden" name="staff_id" value={target.id} />
               <button
-                type="submit"
+                type="button"
                 className="onb-row-menu-form-btn"
                 data-slot="user-row-menu-reactivate-btn"
               >
@@ -345,17 +346,15 @@ function PendingMenu({ target }: { target: UserRowMenuTarget }) {
             asChild
             data-slot="user-row-menu-item-resend"
             onSelect={(e) => {
+              // Issue #125: single-submission path — see Active variant.
               e.preventDefault();
-              const btn = (e.currentTarget as HTMLElement).querySelector(
-                "button[type='submit']"
-              ) as HTMLButtonElement | null;
-              btn?.click();
+              (e.currentTarget as HTMLFormElement).requestSubmit();
             }}
           >
             <form action={resendInvite} className="onb-row-menu-form">
               <input type="hidden" name="staff_id" value={target.id} />
               <button
-                type="submit"
+                type="button"
                 className="onb-row-menu-form-btn"
                 data-slot="user-row-menu-resend-btn"
               >
@@ -385,17 +384,15 @@ function PendingMenu({ target }: { target: UserRowMenuTarget }) {
             data-slot="user-row-menu-item-cancel"
             data-destructive="true"
             onSelect={(e) => {
+              // Issue #125: single-submission path — see Active variant.
               e.preventDefault();
-              const btn = (e.currentTarget as HTMLElement).querySelector(
-                "button[type='submit']"
-              ) as HTMLButtonElement | null;
-              btn?.click();
+              (e.currentTarget as HTMLFormElement).requestSubmit();
             }}
           >
             <form action={cancelInvite} className="onb-row-menu-form">
               <input type="hidden" name="staff_id" value={target.id} />
               <button
-                type="submit"
+                type="button"
                 className="onb-row-menu-form-btn"
                 data-slot="user-row-menu-cancel-btn"
               >
