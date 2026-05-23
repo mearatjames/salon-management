@@ -8,6 +8,15 @@
 
 **Input**: User description: "I want to spec out the feature or the improvement to the existing feature, specifically on the discount in the checkout page. because currently, the discount applies to pretty much everything in that transaction, which is good. But then I also want to have the ability to give discount to certain service in that transaction, like, not for every services listed in that transaction."
 
+## Clarifications
+
+### Session 2026-05-22
+
+- Q: Per-service discount: does it reduce the assigned technician's commission base, or only the customer total? → A: Status quo — customer-facing only. The targeted service's full pre-discount price still counts toward the assigned tech's commission base; the discount is a salon-level revenue cost.
+- Q: How should the scope of a per-service discount be shown in the cart vs. on the receipt? → A: Cart row shows the targeted service name when exactly one service is scoped, or "N services" when more than one. The printed/displayed receipt and the past-transaction detail view enumerate every targeted service by name.
+- Q: When both an "all-services" discount and a scoped discount apply to one sale, which base does each compute against? → A: Sequential — scoped discount(s) are applied to their targeted services first; the all-services percent is then computed against the post-scoped service subtotal. Matches Square's behavior; cannot drive the total below $0.
+- Q: When every targeted service is removed from the cart, what should happen to the scoped discount row? → A: Auto-remove. The discount disappears from the cart the moment its last target is removed; the operator re-adds it from scratch if they want it back after re-adding services.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Scope a discount to selected services (Priority: P1)
@@ -54,11 +63,11 @@ Operators routinely add, remove, or re-price service lines mid-checkout (custome
 
 **Acceptance Scenarios**:
 
-1. **Given** a scoped discount targeting one service, **When** that service is removed from the cart, **Then** the discount is automatically removed (or its scope shows empty and contributes $0 until re-edited).
+1. **Given** a scoped discount targeting one service, **When** that service is removed from the cart, **Then** the discount line is removed from the cart in the same update — no placeholder, no inactive state, no error.
 2. **Given** a scoped discount targeting two services, **When** one of the two is removed, **Then** the discount remains, now scoped to the one remaining target, and the amount is recomputed accordingly.
 3. **Given** a percent discount scoped to a service, **When** the service's price is changed via the price-edit sheet, **Then** the discount amount recomputes from the new price.
 4. **Given** a scoped discount in the cart, **When** the operator adds a new service line, **Then** the new line is NOT automatically included in the existing discount.
-5. **Given** a scoped discount whose every target has been removed and the cart is otherwise valid, **When** the operator tries to take payment, **Then** the system does not block on the empty-scope discount (it is either auto-removed or treated as $0 with a clear visual indication).
+5. **Given** the operator removes the last target of a scoped discount, **When** the cart re-renders, **Then** the scoped discount line is gone (auto-removed per FR-010); payment can proceed immediately without operator confirmation.
 
 ---
 
@@ -68,7 +77,7 @@ Operators routinely add, remove, or re-price service lines mid-checkout (custome
 - **Multiple discounts on the same service** — Stacking is allowed: an operator can add a percent discount scoped to one service and a flat discount scoped to the same service. Each discount is computed independently against its own scope.
 - **Mix of "all services" and scoped discounts on the same sale** — Both discount types coexist. The "all services" discount applies to every service line (today's behavior); a scoped discount applies only to its targets. Order of application is well-defined and shown to the operator (see FR-009).
 - **Empty scope at save time** — The discount sheet does not allow saving with the "Selected services" mode chosen and zero services picked. The Save button stays disabled until at least one service is selected, with a clear inline hint.
-- **All services removed after save** — A scoped discount whose every target service has been removed from the cart shows clearly as inactive in the cart (e.g., greyed with "no matching services"), contributes $0 to the total, and does not block payment.
+- **All services removed after save** — A scoped discount whose every target service has been removed from the cart is auto-removed in the same update (FR-010). The operator does not see an inactive/placeholder line; the only signal is the cart total snapping to its pre-discount value at the same moment the service line disappears.
 - **Variable-price service with unconfirmed price as a discount target** — Selecting an unconfirmed-price service as a discount target is allowed, but the discount contributes $0 (and the cart remains non-chargeable) until the price is confirmed; this mirrors today's rule that unconfirmed services do not contribute to the subtotal.
 - **Percent scoped discount when only one targeted service is present and its price is $0** — Discount amount is $0; no error, no division-by-zero artifact.
 - **Service removed while the discount sheet is open editing it** — The discount sheet either reflects the change or fails gracefully on save; the cart is the source of truth.
@@ -82,18 +91,19 @@ Operators routinely add, remove, or re-price service lines mid-checkout (custome
 - **FR-003**: A scoped percent discount MUST compute its dollar reduction as `percent × sum(price of targeted services)`, rounded to whole cents using the same rounding rule the existing all-services percent discount uses.
 - **FR-004**: A scoped flat discount MUST reduce the cart by the entered dollar amount, capped at the sum of targeted services' prices (the targeted contribution can never go negative), independent of any other discount on the sale.
 - **FR-005**: The default scope ("All services in this sale") MUST behave exactly as today's discount does (no change in math, no change in UI for operators who never engage with the new scope control).
-- **FR-006**: The cart row for a scoped discount MUST clearly identify which services it targets — either by showing the service name(s) directly on the row, or by an unambiguous summary visible on the row (e.g., "Discount — Pedicure" or "Discount — 2 services").
-- **FR-007**: The printed/displayed customer receipt and the past-transaction detail view MUST surface the same scope information for every discount on the sale, distinguishing "all services" discounts from scoped discounts.
+- **FR-006**: The cart row for a scoped discount MUST identify its scope as follows: when exactly one service is targeted, the row shows the service name (e.g., "Discount — Pedicure"); when more than one service is targeted, the row shows "Discount — N services" (e.g., "Discount — 2 services"). The full target list is NOT required on the cart row.
+- **FR-007**: The printed/displayed customer receipt AND the past-transaction detail view MUST enumerate every targeted service by name for each scoped discount on the sale (one bullet/line per target), and MUST distinguish scoped discounts from "all services" discounts (an "all services" discount appears without a per-service list and is clearly labelled as applying to the whole sale).
 - **FR-008**: An "all services" discount and one or more scoped discounts MUST be allowed to coexist on the same sale, and the cart MUST show their effect in a stable, deterministic order so the operator can reconcile the totals.
-- **FR-009**: When both an "all services" discount and a scoped discount apply to the same sale, the order of application MUST be that scoped discounts are applied first (to their targeted services) and the "all services" discount is then applied to the discounted service subtotal. (Same observable customer total either way for additive discounts, but this order makes the on-screen breakdown explainable.)
-- **FR-010**: Removing a targeted service from the cart MUST update the scoped discount: if at least one target remains, the discount stays and its amount recomputes from the remaining targets; if no targets remain, the discount MUST either be auto-removed from the cart or rendered as inactive ($0 contribution) with a visible indicator that no matching services remain.
+- **FR-009**: When both an "all services" discount and one or more scoped discounts apply to the same sale, the system MUST compute the cart total sequentially: (a) apply every scoped discount to its targeted service line(s) first, producing a post-scoped service subtotal; (b) then apply the "all services" discount — if percent, against the post-scoped service subtotal; if flat, as the entered amount. This matches the discount-stacking behavior of the existing Square integration and prevents stacked percent discounts from compounding past 100% of the original subtotal. The cart's on-screen line-by-line breakdown MUST reflect this same order (scoped lines above the all-services line) so the operator and customer can reconcile the math.
+- **FR-010**: Removing a targeted service from the cart MUST update the scoped discount: if at least one target remains, the discount stays and its amount recomputes from the remaining targets; if **no** targets remain, the discount MUST be auto-removed from the cart. The discount line disappears in the same cart update cycle as the removed service; there is no inactive/$0 placeholder state.
 - **FR-011**: Adding a new service line to the cart MUST NOT silently include it in any pre-existing scoped discount. The new service joins a scoped discount only when the operator explicitly edits the discount to add it.
 - **FR-012**: Changing a targeted service's price (via the existing price-edit sheet) MUST cause percent-scoped discounts on that service to recompute, with no operator action required.
 - **FR-013**: The "Selected services" mode MUST disable the Save button while zero services are selected and show an inline hint explaining what is missing.
 - **FR-014**: The operator MUST be able to remove a scoped discount the same way they remove the current transaction-wide discount (single-tap remove from the cart row, idempotent).
 - **FR-015**: Each scoped discount's effect on the cart total MUST never let the cart subtotal fall below $0 (preserves the existing floor-at-zero invariant).
-- **FR-016**: A scoped discount whose every target service is removed MUST NOT block payment; payment is allowed as long as the rest of the cart is otherwise chargeable.
+- **FR-016**: Auto-removing an orphaned scoped discount (per FR-010) MUST NOT block payment, MUST NOT surface an error to the operator, and MUST NOT require operator confirmation. Payment is allowed as long as the rest of the cart is otherwise chargeable.
 - **FR-017**: The operator MUST be able to edit an existing scoped discount in place (change scope, change shape, change amount, change note) without first removing and re-adding it.
+- **FR-018**: Per-service discounts MUST NOT reduce the assigned technician's commission base for the targeted service. The technician's gross-service contribution for reporting and payroll continues to use the service line's pre-discount price. This applies regardless of which technician is assigned to the targeted service.
 
 ### Key Entities
 
@@ -113,7 +123,7 @@ Operators routinely add, remove, or re-price service lines mid-checkout (custome
 
 ## Assumptions
 
-- **Payroll and commission math is unchanged** — Today's report and payroll aggregations compute each technician's commission base from their service line prices *before any discount*. This feature does not alter that. A per-service discount reduces what the customer pays but does not reduce the assigned technician's commissionable revenue. (If the salon owner later decides discounts should reduce the responsible technician's pay, that is a separate feature; this spec is explicit about leaving it alone so the change is reversible.)
+- **Payroll and commission math is unchanged (CONFIRMED in clarification 2026-05-22)** — Today's report and payroll aggregations compute each technician's commission base from their service line prices *before any discount*. This feature does not alter that. A per-service discount reduces what the customer pays but does not reduce the assigned technician's commissionable revenue. (If the salon owner later decides discounts should reduce the responsible technician's pay, that is a separate feature; this spec is explicit about leaving it alone so the change is reversible.)
 - **Discount target unit is the service line, not the service catalog item** — If the same service appears twice in one cart (two pedicures on the same ticket), the operator picks line A or line B (or both) individually, not "all pedicures." This matches how the cart already represents duplicate services.
 - **Scope is captured per discount, not per service line** — A service line does not carry a "discounted by" marker; the relationship is owned by the discount. This makes "the customer also got a 5% off everything" coexist naturally with a $10-off-this-one-service discount.
 - **Tax stays at $0 (v1 invariant)** — Same as today: no tax math affects this feature.

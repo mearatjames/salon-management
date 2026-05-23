@@ -31,7 +31,5 @@
 
 ## Notes
 
-- Items marked incomplete require spec updates before `/speckit-clarify` or `/speckit-plan`.
-- One topic the team may want to revisit at `/speckit-clarify`: the payroll/commission stance.
-  The spec assumes "per-service discounts do not reduce the responsible technician's commission base" (matches today's behavior for transaction-wide discounts). If the salon owner wants discounts to come out of the technician's pay rather than the salon's revenue, that flips an assumption and may add a P2 requirement.
-- A second topic for `/speckit-clarify`: whether scoped discounts and an "all services" discount should compound multiplicatively (current spec, FR-009: scoped first, then all-services on the remainder) or add nominally (sum both reductions, then apply once). Both yield the same total for additive cases; the difference is observable when an "all services" percent discount is combined with a scoped percent discount.
+- All previously flagged ambiguities resolved by the 2026-05-22 `/speckit-clarify` session — see the spec's "Clarifications" section. Commission stance (FR-018), scope display (FR-006/FR-007), compounding order (FR-009), and orphan-target behavior (FR-010/FR-016) are now locked.
+- Spec is ready for `/speckit-plan`.
