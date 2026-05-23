@@ -550,13 +550,20 @@ export async function sendUserPasswordReset(formData: FormData): Promise<void> {
 //        c. ack_irreversible === "on"                → else `ack_required`
 //   4. snapshot display_name + email + role BEFORE mutation (audit needs the
 //      original identity per FR-052).
-//   5. admin.auth.admin.deleteUser(target.user_id) — cascades staff.user_id
-//      to NULL via the 0001 FK constraint.
-//   6. getNextAnonPlaceholder() → "Former staff #N" (security-definer RPC).
-//   7. UPDATE staff SET display_name=anonName, email=null,
+//   5. getNextAnonPlaceholder() → "Former staff #N" (security-definer RPC).
+//   6. UPDATE staff SET display_name=anonName, email=null,
 //      color_token='--avatar-slate', pin_hash=null, removed_at=now().
 //      On trigger 23514|P0001 → `last_owner` (UI should have blocked, the
-//      server is the trust boundary).
+//      server is the trust boundary). This runs BEFORE the auth-user
+//      delete (issue #120): the FK ON DELETE SET NULL cascade from
+//      auth.users → staff.user_id would otherwise hit the
+//      staff_pin_or_user CHECK and abort the auth delete with "Database
+//      error deleting user" — offboardUser nulled pin_hash already, so
+//      every row reaching this action is pin-less. With removed_at set
+//      first, the relaxed CHECK (migration 0022) accepts user_id = NULL
+//      when the cascade fires in step 7.
+//   7. admin.auth.admin.deleteUser(target.user_id) — cascades staff.user_id
+//      to NULL via the 0001 FK constraint.
 //   8. audit user.removed { display_name_at_removal, email_at_removal,
 //      role_at_removal, by } — Constitution III: awaited BEFORE redirect.
 //   9. revalidate + redirect ?toast=removed&name=<encoded original name>.
@@ -609,29 +616,7 @@ export async function removeUser(formData: FormData): Promise<void> {
     role: target.role as string,
   };
 
-  // 5: delete the Supabase auth user. The 0001 FK ON DELETE SET NULL
-  // cascades staff.user_id to NULL — no explicit clear needed here.
-  try {
-    if (target.user_id) {
-      const adminAuth = (admin as unknown as { auth?: { admin?: unknown } }).auth?.admin as
-        | { deleteUser?: (uid: string, shouldSoftDelete?: boolean) => Promise<unknown> }
-        | undefined;
-      if (adminAuth?.deleteUser) {
-        // Explicit hard-delete: the Supabase SDK's `shouldSoftDelete` default
-        // is version-dependent; passing `false` ensures the auth.users row is
-        // physically removed so the email is freed for re-invite per FR-052
-        // and data-model.md Invariant D. Without this, soft-deleted rows
-        // continue to occupy the email and `createUser` rejects re-invites
-        // with `email_exists`.
-        await adminAuth.deleteUser(target.user_id as string, false);
-      }
-    }
-  } catch (err) {
-    console.error("removeUser: deleteUser failed", err);
-    redirect(`${ONB_PATH}?error=server_error`);
-  }
-
-  // 6: mint the anonymized placeholder via the security-definer RPC.
+  // 5: mint the anonymized placeholder via the security-definer RPC.
   let anonName: string;
   try {
     anonName = await getNextAnonPlaceholder();
@@ -640,8 +625,12 @@ export async function removeUser(formData: FormData): Promise<void> {
     redirect(`${ONB_PATH}?error=server_error`);
   }
 
-  // 7: anonymize the staff row. The combination of email=null AND removed_at
-  // non-null drops it from the staff_email_lower_unique partial index.
+  // 6: anonymize the staff row FIRST — see header note (issue #120). The
+  // combination of email=null AND removed_at non-null drops it from the
+  // staff_email_lower_unique partial index. user_id is left intact here;
+  // step 7's auth-user delete cascades it to NULL, and the relaxed
+  // staff_pin_or_user CHECK (migration 0022) accepts that because
+  // removed_at is now non-null.
   const { error: updateErr } = await admin
     .from("staff")
     .update({
@@ -660,6 +649,28 @@ export async function removeUser(formData: FormData): Promise<void> {
       redirect(`${ONB_PATH}?error=last_owner`);
     }
     console.error("removeUser: UPDATE failed", updateErr);
+    redirect(`${ONB_PATH}?error=server_error`);
+  }
+
+  // 7: delete the Supabase auth user. The 0001 FK ON DELETE SET NULL
+  // cascades staff.user_id to NULL — no explicit clear needed here.
+  try {
+    if (target.user_id) {
+      const adminAuth = (admin as unknown as { auth?: { admin?: unknown } }).auth?.admin as
+        | { deleteUser?: (uid: string, shouldSoftDelete?: boolean) => Promise<unknown> }
+        | undefined;
+      if (adminAuth?.deleteUser) {
+        // Explicit hard-delete: the Supabase SDK's `shouldSoftDelete` default
+        // is version-dependent; passing `false` ensures the auth.users row is
+        // physically removed so the email is freed for re-invite per FR-052
+        // and data-model.md Invariant D. Without this, soft-deleted rows
+        // continue to occupy the email and `createUser` rejects re-invites
+        // with `email_exists`.
+        await adminAuth.deleteUser(target.user_id as string, false);
+      }
+    }
+  } catch (err) {
+    console.error("removeUser: deleteUser failed", err);
     redirect(`${ONB_PATH}?error=server_error`);
   }
 
@@ -801,21 +812,28 @@ export async function resendInvite(formData: FormData): Promise<void> {
 //      ?error=not_found.
 //   3. snapshot { email, display_name, user_id } BEFORE any deletes — the
 //      audit row needs the pre-delete email per audit.contract.md § 3.
-//   4. admin.auth.admin.deleteUser(user_id, false) — hard-delete, mirrors
+//   4. DELETE staff WHERE id = staff_id. The staff row goes FIRST: a
+//      magic-link invitee has pin_hash = NULL, so the FK ON DELETE SET
+//      NULL cascade from auth.users → staff.user_id would otherwise leave
+//      both pin_hash AND user_id null and violate the staff_pin_or_user
+//      CHECK — Postgres surfaces that as "Database error deleting user"
+//      from GoTrue and the auth user never goes away (issue #120). With
+//      the staff row already gone, the cascade has no target. Invited
+//      rows have no history worth preserving (no audit references, no
+//      completed sessions), so a hard DELETE is correct here — contrast
+//      with offboarded rows which we soft-archive via removed_at and
+//      anonymized display_name.
+//   5. admin.auth.admin.deleteUser(user_id, false) — hard-delete, mirrors
 //      Phase 6's fix. Frees the email for future re-invite.
-//   5. DELETE staff WHERE id = staff_id. Invited rows have no history worth
-//      preserving (no audit references, no completed sessions), so a hard
-//      DELETE is correct here — versus offboarded rows which we soft-archive
-//      via removed_at and anonymized display_name.
 //   6. audit user.invite_cancelled { email: snapshot.email, by } BEFORE
 //      redirect (Constitution III). entity_id references the now-deleted
 //      staff.id by design (denormalized — see audit.contract.md § 3).
 //   7. revalidate + redirect ?toast=cancelled&name=<display_name>.
 //
-// On Supabase deleteUser failure → ?error=server_error, no staff DELETE,
-// no audit. On staff DELETE failure → ?error=server_error (auth user already
-// hard-deleted; on next reconciliation the orphan staff row will be cleaned
-// up — best-effort).
+// On staff DELETE failure → ?error=server_error, no auth delete, no audit.
+// On Supabase deleteUser failure → ?error=server_error (staff row already
+// gone; the orphan auth user is recoverable via the re-invite path's
+// email-conflict cleanup — best-effort).
 
 export async function cancelInvite(formData: FormData): Promise<void> {
   // 1: session + owner gate.
@@ -847,7 +865,20 @@ export async function cancelInvite(formData: FormData): Promise<void> {
     user_id: (target.user_id as string | null) ?? null,
   };
 
-  // 4: hard-delete the auth user so the email is freed for re-invite per
+  // 4: DELETE the staff row FIRST so the auth-user cascade in step 5 has
+  // no target — see header note (issue #120). Invited rows are hard-
+  // deleted (no history worth preserving) — contrast with offboard which
+  // soft-archives via removed_at.
+  const { error: delErr } = await admin
+    .from("staff")
+    .delete()
+    .eq("id", target.id as string);
+  if (delErr) {
+    console.error("cancelInvite: staff DELETE failed", delErr);
+    redirect(`${ONB_PATH}?error=server_error`);
+  }
+
+  // 5: hard-delete the auth user so the email is freed for re-invite per
   // data-model.md Invariant D + Phase 6's hard-delete pattern.
   try {
     if (snap.user_id) {
@@ -860,17 +891,6 @@ export async function cancelInvite(formData: FormData): Promise<void> {
     }
   } catch (err) {
     console.error("cancelInvite: deleteUser failed", err);
-    redirect(`${ONB_PATH}?error=server_error`);
-  }
-
-  // 5: DELETE staff row. Invited rows are hard-deleted (no history worth
-  // preserving) — contrast with offboard which soft-archives via removed_at.
-  const { error: delErr } = await admin
-    .from("staff")
-    .delete()
-    .eq("id", target.id as string);
-  if (delErr) {
-    console.error("cancelInvite: staff DELETE failed", delErr);
     redirect(`${ONB_PATH}?error=server_error`);
   }
 

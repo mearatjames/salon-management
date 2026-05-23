@@ -3,18 +3,22 @@
 //
 // Coverage matrix per dispatch (012-user-onboarding § Phase 7 / US5 / T071):
 //
-//   - Happy path: snapshots email + display_name BEFORE the deletes; calls
-//     admin.auth.admin.deleteUser(target.user_id, false) — hard-delete per
-//     Phase 6's fix; DELETEs the staff row; writes audit `user.invite_cancelled
-//     { email: snapshot.email, by }` BEFORE the redirect (Constitution III);
-//     redirect ?toast=cancelled&name=<display_name>.
+//   - Happy path: snapshots email + display_name BEFORE the deletes; DELETEs
+//     the staff row first (issue #120 — the FK ON DELETE SET NULL cascade
+//     would otherwise hit staff_pin_or_user CHECK on pin-less magic-link
+//     invitees); then calls admin.auth.admin.deleteUser(target.user_id,
+//     false) — hard-delete per Phase 6's fix; writes audit
+//     `user.invite_cancelled { email: snapshot.email, by }` BEFORE the
+//     redirect (Constitution III); redirect ?toast=cancelled&name=<display_name>.
 //   - Non-invited target (state='active' / 'offboarded' / removed_at non-null
 //     / missing) → ?error=not_found, no deletes, no audit.
 //   - Second-submit (row already deleted by a concurrent cancel) →
 //     ?error=not_found.
-//   - Supabase deleteUser failure → ?error=server_error, no DELETE staff,
+//   - Supabase staff DELETE failure → ?error=server_error, no deleteUser,
 //     no audit.
-//   - Supabase staff DELETE failure → ?error=server_error, no audit.
+//   - Supabase deleteUser failure (after staff DELETE succeeded) →
+//     ?error=server_error, no audit (orphan auth user; recoverable via
+//     re-invite path's email-conflict cleanup).
 //   - Non-owner viewer → /dashboard?error=forbidden.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -197,7 +201,7 @@ describe("cancelInvite", () => {
 
   // ── Happy path ─────────────────────────────────────────────────────────
 
-  it("happy path: deleteUser (hard) → staff DELETE → audit snapshot email → redirect ?toast=cancelled&name=<display_name>", async () => {
+  it("happy path: staff DELETE → deleteUser (hard) → audit snapshot email → redirect ?toast=cancelled&name=<display_name>", async () => {
     const { deleteUserCalls, staffDeleteCalls } = mockAdminClient();
 
     let thrown: unknown;
@@ -207,12 +211,15 @@ describe("cancelInvite", () => {
       thrown = err;
     }
 
-    // 1. deleteUser called once with (user_id, false) — hard delete per
+    // 1. staff DELETE issued once — runs FIRST so the FK cascade in step
+    //    2 has no target (issue #120: magic-link invitees have
+    //    pin_hash=NULL and the cascade would otherwise violate
+    //    staff_pin_or_user CHECK).
+    expect(staffDeleteCalls.count).toBe(1);
+
+    // 2. deleteUser called once with (user_id, false) — hard delete per
     //    Phase 6's fix: ensures the email is freed for future re-invite.
     expect(deleteUserCalls).toEqual([["auth-user-target-1", false]]);
-
-    // 2. staff DELETE issued once.
-    expect(staffDeleteCalls.count).toBe(1);
 
     // 3. Audit BEFORE redirect (Constitution III), with snapshot email.
     //    entity_id references the now-deleted staff.id (denormalized — see
@@ -311,7 +318,26 @@ describe("cancelInvite", () => {
 
   // ── Supabase failures ──────────────────────────────────────────────────
 
-  it("deleteUser throws → ?error=server_error (no staff DELETE, no audit)", async () => {
+  it("staff DELETE fails → ?error=server_error (no deleteUser, no audit)", async () => {
+    const { deleteUserCalls } = mockAdminClient({
+      staffDeleteError: { code: "XX000", message: "transient" },
+    });
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    let thrown: unknown;
+    try {
+      await cancelInvite(cancelForm());
+    } catch (err) {
+      thrown = err;
+    }
+    const url = redirectUrlFrom(thrown);
+    expect(url).toContain("error=server_error");
+    expect(deleteUserCalls).toEqual([]);
+    expect(recordAudit).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("deleteUser throws after staff DELETE → ?error=server_error (staff row already gone, audit NOT written, orphan auth user recoverable via re-invite)", async () => {
     const { staffDeleteCalls } = mockAdminClient({
       deleteUserError: new Error("supabase boom"),
     });
@@ -325,23 +351,7 @@ describe("cancelInvite", () => {
     }
     const url = redirectUrlFrom(thrown);
     expect(url).toContain("error=server_error");
-    expect(staffDeleteCalls.count).toBe(0);
-    expect(recordAudit).not.toHaveBeenCalled();
-    errSpy.mockRestore();
-  });
-
-  it("staff DELETE fails → ?error=server_error (auth user already deleted, audit NOT written)", async () => {
-    mockAdminClient({ staffDeleteError: { code: "XX000", message: "transient" } });
-    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-    let thrown: unknown;
-    try {
-      await cancelInvite(cancelForm());
-    } catch (err) {
-      thrown = err;
-    }
-    const url = redirectUrlFrom(thrown);
-    expect(url).toContain("error=server_error");
+    expect(staffDeleteCalls.count).toBe(1);
     expect(recordAudit).not.toHaveBeenCalled();
     errSpy.mockRestore();
   });
