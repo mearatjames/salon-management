@@ -916,26 +916,32 @@ export async function cancelInvite(formData: FormData): Promise<void> {
 //   1. session + owner gate.
 //   2. load target — must be state='offboarded' AND removed_at IS NULL AND
 //      email IS NOT NULL; else `?error=not_found`.
-//   3. (no email-conflict check needed — the email is still on this row;
-//      we're rotating a fresh token for the same auth user.)
-//   4. admin.generateLink({ type:'magiclink', email: target.email, options:
-//      { redirectTo: '<origin>/auth/invite-callback' } }) — issues a token;
-//      Supabase invalidates any prior token as a side-effect. Always
-//      magic_link in v1 per FR-061, regardless of the prior invite_method.
-//   5. UPDATE staff SET state='invited', active=false, offboarded_at=NULL,
+//   3. re-send a fresh sign-in link to the EXISTING auth user via
+//      `sendImplicitFlowResetEmail`. An offboarded user is already
+//      email-confirmed (they were active before being offboarded), so the
+//      first-invite primitive `inviteUserByEmail` can't be used — it rejects
+//      already-confirmed addresses with `email_exists`. And `admin.generateLink`
+//      only generates a token, it doesn't send the email (the same defect
+//      #115 fixed elsewhere). `resetPasswordForEmail` on the implicit-flow
+//      client reaches the existing user without touching the auth row, and
+//      the link lands on /auth/invite-callback (the same shape the original
+//      invite produced). The redirect omits `?method` — reactivate is ALWAYS
+//      magic_link in v1 per FR-061, independent of the prior invite_method.
+//   4. UPDATE staff SET state='invited', active=false, offboarded_at=NULL,
 //      offboarded_by=NULL, offboard_reason=NULL, invited_at=now(),
 //      invited_by=viewer.staff.id, invite_method='magic_link', pin_hash=NULL.
-//      The staff.id + staff.user_id are PRESERVED — this is the invariant
-//      that keeps the audit chain consistent across the offboard→reactivate
-//      cycle (a future `device.signed_in` row's `actor_user_id` matches the
-//      original auth.users.id).
-//   6. audit `user.reactivated { method: 'magic_link', by }` BEFORE the
+//      The staff.id + staff.user_id are PRESERVED — the auth user is
+//      untouched, and that invariant keeps the audit chain consistent across
+//      the offboard→reactivate cycle (a future `device.signed_in` row's
+//      `actor_user_id` matches the original auth.users.id).
+//   5. audit `user.reactivated { method: 'magic_link', by }` BEFORE the
 //      redirect (Constitution III).
-//   7. revalidate + redirect `?toast=reactivated&name=<display_name>`.
+//   6. revalidate + redirect `?toast=reactivated&name=<display_name>`.
 //
-// On generateLink failure → `?error=invite_failed`, no UPDATE, no audit.
-// On UPDATE failure → `?error=server_error`, no audit (token already rotated
-// but the staff row didn't flip — the orphaned link will simply expire).
+// On sendImplicitFlowResetEmail failure → `?error=invite_failed`, no UPDATE,
+// no audit. On UPDATE failure → `?error=server_error`, no audit (the email
+// already went out but the staff row didn't flip — the offboarded user can
+// still ignore the link).
 
 export async function reactivateUser(formData: FormData): Promise<void> {
   // 1: session + owner gate.
@@ -965,68 +971,24 @@ export async function reactivateUser(formData: FormData): Promise<void> {
     redirect(`${ONB_PATH}?error=not_found`);
   }
 
-  // 4: issue a fresh magic-link. Reactivate is always magic_link in v1 per
-  // FR-061, regardless of the user's prior invite_method.
-  //
-  // Fallback: if `generateLink` fails (most commonly because the auth user
-  // was hard-deleted out of band — e.g. by a prior `removeUser` flow that
-  // ran against this same record before it was re-seeded), re-create the
-  // auth user via `generateMagicLinkInvite`. That helper internally calls
-  // createUser → generateLink, so the magic-link email still goes out and
-  // we capture a NEW user_id we must persist on the staff row.
-  let resolvedUserId: string | null = (target.user_id as string | null) ?? null;
+  // 3: re-send a fresh sign-in link to the EXISTING auth user. See header.
   try {
-    const adminAuth = (admin as unknown as { auth?: { admin?: unknown } }).auth?.admin as
-      | {
-          generateLink?: (args: {
-            type: string;
-            email: string;
-            options?: { redirectTo?: string };
-          }) => Promise<{ error: { message: string } | null }>;
-        }
-      | undefined;
-    if (!adminAuth?.generateLink) {
-      throw new Error("supabase admin.generateLink unavailable");
-    }
-    const { error } = await adminAuth.generateLink({
-      type: "magiclink",
-      email: target.email as string,
-      options: { redirectTo: `${await inviteOrigin()}/auth/invite-callback` },
-    });
-    if (error) throw error;
+    await sendImplicitFlowResetEmail(
+      target.email as string,
+      `${await inviteOrigin()}/auth/invite-callback`
+    );
   } catch (err) {
-    console.error("reactivateUser: generateLink failed, falling back to recreate", err);
-    try {
-      const result = await generateMagicLinkInvite(target.email as string, {
-        display_name: target.display_name as string,
-        invited_by: viewer.staff.id,
-      });
-      if (!result.user_id) {
-        // Genuinely couldn't reach Supabase — surface the standard error.
-        redirect(`${ONB_PATH}?error=invite_failed`);
-      }
-      resolvedUserId = result.user_id;
-    } catch (err2) {
-      if (
-        err2 instanceof Error &&
-        (err2 as { digest?: string }).digest?.startsWith("NEXT_REDIRECT")
-      ) {
-        throw err2;
-      }
-      console.error("reactivateUser: recreate fallback failed", err2);
-      redirect(`${ONB_PATH}?error=invite_failed`);
-    }
+    console.error("reactivateUser: re-send failed", err);
+    redirect(`${ONB_PATH}?error=invite_failed`);
   }
 
-  // 5: UPDATE — preserve id + user_id; flip state to 'invited'; clear the
+  // 4: UPDATE — preserve id + user_id; flip state to 'invited'; clear the
   // offboard_* metadata; set fresh invite metadata; force magic_link;
   // clear any stale pin_hash (offboard already nulled it, but be explicit).
+  // The auth user is untouched so user_id is never rotated.
   const { error: updateErr } = await admin
     .from("staff")
     .update({
-      // If the fallback recreated the auth user, persist the new uuid so the
-      // staff↔auth pairing stays intact for the eventual sign-in (R11).
-      user_id: resolvedUserId,
       state: "invited",
       active: false,
       offboarded_at: null,

@@ -1,26 +1,38 @@
 // Unit tests for `reactivateUser` in
 // `app/(studio)/settings/onboarding/actions.ts`.
 //
-// Mirrors `actions-resend.test.ts` / `actions-cancel.test.ts` for the mocking
-// pattern (redirect-as-throw, per-module mocks). Coverage matrix per dispatch
-// (012-user-onboarding § Phase 8 / US6 / T078):
+// Mirrors `actions-resend.test.ts` for the mocking pattern (redirect-as-throw,
+// per-module mocks, sendImplicitFlowResetEmail mocked at the helper boundary).
 //
-//   - Target validity: must be `state='offboarded' AND removed_at IS NULL`.
-//     Hard-removed target (removed_at non-null) → `?error=not_found`.
-//     Wrong state (active / invited) → `?error=not_found`.
-//     Missing target / missing email → `?error=not_found`.
-//   - Happy path: calls `admin.auth.admin.generateLink({ type:'magiclink',
-//     email: target.email })` (fresh token) → UPDATE staff SET
-//     state='invited', active=false, offboarded_at=NULL, offboarded_by=NULL,
+// Implementation model (post-#116, FR-061): reactivate is ALWAYS magic_link in
+// v1 — independent of the prior offboarded user's original invite_method.
+// Reactivating an offboarded user re-sends a fresh sign-in link to the
+// EXISTING auth user via `sendImplicitFlowResetEmail`. It does NOT use
+// `admin.generateLink` — that primitive only generates a token, it does not
+// send the email (the same defect #115 fixed elsewhere). It also does NOT use
+// `inviteUserByEmail` — that rejects already-confirmed addresses with
+// `email_exists`, and an offboarded user IS already confirmed (they were
+// active before being offboarded). `resetPasswordForEmail` on the implicit-
+// flow client reaches any existing user without touching the auth row, and
+// the link lands on `/auth/invite-callback` (the same shape the original
+// admin invite produces). The staff row's user_id is preserved — the audit
+// chain stays consistent across the offboard→reactivate cycle.
+//
+// Coverage matrix:
+//   - Target validity: must be `state='offboarded' AND removed_at IS NULL AND
+//     email IS NOT NULL`. Hard-removed / wrong state / missing target /
+//     missing email → `?error=not_found`.
+//   - Happy path: sendImplicitFlowResetEmail(target.email,
+//     '<origin>/auth/invite-callback') → UPDATE staff SET state='invited',
+//     active=false, offboarded_at=NULL, offboarded_by=NULL,
 //     offboard_reason=NULL, invited_at=now(), invited_by=viewer.staff.id,
-//     invite_method='magic_link', pin_hash=NULL. Then audit `user.reactivated
-//     { method: 'magic_link', by }`. Redirect ?toast=reactivated&name=…
-//   - generateLink failure → `?error=invite_failed`, no UPDATE, no audit.
+//     invite_method='magic_link', pin_hash=NULL. user_id PRESERVED. Then
+//     audit `user.reactivated { method: 'magic_link', by }`. Redirect
+//     ?toast=reactivated&name=…
+//   - sendImplicitFlowResetEmail throws → `?error=invite_failed`, no UPDATE,
+//     no audit.
 //   - DB UPDATE failure → `?error=server_error`, no audit.
 //   - Non-owner viewer → /dashboard?error=forbidden.
-//
-// Implementation model (FR-061): reactivate is ALWAYS magic_link in v1 —
-// independent of the prior offboarded user's original invite_method.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -60,11 +72,22 @@ vi.mock("@/lib/db/admin", () => ({
   createSupabaseServiceRoleClient: vi.fn(),
 }));
 
+// reactivate reaches Supabase only through these two helpers; the rest are
+// stubbed so `actions.ts`'s other server actions still import cleanly.
+vi.mock("@/lib/onboarding/invite", () => ({
+  inviteOrigin: vi.fn(async () => "http://localhost:3000"),
+  sendImplicitFlowResetEmail: vi.fn(async () => undefined),
+  deleteInviteUser: vi.fn(),
+  generateMagicLinkInvite: vi.fn(),
+  sendPasswordInvite: vi.fn(),
+}));
+
 // ── Imports of the SUT and the mocked modules ──────────────────────────────
 
 import { recordAudit } from "@/lib/auth/audit";
 import { requireStudioSession, type StudioViewer } from "@/lib/auth/session";
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
+import { sendImplicitFlowResetEmail } from "@/lib/onboarding/invite";
 
 import { reactivateUser } from "@/app/(studio)/settings/onboarding/actions";
 
@@ -132,15 +155,12 @@ const DEFAULT_TARGET: TargetRow = {
 type AdminMockOpts = {
   target?: Partial<TargetRow> | null;
   updateError?: { code?: string; message?: string } | null;
-  generateLinkError?: Error | null;
 };
 
 function mockAdminClient(opts: AdminMockOpts = {}): {
   lastUpdate: { current: Record<string, unknown> | null };
-  generateLinkCalls: Array<{ type: string; email: string; options?: unknown }>;
 } {
   const lastUpdate = { current: null as Record<string, unknown> | null };
-  const generateLinkCalls: Array<{ type: string; email: string; options?: unknown }> = [];
 
   const targetRow: TargetRow | null =
     opts.target === null ? null : { ...DEFAULT_TARGET, ...(opts.target ?? {}) };
@@ -172,21 +192,9 @@ function mockAdminClient(opts: AdminMockOpts = {}): {
 
   (createSupabaseServiceRoleClient as unknown as Mocked<() => unknown>).mockReturnValue({
     from: fromImpl,
-    auth: {
-      admin: {
-        generateLink: async (args: { type: string; email: string; options?: unknown }) => {
-          generateLinkCalls.push(args);
-          if (opts.generateLinkError) throw opts.generateLinkError;
-          return {
-            data: { properties: { action_link: "https://example.test/auth/callback?token=abc" } },
-            error: null,
-          };
-        },
-      },
-    },
   });
 
-  return { lastUpdate, generateLinkCalls };
+  return { lastUpdate };
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -197,6 +205,9 @@ describe("reactivateUser", () => {
     (requireStudioSession as unknown as Mocked<() => Promise<StudioViewer>>).mockResolvedValue(
       OWNER_VIEWER
     );
+    (sendImplicitFlowResetEmail as unknown as Mocked<() => Promise<void>>).mockResolvedValue(
+      undefined
+    );
   });
 
   afterEach(() => {
@@ -205,8 +216,8 @@ describe("reactivateUser", () => {
 
   // ── Happy path ─────────────────────────────────────────────────────────
 
-  it("happy path: generateLink (magic_link) → UPDATE staff → audit → redirect ?toast=reactivated", async () => {
-    const { lastUpdate, generateLinkCalls } = mockAdminClient();
+  it("happy path: re-sends sign-in link → UPDATE staff → audit → redirect ?toast=reactivated", async () => {
+    const { lastUpdate } = mockAdminClient();
 
     let thrown: unknown;
     try {
@@ -215,12 +226,17 @@ describe("reactivateUser", () => {
       thrown = err;
     }
 
-    // 1. generateLink called once with type 'magiclink' + target's email.
-    expect(generateLinkCalls).toHaveLength(1);
-    expect(generateLinkCalls[0].type).toBe("magiclink");
-    expect(generateLinkCalls[0].email).toBe("jordan@tangnails.com");
+    // 1. sendImplicitFlowResetEmail called once with target email and the
+    //    magic-link /auth/invite-callback redirect (no `?method` — reactivate
+    //    is always magic_link in v1 per FR-061).
+    expect(sendImplicitFlowResetEmail).toHaveBeenCalledTimes(1);
+    expect(sendImplicitFlowResetEmail).toHaveBeenCalledWith(
+      "jordan@tangnails.com",
+      "http://localhost:3000/auth/invite-callback"
+    );
 
     // 2. UPDATE clears offboard metadata and sets invite metadata.
+    //    user_id is PRESERVED — the auth user is untouched.
     expect(lastUpdate.current).not.toBeNull();
     expect(lastUpdate.current?.state).toBe("invited");
     expect(lastUpdate.current?.active).toBe(false);
@@ -231,6 +247,7 @@ describe("reactivateUser", () => {
     expect(lastUpdate.current?.invited_by).toBe(OWNER_VIEWER.staff.id);
     expect(lastUpdate.current?.pin_hash).toBeNull();
     expect(typeof lastUpdate.current?.invited_at).toBe("string");
+    expect(lastUpdate.current).not.toHaveProperty("user_id");
 
     // 3. Audit BEFORE redirect (Constitution III).
     expect(recordAudit).toHaveBeenCalledTimes(1);
@@ -252,8 +269,8 @@ describe("reactivateUser", () => {
 
   // ── Target-shape gates ─────────────────────────────────────────────────
 
-  it("target.removed_at non-null (hard-removed) → ?error=not_found, no rotation, no UPDATE, no audit", async () => {
-    const { lastUpdate, generateLinkCalls } = mockAdminClient({
+  it("target.removed_at non-null (hard-removed) → ?error=not_found, no re-send, no UPDATE, no audit", async () => {
+    const { lastUpdate } = mockAdminClient({
       target: { removed_at: new Date().toISOString() },
     });
 
@@ -266,7 +283,7 @@ describe("reactivateUser", () => {
 
     const url = redirectUrlFrom(thrown);
     expect(url).toContain("error=not_found");
-    expect(generateLinkCalls).toHaveLength(0);
+    expect(sendImplicitFlowResetEmail).not.toHaveBeenCalled();
     expect(lastUpdate.current).toBeNull();
     expect(recordAudit).not.toHaveBeenCalled();
   });
@@ -338,10 +355,11 @@ describe("reactivateUser", () => {
 
   // ── Supabase failure ───────────────────────────────────────────────────
 
-  it("generateLink throws → ?error=invite_failed (no UPDATE, no audit)", async () => {
-    const { lastUpdate } = mockAdminClient({
-      generateLinkError: new Error("supabase boom"),
-    });
+  it("sendImplicitFlowResetEmail throws → ?error=invite_failed (no UPDATE, no audit)", async () => {
+    const { lastUpdate } = mockAdminClient();
+    (sendImplicitFlowResetEmail as unknown as Mocked<() => Promise<void>>).mockRejectedValueOnce(
+      new Error("supabase boom")
+    );
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     let thrown: unknown;
@@ -360,7 +378,7 @@ describe("reactivateUser", () => {
 
   // ── UPDATE failure ─────────────────────────────────────────────────────
 
-  it("UPDATE failure → ?error=server_error (rotation already happened; audit NOT written)", async () => {
+  it("UPDATE failure → ?error=server_error (re-send already happened; audit NOT written)", async () => {
     mockAdminClient({ updateError: { code: "XX000", message: "transient" } });
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
@@ -393,6 +411,7 @@ describe("reactivateUser", () => {
     const url = redirectUrlFrom(thrown);
     expect(url).toContain("/dashboard");
     expect(url).toContain("error=forbidden");
+    expect(sendImplicitFlowResetEmail).not.toHaveBeenCalled();
     expect(recordAudit).not.toHaveBeenCalled();
   });
 });
