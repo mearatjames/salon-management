@@ -77,6 +77,7 @@ describe("computeTotals", () => {
       taxCents: 0,
       totalCents: 0,
       chargeEligible: false,
+      lineAmountsById: new Map(),
     });
   });
 
@@ -88,6 +89,7 @@ describe("computeTotals", () => {
       taxCents: 0,
       totalCents: 2000,
       chargeEligible: true,
+      lineAmountsById: new Map([["svc-1", 2000]]),
     });
   });
 
@@ -99,6 +101,7 @@ describe("computeTotals", () => {
       taxCents: 0,
       totalCents: 4500,
       chargeEligible: true,
+      lineAmountsById: new Map([["svc-1", 4500]]),
     });
   });
 
@@ -110,6 +113,10 @@ describe("computeTotals", () => {
       taxCents: 0,
       totalCents: 3500,
       chargeEligible: true,
+      lineAmountsById: new Map([
+        ["svc-1", 2000],
+        ["svc-2", 1500],
+      ]),
     });
   });
 
@@ -180,6 +187,10 @@ describe("computeTotals", () => {
     expect(result.subtotalCents).toBe(7000);
     expect(result.totalCents).toBe(7000);
     expect(result.chargeEligible).toBe(true);
+    // The scoped percent's per-line amount reflects the targeted $60
+    // subtotal, NOT the full $100 cart. Display surfaces (cart row,
+    // bill snapshot, draft resolver) read this map directly.
+    expect(result.lineAmountsById.get("disc-1")).toBe(-3000);
   });
 
   it("(049 b) scoped flat caps at the targeted subtotal (FR-004)", () => {
@@ -215,6 +226,18 @@ describe("computeTotals", () => {
     expect(result.subtotalCents).toBe(8100);
     expect(result.totalCents).toBe(8100);
     expect(result.chargeEligible).toBe(true);
+    // Per-line amounts mirror the FR-009 stacking: scoped flat -1000
+    // against the $60 target, all-services percent -900 against the
+    // post-scoped $90 service subtotal. Service rows echo their gross.
+    // Display surfaces read these values directly — no re-derivation.
+    expect(result.lineAmountsById).toEqual(
+      new Map([
+        ["svc-mani", 4000],
+        ["svc-pedi", 6000],
+        ["disc-scoped", -1000],
+        ["disc-all", -900],
+      ])
+    );
   });
 
   it("(049 d) over-discount on scope still floors subtotalCents at $0 (FR-015)", () => {

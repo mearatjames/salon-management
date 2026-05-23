@@ -1234,57 +1234,19 @@ export function CheckoutScreen({
   // current service subtotal so the snapshot matches what the bill totals
   // display. capturedAt drives the bill's decorative Check # field.
   function handleOpenBill() {
-    const liveServiceSubtotalCents = lines
-      .filter((l) => l.kind === "service" && !l.priceUnconfirmed)
-      .reduce((sum, l) => sum + l.unitPriceCents * l.qty, 0);
-    // Feature 049: same per-id price lookup as the cart-row render path so
-    // a SCOPED discount's per-row snapshot amount reflects only the
-    // targeted subtotal. The bill preview total comes from `totals` below
-    // (already correct via `computeTotals`); this just keeps the per-row
-    // numbers from contradicting the total.
-    const livePriceById = new Map(
-      lines
-        .filter((l) => l.kind === "service" && !l.priceUnconfirmed)
-        .map((l) => [l.id, l.unitPriceCents * l.qty] as const)
-    );
-    // FR-009 stacking: scoped discounts apply first; all-services then
-    // apply against the post-scoped subtotal. Mirror that order here so
-    // the bill preview's per-row amounts match the totals shown.
-    const scopedTotalCents = lines.reduce((sum, l) => {
-      if (l.kind !== "discount") return sum;
-      const t = l.discountTargetIds;
-      if (!t || t.length === 0) return sum;
-      const targetSubtotal = t.reduce((s, id) => s + (livePriceById.get(id) ?? 0), 0);
-      if (l.discountPct != null) {
-        return sum - Math.round((l.discountPct * targetSubtotal) / 100);
-      }
-      return sum + Math.max(l.unitPriceCents, -targetSubtotal);
-    }, 0);
-    const postScopedSubtotalCents = liveServiceSubtotalCents + scopedTotalCents;
-
-    const snapshotLines = lines.map((l) => {
-      const displayUnitPriceCents = (() => {
-        if (l.kind !== "discount") return l.unitPriceCents;
-        const targets = l.discountTargetIds;
-        const baseCents =
-          targets && targets.length > 0
-            ? targets.reduce((sum, id) => sum + (livePriceById.get(id) ?? 0), 0)
-            : postScopedSubtotalCents;
-        if (l.discountPct != null) {
-          return -Math.round((l.discountPct * baseCents) / 100);
-        }
-        return Math.max(l.unitPriceCents, -baseCents);
-      })();
-      return {
-        id: l.id,
-        kind: l.kind,
-        name: l.name,
-        unitPriceCents: displayUnitPriceCents,
-        qty: l.qty,
-        note: l.note,
-        discountPct: l.discountPct,
-      };
-    });
+    // Per-row snapshot amounts come from `totals.lineAmountsById` — the
+    // kernel did the FR-009 stacking math once already (see
+    // `lib/pos/cart.ts`). Reading from the map keeps the snapshot's
+    // per-row numbers in lockstep with the totals printed below.
+    const snapshotLines = lines.map((l) => ({
+      id: l.id,
+      kind: l.kind,
+      name: l.name,
+      unitPriceCents: totals.lineAmountsById.get(l.id) ?? l.unitPriceCents * l.qty,
+      qty: l.qty,
+      note: l.note,
+      discountPct: l.discountPct,
+    }));
 
     setBillSnapshot({
       lines: structuredClone(snapshotLines),
@@ -2115,73 +2077,27 @@ export function CheckoutScreen({
                   : "Pick a tech first, then tap a service."}
               </p>
             ) : (
-              // US3: percent-discount rows display an amount that is derived
-              // from the live service subtotal — the local `unitPriceCents`
-              // for a percent row may be stale (server's recompute writes the
-              // amount but the action contract returns only totals). We mirror
-              // `computeTotals`/`recomputeTicketTotals` here so the per-row
-              // amount the operator sees matches what's persisted.
+              // Feature 049 (T021, US2): for each discount row, derive the
+              // scope-kind / scope-target-count + a human-readable scope
+              // label from the live `lines[]`. Single-target → that
+              // service's `name`; N>1 → "N services". Null/empty scope
+              // → no suffix. The label is appended to `line.name` so the
+              // existing CartRowWithTech render path doesn't need to
+              // know about scope semantics. A `display: contents` wrapper
+              // carries the `cart-discount-row` data slot + scope attrs
+              // alongside the existing `cart-line` slot so the new US2
+              // selectors and the existing US1 selectors both resolve.
+              //
+              // Per-row display amounts come from `totals.lineAmountsById`
+              // — the kernel did the FR-009 math once already; we just read
+              // each line's contribution here. (See `lib/pos/cart.ts` —
+              // this map was added specifically to eliminate the duplicated
+              // stacking pass that drifted twice on PR #137.)
               (() => {
-                const liveServiceSubtotalCents = lines
-                  .filter((l) => l.kind === "service" && !l.priceUnconfirmed)
-                  .reduce((sum, l) => sum + l.unitPriceCents * l.qty, 0);
-                // Feature 049 (T021, US2): for each discount row, derive the
-                // scope-kind / scope-target-count + a human-readable scope
-                // label from the live `lines[]`. Single-target → that
-                // service's `name`; N>1 → "N services". Null/empty scope
-                // → no suffix. The label is appended to `line.name` so the
-                // existing CartRowWithTech render path doesn't need to
-                // know about scope semantics. A `display: contents` wrapper
-                // carries the `cart-discount-row` data slot + scope attrs
-                // alongside the existing `cart-line` slot so the new US2
-                // selectors and the existing US1 selectors both resolve.
                 const lineNameById = new Map(lines.map((l) => [l.id, l.name]));
-                // Feature 049: per-id live service price lookup so a SCOPED
-                // discount's per-row display amount reflects only the
-                // targeted subtotal (matches the server's
-                // `recomputeTicketTotals` math). Without this, the row
-                // label would show all-services × pct even when the scope
-                // is restricted, contradicting the cart subtotal.
-                const livePriceById = new Map(
-                  lines
-                    .filter((l) => l.kind === "service" && !l.priceUnconfirmed)
-                    .map((l) => [l.id, l.unitPriceCents * l.qty] as const)
-                );
-                // Feature 049 (FR-009 stacking): scoped discounts apply
-                // first against their targeted subtotal, then all-services
-                // discounts apply against the post-scoped service subtotal.
-                // Pre-compute the post-scoped subtotal once so each
-                // all-services discount row displays the right amount
-                // (matches the kernel-side `computeTotals` order).
-                const scopedTotalCents = lines.reduce((sum, l) => {
-                  if (l.kind !== "discount") return sum;
-                  const t = l.discountTargetIds;
-                  if (!t || t.length === 0) return sum;
-                  const targetSubtotal = t.reduce((s, id) => s + (livePriceById.get(id) ?? 0), 0);
-                  if (l.discountPct != null) {
-                    return sum - Math.round((l.discountPct * targetSubtotal) / 100);
-                  }
-                  return sum + Math.max(l.unitPriceCents, -targetSubtotal);
-                }, 0);
-                const postScopedSubtotalCents = liveServiceSubtotalCents + scopedTotalCents;
                 return lines.map((line) => {
-                  const recomputedUnitPriceCents = (() => {
-                    if (line.kind !== "discount") return line.unitPriceCents;
-                    const targets = line.discountTargetIds;
-                    const baseCents =
-                      targets && targets.length > 0
-                        ? targets.reduce((sum, id) => sum + (livePriceById.get(id) ?? 0), 0)
-                        : postScopedSubtotalCents;
-                    if (line.discountPct != null) {
-                      return -Math.round((line.discountPct * baseCents) / 100);
-                    }
-                    // Scoped flat caps at the targeted subtotal (FR-004); the
-                    // all-services flat path's base is the post-scoped service
-                    // subtotal — the cap is a no-op against the typical
-                    // unconstrained service total but guards over-discounts
-                    // when scoped discounts have already eaten into it.
-                    return Math.max(line.unitPriceCents, -baseCents);
-                  })();
+                  const recomputedUnitPriceCents =
+                    totals.lineAmountsById.get(line.id) ?? line.unitPriceCents * line.qty;
 
                   if (line.kind !== "discount") {
                     return (

@@ -353,47 +353,16 @@ export async function validateAndResolveDraft(
   ];
   const totals = computeTotals(cartItems);
 
-  // Per-discount resolved amount. `computeTotals` already did the math —
-  // we just need each line's contribution. For unscoped discounts the
-  // math is unchanged from before; for scoped discounts we recompute
-  // against the targeted subtotal so the persisted amount matches what
-  // `computeTotals` folded into the total. For all-services percent
-  // discounts the baseline is the POST-SCOPED service subtotal so the
-  // persisted amount matches FR-009 stacking.
-
-  // Build the same id→price lookup the math helper uses, then compute
-  // each scoped discount's amount + scopedSum. Mirrors `computeTotals`
-  // exactly so the RPC's per-line amounts agree with the total guard.
-  const servicePriceById = new Map<string, number>();
-  for (const s of resolvedServices) servicePriceById.set(s.client_line_id, s.unit_price_cents);
-
-  let scopedAmountSum = 0;
-  const scopedAmountByIdx = new Map<number, number>();
-  discountLines.forEach((d, idx) => {
-    const scope = resolvedDiscountScopes[idx];
-    if (scope === null) return;
-    const targetedSubtotal = scope.reduce((sum, id) => sum + (servicePriceById.get(id) ?? 0), 0);
-    let amount: number;
-    if (d.shape === "percent") {
-      amount = -Math.round((d.value * targetedSubtotal) / 100);
-    } else {
-      amount = Math.max(-d.value, -targetedSubtotal);
-    }
-    scopedAmountByIdx.set(idx, amount);
-    scopedAmountSum += amount;
-  });
-  const postScopedServiceSubtotal = totals.serviceSubtotalCents + scopedAmountSum;
-
+  // Per-discount resolved amount. `computeTotals` does the FR-009 math
+  // once and returns each line's contribution in `totals.lineAmountsById`
+  // — read it directly so the RPC's per-line amounts agree with the
+  // total guard without re-deriving the stacking pass here. (Prior to
+  // this, the resolver duplicated the entire scoped + all-services
+  // pipeline, which drifted twice on PR #137 — fixed there, deduped here.)
   const resolvedDiscounts: ResolvedDiscountItem[] = discountLines.map((d, idx) => {
     const scope = resolvedDiscountScopes[idx];
-    let amount: number;
-    if (scope !== null) {
-      amount = scopedAmountByIdx.get(idx)!;
-    } else if (d.shape === "percent") {
-      amount = -Math.round((d.value * postScopedServiceSubtotal) / 100);
-    } else {
-      amount = -d.value;
-    }
+    const amount =
+      totals.lineAmountsById.get(d.clientLineId) ?? (d.shape === "flat" ? -d.value : 0);
     return {
       kind: "discount",
       name_snapshot: d.shape === "percent" ? `Discount · ${d.value}%` : "Discount",

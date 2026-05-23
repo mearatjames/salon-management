@@ -90,6 +90,24 @@ export type CartTotals = {
   taxCents: 0;
   totalCents: number;
   chargeEligible: boolean;
+  /**
+   * Resolved per-line display amount keyed by `CartItem.id`. Service rows
+   * map to `unitPriceCents * qty`; discount rows map to the post-stacking
+   * negative contribution (FR-009 — scoped against the targeted subtotal,
+   * all-services against the post-scoped service subtotal).
+   *
+   * Surfaced so display surfaces (cart row, bill snapshot, draft resolver)
+   * don't duplicate the kernel's math. Without this map, three call sites
+   * re-derived FR-009 stacking and the duplication produced two visible
+   * defects on PR #137 — fixed in 992fbe9 and feb846a, then deduped here.
+   *
+   * Lookup pattern at the caller: `totals.lineAmountsById.get(line.id)`.
+   * The map always carries an entry for every item passed in (no fallback
+   * needed for known-good ids; the `?? line.unitPriceCents * line.qty`
+   * fallback is defensive for callers that pass an id absent from the
+   * items slice).
+   */
+  lineAmountsById: ReadonlyMap<string, number>;
 };
 
 export function computeTotals(items: CartItem[]): CartTotals {
@@ -121,6 +139,15 @@ export function computeTotals(items: CartItem[]): CartTotals {
     else allServicesDiscounts.push(i);
   }
 
+  // Per-line resolved amount, populated as we compute. Service rows ship
+  // `unitPriceCents * qty` verbatim (their "amount" is just their price);
+  // discount rows ship the FR-009 post-stacking negative contribution.
+  // Callers read from this map instead of re-deriving the math.
+  const lineAmountsById = new Map<string, number>();
+  for (const i of items) {
+    if (i.kind === "service") lineAmountsById.set(i.id, i.unitPriceCents * i.qty);
+  }
+
   // PASS 1 — scoped discounts. Each scoped row's amount is computed
   // against the sum of its targeted services' prices. Percent:
   // -round(pct × targetedSubtotal / 100). Flat: caps at -targetedSubtotal
@@ -140,6 +167,7 @@ export function computeTotals(items: CartItem[]): CartTotals {
       // e.g. $80 flat scoped to a $60 service → caps at -6000.
       amount = Math.max(d.unitPriceCents * d.qty, -targetedSubtotal);
     }
+    lineAmountsById.set(d.id, amount);
     scopedAmountSum += amount;
   }
 
@@ -150,11 +178,14 @@ export function computeTotals(items: CartItem[]): CartTotals {
   const postScopedServiceSubtotal = serviceSubtotalCents + scopedAmountSum;
   let allServicesAmountSum = 0;
   for (const d of allServicesDiscounts) {
+    let amount: number;
     if (d.discountPct != null) {
-      allServicesAmountSum -= Math.round((d.discountPct * postScopedServiceSubtotal) / 100);
+      amount = -Math.round((d.discountPct * postScopedServiceSubtotal) / 100);
     } else {
-      allServicesAmountSum += d.unitPriceCents * d.qty;
+      amount = d.unitPriceCents * d.qty;
     }
+    lineAmountsById.set(d.id, amount);
+    allServicesAmountSum += amount;
   }
 
   const discountTotalCents = scopedAmountSum + allServicesAmountSum;
@@ -169,5 +200,6 @@ export function computeTotals(items: CartItem[]): CartTotals {
     taxCents,
     totalCents,
     chargeEligible,
+    lineAmountsById,
   };
 }
