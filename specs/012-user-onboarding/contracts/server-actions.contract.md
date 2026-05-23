@@ -166,7 +166,7 @@ Shared prelude is documented in `./README.md`. Per-action details follow.
 1–2. Prelude.
 3. Validate.
 4. Load target. Must be `state='active'` AND `email IS NOT NULL`; else `?error=not_found`.
-5. Call `(await createSupabaseServerClient()).auth.resetPasswordForEmail(target.email, { redirectTo: '<origin>/auth/callback' })`. On `AuthRetryableFetchError` → `?error=network`.
+5. Call `sendImplicitFlowResetEmail(target.email, '<origin>/auth/recovery-callback')` — a `resetPasswordForEmail` issued through a dedicated **implicit-flow** anon client. The reset is admin-initiated for *another* user, so the link is opened in the target's browser, not the owner's; a PKCE link is unusable (its code verifier lives in the owner's browser) and must NOT be used here. The link lands on the `/auth/recovery-callback` client page, which reads the implicit-flow tokens from the URL hash. On `AuthRetryableFetchError` → `?error=network`; any other failure → `?error=server_error`. (Issue #126.)
 6. (No DB mutation.)
 7. `recordAudit("device.password_reset", viewer.deviceUserId, null, { method: 'recovery', actor: 'admin', by: viewer.deviceUserId }, viewer.staff.id)`. **Note**: this writes only the *request* row; the *completion* row (`device.password_reset` with `actor='user'` semantics) fires later if the user submits the new password.
 8. `revalidatePath` + `redirect("/settings/onboarding?toast=password_reset_sent&name=<display_name>")`.
