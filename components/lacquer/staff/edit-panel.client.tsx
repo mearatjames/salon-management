@@ -63,25 +63,42 @@ const TOOLTIP = {
   selfRemove: "You can't deactivate or remove yourself.",
   lastOwner: "At least one owner must remain.",
   managerOwner: "Only owners can edit owner accounts.",
+  // Issue #129 — manager attempting to remove an app-user. The matrix
+  // restricts `remove_app_user` to owners because it deletes the auth user
+  // and frees the email for re-invite (same gravity as Onboarding's
+  // `removeUser`). The PIN-only branch is unaffected.
+  managerOnAppUser: "Owners can remove app users.",
   setPin: "Set a 4-digit PIN for this staff member.",
   changePin: "Change this staff member's 4-digit PIN.",
   deactivate: "Deactivate this staff member.",
   reactivate: "Reactivate this staff member.",
   remove: "Remove this staff member from the roster.",
+  // Issue #129 — helper text under the Remove button.
+  removePinOnlyHelper: "Removes this staff member from the active roster.",
+  removeAppUserHelper:
+    "Removes this staff member and frees their email for re-invite. History is preserved as 'Former staff #N'.",
 } as const;
 
 /** Per ui.contract.md § Permission-driven disabled state — pick the right tooltip
- *  for a disabled lifecycle control based on which gate fired. */
+ *  for a disabled lifecycle control based on which gate fired.
+ *
+ *  Issue #129 — `ownerOnlyMessage` covers the case where the matrix blocked
+ *  the control because the operator isn't an owner (e.g. a manager on a
+ *  Remove-from-roster button targeting an app-user). It wins over the
+ *  manager×owner fallback so the helper text mentions the right gate.
+ */
 function lifecycleTooltip(args: {
   perms: ReturnType<typeof computeTargetPermissions>;
   flag: boolean;
   selfMessage: string;
   enabledMessage: string;
+  ownerOnlyMessage?: string;
 }): string {
-  const { perms, flag, selfMessage, enabledMessage } = args;
+  const { perms, flag, selfMessage, enabledMessage, ownerOnlyMessage } = args;
   if (flag) return enabledMessage;
   if (perms.isSelf) return selfMessage;
   if (perms.isLastOwner) return TOOLTIP.lastOwner;
+  if (ownerOnlyMessage) return ownerOnlyMessage;
   if (!perms.canEditAnyField) return TOOLTIP.managerOwner;
   return enabledMessage;
 }
@@ -106,6 +123,11 @@ export type EditPanelTarget = Pick<
   | "service_commission_pct"
   | "tip_split_pct"
   | "check_portion_cents"
+  // Issue #129 — DangerZone picks the "Remove from roster" ceremony based
+  // on whether the target is an app-user (rich confirm + auth-user delete)
+  // or PIN-only (simple confirm + soft-delete).
+  | "is_app_user"
+  | "email"
 >;
 
 export type EditPanelProps = {
@@ -137,16 +159,19 @@ export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPa
 
   const perms = useMemo(
     () =>
-      computeTargetPermissions({
-        operator: { id: viewer.id, role: viewer.role },
-        target: {
-          id: target.id,
-          role: target.role,
-          active: target.active,
+      computeTargetPermissions(
+        {
+          operator: { id: viewer.id, role: viewer.role },
+          target: {
+            id: target.id,
+            role: target.role,
+            active: target.active,
+          },
+          isLastOwner,
         },
-        isLastOwner,
-      }),
-    [viewer.id, viewer.role, target.id, target.role, target.active, isLastOwner]
+        target.is_app_user
+      ),
+    [viewer.id, viewer.role, target.id, target.role, target.active, target.is_app_user, isLastOwner]
   );
 
   const roleOptions = useMemo(() => roleOptionsFor(viewer.role), [viewer.role]);
@@ -510,9 +535,14 @@ export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPa
         targetId={target.id}
         targetName={target.display_name}
         targetActive={target.active}
+        targetIsAppUser={target.is_app_user}
+        targetEmail={target.email}
+        targetRole={target.role}
+        targetColorToken={target.color_token}
         canDeactivate={perms.canDeactivate}
         canReactivate={perms.canReactivate}
         canRemove={perms.canRemove}
+        helperText={target.is_app_user ? TOOLTIP.removeAppUserHelper : TOOLTIP.removePinOnlyHelper}
         tooltips={{
           deactivate: lifecycleTooltip({
             perms,
@@ -526,11 +556,16 @@ export function EditPanel({ viewer, target, isLastOwner, supplyCatalog }: EditPa
             selfMessage: TOOLTIP.selfRoleActive,
             enabledMessage: TOOLTIP.reactivate,
           }),
+          // Issue #129 — when a manager hovers the Remove button on an
+          // app-user target, the matrix-blocked tooltip is the
+          // owner-only helper, not the generic manager×owner message.
           remove: lifecycleTooltip({
             perms,
             flag: perms.canRemove,
             selfMessage: TOOLTIP.selfRemove,
             enabledMessage: TOOLTIP.remove,
+            ownerOnlyMessage:
+              target.is_app_user && viewer.role !== "owner" ? TOOLTIP.managerOnAppUser : undefined,
           }),
         }}
       />

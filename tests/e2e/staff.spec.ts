@@ -824,12 +824,15 @@ test.describe("US5: deactivate, reactivate, remove", () => {
     await expect(page.locator("[data-slot='staff-empty-state']")).toBeVisible();
 
     // Audit: one staff.removed row with display_name_at_removal +
-    // role_at_removal snapshotted.
+    // role_at_removal snapshotted. Issue #129 extends the payload with
+    // `email_at_removal` (parity with `user.removed`); the fixture tech is
+    // PIN-only, so it's null on this row.
     const auditRows = await getAuditLogRowsSince(auditCursor, "staff.removed");
     expect(auditRows).toHaveLength(1);
     const payload = (auditRows[0].payload ?? {}) as Record<string, unknown>;
     expect(payload).toEqual({
       display_name_at_removal: techName,
+      email_at_removal: null,
       role_at_removal: "technician",
     });
     expect(payload).not.toHaveProperty("authorizing_staff_id");

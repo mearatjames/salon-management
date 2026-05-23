@@ -20,6 +20,7 @@ import { revalidatePath } from "next/cache";
 import { recordAudit } from "@/lib/auth/audit";
 import { hashPin } from "@/lib/auth/pin";
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
+import { getNextAnonPlaceholder } from "@/lib/onboarding/anon-counter";
 import { requireStudioSession, type StudioViewer } from "@/lib/auth/session";
 
 import {
@@ -634,6 +635,12 @@ type StaffLifecycleRow = {
   color_token: string;
   active: boolean;
   removed_at: string | null;
+  // Issue #129 — `removeStaff` branches on `user_id` (app-user vs PIN-only)
+  // and snapshots `email` for the audit row + the "Former staff #N"
+  // anonymization. Other lifecycle actions (deactivate/reactivate) just
+  // ignore these columns.
+  user_id: string | null;
+  email: string | null;
 };
 
 /** Load the target row + compute isLastOwner, redirecting on lookup errors. */
@@ -643,7 +650,7 @@ async function loadLifecycleTarget(
   const admin = createSupabaseServiceRoleClient();
   const { data: targetRow, error: loadErr } = await admin
     .from("staff")
-    .select("id, display_name, role, color_token, active, removed_at")
+    .select("id, display_name, role, color_token, active, removed_at, user_id, email")
     .eq("id", staffId)
     .single();
 
@@ -674,6 +681,8 @@ async function loadLifecycleTarget(
     color_token: targetRow!.color_token,
     active: targetRow!.active,
     removed_at: targetRow!.removed_at,
+    user_id: (targetRow as { user_id?: string | null }).user_id ?? null,
+    email: (targetRow as { email?: string | null }).email ?? null,
   };
   return { target, isLastOwner };
 }
@@ -805,6 +814,32 @@ export async function reactivateStaff(formData: FormData): Promise<void> {
 }
 
 // ── 6. removeStaff ──────────────────────────────────────────────────────
+//
+// Issue #129 — branches on `target.user_id` so the action does the right
+// thing for both shapes a staff row can take:
+//
+//   - PIN-only target (user_id IS NULL): the row is a kiosk-only tech with
+//     no Supabase auth user and no email. Soft-delete is enough; the
+//     display_name is preserved for audit references. Matrix action:
+//     `remove_pin_only` (owner+manager allowed).
+//
+//   - App-user target (user_id IS NOT NULL): the row owns an auth user and
+//     an email. The previous flow soft-deleted the staff row but left the
+//     auth user in place — a subsequent re-invite of the same email hit
+//     Supabase's `email_exists` because `auth.users` still owned it. The
+//     new flow mirrors Onboarding's `removeUser`: anonymize the row to
+//     "Former staff #N", null the email + pin_hash, set removed_at, then
+//     sign out + delete the auth user. The combination email=NULL +
+//     removed_at NOT NULL drops the row from the partial unique index
+//     `staff_email_lower_unique`, freeing the email for re-invite.
+//     Matrix action: `remove_app_user` (OWNER-only — same gravity as
+//     `removeUser`).
+//
+// The app-user branch also requires the same two client-side gates as
+// Onboarding's removeUser (per ui-side dialog ceremony): `ack` checkbox +
+// typed `confirm_name` matching the target's display_name. The server
+// re-validates both as the trust boundary; first-fail wins, no DB writes
+// on rejection.
 
 export async function removeStaff(formData: FormData): Promise<void> {
   // 1 + 2: session + role gate.
@@ -825,7 +860,12 @@ export async function removeStaff(formData: FormData): Promise<void> {
     redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
   }
 
-  // 5: matrix.
+  const isAppUser = target.user_id !== null;
+
+  // 5: matrix. The action label depends on target identity — the matrix
+  // gates `remove_app_user` to owner-only because it deletes the auth user
+  // and frees the email for re-invite (same gravity as Onboarding's
+  // `removeUser`).
   try {
     assertMutationAllowed(
       {
@@ -833,20 +873,93 @@ export async function removeStaff(formData: FormData): Promise<void> {
         target: { id: target.id, role: target.role, active: target.active },
         isLastOwner,
       },
-      "remove"
+      isAppUser ? "remove_app_user" : "remove_pin_only"
     );
   } catch (err) {
     handleKnownError(err, staffId);
   }
 
-  // 6: UPDATE removed_at=now() AND active=false in a single statement so the
-  // /select-staff query (which filters on active=true) stays internally
-  // consistent with the new removed_at filter.
+  // 5b: extra client-side gates for the app-user branch only. PIN-only stays
+  // single-click because no auth user / email is at stake.
+  if (isAppUser) {
+    const ack = String(formData.get("ack") ?? "");
+    const confirmName = String(formData.get("confirm_name") ?? "");
+    if (ack !== "on") {
+      redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=ack_required`);
+    }
+    if (confirmName.toLowerCase().trim() !== target.display_name.toLowerCase().trim()) {
+      redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=confirm_name_mismatch`);
+    }
+  }
+
   const admin = createSupabaseServiceRoleClient();
+  const removedAt = new Date().toISOString();
+
+  if (!isAppUser) {
+    // ── PIN-only branch ────────────────────────────────────────────────
+    // Existing soft-delete behavior — no auth user, no email to free,
+    // display_name preserved for historical audit references.
+    const { error: updateErr } = await admin
+      .from("staff")
+      .update({
+        removed_at: removedAt,
+        active: false,
+      })
+      .eq("id", target.id);
+
+    if (updateErr) {
+      if (isLastOwnerTriggerError(updateErr)) {
+        redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=last_owner`);
+      }
+      console.error("removeStaff UPDATE failed", updateErr);
+      redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
+    }
+
+    await recordAudit("staff.removed", viewer.deviceUserId, target.id, {
+      display_name_at_removal: target.display_name,
+      email_at_removal: null,
+      role_at_removal: target.role,
+    });
+
+    revalidatePath(STAFF_PATH);
+    redirect(`${STAFF_PATH}?toast=staff_removed&name=${encodeURIComponent(target.display_name)}`);
+  }
+
+  // ── App-user branch ─────────────────────────────────────────────────
+  // Ordering matches Onboarding's `removeUser`: anonymize the staff row
+  // FIRST (which sets removed_at, satisfying the relaxed
+  // `staff_pin_or_user OR removed_at IS NOT NULL` CHECK introduced in
+  // migration 0022), then sign out the user, then delete the auth user.
+  // The 0001 FK `ON DELETE SET NULL` cascade leaves user_id null on the
+  // already-removed row — accepted because removed_at is non-null.
+
+  // 6: snapshot identity for the audit row BEFORE we mutate.
+  const snap = {
+    display_name: target.display_name,
+    email: target.email,
+    role: target.role,
+  };
+
+  // 7: mint the anonymized placeholder via the security-definer RPC.
+  let anonName: string;
+  try {
+    anonName = await getNextAnonPlaceholder();
+  } catch (err) {
+    console.error("removeStaff: getNextAnonPlaceholder failed", err);
+    redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
+  }
+
+  // 8: anonymize the staff row. The combination of email=null AND
+  // removed_at non-null drops it from the staff_email_lower_unique partial
+  // index, freeing the original email for re-invite.
   const { error: updateErr } = await admin
     .from("staff")
     .update({
-      removed_at: new Date().toISOString(),
+      display_name: anonName!,
+      email: null,
+      color_token: "--avatar-slate",
+      pin_hash: null,
+      removed_at: removedAt,
       active: false,
     })
     .eq("id", target.id);
@@ -855,19 +968,56 @@ export async function removeStaff(formData: FormData): Promise<void> {
     if (isLastOwnerTriggerError(updateErr)) {
       redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=last_owner`);
     }
-    console.error("removeStaff UPDATE failed", updateErr);
+    console.error("removeStaff: UPDATE failed", updateErr);
     redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=not_found`);
   }
 
-  // 7: audit row — snapshot the display_name + role at removal time so the
-  // audit log stays human-readable after the row is soft-deleted.
+  // 9: sign out every active session for the target FIRST. Failure is
+  // logged + swallowed — the auth-user delete that follows is the real
+  // access kill, but pre-signOut closes the window where an in-flight
+  // refresh-token could still slip a request through.
+  try {
+    const adminAuth = (admin as unknown as { auth?: { admin?: unknown } }).auth?.admin as
+      | { signOut?: (uid: string, scope: string) => Promise<unknown> }
+      | undefined;
+    if (adminAuth?.signOut && target.user_id) {
+      await adminAuth.signOut(target.user_id, "global");
+    }
+  } catch (err) {
+    console.error("removeStaff: signOut failed", err);
+  }
+
+  // 10: hard-delete the Supabase auth user. The 0001 FK ON DELETE SET NULL
+  // cascade nulls staff.user_id; with removed_at already set, the relaxed
+  // `staff_pin_or_user` CHECK accepts the row. shouldSoftDelete=false is
+  // explicit so the email is physically removed and free to re-invite.
+  try {
+    const adminAuth = (admin as unknown as { auth?: { admin?: unknown } }).auth?.admin as
+      | { deleteUser?: (uid: string, shouldSoftDelete?: boolean) => Promise<unknown> }
+      | undefined;
+    if (adminAuth?.deleteUser && target.user_id) {
+      await adminAuth.deleteUser(target.user_id, false);
+    }
+  } catch (err) {
+    console.error("removeStaff: deleteUser failed", err);
+    // Best-effort: the staff row is already anonymized. An orphan auth
+    // user lingering is recoverable via the re-invite path's email-conflict
+    // cleanup, mirror of cancelInvite's failure mode.
+    redirect(`${STAFF_PATH}?selected=${encodeURIComponent(staffId)}&error=server_error`);
+  }
+
+  // 11: audit BEFORE redirect (Constitution III). Payload carries the
+  // pre-anonymization identity per parity with `user.removed`.
   await recordAudit("staff.removed", viewer.deviceUserId, target.id, {
-    display_name_at_removal: target.display_name,
-    role_at_removal: target.role,
+    display_name_at_removal: snap.display_name,
+    email_at_removal: snap.email,
+    role_at_removal: snap.role,
   });
 
-  // 8: revalidate + redirect. NO ?selected= — the row is gone and the panel
-  // returns to its empty state.
+  // 12: revalidate + redirect. NO ?selected= — the row is gone from the
+  // active roster and the panel returns to its empty state. Use the
+  // original display_name in the toast so the operator sees who they
+  // removed.
   revalidatePath(STAFF_PATH);
-  redirect(`${STAFF_PATH}?toast=staff_removed&name=${encodeURIComponent(target.display_name)}`);
+  redirect(`${STAFF_PATH}?toast=staff_removed&name=${encodeURIComponent(snap.display_name)}`);
 }

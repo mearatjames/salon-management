@@ -82,7 +82,10 @@ export default async function StaffSettingsPage({
   const { data, error } = await supabase
     .from("staff")
     .select(
-      "id, display_name, role, color_token, active, created_at, pin_hash, card_fee_exempt, supply_mode, supply_except, service_commission_pct, tip_split_pct, check_portion_cents"
+      // Issue #129 — `user_id` + `email` feed the DangerZone's branch on
+      // app-user vs PIN-only target so the panel can render the right
+      // "Remove from roster" ceremony without an extra round-trip.
+      "id, display_name, role, color_token, active, created_at, pin_hash, user_id, email, card_fee_exempt, supply_mode, supply_except, service_commission_pct, tip_split_pct, check_portion_cents"
     )
     .is("removed_at", null)
     .order("display_name", { ascending: true });
@@ -100,6 +103,8 @@ export default async function StaffSettingsPage({
       active: row.active,
       created_at: row.created_at,
       pin_set: row.pin_hash != null,
+      is_app_user: (row as { user_id?: string | null }).user_id != null,
+      email: (row as { email?: string | null }).email ?? null,
       // 023-staff-payout-exemptions — three new columns. Coerce defaults so
       // the page still renders if the migration hasn't been applied locally
       // (the SELECT will simply project undefined for those columns).
@@ -186,6 +191,10 @@ export default async function StaffSettingsPage({
               service_commission_pct: selectedTarget.service_commission_pct,
               tip_split_pct: selectedTarget.tip_split_pct,
               check_portion_cents: selectedTarget.check_portion_cents,
+              // Issue #129 — DangerZone branches the "Remove from roster"
+              // ceremony based on these two fields.
+              is_app_user: selectedTarget.is_app_user,
+              email: selectedTarget.email,
             }}
             isLastOwner={isLastOwnerForTarget}
             supplyCatalog={supplyCatalog ?? undefined}
@@ -219,6 +228,9 @@ export default async function StaffSettingsPage({
               service_commission_pct: selectedTarget.service_commission_pct,
               tip_split_pct: selectedTarget.tip_split_pct,
               check_portion_cents: selectedTarget.check_portion_cents,
+              // Issue #129 — same fields as the desktop EditPanel above.
+              is_app_user: selectedTarget.is_app_user,
+              email: selectedTarget.email,
             }}
             isLastOwner={isLastOwnerForTarget}
             supplyCatalog={supplyCatalog ?? undefined}
