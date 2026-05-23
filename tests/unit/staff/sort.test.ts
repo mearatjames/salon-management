@@ -33,6 +33,9 @@ function mk(
     service_commission_pct: partial.service_commission_pct ?? 0,
     tip_split_pct: partial.tip_split_pct ?? 0,
     check_portion_cents: partial.check_portion_cents ?? 0,
+    // 129-remove-app-user — defaults for the new identity fields.
+    is_app_user: partial.is_app_user ?? false,
+    email: partial.email ?? null,
   };
 }
 

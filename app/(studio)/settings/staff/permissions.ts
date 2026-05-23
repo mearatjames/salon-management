@@ -26,7 +26,14 @@ export type StaffAction =
   | "set_pin"
   | "deactivate"
   | "reactivate"
-  | "remove"
+  // Issue #129 — `remove` is split into two actions distinguished by target
+  // identity. `remove_pin_only` covers a kiosk-only tech (user_id IS NULL):
+  // soft-delete the staff row, no auth-user impact, owner+manager allowed.
+  // `remove_app_user` covers a logged-in staff member (user_id IS NOT NULL):
+  // anonymize + delete auth user so the email is freed for re-invite,
+  // owner-only (same gravity as `removeUser` on the Onboarding page).
+  | "remove_pin_only"
+  | "remove_app_user"
   // 023-staff-payout-exemptions: one label covers all three pay-deduction
   // fields (card_fee_exempt + supply_mode + supply_except) per Clarify Q1 +
   // research § R11. Not in SELF_BLOCKED_ACTIONS — operators may edit their
@@ -75,7 +82,15 @@ export type StaffTargetPermissions = {
   canSetPin: boolean;
   canDeactivate: boolean;
   canReactivate: boolean;
+  /** Issue #129 — whether the "Remove from roster" control should be enabled.
+   *  Computed against `remove_pin_only` (PIN-only target) or `remove_app_user`
+   *  (app-user target) per `targetIsAppUser`. App-user removal is owner-only
+   *  because it deletes the auth user and frees the email for re-invite —
+   *  same gravity as Onboarding's `removeUser`. */
   canRemove: boolean;
+  /** Issue #129 — used by the DangerZone UI to switch between the simple
+   *  ConfirmDialog (PIN-only) and the rich type-name + ack dialog (app-user). */
+  removeAction: "remove_pin_only" | "remove_app_user";
   /** 047-payroll-page § US5 — per-tech payroll rates are owner-only. The
    *  edit panel renders the rates section read-only when this is false. */
   canEditPayrollRates: boolean;
@@ -101,7 +116,8 @@ const SELF_BLOCKED_ACTIONS = new Set<StaffAction>([
   "update_role",
   "update_active",
   "deactivate",
-  "remove",
+  "remove_pin_only",
+  "remove_app_user",
 ]);
 
 const ROLE_MUTATING_ACTIONS = new Set<StaffAction>(["add", "update_role"]);
@@ -127,6 +143,15 @@ export function assertMutationAllowed(
   //     rates is restricted to owners — a manager (otherwise a valid settings
   //     operator) is rejected before any target evaluation. FR-002/FR-033.
   if (action === "update_payroll_rates" && operator.role !== "owner") {
+    throw new PermissionError("forbidden");
+  }
+
+  // 1c. Owner-only gate (Issue #129). Removing an app-user from the staff
+  //     roster anonymizes the row AND deletes the Supabase auth user so the
+  //     email is freed for re-invite — same gravity as `removeUser` on the
+  //     Onboarding page, which is owner-only. A manager keeps `remove_pin_only`
+  //     for kiosk-only techs.
+  if (action === "remove_app_user" && operator.role !== "owner") {
     throw new PermissionError("forbidden");
   }
 
@@ -164,7 +189,7 @@ export function assertMutationAllowed(
       // case is when target was active (or last-owner means active owner).
       throw new PermissionError("last_owner");
     }
-    if (action === "deactivate" || action === "remove") {
+    if (action === "deactivate" || action === "remove_pin_only" || action === "remove_app_user") {
       throw new PermissionError("last_owner");
     }
   }
@@ -189,8 +214,18 @@ export function isMutationAllowed(
  * Compose the full `StaffTargetPermissions` object for the edit panel. The
  * panel reads each `canX` flag directly to set `disabled` on the matching
  * control. Computed in the page Server Component and passed as a prop.
+ *
+ * Issue #129 — `targetIsAppUser` distinguishes a logged-in staff member
+ * (`user_id IS NOT NULL`) from a kiosk-only tech. The two cases gate on
+ * different matrix actions (`remove_app_user` vs `remove_pin_only`); the
+ * `removeAction` field on the returned permissions tells the DangerZone UI
+ * which confirm-dialog ceremony to render. Defaults to `false` so existing
+ * call sites (and tests) don't have to thread the flag through.
  */
-export function computeTargetPermissions(ctx: PermissionContext): StaffTargetPermissions {
+export function computeTargetPermissions(
+  ctx: PermissionContext,
+  targetIsAppUser = false
+): StaffTargetPermissions {
   const { operator, target, isLastOwner } = ctx;
   const isSelf = target?.id === operator.id;
 
@@ -209,7 +244,15 @@ export function computeTargetPermissions(ctx: PermissionContext): StaffTargetPer
   // roleOptionsFor(operator.role) so the user can't pick out-of-scope.
   const canEditRole = !isSelf && !isLastOwner && !isManagerOnOwner;
   const canToggleActive = !isSelf && !isLastOwner && !isManagerOnOwner;
-  const canRemove = !isSelf && !isLastOwner && !isManagerOnOwner;
+
+  // Issue #129 — Remove gates on target identity. App-user removal also
+  // requires owner role at the operator level (matches the matrix check in
+  // assertMutationAllowed).
+  const removeAction: "remove_pin_only" | "remove_app_user" = targetIsAppUser
+    ? "remove_app_user"
+    : "remove_pin_only";
+  const canRemoveBase = !isSelf && !isLastOwner && !isManagerOnOwner;
+  const canRemove = targetIsAppUser ? canRemoveBase && operator.role === "owner" : canRemoveBase;
 
   const canDeactivate = canToggleActive && (target?.active ?? false);
   const canReactivate = !isManagerOnOwner && !(target?.active ?? false) && target !== null;
@@ -230,6 +273,7 @@ export function computeTargetPermissions(ctx: PermissionContext): StaffTargetPer
     canDeactivate,
     canReactivate,
     canRemove,
+    removeAction,
     canEditPayrollRates,
   };
 }
