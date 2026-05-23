@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 
 import { recordAuth } from "@/lib/auth/audit";
 import { sanitizeNext } from "@/lib/auth/next-url";
-import { getStudioSessionOrDegraded, requireStudioSession } from "@/lib/auth/session";
+import { parseSidUnsafe, requireStudioSession } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/db/server";
 
 const COOKIE_NAME = "acting_as_staff_id";
@@ -59,39 +59,57 @@ export async function switchStaff(): Promise<void> {
 }
 
 export async function signOut(): Promise<void> {
-  // 1. Resolve the current session — degraded is acceptable. We still want
-  //    to clear the cookie and terminate the Supabase session even if the
-  //    backend is reachability-impaired; the audit row records what we know.
-  const viewer = await getStudioSessionOrDegraded();
-
-  // 2. Write the audit row. Two shapes:
-  //    - Healthy (`StudioViewer`): actor_user_id = device user, acting_as = staff.id.
-  //    - Degraded: actor_user_id = null (we don't know the device user
-  //      without Supabase), acting_as = best-effort cookieStaffId.
-  if ("degraded" in viewer) {
-    await recordAuth("device.signed_out", null, viewer.cookieStaffId, {});
-  } else {
-    await recordAuth("device.signed_out", viewer.deviceUserId, viewer.staff.id, {});
+  // The action's contract is "end the device session, no matter where the
+  // user is in the auth funnel" — including `/select-staff`, where the user
+  // is signed in to Supabase but hasn't picked an operator yet so there is
+  // no operator cookie to anchor a full studio session (#133). Routing
+  // through `requireStudioSession()` here would throw
+  // `AuthRedirectError("/select-staff")` and surface as a 500 to the user.
+  //
+  // Instead, resolve actor and subject best-effort:
+  //   - actor_user_id  ← Supabase `auth.getUser()` (may be null if env vars
+  //                       are missing or the backend is unreachable).
+  //   - acting_as      ← operator cookie's `sid` claim, parsed unsafely
+  //                       (signature isn't re-verified here — the action's
+  //                       job is to end the session, not gate on it). Null
+  //                       when no cookie is set, which is the normal
+  //                       /select-staff state.
+  let deviceUserId: string | null = null;
+  let supabase: Awaited<ReturnType<typeof createSupabaseServerClient>> | null = null;
+  try {
+    supabase = await createSupabaseServerClient();
+    const { data } = await supabase.auth.getUser();
+    deviceUserId = data?.user?.id ?? null;
+  } catch (err) {
+    // Backend unreachable or env vars missing — proceed without a known
+    // actor. The audit row still goes out (null actor); the cookie still
+    // gets cleared; the user still lands on /login.
+    console.error("signOut: failed to resolve device user", err);
   }
 
-  // 3. Clear the operator cookie. The contract reserves cookie-clearing to
-  //    `switchStaff` and `signOut` (and middleware on expiry).
   const cookieStore = await cookies();
+  const cookieStaffId = parseSidUnsafe(cookieStore.get(COOKIE_NAME)?.value ?? null);
+
+  // Audit BEFORE the redirect (Constitution III). One row per attempt, with
+  // whatever identities we have — null on either side is acceptable.
+  await recordAuth("device.signed_out", deviceUserId, cookieStaffId, {});
+
+  // Clear the operator cookie. The contract reserves cookie-clearing to
+  // `switchStaff` and `signOut` (and middleware on expiry).
   cookieStore.delete(COOKIE_NAME);
 
-  // 4. Terminate the Supabase device session. We still attempt this in the
-  //    degraded path — if the backend is genuinely unreachable, the call
-  //    will throw; catch and swallow so the user still lands on /login.
-  try {
-    const supabase = await createSupabaseServerClient();
-    await supabase.auth.signOut();
-  } catch (err) {
-    // Audit + cookie are already done; the user is effectively signed out
-    // on this device. Log so we have a forensic trail.
-    console.error("supabase.auth.signOut failed during signOut action", err);
+  // Terminate the Supabase device session. If the backend is genuinely
+  // unreachable the call will throw; the audit + cookie are already done,
+  // so swallow and let the user land on /login.
+  if (supabase) {
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error("supabase.auth.signOut failed during signOut action", err);
+    }
   }
 
-  // 5. Always land on /login. The form is rendered there; a hard refresh
-  //    after this redirect will keep the user on /login.
+  // Always land on /login. The form is rendered there; a hard refresh after
+  // this redirect will keep the user on /login (US6.b regression guard).
   redirect("/login");
 }
