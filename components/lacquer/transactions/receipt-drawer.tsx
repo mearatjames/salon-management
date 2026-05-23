@@ -146,8 +146,22 @@ export function ReceiptDrawer({ transaction, staff, onClose }: ReceiptDrawerProp
             <div data-slot="receipt-items">
               {transaction.items.map((item, index) => {
                 const tech = item.techId ? staffById.get(item.techId) : undefined;
+                // Feature 049 (T024): expose discount-row scope on the
+                // drawer line so the printable receipt and the past-
+                // transaction drawer carry the same selectors, and so
+                // the `Applies to: <name>` sub-line can hang under the
+                // standard `tp-d-line` meta strip. Legacy rows
+                // (`targetNames == null`) render exactly as today.
+                const scopeKind =
+                  item.kind === "discount" && item.targetNames != null ? "selected" : "all";
                 return (
-                  <div key={index} className="tp-d-line" data-slot="receipt-item">
+                  <div
+                    key={index}
+                    className="tp-d-line"
+                    data-slot="receipt-item"
+                    data-kind={item.kind}
+                    data-scope-kind={item.kind === "discount" ? scopeKind : undefined}
+                  >
                     <div>
                       <div className="nm">{item.name}</div>
                       <div className="meta">
@@ -165,6 +179,13 @@ export function ReceiptDrawer({ transaction, staff, onClose }: ReceiptDrawerProp
                         ) : null}
                         {item.qty > 1 ? <span>· qty {item.qty}</span> : null}
                       </div>
+                      {item.kind === "discount" &&
+                      item.targetNames != null &&
+                      item.targetNames.length > 0 ? (
+                        <div className="meta" data-slot="receipt-item-targets">
+                          <span>Applies to: {item.targetNames.join(", ")}</span>
+                        </div>
+                      ) : null}
                     </div>
                     <div className="price">{formatCurrency(item.lineTotalCents / 100)}</div>
                   </div>

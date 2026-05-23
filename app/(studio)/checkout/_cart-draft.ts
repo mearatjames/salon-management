@@ -55,6 +55,15 @@ export type DraftDiscountLine = {
   value: number;
   /** <= 80 chars. */
   note: string | null;
+  /**
+   * Feature 049-per-service-discount (T012). When non-null, the discount
+   * is scoped to the listed service `clientLineId`s in the same draft.
+   * `null`/omitted = "applies to all services" (today's default). Each
+   * entry must resolve to a service line in the same `draft.lines`; a
+   * miss is a `DraftCorruptError`. Empty array (after dedupe) refused
+   * with `DiscountInvalidError("scope_empty")`.
+   */
+  targetClientLineIds?: string[] | null;
 };
 
 export type DraftLine = DraftServiceLine | DraftDiscountLine;
@@ -80,6 +89,15 @@ export type PaymentTarget =
 /** A fully-resolved service line, ready for `pos_create_ticket_from_draft`. */
 export type ResolvedServiceItem = {
   kind: "service";
+  /**
+   * Feature 049 (T012). The draft's `clientLineId` for this service line —
+   * the RPC builds a `client_line_id → ticket_items.id` map across the
+   * service-insert pass so the discount-insert pass can resolve any
+   * `target_client_line_ids` array into the real `discount_target_line_ids`
+   * column. Backward-compatible: the RPC tolerates payloads without this
+   * field (legacy single-line-pass shape).
+   */
+  client_line_id: string;
   ref_id: string;
   name_snapshot: string;
   unit_price_cents: number;
@@ -96,6 +114,13 @@ export type ResolvedDiscountItem = {
   /** Whole-percent value for percent-shape discounts; null for flat. */
   discount_pct: number | null;
   note: string | null;
+  /**
+   * Feature 049 (T012). When non-null, the list of service `clientLineId`s
+   * this discount scopes to. The RPC resolves each entry through the
+   * service-pass map into a real `ticket_items.id` and writes the array
+   * to `discount_target_line_ids`. `null` = "applies to all services".
+   */
+  target_client_line_ids: string[] | null;
 };
 
 export type ResolvedDraftItem = ResolvedServiceItem | ResolvedDiscountItem;
@@ -211,9 +236,12 @@ export async function validateAndResolveDraft(
     }
   }
 
-  // Build the resolved service items.
+  // Build the resolved service items. `client_line_id` carries the
+  // draft's clientLineId so the RPC's service-insert pass can build the
+  // map for discount-scope resolution (feature 049).
   const resolvedServices: ResolvedServiceItem[] = serviceLines.map((line) => ({
     kind: "service",
+    client_line_id: line.clientLineId,
     ref_id: line.serviceId,
     name_snapshot: servicesById.get(line.serviceId)!.name,
     unit_price_cents: line.unitPriceCents,
@@ -221,7 +249,20 @@ export async function validateAndResolveDraft(
     price_unconfirmed: false,
   }));
 
+  // Feature 049 — set of valid service clientLineIds for discount-scope
+  // resolution. Each entry in `targetClientLineIds` must match one of
+  // these, else `DraftCorruptError`.
+  const serviceClientLineIds = new Set<string>();
+  for (const line of serviceLines) serviceClientLineIds.add(line.clientLineId);
+
   // 6) Discount integrity — same per-shape checks as `addDiscountLine`.
+  //    Feature 049 adds scope validation (T012): dedupe + non-empty
+  //    (`scope_empty`); each entry must resolve to a service clientLineId
+  //    in the same draft (else `DraftCorruptError`).
+  // Per-line resolved scope (parallel to `discountLines` ordering). null
+  // = "applies to all services". A non-null `string[]` is the deduped
+  // target list.
+  const resolvedDiscountScopes: Array<string[] | null> = [];
   for (const line of discountLines) {
     if (line.shape !== "flat" && line.shape !== "percent") {
       throw new DiscountInvalidError(
@@ -250,15 +291,43 @@ export async function validateAndResolveDraft(
         "note_too_long"
       );
     }
+    // Feature 049 — scope resolution. `null`/omitted = "all services" (no
+    // change). Non-null: dedupe → non-empty (`scope_empty`); every entry
+    // must be a service clientLineId in this same draft (else corrupt).
+    if (line.targetClientLineIds === undefined || line.targetClientLineIds === null) {
+      resolvedDiscountScopes.push(null);
+    } else {
+      if (!Array.isArray(line.targetClientLineIds)) {
+        throw new DiscountInvalidError(
+          `targetClientLineIds must be an array (got ${typeof line.targetClientLineIds})`,
+          "scope_empty"
+        );
+      }
+      const deduped = Array.from(new Set(line.targetClientLineIds));
+      if (deduped.length === 0) {
+        throw new DiscountInvalidError("targetClientLineIds is empty after dedupe", "scope_empty");
+      }
+      for (const id of deduped) {
+        if (!serviceClientLineIds.has(id)) {
+          throw new DraftCorruptError(`draft scope references unknown service line ${id}`);
+        }
+      }
+      resolvedDiscountScopes.push(deduped);
+    }
   }
 
   // 7) Resolve discounts — fold each discount to a final negative
   //    `unit_price_cents` using `computeTotals` against the service
   //    subtotal, so the RPC receives ready-to-insert amounts and the
   //    persisted total equals what the operator saw on screen (FR-007).
+  //    Feature 049: pass `id` (clientLineId for services, generated
+  //    sentinel for discounts) + `discountTargetIds` so the math reflects
+  //    FR-009 stacking — scoped discounts apply against their targeted
+  //    service subtotal first, all-services after.
   const cartItems: CartItem[] = [
     ...resolvedServices.map(
       (s): CartItem => ({
+        id: s.client_line_id,
         kind: "service",
         unitPriceCents: s.unit_price_cents,
         qty: 1,
@@ -267,31 +336,71 @@ export async function validateAndResolveDraft(
       })
     ),
     ...discountLines.map(
-      (d): CartItem => ({
+      (d, idx): CartItem => ({
+        // Discount lines need a stable id too — reuse the draft's
+        // clientLineId so the helper's per-line discriminator is unique.
+        id: d.clientLineId,
         kind: "discount",
         // Flat: the negative amount verbatim. Percent: computeTotals
-        // recomputes against the service subtotal — pass 0 here.
+        // recomputes against the (possibly post-scoped) subtotal — pass 0 here.
         unitPriceCents: d.shape === "flat" ? -d.value : 0,
         qty: 1,
         priceUnconfirmed: false,
         discountPct: d.shape === "percent" ? d.value : null,
+        discountTargetIds: resolvedDiscountScopes[idx],
       })
     ),
   ];
   const totals = computeTotals(cartItems);
 
-  // Per-discount resolved amount. For a percent discount, the folded
-  // amount is `-round(value * serviceSubtotal / 100)` — the same math
-  // `computeTotals` runs internally.
-  const resolvedDiscounts: ResolvedDiscountItem[] = discountLines.map((d) => {
-    const amount =
-      d.shape === "flat" ? -d.value : -Math.round((d.value * totals.serviceSubtotalCents) / 100);
+  // Per-discount resolved amount. `computeTotals` already did the math —
+  // we just need each line's contribution. For unscoped discounts the
+  // math is unchanged from before; for scoped discounts we recompute
+  // against the targeted subtotal so the persisted amount matches what
+  // `computeTotals` folded into the total. For all-services percent
+  // discounts the baseline is the POST-SCOPED service subtotal so the
+  // persisted amount matches FR-009 stacking.
+
+  // Build the same id→price lookup the math helper uses, then compute
+  // each scoped discount's amount + scopedSum. Mirrors `computeTotals`
+  // exactly so the RPC's per-line amounts agree with the total guard.
+  const servicePriceById = new Map<string, number>();
+  for (const s of resolvedServices) servicePriceById.set(s.client_line_id, s.unit_price_cents);
+
+  let scopedAmountSum = 0;
+  const scopedAmountByIdx = new Map<number, number>();
+  discountLines.forEach((d, idx) => {
+    const scope = resolvedDiscountScopes[idx];
+    if (scope === null) return;
+    const targetedSubtotal = scope.reduce((sum, id) => sum + (servicePriceById.get(id) ?? 0), 0);
+    let amount: number;
+    if (d.shape === "percent") {
+      amount = -Math.round((d.value * targetedSubtotal) / 100);
+    } else {
+      amount = Math.max(-d.value, -targetedSubtotal);
+    }
+    scopedAmountByIdx.set(idx, amount);
+    scopedAmountSum += amount;
+  });
+  const postScopedServiceSubtotal = totals.serviceSubtotalCents + scopedAmountSum;
+
+  const resolvedDiscounts: ResolvedDiscountItem[] = discountLines.map((d, idx) => {
+    const scope = resolvedDiscountScopes[idx];
+    let amount: number;
+    if (scope !== null) {
+      amount = scopedAmountByIdx.get(idx)!;
+    } else if (d.shape === "percent") {
+      amount = -Math.round((d.value * postScopedServiceSubtotal) / 100);
+    } else {
+      amount = -d.value;
+    }
     return {
       kind: "discount",
       name_snapshot: d.shape === "percent" ? `Discount · ${d.value}%` : "Discount",
       unit_price_cents: amount,
       discount_pct: d.shape === "percent" ? d.value : null,
       note: d.note,
+      target_client_line_ids: scope,
     };
   });
 

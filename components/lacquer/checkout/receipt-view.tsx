@@ -24,6 +24,19 @@ export type ReceiptViewProps = {
     name_snapshot: string;
     unit_price_cents: number;
     qty: number;
+    /**
+     * Feature 049 (T023). Row discriminator. Discount rows render with
+     * the `data-kind="discount"` slot marker; the printable receipt
+     * shows an `Applies to: <name>` sub-line below scoped discount rows
+     * (`targetNames` non-null). Default `"service"` when omitted so
+     * legacy callers don't have to change shape.
+     */
+    kind?: "service" | "discount" | "product";
+    /**
+     * Feature 049 (T023). Non-null for scoped discount rows; null for
+     * all-services discounts and non-discount rows.
+     */
+    targetNames?: readonly string[] | null;
   }>;
   payment: {
     id: string;
@@ -114,38 +127,67 @@ export function ReceiptView({ ticket, items, payment, salonName }: ReceiptViewPr
       >
         {items.map((item) => {
           const lineTotal = item.unit_price_cents * item.qty;
+          // Feature 049 (T023): mark discount rows so the read surface
+          // (and US2 e2e) can distinguish them, and emit the "Applies to:"
+          // sub-line for scoped discounts. Legacy callers that don't pass
+          // `kind` get the default `"service"` and render unchanged.
+          const kind = item.kind ?? "service";
+          const targetNames = item.targetNames ?? null;
+          const scopeKind = kind === "discount" && targetNames != null ? "selected" : "all";
           return (
             <li
               key={item.id}
               style={{
                 display: "flex",
-                alignItems: "baseline",
-                justifyContent: "space-between",
-                gap: "var(--space-3)",
+                flexDirection: "column",
+                gap: "var(--space-1)",
                 fontSize: "var(--text-sm)",
               }}
               data-slot="receipt-item"
+              data-kind={kind}
+              data-scope-kind={kind === "discount" ? scopeKind : undefined}
             >
-              <span style={{ color: "var(--foreground)" }}>
-                {item.name_snapshot}
-                {item.qty > 1 ? (
-                  <span
-                    style={{
-                      marginLeft: "var(--space-2)",
-                      color: "var(--muted-foreground)",
-                      ...tnumStyle,
-                    }}
-                  >
-                    {item.qty} × {fmt(item.unit_price_cents)}
-                  </span>
-                ) : null}
-              </span>
-              <span
-                style={{ color: "var(--foreground)", fontWeight: 500, ...tnumStyle }}
-                data-slot="receipt-item-amount"
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "baseline",
+                  justifyContent: "space-between",
+                  gap: "var(--space-3)",
+                }}
               >
-                {fmt(lineTotal)}
-              </span>
+                <span style={{ color: "var(--foreground)" }}>
+                  {item.name_snapshot}
+                  {item.qty > 1 ? (
+                    <span
+                      style={{
+                        marginLeft: "var(--space-2)",
+                        color: "var(--muted-foreground)",
+                        ...tnumStyle,
+                      }}
+                    >
+                      {item.qty} × {fmt(item.unit_price_cents)}
+                    </span>
+                  ) : null}
+                </span>
+                <span
+                  style={{ color: "var(--foreground)", fontWeight: 500, ...tnumStyle }}
+                  data-slot="receipt-item-amount"
+                >
+                  {fmt(lineTotal)}
+                </span>
+              </div>
+              {kind === "discount" && targetNames != null && targetNames.length > 0 ? (
+                <div
+                  data-slot="receipt-item-targets"
+                  style={{
+                    paddingLeft: "var(--space-3)",
+                    fontSize: "var(--text-xs)",
+                    color: "var(--muted-foreground)",
+                  }}
+                >
+                  Applies to: {targetNames.join(", ")}
+                </div>
+              ) : null}
             </li>
           );
         })}

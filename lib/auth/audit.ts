@@ -69,6 +69,8 @@ export type AuditAction =
   | "discount.added"
   | "discount.removed"
   | "bill.emailed"
+  // Added by feature 049 (entity_type "ticket")
+  | "discount.edited"
   // Added by feature 015 (entity_type "payment"/"integration")
   | "payment.failed"
   | "payment.cancelled"

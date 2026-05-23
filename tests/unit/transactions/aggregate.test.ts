@@ -86,6 +86,7 @@ function baseInput(): MutableInput {
     ],
     items: [
       {
+        id: "item-0001-a",
         ticket_id: "ticket-0001",
         kind: "service",
         qty: 1,
@@ -93,8 +94,10 @@ function baseInput(): MutableInput {
         assigned_staff_id: "staff-maya",
         unit_price_cents: 4000,
         ref_id: "svc-mani",
+        discount_target_line_ids: null,
       },
       {
+        id: "item-0001-b",
         ticket_id: "ticket-0001",
         kind: "service",
         qty: 1,
@@ -102,6 +105,7 @@ function baseInput(): MutableInput {
         assigned_staff_id: "staff-lena",
         unit_price_cents: 2000,
         ref_id: "svc-pedi",
+        discount_target_line_ids: null,
       },
     ],
     payments: [
@@ -163,6 +167,7 @@ describe("projectTransactions — single ticket", () => {
     const input = baseInput();
     // add a third service line re-using Maya.
     input.items.push({
+      id: "item-0001-c",
       ticket_id: "ticket-0001",
       kind: "service",
       qty: 1,
@@ -170,6 +175,7 @@ describe("projectTransactions — single ticket", () => {
       assigned_staff_id: "staff-maya",
       unit_price_cents: 1500,
       ref_id: null,
+      discount_target_line_ids: null,
     });
     const [tx] = projectTransactions(input);
     expect(tx.techIds).toEqual(["staff-maya", "staff-lena"]);
@@ -178,6 +184,7 @@ describe("projectTransactions — single ticket", () => {
   it("excludes discount lines from techIds and serviceCount", () => {
     const input = baseInput();
     input.items.push({
+      id: "item-0001-d",
       ticket_id: "ticket-0001",
       kind: "discount",
       qty: 1,
@@ -185,6 +192,7 @@ describe("projectTransactions — single ticket", () => {
       assigned_staff_id: "staff-lena",
       unit_price_cents: -500,
       ref_id: null,
+      discount_target_line_ids: null,
     });
     const [tx] = projectTransactions(input);
     expect(tx.serviceCount).toBe(2); // discount not counted
@@ -194,6 +202,7 @@ describe("projectTransactions — single ticket", () => {
   it("line-item category is null for non-service / unknown ref", () => {
     const input = baseInput();
     input.items.push({
+      id: "item-0001-e",
       ticket_id: "ticket-0001",
       kind: "product",
       qty: 2,
@@ -201,6 +210,7 @@ describe("projectTransactions — single ticket", () => {
       assigned_staff_id: null,
       unit_price_cents: 800,
       ref_id: null,
+      discount_target_line_ids: null,
     });
     const [tx] = projectTransactions(input);
     const product = tx.items.find((i) => i.name === "Cuticle oil");
@@ -252,6 +262,7 @@ describe("projectTransactions — multiple tickets, newest-first", () => {
       closed_by_staff_id: "staff-lena",
     });
     input.items.push({
+      id: "item-0002-a",
       ticket_id: "ticket-0002",
       kind: "service",
       qty: 1,
@@ -259,6 +270,7 @@ describe("projectTransactions — multiple tickets, newest-first", () => {
       assigned_staff_id: "staff-lena",
       unit_price_cents: 3000,
       ref_id: "svc-mani",
+      discount_target_line_ids: null,
     });
     input.payments.push({
       ticket_id: "ticket-0002",

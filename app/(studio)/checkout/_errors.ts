@@ -23,7 +23,11 @@ export type CheckoutActionError =
         | "flat_value_non_positive"
         | "percent_out_of_range"
         | "note_too_long"
-        | "not_a_discount_line";
+        | "not_a_discount_line"
+        // Added by feature 049-per-service-discount (T008)
+        | "scope_empty"
+        | "scope_target_unknown"
+        | "scope_off_ticket";
     }
   | { code: "EMAIL_ADDRESS_INVALID" }
   // Added by feature 015-square-terminal-payment (US2/US3)
@@ -154,7 +158,18 @@ export type DiscountInvalidReason =
   | "flat_value_non_positive"
   | "percent_out_of_range"
   | "note_too_long"
-  | "not_a_discount_line";
+  | "not_a_discount_line"
+  // Added by feature 049-per-service-discount (T008) — the scope-validation
+  // surface on `addDiscountLine` (and the upcoming `editDiscountLine`).
+  // - scope_empty:         targetLineIds provided but empty after dedupe.
+  // - scope_target_unknown: a target uuid isn't a same-ticket service row
+  //                         (not in `ticket_items` at all OR its kind is
+  //                         not 'service').
+  // - scope_off_ticket:    the target uuid IS a `ticket_items` row but its
+  //                        ticket_id is a different ticket.
+  | "scope_empty"
+  | "scope_target_unknown"
+  | "scope_off_ticket";
 
 export class DiscountInvalidError extends CheckoutError {
   readonly code = "DISCOUNT_INVALID" as const;

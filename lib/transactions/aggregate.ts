@@ -29,6 +29,14 @@ export type TransactionLineItem = {
   readonly unitPriceCents: number;
   readonly lineTotalCents: number;
   readonly techId: string | null;
+  /**
+   * Feature 049-per-service-discount (T022). For a scoped discount row,
+   * the `name_snapshot` of each targeted service line on the same ticket.
+   * `null` for non-discount rows AND for legacy all-services discount rows
+   * (which carry `discount_target_line_ids = NULL` in the DB and render
+   * exactly as today — no `Applies to:` sub-line).
+   */
+  readonly targetNames: readonly string[] | null;
 };
 
 export type TransactionPayment = {
@@ -88,6 +96,13 @@ export type ProjectTicketRow = {
 };
 
 export type ProjectItemRow = {
+  /**
+   * Feature 049 (T022): the row id is load-bearing — scoped discount rows
+   * carry `discount_target_line_ids: uuid[]` whose elements are the ids
+   * of the targeted service rows on the same ticket. The projection
+   * builds an `id → name_snapshot` lookup to resolve `targetNames`.
+   */
+  readonly id: string;
   readonly ticket_id: string;
   readonly kind: string; // 'service' | 'discount' | 'product'
   readonly qty: number;
@@ -95,6 +110,11 @@ export type ProjectItemRow = {
   readonly assigned_staff_id: string | null;
   readonly unit_price_cents: number;
   readonly ref_id: string | null;
+  /**
+   * Feature 049 (T022). Non-null for scoped discount rows; null for
+   * non-discount rows AND for legacy all-services discount rows.
+   */
+  readonly discount_target_line_ids: readonly string[] | null;
 };
 
 export type ProjectPaymentRow = {
@@ -186,11 +206,28 @@ export function projectTransactions(input: ProjectTransactionsInput): readonly T
     const closedAtIso = ticket.closed_at ?? "";
     const closedAt = ticket.closed_at ? new Date(ticket.closed_at) : null;
 
+    // Feature 049 (T022): id → name_snapshot lookup over the same ticket's
+    // items, used to resolve a scoped discount's `targetNames` from its
+    // `discount_target_line_ids` array. Built per-ticket so legacy rows
+    // (no scope) and feature rows coexist correctly.
+    const nameByItemId = new Map(ticketItems.map((it) => [it.id, it.name_snapshot]));
+
     const lineItems: TransactionLineItem[] = ticketItems.map((it) => {
       const kind =
         it.kind === "service" || it.kind === "discount" || it.kind === "product"
           ? it.kind
           : "service";
+      let targetNames: readonly string[] | null = null;
+      if (kind === "discount" && it.discount_target_line_ids) {
+        const resolved = it.discount_target_line_ids
+          .map((id) => nameByItemId.get(id))
+          .filter((n): n is string => typeof n === "string");
+        // Defensive: an empty resolved array (a target id not found in this
+        // ticket's slice — shouldn't happen, US3 auto-removal handles the
+        // live case) is projected as `null` so the surface renders the
+        // legacy all-services layout instead of an empty `Applies to:` row.
+        targetNames = resolved.length > 0 ? resolved : null;
+      }
       return {
         name: it.name_snapshot,
         category: it.ref_id ? (categoryByServiceId.get(it.ref_id) ?? null) : null,
@@ -199,6 +236,7 @@ export function projectTransactions(input: ProjectTransactionsInput): readonly T
         unitPriceCents: it.unit_price_cents,
         lineTotalCents: it.unit_price_cents * it.qty,
         techId: it.assigned_staff_id,
+        targetNames,
       };
     });
 

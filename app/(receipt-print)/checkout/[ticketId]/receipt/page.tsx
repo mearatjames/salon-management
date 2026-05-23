@@ -53,9 +53,14 @@ export default async function ReceiptPage({ params }: { params: Promise<{ ticket
     .eq("id", ticketId)
     .maybeSingle();
 
+  // Feature 049 (T023): pull `kind` + `discount_target_line_ids` so the
+  // printable receipt can render `data-kind="discount"` + an indented
+  // `Applies to: <name>` sub-line under scoped discount rows. Pre-feature
+  // rows have `discount_target_line_ids = NULL` and render exactly as
+  // today (no sub-line, no scope marker).
   const itemsPromise = supabase
     .from("ticket_items")
-    .select("id, name_snapshot, unit_price_cents, qty")
+    .select("id, name_snapshot, unit_price_cents, qty, kind, discount_target_line_ids")
     .eq("ticket_id", ticketId)
     .order("created_at", { ascending: true });
 
@@ -87,6 +92,36 @@ export default async function ReceiptPage({ params }: { params: Promise<{ ticket
   // Hardcoded per T044 — no `settings` table in v1 (data-model.md § 8).
   const salonName = "Tang Nails Studio";
 
+  // Feature 049 (T023): resolve each scoped discount row's
+  // `discount_target_line_ids` to the targeted services' `name_snapshot`
+  // by looking each id up in the same item slice. Pre-feature rows
+  // (`discount_target_line_ids = NULL`) project as `targetNames: null`
+  // and the receipt view renders them exactly as today.
+  const nameByItemId = new Map(items.map((it) => [it.id, it.name_snapshot]));
+  const viewItems = items.map((it) => {
+    let targetNames: readonly string[] | null = null;
+    if (
+      it.kind === "discount" &&
+      Array.isArray(it.discount_target_line_ids) &&
+      it.discount_target_line_ids.length > 0
+    ) {
+      const resolved = it.discount_target_line_ids
+        .map((id: string) => nameByItemId.get(id))
+        .filter((n): n is string => typeof n === "string");
+      targetNames = resolved.length > 0 ? resolved : null;
+    }
+    return {
+      id: it.id,
+      name_snapshot: it.name_snapshot,
+      unit_price_cents: it.unit_price_cents,
+      qty: it.qty,
+      kind: (it.kind === "service" || it.kind === "discount" || it.kind === "product"
+        ? it.kind
+        : "service") as "service" | "discount" | "product",
+      targetNames,
+    };
+  });
+
   return (
     <ReceiptView
       ticket={{
@@ -96,12 +131,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ ticket
         total_cents: ticket.total_cents,
         closed_at: ticket.closed_at,
       }}
-      items={items.map((it) => ({
-        id: it.id,
-        name_snapshot: it.name_snapshot,
-        unit_price_cents: it.unit_price_cents,
-        qty: it.qty,
-      }))}
+      items={viewItems}
       payment={{
         id: payment.id,
         method: "cash",

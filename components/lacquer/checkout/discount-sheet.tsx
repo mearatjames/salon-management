@@ -13,27 +13,48 @@
 //     - Shape: radio group with two options (Flat amount / Percent)
 //     - Amount input: dollars for flat, integer 1-100 for percent
 //     - Note input with a live 80-char counter
+//     - Applies to: radio group (All services / Selected services) — feature
+//       049 (T015). When "Selected services" is chosen, a chip-picker
+//       renders below with one toggleable chip per service line in the
+//       current cart. Save is disabled while no chip is picked + an inline
+//       hint ("Pick at least one service.") is shown.
 //   - Footer: Cancel + "Add discount" (primary)
 //
 // Validation:
 //   - Save is disabled while:
 //     - flat: amount ≤ 0 OR non-numeric
 //     - percent: amount ∉ [1, 100] OR non-integer
+//     - scope === "selected" AND no chip picked
 //     - the in-flight `onSave` is pending
 //
 // Amount semantics passed to `onSave`:
 //   - flat:   value = round(dollars * 100) → integer cents (positive)
 //   - percent: value = integer percent (1..100)
 //
+// Scope semantics passed to `onSave`:
+//   - scope === "all" → targetLineIds: null (today's default)
+//   - scope === "selected" → targetLineIds: string[] (≥ 1, dedupe-preserved
+//     in the order of `serviceLines`)
+//
 // The caller (checkout-screen.client.tsx) wraps `addDiscountLine` and
 // closes the sheet on success. This component itself doesn't know about
 // the action.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { X } from "lucide-react";
 
 type Shape = "flat" | "percent";
+
+type Scope = "all" | "selected";
+
+export type DiscountSheetServiceLine = {
+  /** ticket_items.id (persisted) OR clientLineId (ephemeral) — both surface as `line.id`. */
+  id: string;
+  name: string;
+  unitPriceCents: number;
+  priceUnconfirmed: boolean;
+};
 
 export type DiscountSheetOnSavePayload = {
   shape: Shape;
@@ -42,27 +63,112 @@ export type DiscountSheetOnSavePayload = {
   /** Empty string is passed through as `undefined` so the caller's optional
    *  field reflects "operator did not enter a note." */
   note: string | undefined;
+  /**
+   * Feature 049 (T015). `null` = applies to every service line on the
+   * ticket (today's default — backward-compatible). Non-null = explicit
+   * list of service-line ids the discount targets (deduped, non-empty).
+   */
+  targetLineIds: string[] | null;
 };
 
 export type DiscountSheetProps = {
+  /**
+   * Feature 049 (T015). Service lines in the current cart — the source
+   * for the "Applies to" chip-picker. Order matches the order chips are
+   * rendered + the order ids appear in the saved `targetLineIds` array.
+   */
+  serviceLines: ReadonlyArray<DiscountSheetServiceLine>;
+  /**
+   * Feature 049 (T015). Add mode: undefined. Edit mode (US3 / T032):
+   * existing discount row snapshot — the sheet prefills shape/value/note/
+   * scope from this prop. T015 ships the prop for type-shape completeness;
+   * the prefill is wired in T032.
+   *
+   * NOTE: edit-mode prefill from `initial` lands in US3 (T032). The
+   * sheet currently accepts and ignores this prop so callers can wire it
+   * without a follow-up signature change.
+   */
+  initial?: {
+    shape: Shape;
+    value: number;
+    note: string | null;
+    targetLineIds: string[] | null;
+  };
   onSave: (payload: DiscountSheetOnSavePayload) => Promise<void>;
   onCancel: () => void;
 };
 
 const NOTE_MAX = 80;
 
-export function DiscountSheet({ onSave, onCancel }: DiscountSheetProps) {
-  const [shape, setShape] = useState<Shape>("flat");
+function fmtDollars(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+export function DiscountSheet({
+  serviceLines,
+  // Feature 049 (T032 / US3) — edit-mode prefill. When `initial` is
+  // present, all four pieces of state (shape, amount, note, scope) seed
+  // from the existing row so the operator can adjust just the field
+  // they're changing. Add mode (no `initial`) keeps the default-empty
+  // behavior. The contract says NOT to re-validate `initial.targetLineIds`
+  // against the live `serviceLines` here — if a target id has gone
+  // missing from the cart (out-of-band mutation while the sheet is open),
+  // the server rejects on save with `scope_target_unknown` and the
+  // caller surfaces an inline banner. Preemptive unpicking would hide
+  // the discrepancy from the operator.
+  initial,
+  onSave,
+  onCancel,
+}: DiscountSheetProps) {
+  const isEdit = initial != null;
+  const [shape, setShape] = useState<Shape>(initial?.shape ?? "flat");
   // Working amount as a raw string so the operator can clear-and-retype
-  // freely (matches the PriceSheet's input model).
-  const [amount, setAmount] = useState<string>("");
-  const [note, setNote] = useState<string>("");
+  // freely (matches the PriceSheet's input model). In edit mode, seed
+  // from `initial.value` translated to the input convention: flat values
+  // are stored as integer cents and rendered as dollars; percent values
+  // are stored as integer percents and rendered as-is.
+  const [amount, setAmount] = useState<string>(() => {
+    if (!initial) return "";
+    if (initial.shape === "flat") return (initial.value / 100).toString();
+    return initial.value.toString();
+  });
+  const [note, setNote] = useState<string>(initial?.note ?? "");
   const [pending, setPending] = useState(false);
+
+  // Feature 049 (T015) — scope state. Default "all" preserves today's
+  // behavior (FR-005 / SC-005). Switching to "selected" reveals the chip
+  // picker; switching back to "all" keeps the chip selections so a
+  // ping-pong doesn't lose work. Edit mode (T032): seed from
+  // `initial.targetLineIds` — null → "all" with empty picks; non-null →
+  // "selected" with each id picked.
+  const [scope, setScope] = useState<Scope>(() => {
+    if (initial?.targetLineIds != null) return "selected";
+    return "all";
+  });
+  // Map<lineId, picked>. Lines that aren't in this map are treated as
+  // not-picked. Driven from `serviceLines` so a re-render with an updated
+  // cart doesn't lose user intent.
+  const [pickedById, setPickedById] = useState<Record<string, boolean>>(() => {
+    const seeded: Record<string, boolean> = {};
+    if (initial?.targetLineIds != null) {
+      for (const id of initial.targetLineIds) seeded[id] = true;
+    }
+    return seeded;
+  });
+
+  // Insertion-order list of currently-picked ids. Deduped by Map semantics.
+  const pickedIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const line of serviceLines) {
+      if (pickedById[line.id]) ids.push(line.id);
+    }
+    return ids;
+  }, [serviceLines, pickedById]);
 
   // Parse-on-demand. `parseFloat("")` returns NaN; the boolean checks
   // below treat NaN as invalid for both shapes.
   const numericValue = parseFloat(amount);
-  const isValid = (() => {
+  const amountValid = (() => {
     if (!Number.isFinite(numericValue)) return false;
     if (shape === "flat") {
       // Dollars > 0; integer-cents enforcement is at the boundary
@@ -74,14 +180,20 @@ export function DiscountSheet({ onSave, onCancel }: DiscountSheetProps) {
     // percent: whole integer in [1, 100].
     return Number.isInteger(numericValue) && numericValue >= 1 && numericValue <= 100;
   })();
-  const saveDisabled = !isValid || pending;
+
+  // FR-013 Save-disabled matrix. Scope=selected with 0 picks blocks save
+  // and surfaces the inline hint.
+  const scopeValid = scope === "all" || pickedIds.length >= 1;
+  const saveDisabled = !amountValid || !scopeValid || pending;
+  const showEmptyScopeHint = scope === "selected" && pickedIds.length === 0;
 
   function onSubmit() {
     if (saveDisabled) return;
     setPending(true);
     const value = shape === "flat" ? Math.round(numericValue * 100) : Math.trunc(numericValue);
     const noteOrUndef = note.trim() === "" ? undefined : note.trim();
-    onSave({ shape, value, note: noteOrUndef })
+    const targetLineIds = scope === "all" ? null : pickedIds;
+    onSave({ shape, value, note: noteOrUndef, targetLineIds })
       // The caller is expected to close the sheet on success (which will
       // unmount this component). On failure, re-enable the Save button so
       // the operator can retry. We swallow the rejection because surfacing
@@ -99,6 +211,15 @@ export function DiscountSheet({ onSave, onCancel }: DiscountSheetProps) {
     setAmount("");
   }
 
+  function pickScope(next: Scope) {
+    if (next === scope) return;
+    setScope(next);
+  }
+
+  function toggleChip(lineId: string) {
+    setPickedById((prev) => ({ ...prev, [lineId]: !prev[lineId] }));
+  }
+
   return (
     <div
       className="tx-sheet-backdrop"
@@ -106,11 +227,13 @@ export function DiscountSheet({ onSave, onCancel }: DiscountSheetProps) {
       onClick={onCancel}
       role="dialog"
       aria-modal="true"
-      aria-label="Add discount"
+      aria-label={isEdit ? "Edit discount" : "Add discount"}
     >
       <div className="tx-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="tx-sheet-h">
-          <div style={{ fontWeight: 600, fontSize: "var(--text-base)" }}>Add discount</div>
+          <div style={{ fontWeight: 600, fontSize: "var(--text-base)" }}>
+            {isEdit ? "Edit discount" : "Add discount"}
+          </div>
           <button
             type="button"
             className="tx-stepper-btn"
@@ -296,6 +419,132 @@ export function DiscountSheet({ onSave, onCancel }: DiscountSheetProps) {
               {note.length}/{NOTE_MAX}
             </div>
           </div>
+
+          {/* Feature 049 (T015) — Applies-to scope picker. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
+            <div
+              style={{
+                fontSize: "var(--text-xs)",
+                textTransform: "uppercase",
+                letterSpacing: "var(--tracking-wide)",
+                fontWeight: 500,
+                color: "var(--muted-foreground)",
+              }}
+            >
+              Applies to
+            </div>
+            <div
+              role="radiogroup"
+              aria-label="Applies to"
+              style={{
+                display: "flex",
+                gap: "var(--space-2)",
+              }}
+            >
+              <button
+                type="button"
+                role="radio"
+                aria-checked={scope === "all"}
+                data-slot="discount-sheet-scope-all"
+                data-active={scope === "all" ? "true" : "false"}
+                onClick={() => pickScope("all")}
+                style={{
+                  flex: "1 1 0",
+                  padding: "var(--space-2) var(--space-3)",
+                  background:
+                    scope === "all"
+                      ? "color-mix(in oklch, var(--primary) 10%, transparent)"
+                      : "var(--card)",
+                  border: scope === "all" ? "1px solid var(--primary)" : "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm)",
+                  color: scope === "all" ? "var(--primary)" : "var(--foreground)",
+                  fontSize: "var(--text-sm)",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                All services in this sale
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={scope === "selected"}
+                data-slot="discount-sheet-scope-selected"
+                data-active={scope === "selected" ? "true" : "false"}
+                onClick={() => pickScope("selected")}
+                style={{
+                  flex: "1 1 0",
+                  padding: "var(--space-2) var(--space-3)",
+                  background:
+                    scope === "selected"
+                      ? "color-mix(in oklch, var(--primary) 10%, transparent)"
+                      : "var(--card)",
+                  border:
+                    scope === "selected" ? "1px solid var(--primary)" : "1px solid var(--border)",
+                  borderRadius: "var(--radius-sm)",
+                  color: scope === "selected" ? "var(--primary)" : "var(--foreground)",
+                  fontSize: "var(--text-sm)",
+                  fontWeight: 500,
+                  cursor: "pointer",
+                }}
+              >
+                Selected services
+              </button>
+            </div>
+
+            {scope === "selected" ? (
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "var(--space-2)",
+                }}
+              >
+                {serviceLines.map((line) => {
+                  const picked = !!pickedById[line.id];
+                  return (
+                    <button
+                      key={line.id}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={picked}
+                      data-slot="discount-sheet-scope-chip"
+                      data-line-id={line.id}
+                      data-picked={picked ? "true" : "false"}
+                      onClick={() => toggleChip(line.id)}
+                      style={{
+                        padding: "var(--space-2) var(--space-3)",
+                        background: picked
+                          ? "color-mix(in oklch, var(--primary) 10%, transparent)"
+                          : "var(--card)",
+                        border: picked ? "1px solid var(--primary)" : "1px solid var(--border)",
+                        borderRadius: "var(--radius-sm)",
+                        color: picked ? "var(--primary)" : "var(--foreground)",
+                        fontSize: "var(--text-sm)",
+                        fontWeight: 500,
+                        cursor: "pointer",
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      {line.name} {fmtDollars(line.unitPriceCents)}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            {showEmptyScopeHint ? (
+              <div
+                data-slot="discount-sheet-scope-hint"
+                style={{
+                  fontSize: "var(--text-xs)",
+                  color: "var(--muted-foreground)",
+                }}
+              >
+                Pick at least one service.
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="tx-sheet-foot">
@@ -315,7 +564,7 @@ export function DiscountSheet({ onSave, onCancel }: DiscountSheetProps) {
             disabled={saveDisabled}
             data-slot="discount-sheet-save"
           >
-            Add discount
+            {isEdit ? "Save changes" : "Add discount"}
           </button>
         </div>
       </div>

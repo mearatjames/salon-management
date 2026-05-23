@@ -17,7 +17,7 @@
 
 import { useState } from "react";
 
-import { ChevronDown, X, Edit3 } from "lucide-react";
+import { ChevronDown, X, Edit3, Pencil } from "lucide-react";
 
 import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -65,6 +65,14 @@ export type CartLineView = {
   /** Whole-percent value (1..100) for percent-shape discounts; null for flat
    *  discounts AND for all service rows. */
   discountPct: number | null;
+  /**
+   * Feature 049-per-service-discount (T016). Per-discount-row scope. `null`
+   * = applies to every service line on this ticket (today's default). Non-
+   * null = list of service-line ids this discount targets. Always null on
+   * service rows. Ephemeral path uses this to drive `computeTotals` client-
+   * side; the persisted column is `ticket_items.discount_target_line_ids`.
+   */
+  discountTargetIds?: readonly string[] | null;
 };
 
 type ActiveStaff = {
@@ -87,6 +95,14 @@ export type CartRowWithTechProps = {
    * when omitted, the popover behaves as a read-only preview of the roster.
    */
   onSetTech?: (staffId: string) => void;
+  /**
+   * Feature 049 (T033 / US3 — FR-017). Edit affordance on a discount row.
+   * Only relevant for `kind === 'discount'` rows; ignored for service rows.
+   * When provided, the discount-row layout renders a Pencil icon button
+   * next to the existing × remove control. Tap opens the DiscountSheet in
+   * edit mode (the caller wires the prefill).
+   */
+  onEditDiscount?: () => void;
 };
 
 function fmtMoney(cents: number): string {
@@ -101,6 +117,7 @@ export function CartRowWithTech({
   onRemove,
   onEditPrice,
   onSetTech,
+  onEditDiscount,
 }: CartRowWithTechProps) {
   // Controlled Popover state so the item-pick handler can dismiss the
   // overlay after firing `onSetTech` (Radix Content does NOT auto-close on
@@ -170,6 +187,31 @@ export function CartRowWithTech({
           >
             {fmtMoney(amountCents)}
           </span>
+          {onEditDiscount ? (
+            // Feature 049 (T033 / US3 — FR-017). Pencil icon button matches
+            // the × remove control's hit-target + tokens exactly so the
+            // two affordances read as a pair.
+            <button
+              type="button"
+              onClick={onEditDiscount}
+              data-slot="cart-discount-edit"
+              aria-label={`Edit ${line.name}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "var(--space-6)",
+                height: "var(--space-6)",
+                background: "transparent",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-sm)",
+                cursor: "pointer",
+                color: "var(--muted-foreground)",
+              }}
+            >
+              <Pencil size={16} strokeWidth={1.5} aria-hidden="true" />
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onRemove}

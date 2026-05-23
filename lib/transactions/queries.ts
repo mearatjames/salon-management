@@ -66,7 +66,11 @@ export async function queryTransactions(
   const [itemsRes, paymentsRes, staffRes] = await Promise.all([
     supabase
       .from("ticket_items")
-      .select("ticket_id, kind, qty, name_snapshot, assigned_staff_id, unit_price_cents, ref_id")
+      // Feature 049 (T022): `id` + `discount_target_line_ids` are needed
+      // to resolve `targetNames` for scoped discount rows in `projectTransactions`.
+      .select(
+        "id, ticket_id, kind, qty, name_snapshot, assigned_staff_id, unit_price_cents, ref_id, discount_target_line_ids"
+      )
       .in("ticket_id", ticketIds),
     supabase
       .from("payments")

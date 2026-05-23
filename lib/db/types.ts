@@ -775,6 +775,7 @@ export type Database = {
           assigned_staff_id: string | null;
           created_at: string;
           discount_pct: number | null;
+          discount_target_line_ids: string[] | null;
           id: string;
           kind: Database["public"]["Enums"]["ticket_item_kind"];
           name_snapshot: string;
@@ -789,6 +790,7 @@ export type Database = {
           assigned_staff_id?: string | null;
           created_at?: string;
           discount_pct?: number | null;
+          discount_target_line_ids?: string[] | null;
           id?: string;
           kind: Database["public"]["Enums"]["ticket_item_kind"];
           name_snapshot: string;
@@ -803,6 +805,7 @@ export type Database = {
           assigned_staff_id?: string | null;
           created_at?: string;
           discount_pct?: number | null;
+          discount_target_line_ids?: string[] | null;
           id?: string;
           kind?: Database["public"]["Enums"]["ticket_item_kind"];
           name_snapshot?: string;
