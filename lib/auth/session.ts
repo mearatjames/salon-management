@@ -62,10 +62,13 @@ async function readCookieValue(): Promise<string | null> {
 /**
  * Best-effort decode of the cookie's `sid` claim without verifying the
  * signature. Used by the degraded sentinel so the studio shell can render
- * a placeholder operator chip even when Supabase is unreachable. A tampered
- * cookie returns null.
+ * a placeholder operator chip even when Supabase is unreachable, and by
+ * `signOut` (#133) so the action can audit the outgoing operator even when
+ * a full studio session can't be resolved (e.g., the user is on
+ * `/select-staff` and hasn't pinned in yet). A tampered or absent cookie
+ * returns null.
  */
-function parseSidUnsafe(cookieValue: string | null): string | null {
+export function parseSidUnsafe(cookieValue: string | null): string | null {
   if (!cookieValue) return null;
   const parts = cookieValue.split(".");
   if (parts.length !== 3) return null;

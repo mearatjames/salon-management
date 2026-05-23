@@ -1240,6 +1240,47 @@ test.describe.serial("US6: sign out the device", () => {
       ).length
     ).toBe(1);
   });
+
+  // Issue #133 regression guard. The /select-staff header has its own
+  // Sign out button (FR-007 of spec 044). Until the fix, clicking it on
+  // the half-signed-in state (Supabase user + no operator cookie yet)
+  // 500'd because the action routed through requireStudioSession() and
+  // threw AuthRedirectError("/select-staff"). After the fix, the action
+  // resolves device user + cookie sid best-effort and redirects to /login.
+  test("(d) #133 — Sign out from /select-staff (no operator cookie) lands on /login", async ({
+    page,
+    staffFixture,
+  }) => {
+    if (!staffFixture.owner.email || !staffFixture.owner.password) {
+      throw new Error("staffFixture.owner missing email/password");
+    }
+    await page.goto("/login?next=/dashboard");
+    await page.locator("#signin-email").fill(staffFixture.owner.email);
+    await page.locator("#signin-password").fill(staffFixture.owner.password);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    // Land on /select-staff — the device session is open but no operator
+    // is pinned in. This is the half-signed-in state #133 used to 500 on.
+    await page.waitForURL(/\/select-staff\?next=/);
+
+    const signOutBtn = page.locator(".select-staff-signout");
+    await expect(signOutBtn).toBeVisible();
+    await signOutBtn.click();
+
+    await page.waitForURL(/\/login(\?|$)/);
+    expect(new URL(page.url()).pathname).toBe("/login");
+    // The Supabase session is gone, so the login form (not the dashboard)
+    // is what renders even after a hard reload.
+    await page.reload();
+    await expect(page.locator("#signin-email")).toBeVisible();
+
+    // One device.signed_out row, actor = device user, acting_as = null
+    // (no operator was pinned in when the action ran).
+    const signedOut = await getAuditLogRowsSince(auditCursor, "device.signed_out");
+    const row = signedOut.find(
+      (r) => r.actor_user_id === staffFixture.owner.userId && r.acting_as_staff_id === null
+    );
+    expect(row).toBeTruthy();
+  });
 });
 
 // ----- US-soft-degrade: Supabase outage (FR-015a / Q1 verification) ---------

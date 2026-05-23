@@ -128,6 +128,11 @@ export const AFFECTED_MAP = {
 
   // Auth / sign-in.
   "app/(auth)/**": ["tests/e2e/auth.spec.ts"],
+  // The operator-menu actions module — `signOut` + `switchStaff`. No spec
+  // imports it directly (e2e drives them via form submits), so map it
+  // explicitly. The US6 sign-out cases and US3 switch-staff cases in
+  // auth.spec.ts are the regression net for this file.
+  "app/(studio)/actions.ts": ["tests/e2e/auth.spec.ts"],
   // The /set-pin route group + the reset-password redirect change
   // (048-invitee-self-set-pin) are exercised by the set-pin spec.
   "app/(auth)/set-pin/**": ["tests/e2e/set-pin.spec.ts"],
