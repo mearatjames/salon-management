@@ -1247,6 +1247,20 @@ export function CheckoutScreen({
         .filter((l) => l.kind === "service" && !l.priceUnconfirmed)
         .map((l) => [l.id, l.unitPriceCents * l.qty] as const)
     );
+    // FR-009 stacking: scoped discounts apply first; all-services then
+    // apply against the post-scoped subtotal. Mirror that order here so
+    // the bill preview's per-row amounts match the totals shown.
+    const scopedTotalCents = lines.reduce((sum, l) => {
+      if (l.kind !== "discount") return sum;
+      const t = l.discountTargetIds;
+      if (!t || t.length === 0) return sum;
+      const targetSubtotal = t.reduce((s, id) => s + (livePriceById.get(id) ?? 0), 0);
+      if (l.discountPct != null) {
+        return sum - Math.round((l.discountPct * targetSubtotal) / 100);
+      }
+      return sum + Math.max(l.unitPriceCents, -targetSubtotal);
+    }, 0);
+    const postScopedSubtotalCents = liveServiceSubtotalCents + scopedTotalCents;
 
     const snapshotLines = lines.map((l) => {
       const displayUnitPriceCents = (() => {
@@ -1255,7 +1269,7 @@ export function CheckoutScreen({
         const baseCents =
           targets && targets.length > 0
             ? targets.reduce((sum, id) => sum + (livePriceById.get(id) ?? 0), 0)
-            : liveServiceSubtotalCents;
+            : postScopedSubtotalCents;
         if (l.discountPct != null) {
           return -Math.round((l.discountPct * baseCents) / 100);
         }
@@ -2133,6 +2147,23 @@ export function CheckoutScreen({
                     .filter((l) => l.kind === "service" && !l.priceUnconfirmed)
                     .map((l) => [l.id, l.unitPriceCents * l.qty] as const)
                 );
+                // Feature 049 (FR-009 stacking): scoped discounts apply
+                // first against their targeted subtotal, then all-services
+                // discounts apply against the post-scoped service subtotal.
+                // Pre-compute the post-scoped subtotal once so each
+                // all-services discount row displays the right amount
+                // (matches the kernel-side `computeTotals` order).
+                const scopedTotalCents = lines.reduce((sum, l) => {
+                  if (l.kind !== "discount") return sum;
+                  const t = l.discountTargetIds;
+                  if (!t || t.length === 0) return sum;
+                  const targetSubtotal = t.reduce((s, id) => s + (livePriceById.get(id) ?? 0), 0);
+                  if (l.discountPct != null) {
+                    return sum - Math.round((l.discountPct * targetSubtotal) / 100);
+                  }
+                  return sum + Math.max(l.unitPriceCents, -targetSubtotal);
+                }, 0);
+                const postScopedSubtotalCents = liveServiceSubtotalCents + scopedTotalCents;
                 return lines.map((line) => {
                   const recomputedUnitPriceCents = (() => {
                     if (line.kind !== "discount") return line.unitPriceCents;
@@ -2140,14 +2171,15 @@ export function CheckoutScreen({
                     const baseCents =
                       targets && targets.length > 0
                         ? targets.reduce((sum, id) => sum + (livePriceById.get(id) ?? 0), 0)
-                        : liveServiceSubtotalCents;
+                        : postScopedSubtotalCents;
                     if (line.discountPct != null) {
                       return -Math.round((line.discountPct * baseCents) / 100);
                     }
                     // Scoped flat caps at the targeted subtotal (FR-004); the
-                    // all-services flat path is unchanged because baseCents
-                    // equals the full service subtotal there, and the cap is
-                    // a no-op against an unconstrained service total.
+                    // all-services flat path's base is the post-scoped service
+                    // subtotal — the cap is a no-op against the typical
+                    // unconstrained service total but guards over-discounts
+                    // when scoped discounts have already eaten into it.
                     return Math.max(line.unitPriceCents, -baseCents);
                   })();
 
