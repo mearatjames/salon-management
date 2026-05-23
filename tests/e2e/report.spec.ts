@@ -81,14 +81,18 @@ function adminClient() {
   });
 }
 
-// A fixed past instant earlier today (salon-local): noon LA, or now-30min when
-// the wall clock is already past noon. Guaranteed inside today's day window
-// and `<= now()`.
+// A fixed past instant earlier today (salon-local): noon LA when the wall
+// clock is already past noon, otherwise `now` itself. Earlier code
+// subtracted 30 minutes from `now` in the pre-noon branch, but between
+// 00:00 and 00:30 LA that rolled into salon-yesterday and broke the
+// "default period = today" assertions; using `now` is the safe lower bound
+// (we're already past salon-midnight in the pre-noon branch, so `now` is
+// salon-today and trivially `<= now()`).
 function todayInstant(): Date {
   const now = new Date();
   const t = laParts(now);
   const noon = utcFromLaWall(t.year, t.month, t.day, 12);
-  return noon.getTime() <= now.getTime() ? noon : new Date(now.getTime() - 30 * 60_000);
+  return noon.getTime() <= now.getTime() ? noon : now;
 }
 
 async function insertFixture(): Promise<void> {

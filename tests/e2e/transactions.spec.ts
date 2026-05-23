@@ -74,13 +74,18 @@ function adminClient() {
   });
 }
 
-// Today, safely in the past: noon LA, or now-30min when the wall clock is
-// already past noon — guaranteed inside today's salon window and `<= now()`.
+// Today, safely in the past: noon LA when the wall clock is already past
+// noon LA, otherwise `now` itself — guaranteed inside today's salon window
+// and `<= now()`. Earlier code subtracted 30 minutes from `now` in the
+// pre-noon branch, but between 00:00 and 00:30 LA that rolled the instant
+// back into salon-yesterday and broke the day-grouping assertions; using
+// `now` is the safe lower bound (we're already past salon-midnight in the
+// pre-noon branch, so `now` is salon-today and trivially `<= now()`).
 function todayInstant(): Date {
   const now = new Date();
   const t = laParts(now);
   const noon = utcFromLaWall(t.year, t.month, t.day, 12);
-  return noon.getTime() <= now.getTime() ? noon : new Date(now.getTime() - 30 * 60_000);
+  return noon.getTime() <= now.getTime() ? noon : now;
 }
 
 // Last Tuesday 14:00 LA — always strictly before this week's Monday, so it is
@@ -457,6 +462,118 @@ test.describe("US2: open the receipt drawer for a transaction", () => {
 
     await page.keyboard.press("Escape");
     await expect(drawer).toHaveCount(0);
+  });
+
+  // Feature 049 (US2): the drawer renders an `Applies to: <name>` sub-line
+  // under any discount line that carries `discount_target_line_ids != null`.
+  // Self-contained ticket with its own UUID prefix `61000000-…` so the
+  // fixture lifecycle doesn't interfere with the main US1/US2/US3 blocks.
+  test("(j) drawer shows `Applies to:` sub-line under a scoped discount line", async ({ page }) => {
+    const admin = adminClient();
+    const TX_SCOPED = "61000000-0000-0000-0000-000000000001";
+    const ITEM_SVC_A_ID = "61000000-0000-0000-0000-000000000010";
+    const ITEM_SVC_B_ID = "61000000-0000-0000-0000-000000000011";
+    const ITEM_DISCOUNT_ID = "61000000-0000-0000-0000-000000000012";
+    const SVC_A_NAME = "Classic manicure (txfx-scoped-A)";
+    const SVC_B_NAME = "Gel polish (txfx-scoped-B)";
+
+    const today = todayInstant().toISOString();
+
+    // Insert the scoped-discount ticket. Subtotal = 25 + 35 - 10 = 50.
+    const { error: tkErr } = await admin.from("tickets").upsert(
+      [
+        {
+          id: TX_SCOPED,
+          status: "paid",
+          subtotal_cents: 5000,
+          tax_cents: 0,
+          total_cents: 5000,
+          opened_by_staff_id: OWNER,
+          closed_by_staff_id: OWNER,
+          closed_at: today,
+        },
+      ],
+      { onConflict: "id" }
+    );
+    expect(tkErr).toBeNull();
+
+    const { error: itErr } = await admin.from("ticket_items").insert([
+      {
+        id: ITEM_SVC_A_ID,
+        ticket_id: TX_SCOPED,
+        kind: "service",
+        ref_id: SVC_CLASSIC_MANI,
+        name_snapshot: SVC_A_NAME,
+        unit_price_cents: 2500,
+        qty: 1,
+        assigned_staff_id: OWNER,
+        price_unconfirmed: false,
+      },
+      {
+        id: ITEM_SVC_B_ID,
+        ticket_id: TX_SCOPED,
+        kind: "service",
+        ref_id: SVC_GEL_POLISH,
+        name_snapshot: SVC_B_NAME,
+        unit_price_cents: 3500,
+        qty: 1,
+        assigned_staff_id: OWNER,
+        price_unconfirmed: false,
+      },
+      {
+        id: ITEM_DISCOUNT_ID,
+        ticket_id: TX_SCOPED,
+        kind: "discount",
+        name_snapshot: "Discount",
+        unit_price_cents: -1000,
+        qty: 1,
+        price_unconfirmed: false,
+        // Scope: only the Gel polish line.
+        discount_target_line_ids: [ITEM_SVC_B_ID],
+      },
+    ]);
+    expect(itErr).toBeNull();
+
+    const { error: pmErr } = await admin.from("payments").insert([
+      {
+        ticket_id: TX_SCOPED,
+        method: "cash",
+        kind: "payment",
+        amount_cents: 5000,
+        tip_cents: 0,
+        status: "succeeded",
+        taken_by_staff_id: OWNER,
+        processed_at: today,
+      },
+    ]);
+    expect(pmErr).toBeNull();
+
+    try {
+      await page.goto("/transactions");
+      const row = page.locator(`tr[data-tx-id="${TX_SCOPED}"]`);
+      await expect(row).toBeVisible();
+      await row.click();
+
+      const drawer = page.locator(`[data-slot="receipt-drawer"][data-tx-id="${TX_SCOPED}"]`);
+      await expect(drawer).toBeVisible();
+
+      // The discount line carries the `data-scope-kind=selected` marker.
+      const scopedDiscountRow = drawer
+        .locator('[data-slot="receipt-item"][data-kind="discount"][data-scope-kind="selected"]')
+        .first();
+      await expect(scopedDiscountRow).toBeVisible();
+
+      // Under it, an `Applies to: <name>` sub-line carries the target service.
+      const targets = scopedDiscountRow.locator('[data-slot="receipt-item-targets"]');
+      await expect(targets).toBeVisible();
+      await expect(targets).toContainText("Applies to:");
+      await expect(targets).toContainText(SVC_B_NAME);
+    } finally {
+      // Clean up the per-test fixture so the next run starts clean.
+      await admin.from("payments").delete().eq("ticket_id", TX_SCOPED);
+      await admin.from("ticket_items").delete().eq("ticket_id", TX_SCOPED);
+      await admin.from("tickets").delete().eq("id", TX_SCOPED);
+    }
   });
 });
 
