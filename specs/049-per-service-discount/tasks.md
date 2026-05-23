@@ -145,9 +145,9 @@ Single Next.js web app. All paths are from repo root. Touched trees: `supabase/m
 
 - [X] T036 [P] Run the full `quickstart.md` walkthrough manually in a browser (US1 → US2 → US3 → Edit + Edge cases) and confirm every "Expected" matches; fix any divergence (deferred to PR review — quickstart e2e suite `tests/e2e/checkout-discount-scoped.spec.ts` US1+US2+US3 + receipt-drawer scenario in `tests/e2e/transactions.spec.ts` is the programmatic substitute, kept green by per-phase gates)
 - [X] T037 Run the final full gate set (no scoping): `npm run format:check && npm run lint && npm run typecheck && npm test && npm run test:e2e`. All must be green (format/lint/typecheck/unit all green; e2e: 3 pre-existing date-flake failures in `transactions.spec.ts` + `report.spec.ts` fixed inline — `todayInstant()` fallback rolled into salon-yesterday between 00:00 and 00:30 LA; targeted re-run after fix is 36/36 + 14/14 green)
-- [ ] T038 [P] Verify the migration applies cleanly on the preview Supabase project (the `db-migrate-preview` GitHub Action runs on PR open; confirm it passed before requesting review). Constitution § "Schema drift forbidden"
+- [X] T038 [P] Verify the migration applies cleanly on the preview Supabase project (the `db-migrate-preview` GitHub Action runs on PR open; confirm it passed before requesting review). Constitution § "Schema drift forbidden" (db-migrate-preview run on PR #137 completed `success` in 20s — migration 0023 applied cleanly)
 - [X] T039 [P] Skim `docs/system-design.md` for any data-model paragraph that names `ticket_items` columns and append `discount_target_line_ids` to the list if such a paragraph exists; otherwise no change (system-design's overview rarely enumerates columns one-by-one — do not invent new sections)
-- [ ] T040 Open the PR with `Closes #<issue>` if there is a tracking issue; otherwise reference `specs/049-per-service-discount/spec.md`. Include the quickstart's verification checklist in the PR description so the reviewer can replay it
+- [X] T040 Open the PR with `Closes #<issue>` if there is a tracking issue; otherwise reference `specs/049-per-service-discount/spec.md`. Include the quickstart's verification checklist in the PR description so the reviewer can replay it (PR #137: https://github.com/mearatjames/salon-management/pull/137)
 
 ---
 
