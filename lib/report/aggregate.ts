@@ -119,6 +119,14 @@ export type ReportTotals = {
   readonly totalDeductionsCents: number;
   readonly commissionableCents: number;
   readonly cardTipsCents: number;
+  /**
+   * Issue #139: total customer-facing discount given in the period. Sum of
+   * `|unit_price_cents × qty|` over `kind = 'discount'` ticket_items, covering
+   * both legacy all-services discounts and 049 scoped per-service discounts.
+   * Does NOT feed `grossCents` (a separate axis — gross stays the commission
+   * base per FR-018).
+   */
+  readonly discountsCents: number;
 };
 
 export type ReportReadModel = {
@@ -252,6 +260,7 @@ const ZERO_TOTALS: ReportTotals = {
   totalDeductionsCents: 0,
   commissionableCents: 0,
   cardTipsCents: 0,
+  discountsCents: 0,
 };
 
 // A mutable per-tech accumulator built up during projection, then frozen into
@@ -475,6 +484,14 @@ export function projectReport(input: ProjectReportInput): ReportReadModel {
     for (const tx of t.transactions) distinctTicketIds.add(tx.ticketId);
   }
 
+  // Discount lines (kind='discount') are stored with negative `unit_price_cents`;
+  // sum their absolute value over every paid ticket in the window (issue #139).
+  // Covers both legacy all-services discounts and 049 scoped per-service rows.
+  const discountsCents = items.reduce(
+    (acc, it) => (it.kind === "discount" ? acc + Math.abs(it.unit_price_cents * it.qty) : acc),
+    0
+  );
+
   const totals: ReportTotals = {
     technicianCount: technicians.length,
     transactionCount: distinctTicketIds.size,
@@ -485,6 +502,7 @@ export function projectReport(input: ProjectReportInput): ReportReadModel {
     totalDeductionsCents: technicians.reduce((a, t) => a + t.totalDeductionsCents, 0),
     commissionableCents: technicians.reduce((a, t) => a + t.commissionableCents, 0),
     cardTipsCents: technicians.reduce((a, t) => a + t.cardTipsCents, 0),
+    discountsCents,
   };
 
   return { technicians, totals, isEmpty: technicians.length === 0 };

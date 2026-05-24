@@ -43,6 +43,7 @@ const EMPTY_READ_MODEL: ReportReadModel = {
     totalDeductionsCents: 0,
     commissionableCents: 0,
     cardTipsCents: 0,
+    discountsCents: 0,
   },
   isEmpty: true,
 };

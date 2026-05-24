@@ -25,6 +25,14 @@ export function ReportSummary({ totals }: ReportSummaryProps) {
         <div className="dr-stat-v">{formatCurrency(totals.grossCents / 100)}</div>
         <div className="dr-stat-s">
           {totals.transactionCount} transactions · {totals.serviceCount} services
+          {totals.discountsCents > 0 ? (
+            <>
+              {" · "}
+              <span data-slot="discounts-given">
+                {formatCurrency(totals.discountsCents / 100)} discounted
+              </span>
+            </>
+          ) : null}
         </div>
       </div>
       <div className="dr-stat">
