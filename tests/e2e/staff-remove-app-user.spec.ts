@@ -10,13 +10,21 @@
 //     owners; managers keep `remove_pin_only`).
 //
 // Test data:
-//   We seed a fresh `@tangnails.test` auth user + staff row per test instead
-//   of using the fixture's `manager` (which is the worker's app-user but
-//   shared with other tests on this worker). This spec is the only writer
-//   of `app-user-remove-${workerIndex}-${testId}@tangnails.test`, so
-//   teardown is a single delete by email and never touches another spec's
-//   state. Mirrors the test-data pattern in `tests/e2e/onboarding.spec.ts`
-//   ("@tangnails.test" cleanup).
+//   We seed a fresh `@staff-remove.test` auth user + staff row per test
+//   instead of using the fixture's `manager` (which is the worker's
+//   app-user but shared with other tests on this worker). This spec is
+//   the only writer of
+//   `app-user-remove-${workerIndex}-${testId}@staff-remove.test`, so
+//   teardown is a single delete by email and never touches another
+//   spec's state.
+//
+//   Issue #142 — the original draft of this spec used `@tangnails.test`
+//   to mirror the onboarding pattern, but `onboarding.spec.ts` runs an
+//   unscoped `DELETE FROM staff WHERE email LIKE '%@tangnails.test'`
+//   in its beforeEach. Under parallel load, that wipe could fire on a
+//   sibling worker between this spec's provisionAppUser and signInAs,
+//   leaving the provisioned row absent from the rendered roster. The
+//   dedicated `@staff-remove.test` domain isolates us from that sweep.
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
@@ -67,7 +75,7 @@ async function provisionAppUser(
   testTag: string
 ): Promise<{ staffId: string; email: string; displayName: string; userId: string }> {
   const c = adminClient();
-  const email = `app-user-remove-${fixture.workerIndex}-${testTag}@tangnails.test`;
+  const email = `app-user-remove-${fixture.workerIndex}-${testTag}@staff-remove.test`;
   const displayName = `Remove Target ${testTag} [w${fixture.workerIndex}]`;
 
   // Belt-and-suspenders: drop any stale rows from a prior failed run.
@@ -148,6 +156,16 @@ test.describe("129: remove an active app-user from Settings → Staff", () => {
       // Open the target's edit panel.
       await page.locator(`[data-staff-id="${target.staffId}"]`).first().click();
       await page.waitForURL(/\/settings\/staff\?selected=/);
+
+      // Issue #142 — wait for the edit panel to settle on the correct
+      // target before drilling into the danger-zone variant. The URL
+      // change beats panel hydration under parallel load, and the
+      // `data-target-kind='app_user'` selector can't match until the
+      // server-rendered DangerZone has streamed in. Matching pattern
+      // from staff.spec.ts:358-360.
+      const panel = page.locator("[data-slot='staff-edit-panel']");
+      await expect(panel).toBeVisible();
+      await expect(panel).toHaveAttribute("data-staff-id", target.staffId);
 
       // The danger-zone Remove button advertises its target kind so the
       // test can be precise about the branch under exercise.
@@ -250,6 +268,13 @@ test.describe("129: remove an active app-user from Settings → Staff", () => {
 
       await page.locator(`[data-staff-id="${target.staffId}"]`).first().click();
       await page.waitForURL(/\/settings\/staff\?selected=/);
+
+      // Issue #142 — wait for the edit panel to settle on the correct
+      // target before drilling into the danger-zone variant. See the
+      // companion comment on the happy-path test above for rationale.
+      const panel = page.locator("[data-slot='staff-edit-panel']");
+      await expect(panel).toBeVisible();
+      await expect(panel).toHaveAttribute("data-staff-id", target.staffId);
 
       const removeButton = page.locator(
         "[data-slot='danger-zone-remove'][data-target-kind='app_user']"
