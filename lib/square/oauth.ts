@@ -42,11 +42,27 @@ const SQUARE_BASE_URL = (): string => {
   return SQUARE_BROWSER_HOST();
 };
 
+// Square OAuth scopes the operator grants when connecting their account in
+// Settings → Square. Square doesn't grant scopes retroactively — every entry
+// here must be requested at authorize time, and adding a new one requires the
+// merchant to disconnect + reconnect so a fresh access token is issued.
+//
+// Per-call requirements (kept in sync with the SDK call sites under lib/square/):
+//   PAYMENTS_WRITE              — client.terminal.checkouts.create (lib/square/terminal.ts)
+//   PAYMENTS_READ               — webhook reads + manual reconciliation
+//   MERCHANT_PROFILE_READ       — client.locations.get (lib/square/oauth.ts:getSquareLocationId)
+//   DEVICE_CREDENTIAL_MANAGEMENT — terminal device pairing
+//   DEVICES_READ                — client.devices.list (lib/square/terminal.ts:listDevices)
+//   ORDERS_WRITE                — client.orders.create + client.orders.update
+//                                 (lib/square/orders.ts — feature 051 itemized checkout
+//                                 + best-effort orphan cancel)
 const SCOPES = [
   "PAYMENTS_WRITE",
   "PAYMENTS_READ",
   "MERCHANT_PROFILE_READ",
   "DEVICE_CREDENTIAL_MANAGEMENT",
+  "DEVICES_READ",
+  "ORDERS_WRITE",
 ].join("+");
 
 const STATE_TTL_SECONDS = 600; // 10 minutes — Square spec.
