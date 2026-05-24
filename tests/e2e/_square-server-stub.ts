@@ -67,6 +67,19 @@ export type ServerStubControls = {
   setTokenResponse(resp: TokenResponseShape | TokenErrorShape): Promise<void>;
   /** Prime the *next* POST /v2/terminals/checkouts response. */
   setNextCheckoutCreate(stub: CheckoutCreateStub | null): Promise<void>;
+  /**
+   * Phase 5 (US3 / T022) — fault-injection knob for the Terminal
+   * checkout endpoint. When set, EVERY call to
+   * `POST /v2/terminals/checkouts` responds with the given HTTP status
+   * + body until the fault is cleared (pass `null`) or `reset()` runs.
+   *
+   * Sticky on purpose: the Square SDK retries 5xx responses up to
+   * `DEFAULT_MAX_RETRIES` (=2) with an exponential backoff, so a
+   * one-shot 500 would let the retry sneak through and the action
+   * would succeed against the stub's default happy-path 200. Sticky
+   * faults guarantee every retry sees the same failure surface.
+   */
+  failNextCheckoutCreate(stub: { status: number; body?: object | string } | null): Promise<void>;
   /** Prime a GET /v2/terminals/checkouts/:id response for a specific id. */
   setCheckoutGet(checkoutId: string, stub: CheckoutGetStub | null): Promise<void>;
   /** Prime POST /v2/terminals/checkouts/:id/cancel. */
@@ -81,6 +94,17 @@ export type ServerStubControls = {
   unsuppressGiftWebhook(): Promise<void>;
   reset(): Promise<void>;
   recordedCalls(): Promise<readonly RecordedCall[]>;
+  /**
+   * Feature 051 — recorder accessor for `POST /v2/orders`. Specs read this
+   * to assert single-tender card sales sent an itemized Order (and that
+   * split-tender legs did NOT).
+   */
+  recordedOrderCreates(): Promise<readonly RecordedOrderCreate[]>;
+  /**
+   * Feature 051 — recorder accessor for `PUT /v2/orders/:id`. Phase 5
+   * orphan-cancel asserts on this.
+   */
+  recordedOrderUpdates(): Promise<readonly RecordedOrderUpdate[]>;
   /** No-op; the server lifecycle is owned by globalSetup/globalTeardown. */
   close(): Promise<void>;
 };
@@ -108,6 +132,26 @@ export type TokenErrorShape = {
 export type RecordedCall = {
   method: string;
   path: string;
+};
+
+/**
+ * Feature 051 — recorder for `POST /v2/orders` calls so specs can assert
+ * on the wire payload (line items, discounts, totals) the server-side
+ * Square SDK sends. Mirrors the browser-side stub's `recorded.orderCreates`
+ * shape but lives on the server stub because the Square SDK runs in the
+ * Next.js server process and routes via `SQUARE_API_BASE_URL`.
+ */
+export type RecordedOrderCreate = {
+  url: string;
+  body: unknown;
+  responseOrderId: string;
+};
+
+export type RecordedOrderUpdate = {
+  url: string;
+  orderId: string;
+  body: unknown;
+  responseVersion: number;
 };
 
 const DEFAULT_TOKEN: TokenResponseShape = {
@@ -195,6 +239,12 @@ export async function startSquareServerStub(port = 4567): Promise<ServerHandle> 
   let devices: DeviceStub[] = [];
   let tokenResponse: TokenResponseShape | TokenErrorShape = { ...DEFAULT_TOKEN };
   let nextCheckoutCreate: CheckoutCreateStub | null = null;
+  // Phase 5 (US3 / T022) — STICKY fault injection for
+  // `POST /v2/terminals/checkouts`. Stays armed until cleared (pass
+  // null) or `reset()` runs. Sticky on purpose: the Square SDK retries
+  // 5xx responses up to `DEFAULT_MAX_RETRIES` (=2) with exponential
+  // backoff, so a one-shot 500 would let the retry sneak through.
+  let nextCheckoutCreateFault: { status: number; body?: object | string } | null = null;
   const checkoutGetStubs = new Map<string, CheckoutGetStub>();
   const checkoutCancelStubs = new Map<string, CheckoutCancelStub>();
   let lastMintedCheckoutId: string | null = null;
@@ -204,12 +254,21 @@ export async function startSquareServerStub(port = 4567): Promise<ServerHandle> 
   let giftPaymentCounter = 0;
   const webhookKey = loadWebhookKey();
   const calls: RecordedCall[] = [];
+  // Feature 051 — itemized order recorders. The server-side Square SDK
+  // posts here (via `SQUARE_API_BASE_URL`) when `sendCardToTerminal`
+  // takes the single-tender branch. We capture request bodies + mint a
+  // deterministic order id per call, tracking the order's current version
+  // so PUT responses see correct version progression.
+  const recordedOrderCreates: RecordedOrderCreate[] = [];
+  const recordedOrderUpdates: RecordedOrderUpdate[] = [];
+  const orderVersions = new Map<string, number>();
 
   function resetState(): void {
     merchant = { ...DEFAULT_MERCHANT };
     devices = [];
     tokenResponse = { ...DEFAULT_TOKEN };
     nextCheckoutCreate = null;
+    nextCheckoutCreateFault = null;
     checkoutGetStubs.clear();
     checkoutCancelStubs.clear();
     lastMintedCheckoutId = null;
@@ -218,6 +277,9 @@ export async function startSquareServerStub(port = 4567): Promise<ServerHandle> 
     giftCardCounter = 0;
     giftPaymentCounter = 0;
     calls.length = 0;
+    recordedOrderCreates.length = 0;
+    recordedOrderUpdates.length = 0;
+    orderVersions.clear();
   }
 
   function ack(res: ServerResponse): void {
@@ -239,6 +301,16 @@ export async function startSquareServerStub(port = 4567): Promise<ServerHandle> 
     }
     if (method === "GET" && op === "recorded-calls") {
       json(res, 200, { calls });
+      return true;
+    }
+
+    // Feature 051 — recorder accessors for /v2/orders.
+    if (method === "GET" && op === "recorded-order-creates") {
+      json(res, 200, { creates: recordedOrderCreates });
+      return true;
+    }
+    if (method === "GET" && op === "recorded-order-updates") {
+      json(res, 200, { updates: recordedOrderUpdates });
       return true;
     }
 
@@ -273,6 +345,11 @@ export async function startSquareServerStub(port = 4567): Promise<ServerHandle> 
         return true;
       case "next-checkout-create":
         nextCheckoutCreate = (body.stub as CheckoutCreateStub | null | undefined) ?? null;
+        ack(res);
+        return true;
+      case "fail-next-checkout-create":
+        nextCheckoutCreateFault =
+          (body.stub as { status: number; body?: object | string } | null | undefined) ?? null;
         ack(res);
         return true;
       case "checkout-get": {
@@ -356,6 +433,24 @@ export async function startSquareServerStub(port = 4567): Promise<ServerHandle> 
     // POST /v2/terminals/checkouts  (createCheckout)
     if (method === "POST" && /^\/v2\/terminals\/checkouts\/?$/.test(path)) {
       await readBody(req);
+      // Phase 5 (US3 / T022) — STICKY fault injection. Stays armed
+      // until cleared via `failNextCheckoutCreate(null)` or `reset()`.
+      if (nextCheckoutCreateFault !== null) {
+        const fault = nextCheckoutCreateFault;
+        return json(
+          res,
+          fault.status,
+          fault.body ?? {
+            errors: [
+              {
+                category: "API_ERROR",
+                code: "INTERNAL_SERVER_ERROR",
+                detail: "stub-injected terminal-checkout failure",
+              },
+            ],
+          }
+        );
+      }
       const createStatus = nextCheckoutCreate?.status ?? "PENDING";
       const createTip = nextCheckoutCreate?.tipCents;
       const newCheckoutId = `tco_stub_${Math.random().toString(36).slice(2, 10)}`;
@@ -413,6 +508,83 @@ export async function startSquareServerStub(port = 4567): Promise<ServerHandle> 
         },
       };
       return json(res, 200, body);
+    }
+
+    // Feature 051 - POST /v2/orders (itemized Order creation). Returns
+    // a fixed `ord_stub_<random>` per call with version 1. The request
+    // body is recorded so specs can assert on the wire payload (line
+    // items, discounts, totals) sent by the server-side Square SDK.
+    if (method === "POST" && /^\/v2\/orders\/?$/.test(path)) {
+      const raw = await readBody(req);
+      let parsedCreateBody: unknown = null;
+      try {
+        parsedCreateBody = raw ? JSON.parse(raw) : null;
+      } catch {
+        parsedCreateBody = null;
+      }
+      const orderId = `ord_stub_${Math.random().toString(36).slice(2, 10)}`;
+      orderVersions.set(orderId, 1);
+      recordedOrderCreates.push({
+        url: "http://127.0.0.1:" + port + path,
+        body: parsedCreateBody,
+        responseOrderId: orderId,
+      });
+      return json(res, 200, {
+        order: {
+          id: orderId,
+          version: 1,
+          location_id: "main",
+          state: "OPEN",
+        },
+      });
+    }
+
+    // Feature 051 - PUT /v2/orders/:id (itemized Order update, used by
+    // the Phase 5 orphan-cancel path). Increments the order's version
+    // to mirror Square's progression.
+    const orderUpdateMatch = /^\/v2\/orders\/([A-Za-z0-9_-]+)\/?$/.exec(path);
+    if (method === "PUT" && orderUpdateMatch?.[1]) {
+      const orderId = orderUpdateMatch[1];
+      const raw = await readBody(req);
+      let parsedUpdateBody: unknown = null;
+      try {
+        parsedUpdateBody = raw ? JSON.parse(raw) : null;
+      } catch {
+        parsedUpdateBody = null;
+      }
+      const nextVersion = (orderVersions.get(orderId) ?? 0) + 1;
+      orderVersions.set(orderId, nextVersion);
+      recordedOrderUpdates.push({
+        url: "http://127.0.0.1:" + port + path,
+        orderId,
+        body: parsedUpdateBody,
+        responseVersion: nextVersion,
+      });
+      return json(res, 200, {
+        order: {
+          id: orderId,
+          version: nextVersion,
+          location_id: "main",
+          state: "OPEN",
+        },
+      });
+    }
+
+    // Feature 051 - GET /v2/locations/:id (locationId resolver). The
+    // server-side `getSquareLocationId()` helper calls
+    // `client.locations.get({ locationId: 'main' })` on first use; the
+    // stub returns a deterministic location id so the persisted
+    // `square_oauth.location_id` value is stable across runs.
+    if (method === "GET" && /^\/v2\/locations\/[^/]+$/.test(path)) {
+      const segments = path.split("/");
+      const locationId = segments[segments.length - 1];
+      return json(res, 200, {
+        location: {
+          id: locationId,
+          name: "Stub Salon",
+          status: "ACTIVE",
+        },
+      });
     }
 
     // Feature 018 - POST /v2/gift-cards/from-gan. Routes through the
@@ -622,6 +794,9 @@ export function getStubControls(baseUrl: string = DEFAULT_STUB_BASE): ServerStub
     async setNextCheckoutCreate(stub) {
       await controlPost(baseUrl, "next-checkout-create", { stub });
     },
+    async failNextCheckoutCreate(stub) {
+      await controlPost(baseUrl, "fail-next-checkout-create", { stub });
+    },
     async setCheckoutGet(checkoutId, stub) {
       await controlPost(baseUrl, "checkout-get", { checkoutId, stub });
     },
@@ -647,6 +822,20 @@ export function getStubControls(baseUrl: string = DEFAULT_STUB_BASE): ServerStub
     async recordedCalls() {
       const { calls } = await controlGet<{ calls: RecordedCall[] }>(baseUrl, "recorded-calls");
       return calls;
+    },
+    async recordedOrderCreates() {
+      const { creates } = await controlGet<{ creates: RecordedOrderCreate[] }>(
+        baseUrl,
+        "recorded-order-creates"
+      );
+      return creates;
+    },
+    async recordedOrderUpdates() {
+      const { updates } = await controlGet<{ updates: RecordedOrderUpdate[] }>(
+        baseUrl,
+        "recorded-order-updates"
+      );
+      return updates;
     },
     async close() {
       // Server lifecycle owned by globalSetup/globalTeardown.

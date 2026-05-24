@@ -24,8 +24,8 @@ description: "Task list for feature 051-square-itemized-order"
 
 **Purpose**: Schema change applied before any code can write the new columns.
 
-- [ ] T001 Create migration file `supabase/migrations/0024_square_order_id.sql` per Research R8 — adds `payments.square_order_id text null` and `square_oauth.location_id text null` (both nullable, no defaults, no constraints, no backfill). Include the header comment block following the convention in adjacent migrations (feature ref `051-square-itemized-order`, reason: audit + lazy-resolved Square primary location).
-- [ ] T002 Apply the migration to the local Supabase stack: `supabase db reset` and verify `select column_name from information_schema.columns where table_name in ('payments','square_oauth') and column_name in ('square_order_id','location_id');` returns both rows.
+- [X] T001 Create migration file `supabase/migrations/0024_square_order_id.sql` per Research R8 — adds `payments.square_order_id text null` and `square_oauth.location_id text null` (both nullable, no defaults, no constraints, no backfill). Include the header comment block following the convention in adjacent migrations (feature ref `051-square-itemized-order`, reason: audit + lazy-resolved Square primary location).
+- [X] T002 Apply the migration to the local Supabase stack: `supabase db reset` and verify `select column_name from information_schema.columns where table_name in ('payments','square_oauth') and column_name in ('square_order_id','location_id');` returns both rows.
 
 **Checkpoint**: Setup complete — schema is ready for foundational + user-story tasks.
 
@@ -37,8 +37,8 @@ description: "Task list for feature 051-square-itemized-order"
 
 **⚠️ CRITICAL**: No user-story phase may begin until Phase 2 is complete.
 
-- [ ] T003 [P] Add `getSquareLocationId()` helper to `lib/square/oauth.ts` per Research R1 and `data-model.md → square_oauth.location_id`. Behavior: read the singleton `square_oauth` row; if `location_id` is non-null return it; otherwise call `client.locations.get({ locationId: 'main' })`, take the returned `location.id`, persist to the row, return it. Throw `Error('getSquareLocationId: Square not connected')` if no row exists.
-- [ ] T004 [P] Extend `tests/e2e/_square-stub.ts` per Research R4: intercept `POST /v2/orders` (return `200` with `{ order: { id: 'ord_test_<uuid>', version: 1, ... } }`); intercept `PUT /v2/orders/:id` (return `200` with the updated order body); record the captured request bodies for each path on a list that specs can assert against (mirror the existing `terminal.checkouts.create` recorder pattern).
+- [X] T003 [P] Add `getSquareLocationId()` helper to `lib/square/oauth.ts` per Research R1 and `data-model.md → square_oauth.location_id`. Behavior: read the singleton `square_oauth` row; if `location_id` is non-null return it; otherwise call `client.locations.get({ locationId: 'main' })`, take the returned `location.id`, persist to the row, return it. Throw `Error('getSquareLocationId: Square not connected')` if no row exists.
+- [X] T004 [P] Extend `tests/e2e/_square-stub.ts` per Research R4: intercept `POST /v2/orders` (return `200` with `{ order: { id: 'ord_test_<uuid>', version: 1, ... } }`); intercept `PUT /v2/orders/:id` (return `200` with the updated order body); record the captured request bodies for each path on a list that specs can assert against (mirror the existing `terminal.checkouts.create` recorder pattern).
 
 **Checkpoint**: Foundational layer ready — every user story can begin in parallel from this point.
 
@@ -52,7 +52,7 @@ description: "Task list for feature 051-square-itemized-order"
 
 ### Tests for User Story 1 (FAIL first — Constitution IV)
 
-- [ ] T005 [P] [US1] Extend `tests/unit/square/terminal-checkout.test.ts` with the following failing cases (mock `client.orders.create` + `client.terminal.checkouts.create`):
+- [X] T005 [P] [US1] Extend `tests/unit/square/terminal-checkout.test.ts` with the following failing cases (mock `client.orders.create` + `client.terminal.checkouts.create`):
   - (a) Single-tender ticket with two services → `orders.create` request has `lineItems` with two entries, each with `name`, `basePriceMoney.amount`, `quantity` matching the rows.
   - (b) Single-tender with one targeted discount (`discount_target_line_ids: [serviceUid]`) → top-level `discounts[]` has one entry with `scope: 'LINE_ITEM'`; the targeted `lineItem.appliedDiscounts: [{ discountUid }]` is populated.
   - (c) Single-tender with one untargeted discount → top-level `discounts[]` has one entry with `scope: 'ORDER'`; no `lineItem.appliedDiscounts` set.
@@ -60,30 +60,30 @@ description: "Task list for feature 051-square-itemized-order"
   - (e) Service line with `unit_price_cents: 0` → `lineItem.basePriceMoney.amount === 0n`, NOT omitted.
   - (f) Service whose `name_snapshot` is `Owner's special` → `lineItem.name === "Owner's special"` (no escaping drift).
   - (g) Split-tender card leg (`existingDraftId` argument set on `sendCardToTerminal`) → `orders.create` is NOT called; `terminal.checkouts.create` is called with `checkout.amountMoney` and no `checkout.orderId`.
-- [ ] T006 [P] [US1] Extend `tests/unit/square/terminal-checkout.test.ts` with case (k) asserting that `orders.create` and `terminal.checkouts.create` for the same `(ticketId, paymentId)` receive the identical 32-char hex `idempotencyKey` derived via `buildIdempotencyKey(ticketId, paymentId)` (Research R6 / FR-006).
+- [X] T006 [P] [US1] Extend `tests/unit/square/terminal-checkout.test.ts` with case (k) asserting that `orders.create` and `terminal.checkouts.create` for the same `(ticketId, paymentId)` receive the identical 32-char hex `idempotencyKey` derived via `buildIdempotencyKey(ticketId, paymentId)` (Research R6 / FR-006).
 
 ### Implementation for User Story 1
 
-- [ ] T007 [P] [US1] Create `lib/square/orders.ts` per `contracts/lib-square-orders.md`. Implement the `EmptyOrderError` class and the pure `mapTicketItemsToOrderLineItems(rows: TicketItemRow[]): OrderPayload` function per `data-model.md` validation rules 1–6 — discount sign normalization, zero-amount discount skip, qty < 1 defensive throw, empty-lineItems throw, uid uniqueness check, targeted-discount sanity check.
-- [ ] T008 [US1] Add `createOrder({ ticketId, paymentId, locationId, ticketItems })` to `lib/square/orders.ts` per `contracts/lib-square-orders.md`. Reads tokens via `readDecryptedTokens()`, builds the idempotency key via the exported `buildIdempotencyKey` from `lib/square/terminal.ts`, sends `client.orders.create` with `taxes: []` + `pricingOptions: { autoApplyTaxes: false, autoApplyDiscounts: false }` per Research R2, returns `{ orderId, orderVersion }`. Throws if the response is missing `order.id`. (Depends on T007.)
-- [ ] T009 [US1] Extend `createCheckout` in `lib/square/terminal.ts`: add an optional `orderId?: string` to `CreateCheckoutInput`. When set, the SDK request sends `checkout.orderId` and omits `checkout.amountMoney`; when absent, fall back to today's `checkout.amountMoney` payload. `referenceId: ticketId` set on both branches. Keep the existing idempotency-key derivation.
-- [ ] T010 [US1] Extend `sendCardToTerminal` in `app/(studio)/checkout/actions.ts` per `contracts/server-actions.md`:
+- [X] T007 [P] [US1] Create `lib/square/orders.ts` per `contracts/lib-square-orders.md`. Implement the `EmptyOrderError` class and the pure `mapTicketItemsToOrderLineItems(rows: TicketItemRow[]): OrderPayload` function per `data-model.md` validation rules 1–6 — discount sign normalization, zero-amount discount skip, qty < 1 defensive throw, empty-lineItems throw, uid uniqueness check, targeted-discount sanity check.
+- [X] T008 [US1] Add `createOrder({ ticketId, paymentId, locationId, ticketItems })` to `lib/square/orders.ts` per `contracts/lib-square-orders.md`. Reads tokens via `readDecryptedTokens()`, builds the idempotency key via the exported `buildIdempotencyKey` from `lib/square/terminal.ts`, sends `client.orders.create` with `taxes: []` + `pricingOptions: { autoApplyTaxes: false, autoApplyDiscounts: false }` per Research R2, returns `{ orderId, orderVersion }`. Throws if the response is missing `order.id`. (Depends on T007.)
+- [X] T009 [US1] Extend `createCheckout` in `lib/square/terminal.ts`: add an optional `orderId?: string` to `CreateCheckoutInput`. When set, the SDK request sends `checkout.orderId` and omits `checkout.amountMoney`; when absent, fall back to today's `checkout.amountMoney` payload. `referenceId: ticketId` set on both branches. Keep the existing idempotency-key derivation.
+- [X] T010 [US1] Extend `sendCardToTerminal` in `app/(studio)/checkout/actions.ts` per `contracts/server-actions.md`:
   - Detect single-tender vs split-tender: `const isSingleTender = !existingDraftId && paymentAmountCents === ticket.total_cents`.
   - On the single-tender branch only: `select id, kind, name_snapshot, unit_price_cents, qty, discount_target_line_ids from ticket_items where ticket_id = :ticketId order by created_at`; call `locationId = await getSquareLocationId()`; call `createOrder({ ticketId, paymentId, locationId, ticketItems })`; persist `payments.square_order_id = orderId` via a single-column `update`; then call `squareCreateCheckout({ ticketId, paymentId, deviceId, referenceId: ticketId, orderId })` with NO `amountCents`.
   - On the split-tender branch: continue with today's path verbatim (pass `amountCents: paymentAmountCents`, no `orderId`).
   - Catch `EmptyOrderError` (and any other internal error from `createOrder`) and translate to `SquareCheckoutCreateFailedError` so the operator-facing error vocabulary stays stable.
-- [ ] T011 [US1] Update the `recordAudit('payment.created', ...)` call inside `sendCardToTerminal` to include `square_order_id` in the `payload` JSON whenever the single-tender branch ran (FR-013 + Constitution Principle III audit-payload extension). Controlled-vocabulary `action` value is unchanged.
-- [ ] T012 [US1] Extend `tests/unit/square/client-import-graph.test.ts`: add `lib/square/orders.ts` to the set of modules asserted server-only (mirror the existing `lib/square/terminal.ts` assertion).
+- [X] T011 [US1] Update the `recordAudit('payment.created', ...)` call inside `sendCardToTerminal` to include `square_order_id` in the `payload` JSON whenever the single-tender branch ran (FR-013 + Constitution Principle III audit-payload extension). Controlled-vocabulary `action` value is unchanged.
+- [X] T012 [US1] Extend `tests/unit/square/client-import-graph.test.ts`: add `lib/square/orders.ts` to the set of modules asserted server-only (mirror the existing `lib/square/terminal.ts` assertion).
 
 ### E2E for User Story 1
 
-- [ ] T013 [US1] Extend `tests/e2e/card-payment-happy.spec.ts` with two assertions against the stub recorder from T004:
+- [X] T013 [US1] Extend `tests/e2e/card-payment-happy.spec.ts` with two assertions against the stub recorder from T004:
   - (l) Single-tender card sale: after the happy-path completes, the recorder shows exactly one `POST /v2/orders` with a body whose `order.lineItems[].name + basePriceMoney.amount + quantity` matches the seeded ticket's service rows.
   - (m) Split-tender card leg (run a cart with a partial cash payment then a card leg): the recorder shows ZERO `POST /v2/orders` for the card leg.
 
 ### Phase 3 verification gate (scoped)
 
-- [ ] T014 [US1] Scoped gate set per CLAUDE.md "Scoping intermediate phase gates":
+- [X] T014 [US1] Scoped gate set per CLAUDE.md "Scoping intermediate phase gates":
   - `npx prettier --check $(git diff --name-only --diff-filter=ACMR HEAD)`
   - `npx eslint $(git diff --name-only --diff-filter=ACMR HEAD | grep -E '\.(ts|tsx|js|jsx)$' || echo .)`
   - `npm run typecheck`
@@ -118,25 +118,25 @@ description: "Task list for feature 051-square-itemized-order"
 
 ### Tests for User Story 3 (FAIL first — Constitution IV)
 
-- [ ] T016 [P] [US3] Extend `tests/unit/square/terminal-checkout.test.ts` with failing case (h): for a fixture ticket of two services ($45 + $60) and a targeted -$10.50 discount, the `mapTicketItemsToOrderLineItems` output, when totaled (sum of `lineItems[i].basePriceMoney.amount * quantity` minus `discounts[i].amountMoney.amount`), equals the seeded `ticket.total_cents` ($94.50 → 9450 cents).
-- [ ] T017 [P] [US3] Extend `tests/unit/square/terminal-checkout.test.ts` with a failing case asserting every `client.orders.create` call body includes `order.taxes: []`, `order.pricingOptions.autoApplyTaxes: false`, and `order.pricingOptions.autoApplyDiscounts: false` (Research R2 / FR-005 / US3 AS2).
-- [ ] T018 [P] [US3] Create `tests/unit/square/order-cancel-orphan.test.ts` with two failing cases:
+- [X] T016 [P] [US3] Extend `tests/unit/square/terminal-checkout.test.ts` with failing case (h): for a fixture ticket of two services ($45 + $60) and a targeted -$10.50 discount, the `mapTicketItemsToOrderLineItems` output, when totaled (sum of `lineItems[i].basePriceMoney.amount * quantity` minus `discounts[i].amountMoney.amount`), equals the seeded `ticket.total_cents` ($94.50 → 9450 cents).
+- [X] T017 [P] [US3] Extend `tests/unit/square/terminal-checkout.test.ts` with a failing case asserting every `client.orders.create` call body includes `order.taxes: []`, `order.pricingOptions.autoApplyTaxes: false`, and `order.pricingOptions.autoApplyDiscounts: false` (Research R2 / FR-005 / US3 AS2).
+- [X] T018 [P] [US3] Create `tests/unit/square/order-cancel-orphan.test.ts` with two failing cases:
   - (i) `client.terminal.checkouts.create` is mocked to throw AFTER `client.orders.create` succeeds → `client.orders.update` is called exactly once with `orderId`, `version` matching the `orders.create` response, and `order.state === 'CANCELED'`.
   - (j) The `client.orders.update` call itself is mocked to throw → `console.warn` is invoked with a message containing both the original error and the cancel error; the function still throws the original `SquareCheckoutCreateFailedError`; the row is still marked `failed` with `failure_reason: 'square_unreachable'`.
 
 ### Implementation for User Story 3
 
-- [ ] T019 [US3] Add `cancelOrder({ orderId, orderVersion, locationId })` to `lib/square/orders.ts` per `contracts/lib-square-orders.md` and Research R7: calls `client.orders.update({ orderId, order: { locationId, version: orderVersion, state: 'CANCELED' } })`. Throws on Square error (caller catches).
-- [ ] T020 [US3] Update the catch branch in `sendCardToTerminal` (the one that runs when `squareCreateCheckout` throws AFTER the new `orders.create` succeeded): wrap a call to `cancelOrder({ orderId, orderVersion, locationId })` in `try/catch`; on cancel failure call `console.warn('orphan order cancel failed; orphan remains in Square dashboard', { orderId, checkoutError, cancelError })`. Do not surface the cancel error to the operator; continue with the existing `payments` failed-mark + audit + `throw SquareCheckoutCreateFailedError` flow.
-- [ ] T021 [US3] Thread `orderVersion` from `createOrder`'s return value through to the `cancelOrder` call. Capture it into a function-scoped `let orderVersion: number | null = null` declared alongside `let orderId: string | null = null` near the top of the single-tender branch.
+- [X] T019 [US3] Add `cancelOrder({ orderId, orderVersion, locationId })` to `lib/square/orders.ts` per `contracts/lib-square-orders.md` and Research R7: calls `client.orders.update({ orderId, order: { locationId, version: orderVersion, state: 'CANCELED' } })`. Throws on Square error (caller catches).
+- [X] T020 [US3] Update the catch branch in `sendCardToTerminal` (the one that runs when `squareCreateCheckout` throws AFTER the new `orders.create` succeeded): wrap a call to `cancelOrder({ orderId, orderVersion, locationId })` in `try/catch`; on cancel failure call `console.warn('orphan order cancel failed; orphan remains in Square dashboard', { orderId, checkoutError, cancelError })`. Do not surface the cancel error to the operator; continue with the existing `payments` failed-mark + audit + `throw SquareCheckoutCreateFailedError` flow.
+- [X] T021 [US3] Thread `orderVersion` from `createOrder`'s return value through to the `cancelOrder` call. Capture it into a function-scoped `let orderVersion: number | null = null` declared alongside `let orderId: string | null = null` near the top of the single-tender branch.
 
 ### E2E for User Story 3
 
-- [ ] T022 [US3] Extend `tests/e2e/card-payment-cancel.spec.ts` with assertion (n): configure the Square stub from T004 to return a `500` on `POST /v2/terminals/checkouts` while still returning `200` on `POST /v2/orders`. Trigger a single-tender card sale; assert the stub recorder shows exactly one `PUT /v2/orders/:id` whose request body's `order.state === 'CANCELED'`. Assert the operator-facing error is the same `SquareCheckoutCreateFailedError` text as today.
+- [X] T022 [US3] Extend `tests/e2e/card-payment-cancel.spec.ts` with assertion (n): configure the Square stub from T004 to return a `500` on `POST /v2/terminals/checkouts` while still returning `200` on `POST /v2/orders`. Trigger a single-tender card sale; assert the stub recorder shows exactly one `PUT /v2/orders/:id` whose request body's `order.state === 'CANCELED'`. Assert the operator-facing error is the same `SquareCheckoutCreateFailedError` text as today.
 
 ### Phase 5 verification gate (scoped)
 
-- [ ] T023 [US3] Scoped gate set per CLAUDE.md "Scoping intermediate phase gates":
+- [X] T023 [US3] Scoped gate set per CLAUDE.md "Scoping intermediate phase gates":
   - `npx prettier --check $(git diff --name-only --diff-filter=ACMR HEAD)`
   - `npx eslint $(git diff --name-only --diff-filter=ACMR HEAD | grep -E '\.(ts|tsx|js|jsx)$' || echo .)`
   - `npm run typecheck`
@@ -152,14 +152,14 @@ description: "Task list for feature 051-square-itemized-order"
 **Purpose**: Final-gate verification + manual orphan-cancel smoke + PR readiness.
 
 - [ ] T024 [P] Manual orphan-cancel verification per `quickstart.md → Negative test (manual orphan-cancel)`: temporarily block egress to `connect.squareupsandbox.com/v2/terminals/checkouts` while allowing `/v2/orders`; trigger a single-tender card sale; confirm the Order in the Square sandbox dashboard transitions to `CANCELED`; confirm the application logs do NOT contain a `console.warn` (because the cancel succeeded). Record the outcome in the PR description.
-- [ ] T025 Run the FULL local gate set per CLAUDE.md "Pre-push quality gates", in order:
-  1. `npm run format:check`
-  2. `npm run lint`
-  3. `npm run typecheck`
-  4. `npm test`
-  5. `npm run test:e2e`
+- [X] T025 Run the FULL local gate set per CLAUDE.md "Pre-push quality gates", in order:
+  1. `npm run format:check` — PASS (all files normalized; one new test file needed `npm run format`)
+  2. `npm run lint` — PASS (2 unrelated warnings on `supply-type-picker.client.tsx:196` + `actions-invite-thorough.test.ts:73`; 0 errors)
+  3. `npm run typecheck` — PASS (`tsc --noEmit` exit 0)
+  4. `npm test` — PASS (1135 passed | 1 skipped — 118 test files)
+  5. `npm run test:e2e` — PASS (315 passed, 12 skipped, 0 flaky; ~7.9 min full 4-project chain)
 
-  All five must be green before push. Re-run from `npm install` if any worktree-isolated dependencies are missing (per the `feedback_worktree_setup` memory).
+  All five gates green on 2026-05-24.
 - [ ] T026 Update the PR body to:
   - Reference `Closes #149`.
   - Summarize the three resolved clarifications (Q1 single-tender-only itemization, Q2 line-level for targeted discounts, Q3 best-effort orphan-cancel).

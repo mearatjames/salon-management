@@ -22,6 +22,7 @@
 import { SignJWT, jwtVerify } from "jose";
 
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
+import { getSquareClient } from "@/lib/square/client";
 
 // Canonical Square host — used for the BROWSER-FACING /oauth2/authorize
 // URL only. This must stay on Square's real host so Playwright's
@@ -495,4 +496,70 @@ export async function revokeAndDelete(): Promise<void> {
   // first, then the connection row.
   await supabase.from("square_devices").delete().neq("id", "00000000-0000-0000-0000-000000000000");
   await supabase.from("square_oauth").delete().eq("id", true);
+}
+
+// ---------------------------------------------------------------------
+// Location-id resolution (feature 051, research R1)
+// ---------------------------------------------------------------------
+
+/**
+ * Resolve and cache the salon's Square `location_id`.
+ *
+ * The single-salon Tang Nails install has exactly one Square location.
+ * `orders.create` requires a concrete `location_id` UUID — the literal
+ * `"main"` string is only accepted by `locations.get` as a convenience
+ * alias. We lazy-resolve once on the first itemized checkout, persist the
+ * value onto the singleton `square_oauth` row, and read it from there for
+ * every subsequent call.
+ *
+ * Behavior:
+ *   - If the `square_oauth` row's `location_id` is non-null, return it.
+ *   - Otherwise call `client.locations.get({ locationId: "main" })`, take
+ *     the returned `location.id`, persist it back, and return it.
+ *   - Throws `Error('getSquareLocationId: Square not connected')` if no
+ *     row exists.
+ *
+ * See: specs/051-square-itemized-order/data-model.md →
+ * square_oauth.location_id and research R1.
+ */
+export async function getSquareLocationId(): Promise<string> {
+  const supabase = createSupabaseServiceRoleClient();
+  const { data: row, error: readErr } = await supabase
+    .from("square_oauth")
+    .select("location_id")
+    .eq("id", true)
+    .maybeSingle();
+  if (readErr) {
+    throw new Error(`getSquareLocationId: read failed: ${readErr.message}`);
+  }
+  if (!row) {
+    throw new Error("getSquareLocationId: Square not connected");
+  }
+  if (typeof row.location_id === "string" && row.location_id.length > 0) {
+    return row.location_id;
+  }
+
+  // Cache miss — resolve via Square API.
+  const connection = await readDecryptedTokens();
+  if (!connection) {
+    throw new Error("getSquareLocationId: Square not connected");
+  }
+  const client = getSquareClient(connection.accessToken);
+  const response = (await client.locations.get({ locationId: "main" })) as unknown as {
+    location?: { id?: string };
+  };
+  const locationId = response.location?.id;
+  if (!locationId) {
+    throw new Error("getSquareLocationId: Square response missing location.id");
+  }
+
+  const { error: updErr } = await supabase
+    .from("square_oauth")
+    .update({ location_id: locationId, updated_at: new Date().toISOString() })
+    .eq("id", true);
+  if (updErr) {
+    throw new Error(`getSquareLocationId: persist failed: ${updErr.message}`);
+  }
+
+  return locationId;
 }

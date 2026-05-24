@@ -76,6 +76,11 @@ export type AuditAction =
   // Added by feature 015 (entity_type "payment"/"integration")
   | "payment.failed"
   | "payment.cancelled"
+  // Added by feature 051 (entity_type "payment") — emitted by
+  // `sendCardToTerminal` after `terminal.checkouts.create` succeeds. The
+  // payload carries `square_terminal_checkout_id` and, when the single-
+  // tender itemized branch ran, `square_order_id` (FR-013).
+  | "payment.created"
   | "integration.square_connected"
   | "integration.square_disconnected"
   | "integration.square_token_refreshed"

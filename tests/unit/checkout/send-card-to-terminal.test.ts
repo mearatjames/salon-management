@@ -36,6 +36,21 @@ vi.mock("@/lib/square/terminal", () => ({
   createCheckout: vi.fn(),
 }));
 
+// Feature 051 — single-tender itemized branch. The action now calls
+// `getSquareLocationId()` from `@/lib/square/oauth` and
+// `createOrder()` from `@/lib/square/orders` whenever
+// `paymentAmountCents === ticket.total_cents` and no `existingDraftId`
+// was passed. Stub both so existing tests (which use single-tender
+// totals) still exercise today's pending-row + checkout-create path.
+vi.mock("@/lib/square/oauth", () => ({
+  getSquareLocationId: vi.fn(async () => "loc_stub"),
+}));
+
+vi.mock("@/lib/square/orders", () => ({
+  createOrder: vi.fn(async () => ({ orderId: "ord_stub_001", orderVersion: 1 })),
+  EmptyOrderError: class EmptyOrderError extends Error {},
+}));
+
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 import { requireStudioSession } from "@/lib/auth/session";
 import { createCheckout as squareCreateCheckout } from "@/lib/square/terminal";
@@ -91,12 +106,37 @@ function ticketsTable(totalCents: number) {
 }
 
 function ticketItemsTable() {
+  // The action makes TWO selects against `ticket_items`:
+  //   1) Unpriced-line check (feature 015) — `.eq(ticket_id, …)` resolves
+  //      to a Promise<{data, error}> directly.
+  //   2) Feature 051 single-tender items-for-Order read — adds a
+  //      `.order("created_at", { ascending: true })` step before the
+  //      Promise. We satisfy both by returning an `.eq()` result that is
+  //      itself awaitable AND carries an `.order()` method whose result
+  //      is also awaitable. (The chained-API style Supabase exposes via
+  //      `PostgrestFilterBuilder` makes this work; both `.eq()` and
+  //      `.order()` resolve to the same row shape because the action
+  //      never differentiates types in test scope.)
+  const rows = [
+    {
+      id: "item-1",
+      kind: "service",
+      name_snapshot: "Classic manicure",
+      unit_price_cents: 2500,
+      qty: 1,
+      discount_target_line_ids: null,
+      price_unconfirmed: false,
+    },
+  ];
   return {
     select: vi.fn(() => ({
-      eq: vi.fn(async () => ({
-        data: [{ id: "item-1", price_unconfirmed: false }],
-        error: null,
-      })),
+      eq: vi.fn(() => {
+        const eqResult: { then: typeof Promise.prototype.then; order: typeof vi.fn } & object =
+          Object.assign(Promise.resolve({ data: rows, error: null }), {
+            order: vi.fn(async () => ({ data: rows, error: null })),
+          }) as never;
+        return eqResult;
+      }),
     })),
   };
 }

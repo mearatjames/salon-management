@@ -278,6 +278,7 @@ export type Database = {
           processed_at: string;
           raw: Json | null;
           square_gift_card_payment_id: string | null;
+          square_order_id: string | null;
           square_payment_id: string | null;
           square_terminal_checkout_id: string | null;
           status: Database["public"]["Enums"]["payment_status"];
@@ -296,6 +297,7 @@ export type Database = {
           processed_at?: string;
           raw?: Json | null;
           square_gift_card_payment_id?: string | null;
+          square_order_id?: string | null;
           square_payment_id?: string | null;
           square_terminal_checkout_id?: string | null;
           status: Database["public"]["Enums"]["payment_status"];
@@ -314,6 +316,7 @@ export type Database = {
           processed_at?: string;
           raw?: Json | null;
           square_gift_card_payment_id?: string | null;
+          square_order_id?: string | null;
           square_payment_id?: string | null;
           square_terminal_checkout_id?: string | null;
           status?: Database["public"]["Enums"]["payment_status"];
@@ -558,6 +561,7 @@ export type Database = {
           created_at: string;
           id: boolean;
           last_refreshed_at: string | null;
+          location_id: string | null;
           merchant_id: string;
           merchant_name: string;
           refresh_failed_at: string | null;
@@ -573,6 +577,7 @@ export type Database = {
           created_at?: string;
           id?: boolean;
           last_refreshed_at?: string | null;
+          location_id?: string | null;
           merchant_id: string;
           merchant_name: string;
           refresh_failed_at?: string | null;
@@ -588,6 +593,7 @@ export type Database = {
           created_at?: string;
           id?: boolean;
           last_refreshed_at?: string | null;
+          location_id?: string | null;
           merchant_id?: string;
           merchant_name?: string;
           refresh_failed_at?: string | null;

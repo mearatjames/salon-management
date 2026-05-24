@@ -303,5 +303,153 @@ test.describe("US2: Take a card payment — happy path", () => {
     expect(cardCaptured).toBeDefined();
 
     stub.assertNoLiveSquareCalls();
+
+    // 13) Feature 051 (T013 (l)) — single-tender card sale sends an
+    //     itemized Order to Square. The server-side Square SDK routes
+    //     through `SQUARE_API_BASE_URL=http://127.0.0.1:4567` (the
+    //     `_square-server-stub.ts` singleton), which records every
+    //     `POST /v2/orders` request body. Assert exactly one create and
+    //     that its `lineItems` mirror the seeded ticket's service rows.
+    const orderCreates = await serverStub.recordedOrderCreates();
+    expect(orderCreates).toHaveLength(1);
+    const orderBody = orderCreates[0].body as {
+      order?: {
+        line_items?: Array<{
+          name?: string;
+          base_price_money?: { amount?: number };
+          quantity?: string;
+        }>;
+      };
+    };
+    expect(orderBody.order?.line_items).toHaveLength(1);
+    const li = orderBody.order!.line_items![0];
+    expect(li.name).toBe("Classic manicure");
+    // Square SDK serializes BigInt money as a JSON number. Tang Nails
+    // sends 2500 cents for the $25 Classic manicure seeded service.
+    expect(li.base_price_money?.amount).toBe(2500);
+    expect(li.quantity).toBe("1");
+
+    // The persisted payment row also carries the Square Order id so
+    // support can pivot from Tang Nails to Square without recomputation.
+    const { data: orderedRow } = await supabase
+      .from("payments")
+      .select("square_order_id")
+      .eq("ticket_id", ticketId)
+      .eq("method", "card")
+      .single();
+    expect(orderedRow?.square_order_id).toBe(orderCreates[0].responseOrderId);
+  });
+
+  // ---------------------------------------------------------------------
+  // Feature 051 (T013 (m)) — split-tender card leg sends NO Order.
+  //
+  // A $25 ticket is split into $10 cash + $15 card. After the card leg
+  // activates we assert the server stub recorded ZERO `POST /v2/orders`
+  // because the card amount (1500 cents) is strictly less than the
+  // ticket total (2500 cents) — `sendCardToTerminal`'s `isSingleTender`
+  // gate keeps the split-tender path on today's `amountMoney`-only
+  // contract. No webhook is required to make this assertion; the
+  // `card-waiting` screen is enough.
+  // ---------------------------------------------------------------------
+  test("US1 (m) split-tender card leg → no POST /v2/orders recorded", async ({
+    page,
+    context,
+    baseURL,
+  }) => {
+    if (!supabaseUp) test.skip();
+    const supabase = serviceClient();
+
+    // 1) Sign in + connect Square + set default terminal.
+    await page.goto("/settings/square");
+    await connectSquareViaStub(page, context, baseURL!);
+
+    const stub: SquareStub = await squareStub(context, baseURL!);
+    stub.stubListDevices([{ id: "device:STUB_HAPPY", name: "Lobby Terminal", status: "PAIRED" }]);
+
+    // 2) Open a fresh ephemeral cart, pick a $25 Classic manicure.
+    await page.goto("/dashboard");
+    await page.locator("[data-slot='new-transaction-cta']").click();
+    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
+    await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Jordan Lee']").click();
+    await page
+      .locator("[data-slot='service-tile'][data-service-id='20000000-0000-0000-0000-000000000001']")
+      .click();
+    await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$25.00");
+
+    // 3) Tap Split → SplitCartFooter renders.
+    await page.locator("[data-slot='payment-tile'][data-method='split']").click();
+    await expect(page.locator("[data-slot='split-cart-footer']")).toBeVisible({ timeout: 5_000 });
+
+    // 4) Compose $10 cash leg (this persists the cart) + $15 card leg.
+    await page.locator("[data-slot='split-add-leg']").click();
+    await expect(page.locator("[data-slot='split-composer']")).toBeVisible();
+    await page.locator("[data-slot='split-composer-amount']").fill("10.00");
+    await page.locator("[data-slot='split-composer-method'][data-method='cash']").click();
+    await page.locator("[data-slot='split-composer-submit']").click();
+    await page.waitForURL(/\/checkout\/[0-9a-f-]{36}(\?|$)/, { timeout: 10_000 });
+    const ticketId = new URL(page.url()).pathname.split("/").pop()!;
+
+    await page.locator("[data-slot='split-add-leg']").click();
+    await expect(page.locator("[data-slot='split-composer']")).toBeVisible();
+    await page.locator("[data-slot='split-composer-amount']").fill("15.00");
+    await page.locator("[data-slot='split-composer-method'][data-method='card']").click();
+    await page.locator("[data-slot='split-composer-submit']").click();
+    await expect(
+      page.locator("[data-slot='payment-leg-row'][data-method='card'][data-status='draft']")
+    ).toBeVisible({ timeout: 5_000 });
+
+    // 5) Activate the cash leg, then the card leg.
+    await page.locator("[data-slot='payment-leg-row'][data-method='cash']").click();
+    await expect(
+      page.locator("[data-slot='payment-leg-row'][data-method='cash'][data-status='succeeded']")
+    ).toBeVisible({ timeout: 5_000 });
+
+    // Snapshot the order-creates list BEFORE the card leg so we can prove
+    // the leg itself added nothing (the happy-path test, run earlier in
+    // this serial describe, will have left at least one create on the
+    // shared singleton stub's recorder).
+    const ordersBefore = await serverStub.recordedOrderCreates();
+    const baselineCount = ordersBefore.length;
+
+    await page.locator("[data-slot='payment-leg-row'][data-method='card']").click();
+    await expect(page.locator("[data-slot='card-waiting']")).toBeVisible({ timeout: 10_000 });
+
+    // 6) Wait for the pending card row to land + capture its checkout id
+    //    (proves `squareCreateCheckout` was invoked — i.e. the only path
+    //    that *could* have called `orders.create` ran fully).
+    let attempt = 0;
+    type PendingPaymentRow = {
+      id: string;
+      square_terminal_checkout_id: string | null;
+      square_order_id: string | null;
+    };
+    let pendingRow: PendingPaymentRow | null = null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    while (attempt < 20 && !(pendingRow as any)?.square_terminal_checkout_id) {
+      const { data } = await supabase
+        .from("payments")
+        .select("id, square_terminal_checkout_id, square_order_id")
+        .eq("ticket_id", ticketId)
+        .eq("method", "card")
+        .eq("status", "pending")
+        .limit(1)
+        .maybeSingle();
+      const row = data as PendingPaymentRow | null;
+      if (row?.square_terminal_checkout_id) {
+        pendingRow = row;
+        break;
+      }
+      await new Promise((r) => setTimeout(r, 250));
+      attempt++;
+    }
+    expect(pendingRow?.square_terminal_checkout_id).toBeTruthy();
+
+    // 7) Split-tender card leg MUST NOT create an Order and the row's
+    //    `square_order_id` column stays null.
+    const ordersAfter = await serverStub.recordedOrderCreates();
+    expect(ordersAfter.length - baselineCount).toBe(0);
+    expect(pendingRow?.square_order_id).toBeNull();
+
+    stub.assertNoLiveSquareCalls();
   });
 });

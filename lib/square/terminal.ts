@@ -91,6 +91,15 @@ export type CreateCheckoutInput = {
   amountCents: number;
   deviceId: string;
   referenceId: string;
+  /**
+   * Feature 051 (US1 single-tender itemized branch): when set, the SDK
+   * request sends `checkout.orderId` and OMITS `checkout.amountMoney`.
+   * Square renders the line items + discounts from the referenced Order
+   * on the terminal screen, the dashboard, and the receipts. When
+   * absent (today's split-tender + cash-only-card path), the request
+   * falls back to `checkout.amountMoney` exactly as before.
+   */
+  orderId?: string;
 };
 
 export type CreateCheckoutResult = {
@@ -122,18 +131,30 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
 
   // The SDK accepts a typed CreateTerminalCheckoutRequest. We construct it
   // manually so the test-mocked fake gets a stable arg shape.
+  //
+  // Feature 051 (US1) — when `orderId` is set we additionally send
+  // `checkout.orderId` so Square renders the referenced Order's line
+  // items + discounts on the terminal + receipts (instead of the
+  // legacy "Custom amount" row). The Square v44 SDK still requires
+  // `amountMoney` even on the orderId branch (Square cross-checks it
+  // against the Order's grand total), so we send the cart total in
+  // both branches and only the `orderId` key differs.
+  const checkout: Record<string, unknown> = {
+    referenceId: input.referenceId,
+    deviceOptions: { deviceId: input.deviceId },
+    amountMoney: {
+      amount: BigInt(input.amountCents),
+      currency: "USD",
+    },
+  };
+  if (input.orderId) {
+    checkout.orderId = input.orderId;
+  }
   const response = (await client.terminal.checkouts.create({
     idempotencyKey,
-    checkout: {
-      amountMoney: {
-        amount: BigInt(input.amountCents),
-        currency: "USD",
-      },
-      referenceId: input.referenceId,
-      deviceOptions: {
-        deviceId: input.deviceId,
-      },
-    },
+    // SDK typing accepts the discriminated shape; tests assert on it directly.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    checkout: checkout as any,
   })) as unknown as { checkout?: { id?: string; status?: string } };
 
   const checkoutId = response.checkout?.id;
