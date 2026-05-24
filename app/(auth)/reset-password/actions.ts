@@ -14,11 +14,17 @@
 // written by `/auth/callback`'s recovery branch).
 //
 // Branch matrix:
-//   • password < 8 chars      → /reset-password?error=too_short
-//   • password !== confirm    → /reset-password?error=mismatch
-//   • no session              → /reset-password?error=expired
-//   • AuthRetryableFetchError → /reset-password?error=network
-//   • success                 → recordAuth(device.password_reset) + /select-staff
+//   • password < 8 chars            → /reset-password?error=too_short
+//   • password !== confirm          → /reset-password?error=mismatch
+//   • no session                    → /reset-password?error=expired
+//   • AuthRetryableFetchError       → /reset-password?error=network
+//   • SDK error code "same_password"→ /reset-password?error=same_password
+//   • Any other SDK error           → /reset-password?error=update_failed
+//   • success                       → recordAuth(device.password_reset) + /select-staff
+//
+// `too_short` is only emitted by the client-length check above the SDK
+// call — never by a Supabase rejection. See contracts/server-actions.md
+// § updatePassword.
 
 import { redirect } from "next/navigation";
 
@@ -82,11 +88,17 @@ export async function updatePassword(formData: FormData): Promise<void> {
       if (error instanceof AuthRetryableFetchError) {
         redirect("/reset-password?error=network");
       }
-      // Any other SDK error (e.g. weak-password policy from Supabase) —
-      // surface as too_short for now; the dev console will carry the
-      // forensic detail.
+      // Supabase signals same-password via AuthApiError.code === "same_password".
+      // The message is also stable: "New password should be different from
+      // the old password."
+      if ((error as { code?: string }).code === "same_password") {
+        redirect("/reset-password?error=same_password");
+      }
+      // Any other non-retryable rejection (weak-password policy, future
+      // server-side rules, etc.) — surface a generic update-failed message
+      // instead of lying about length. Dev console still carries the detail.
       console.error("updatePassword: SDK returned error", error);
-      redirect("/reset-password?error=too_short");
+      redirect("/reset-password?error=update_failed");
     }
   } catch (err) {
     if (isNextRedirectError(err)) throw err;

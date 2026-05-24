@@ -1966,6 +1966,45 @@ test.describe.serial("010-US3: password-reset flow (full round-trip)", () => {
     await expect(secondPage.getByRole("link", { name: "Request a new link" })).toBeVisible();
     await secondContext.close();
   });
+
+  // Issue #136 — submitting the user's CURRENT password as the new one
+  // used to render the misleading "Password must be at least 8 characters"
+  // alert because every non-retryable SDK error was funneled into
+  // ?error=too_short. updatePassword now routes the SDK's "same_password"
+  // code to its own ?error=same_password branch with honest copy, and the
+  // catch-all is ?error=update_failed (still verified by alert rendering).
+  test("(T048) same-password reuse and update_failed inline errors", async ({ page }) => {
+    await page.goto("/login?reset_intent=1");
+    await page.locator("#forgot-email").fill(RESET_TEST_EMAIL);
+    await page.getByRole("button", { name: "Send reset link" }).click();
+    await page.waitForURL(/\/login\?reset_sent=/);
+
+    const message = await fetchLatestEmailFor(RESET_TEST_EMAIL);
+    expect(message).not.toBeNull();
+    const recoveryUrl = extractRecoveryLink(message!);
+    expect(recoveryUrl).not.toBeNull();
+    await followRecoveryLink(page, recoveryUrl!);
+
+    // Submit the CURRENT password as the new password. Supabase rejects
+    // with AuthApiError code "same_password"; the action must route that
+    // to ?error=same_password (not the old misleading ?error=too_short).
+    await page.locator("#reset-password").fill(RESET_TEST_PASSWORD);
+    await page.locator("#reset-confirm").fill(RESET_TEST_PASSWORD);
+    await page.getByRole("button", { name: "Set new password" }).click();
+    await page.waitForURL(/\/reset-password\?error=same_password/);
+    await expect(page.locator(".auth-alert.auth-alert-error")).toHaveText(
+      "Pick a password you haven't used before — this one matches your current password."
+    );
+
+    // The recovery session is still valid (the SDK rejected the update
+    // before mutating anything). Navigate directly to the update_failed
+    // surface — the page-level render is the part this verifies; the
+    // action-layer routing to update_failed is covered in the unit suite.
+    await page.goto("/reset-password?error=update_failed");
+    await expect(page.locator(".auth-alert.auth-alert-error")).toHaveText(
+      "Couldn't update your password. Try again, or request a new reset link."
+    );
+  });
 });
 
 // ----- 010-US4: Magic-link dedicated views ----------------------------------

@@ -145,7 +145,7 @@ copy:
 
 | Param | Type | Source | Effect |
 |---|---|---|---|
-| `error` | `"expired" \| "too_short" \| "mismatch" \| "network"` | `updatePassword`, `/auth/callback` on recovery exchange failure | Renders the matching `Alert` above the form (or the expired-state body for `expired`). |
+| `error` | `"expired" \| "too_short" \| "mismatch" \| "network" \| "same_password" \| "update_failed"` | `updatePassword`, `/auth/callback` on recovery exchange failure | Renders the matching `Alert` above the form (or the expired-state body for `expired`). `same_password` fires when the user submits their current password as the new one; `update_failed` is the fallback for any non-retryable Supabase rejection that isn't a recognised code (so `too_short` is reserved for the client-side length check). |
 
 ### Response
 
