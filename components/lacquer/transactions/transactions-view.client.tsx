@@ -25,6 +25,7 @@
 import { useCallback, useMemo, useState } from "react";
 
 import type { Technician } from "@/lib/dashboard/aggregate";
+import type { StudioRole } from "@/lib/auth/session";
 import { computeKpis, groupByDay, type TransactionDetail } from "@/lib/transactions/aggregate";
 import {
   FilterBar,
@@ -42,6 +43,14 @@ export type TransactionsViewProps = {
   todayKey: string;
   /** Lower-cased period label, e.g. `"this week"`, shown under the KPI count. */
   periodLabel: string;
+  /**
+   * Feature 050: the viewer's role. The page already redirects non-owner/
+   * non-manager away from `/transactions`, so this is guaranteed
+   * "owner" | "manager" at render; threaded through for defense-in-depth
+   * and so the chip's per-line gate has a single source of truth. The
+   * `<ReceiptDrawer>` reads it directly.
+   */
+  viewerRole: StudioRole;
 };
 
 // C4 § search clause — case-insensitive, trimmed, substring over the client
@@ -67,6 +76,7 @@ export function TransactionsView({
   previousPeriodCount,
   todayKey,
   periodLabel,
+  viewerRole,
 }: TransactionsViewProps) {
   // US3 filter state — all in-memory over the loaded period (contract C4).
   const [search, setSearch] = useState("");
@@ -174,6 +184,8 @@ export function TransactionsView({
         <ReceiptDrawer
           transaction={selectedTransaction}
           staff={staff}
+          viewerRole={viewerRole}
+          payPeriodFinalized={selectedTransaction.payPeriodFinalized}
           onClose={handleDrawerClose}
         />
       ) : null}

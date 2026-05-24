@@ -127,6 +127,110 @@ export async function getAuthUserByEmail(email: string): Promise<{ id: string }>
 }
 
 /**
+ * Seed a `payroll_payouts` row that "finalizes" the pay period containing
+ * `startsOn` for the given `staffId`. Used by feature-050 US3 specs to flip
+ * the reassign-paid-line-tech surface to mode 3 (Lock + tooltip) without
+ * recording an actual payout via the Payroll RPC chain.
+ *
+ * Behaviour (mirrors `lib/payroll/queries.ts § ensurePayPeriodRow`):
+ *   1. Upsert the `pay_periods` row (on conflict do nothing) with status
+ *      'open' — the current half-month period is shared across workers and
+ *      may already exist; the upsert is a no-op if so.
+ *   2. Re-read the row to obtain its canonical `id`.
+ *   3. Insert one `payroll_payouts` row tied to that `(pay_period_id,
+ *      staff_id)` — `paid=true` to satisfy the
+ *      `payroll_payouts_paid_consistency_chk` CHECK constraint.
+ *
+ * Each worker scopes its payout to its own staff id so two workers never
+ * collide on the `(pay_period_id, staff_id)` unique constraint.
+ *
+ * Returns the inserted payout's `id` so `clearPayoutForPeriod` can target
+ * it for cleanup without affecting the shared `pay_periods` row.
+ */
+export async function seedPayoutForPeriod(opts: {
+  startsOn: string;
+  endsOn: string;
+  payDate: string;
+  staffId: string;
+  recordedByStaffId: string;
+}): Promise<{ payoutId: string; payPeriodId: string }> {
+  const c = client();
+
+  // 1. Ensure the period row exists.
+  const { error: upErr } = await c.from("pay_periods").upsert(
+    {
+      starts_on: opts.startsOn,
+      ends_on: opts.endsOn,
+      pay_date: opts.payDate,
+      status: "open",
+    },
+    { onConflict: "starts_on", ignoreDuplicates: true }
+  );
+  if (upErr) {
+    throw new Error(`seedPayoutForPeriod: pay_periods upsert failed: ${upErr.message}`);
+  }
+
+  // 2. Read back the canonical id.
+  const { data: periodRow, error: rdErr } = await c
+    .from("pay_periods")
+    .select("id")
+    .eq("starts_on", opts.startsOn)
+    .single();
+  if (rdErr || !periodRow) {
+    throw new Error(
+      `seedPayoutForPeriod: pay_periods reread failed: ${rdErr?.message ?? "no row"}`
+    );
+  }
+  const periodId = (periodRow as { id: string }).id;
+
+  // 3. Insert one payout for this worker's staff. paid=true plus the
+  //    other consistency-required columns satisfies the CHECK constraint.
+  const { data: payoutRow, error: insErr } = await c
+    .from("payroll_payouts")
+    .insert({
+      pay_period_id: periodId,
+      staff_id: opts.staffId,
+      paid: true,
+      method: "cash",
+      paid_on: opts.payDate,
+      recorded_by_staff_id: opts.recordedByStaffId,
+      paid_at: new Date().toISOString(),
+      commissionable_cents: 0,
+      income_after_split_cents: 0,
+      card_tips_cents: 0,
+      tips_after_split_cents: 0,
+      check_portion_cents: 0,
+      cash_payment_cents: 0,
+      service_commission_pct: 0,
+      tip_split_pct: 0,
+    })
+    .select("id")
+    .single();
+  if (insErr || !payoutRow) {
+    throw new Error(
+      `seedPayoutForPeriod: payroll_payouts insert failed: ${insErr?.message ?? "no row"}`
+    );
+  }
+
+  return {
+    payoutId: (payoutRow as { id: string }).id,
+    payPeriodId: periodId,
+  };
+}
+
+/**
+ * Delete a single `payroll_payouts` row by id. Leaves the (shared)
+ * `pay_periods` row in place so other workers / specs that rely on it
+ * are unaffected. Idempotent — a missing row is a no-op.
+ */
+export async function clearPayoutById(payoutId: string): Promise<void> {
+  const { error } = await client().from("payroll_payouts").delete().eq("id", payoutId);
+  if (error) {
+    throw new Error(`clearPayoutById(${payoutId}) failed: ${error.message}`);
+  }
+}
+
+/**
  * Wait for a Next.js `loading.tsx` route skeleton to clear after a
  * `page.goto(...)` call.
  *

@@ -304,6 +304,7 @@ function tx(partial: Partial<TransactionDetail>): TransactionDetail {
     totalCents: 0,
     serviceCount: 0,
     cashierName: null,
+    payPeriodFinalized: false,
     ...partial,
   };
 }

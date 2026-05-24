@@ -28,17 +28,32 @@ import { X } from "lucide-react";
 
 import type { Technician } from "@/lib/dashboard/aggregate";
 import { formatCurrency } from "@/lib/dashboard/format";
+import type { StudioRole } from "@/lib/auth/session";
 import type { TransactionDetail } from "@/lib/transactions/aggregate";
 import { formatDayLabel } from "@/lib/transactions/format";
 import { MethodPill } from "@/components/lacquer/method-pill";
-import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 import { TechStack } from "@/components/lacquer/tech-stack";
+import { ReceiptLineTechChip } from "@/components/lacquer/transactions/receipt-line-tech-chip";
 
 export type ReceiptDrawerProps = {
   /** The transaction to render the receipt for. */
   transaction: TransactionDetail;
   /** Staff roster, for resolving tech avatars / names. */
   staff: readonly Technician[];
+  /**
+   * Feature 050: the viewer's role. Owner + manager get the per-line
+   * "Change" trigger (mode 2 of `<ReceiptLineTechChip>`); every other
+   * role gets the read-only chip (mode 1). The server action is the
+   * authority — this is defense-in-depth (Constitution Principle II).
+   */
+  viewerRole: StudioRole;
+  /**
+   * Feature 050: when true (the page resolved
+   * `isPayPeriodFinalized(period) === true`), every per-line chip
+   * renders mode 3 — Lock icon + tooltip; no Change trigger for any
+   * role (FR-002, FR-004).
+   */
+  payPeriodFinalized: boolean;
   /** Called for any of the three dismissal paths (✕, backdrop, Escape). */
   onClose: () => void;
 };
@@ -51,12 +66,13 @@ const METHOD_LABEL: Record<TransactionDetail["method"], string> = {
   split: "Split payment",
 };
 
-// The first name of a staff member, for the per-line tech chip.
-function firstName(displayName: string): string {
-  return displayName.split(/\s+/)[0] ?? displayName;
-}
-
-export function ReceiptDrawer({ transaction, staff, onClose }: ReceiptDrawerProps) {
+export function ReceiptDrawer({
+  transaction,
+  staff,
+  viewerRole,
+  payPeriodFinalized,
+  onClose,
+}: ReceiptDrawerProps) {
   // Escape closes the drawer; the document body is scroll-locked while open.
   // Both are registered together and torn down on unmount so a remount for a
   // different transaction never leaks a listener or a stuck `overflow`.
@@ -78,6 +94,20 @@ export function ReceiptDrawer({ transaction, staff, onClose }: ReceiptDrawerProp
   const staffById = new Map(staff.map((member) => [member.id, member]));
   const dayLabel = formatDayLabel(transaction.dayKey);
   const cashier = transaction.cashierName ?? "Unknown";
+
+  // Feature 050: the canEdit gate is the drawer-level resolution of "is
+  // this viewer + this period eligible to mutate the line's tech?" The
+  // server action re-checks both (Principle II); this only controls
+  // affordance visibility. Discount + product rows still skip the chip
+  // entirely (the line's `kind` filter below preserves today's render).
+  const canEdit = (viewerRole === "owner" || viewerRole === "manager") && !payPeriodFinalized;
+  // The active-staff roster the picker lists — already pre-filtered to
+  // `active=true` by `queryStaffRoster`.
+  const activeStaff = staff.map((member) => ({
+    id: member.id,
+    displayName: member.displayName,
+    colorToken: member.colorToken,
+  }));
 
   // The payment block shows one row per recorded payment. `deriveMethod`
   // already resolved the drawer-level marker; each line keeps its own method.
@@ -166,16 +196,28 @@ export function ReceiptDrawer({ transaction, staff, onClose }: ReceiptDrawerProp
                       <div className="nm">{item.name}</div>
                       <div className="meta">
                         {item.category ? <span>{item.category}</span> : null}
-                        {item.category && tech ? <span aria-hidden="true">·</span> : null}
-                        {tech ? (
-                          <span className="tp-d-tech-chip">
-                            <InitialsAvatar
-                              name={tech.displayName}
-                              colorToken={tech.colorToken}
-                              size={14}
-                            />{" "}
-                            {firstName(tech.displayName)}
-                          </span>
+                        {/* Feature 050: the per-line chip renders for service
+                            rows in all three modes — read-only chip (mode 1),
+                            chip + Change (mode 2), or chip + Lock (mode 3).
+                            Discount + product rows still skip the chip
+                            (today's behavior). For mode 2 we also render the
+                            chip when the line is unassigned, so a placeholder
+                            chip + Change trigger is available to fill the
+                            attribution. */}
+                        {item.kind === "service" && (tech || canEdit || payPeriodFinalized) ? (
+                          <>
+                            {item.category ? <span aria-hidden="true">·</span> : null}
+                            <ReceiptLineTechChip
+                              techId={item.techId}
+                              techDisplayName={tech?.displayName ?? null}
+                              techColorToken={tech?.colorToken ?? null}
+                              lineId={item.lineId}
+                              ticketId={transaction.id}
+                              canEdit={canEdit}
+                              payPeriodFinalized={payPeriodFinalized}
+                              activeStaff={activeStaff}
+                            />
+                          </>
                         ) : null}
                         {item.qty > 1 ? <span>· qty {item.qty}</span> : null}
                       </div>
