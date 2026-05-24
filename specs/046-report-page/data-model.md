@@ -134,7 +134,6 @@ shares 0.
   scope).
 - `totalDeductionsCents = cardFeeCents + supplyCents`.
 - Totals row: every grand total === Σ of that column across tech rows (SC-002).
-- `hasNoDeductions` (a tech) ⇔ `totalDeductionsCents === 0` (R7).
 - Period `transactionCount` = distinct paid tickets in the window (R9) — **not**
   Σ per-tech counts.
 
@@ -188,7 +187,6 @@ server pre-formats every time string.
 | `totalDeductionsCents` | `number` | `cardFeeCents + supplyCents` |
 | `commissionableCents` | `number` | `grossCents − totalDeductionsCents` |
 | `cardTipsCents` | `number` | Σ `cardTipCents` |
-| `hasNoDeductions` | `boolean` | `totalDeductionsCents === 0` (R7) |
 | `transactions` | `readonly ReportTransaction[]` | this tech's reported transactions, newest-first |
 
 `TechnicianReport[]` is ordered by `displayName` ascending.

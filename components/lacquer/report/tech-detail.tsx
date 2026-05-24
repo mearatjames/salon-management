@@ -7,9 +7,10 @@
 // deduction, net, and a payment-method pill — plus a header summary (gross,
 // deducted, commissionable, card tips) and a per-technician totals row.
 //
-// For an exempt technician (`hasNoDeductions === true`, FR-025) the two
-// deduction columns (card fee + supply) are omitted; each transaction's net
-// then equals its gross. The header drops the "Deducted" figure too.
+// When a technician has no deductions for the window
+// (`totalDeductionsCents === 0`, FR-025) the two deduction columns (card fee
+// + supply) are omitted; each transaction's net then equals its gross. The
+// header drops the "Deducted" figure too.
 //
 // A transaction with at least one deduction or a card tip (`isExpandable`)
 // renders as a clickable row carrying `data-expandable`; clicking it toggles an
@@ -154,10 +155,10 @@ function TransactionRows({
 }
 
 export function TechDetail({ technician, expandedTxIds, onToggleTx }: TechDetailProps) {
-  const showDeductions = !technician.hasNoDeductions;
+  const showDeductions = technician.totalDeductionsCents > 0;
   // The transaction table's column count — the expanded breakdown row spans it.
   // Time, Client, Services, Gross, Net, Pay = 6; plus Card fee + Supply when
-  // the technician is not exempt.
+  // the technician has deductions for the window.
   const columnCount = showDeductions ? 8 : 6;
 
   return (
@@ -180,11 +181,6 @@ export function TechDetail({ technician, expandedTxIds, onToggleTx }: TechDetail
               >
                 {technician.displayName}
               </span>
-              {technician.hasNoDeductions ? (
-                <span className="dr-exempt-badge" data-slot="exempt-tag">
-                  No deductions
-                </span>
-              ) : null}
             </div>
             <div className="dr-scope-sub">
               {technician.transactionCount} transactions · {technician.serviceCount} services

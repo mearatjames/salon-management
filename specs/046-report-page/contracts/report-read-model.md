@@ -87,11 +87,11 @@ Half-month windows; `offset` steps by whole half-months across month boundaries.
 buildReportCsv(report: ReportReadModel, window: ReportWindow): string
 ```
 
-- Header row: `Tech, Exempt, Services, Gross, Card Fee, Supply, Total
-  Deductions, Commissionable, Card Tips`.
-- One row per `TechnicianReport` (order: `displayName` asc); `Exempt` = `Yes`
-  when `hasNoDeductions` else `No`; money columns are decimal dollars (`75.00`).
-- Final `TOTAL` row from `ReportTotals` (blank `Exempt`).
+- Header row: `Tech, Services, Gross, Card Fee, Supply, Total Deductions,
+  Commissionable, Card Tips`.
+- One row per `TechnicianReport` (order: `displayName` asc); money columns
+  are decimal dollars (`75.00`).
+- Final `TOTAL` row from `ReportTotals`.
 - Every value is double-quoted; rows joined with `\n`.
 - The client island downloads it as `Report-<window.rangeLabel>.csv` via a
   `data:text/csv;charset=utf-8` anchor. Values match the on-screen overview
@@ -106,7 +106,7 @@ buildReportCsv(report: ReportReadModel, window: ReportWindow): string
 | `report-summary.tsx` | Server | 3-stat strip — gross revenue, total deductions (Card / Supply), card tips (FR-022) |
 | `report-view.client.tsx` | Client island | owns `selectedTechId` + `expandedTxIds`; renders left list + right panel |
 | `all-staff-overview.tsx` | Presentational | overview table + totals row + legend (FR-021, FR-023) |
-| `tech-detail.tsx` | Presentational | per-tech transaction table; expandable rows; omits deduction columns when `hasNoDeductions` (FR-024, FR-025, FR-026) |
+| `tech-detail.tsx` | Presentational | per-tech transaction table; expandable rows; omits deduction columns when `totalDeductionsCents === 0` (FR-024, FR-025, FR-026) |
 | `report-empty-state.tsx` | Presentational | shown when `report.isEmpty` (FR-029) |
 
 Stable `data-slot` / `data-*` hooks for e2e: `data-slot="report-actions"`,

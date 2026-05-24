@@ -353,7 +353,6 @@ describe("projectReport — single tech, single cash transaction", () => {
     expect(t.supplyCents).toBe(0);
     expect(t.totalDeductionsCents).toBe(0);
     expect(t.commissionableCents).toBe(5000);
-    expect(t.hasNoDeductions).toBe(true);
     expect(t.serviceCount).toBe(1);
     expect(t.transactionCount).toBe(1);
   });
@@ -396,7 +395,6 @@ describe("projectReport — card transaction applies deductions", () => {
     expect(t.supplyCents).toBe(400);
     expect(t.totalDeductionsCents).toBe(DEFAULT_CARD_FEE_CENTS + 400);
     expect(t.commissionableCents).toBe(5000 - DEFAULT_CARD_FEE_CENTS - 400);
-    expect(t.hasNoDeductions).toBe(false);
   });
 
   it("the whole card tip goes to the single tech", () => {
@@ -629,7 +627,7 @@ describe("projectReport — multi-tech tip split on one ticket", () => {
   });
 });
 
-describe("projectReport — hasNoDeductions ⇔ totalDeductions === 0", () => {
+describe("projectReport — fully-exempt tech yields zero deductions", () => {
   // A fully-exempt tech (card_fee_exempt + supply_mode 'exempt') on a card ticket.
   const model = projectReport(
     input({
@@ -651,10 +649,9 @@ describe("projectReport — hasNoDeductions ⇔ totalDeductions === 0", () => {
     })
   );
 
-  it("a fully-exempt tech has zero deductions, commissionable === gross, hasNoDeductions true", () => {
+  it("a fully-exempt tech has zero deductions and commissionable === gross", () => {
     const t = model.technicians[0];
     expect(t.totalDeductionsCents).toBe(0);
-    expect(t.hasNoDeductions).toBe(true);
     expect(t.commissionableCents).toBe(t.grossCents);
   });
 

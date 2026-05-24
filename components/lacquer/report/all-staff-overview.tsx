@@ -2,10 +2,10 @@
 // page (US1, FR-021 … FR-023).
 //
 // Presentational Server Component. Renders one `.dr-table` row per
-// `TechnicianReport` — avatar + name + "Exempt" tag, services count, gross,
-// card-fee deduction, supply deduction, commissionable amount, card tips —
-// plus a `tfoot` totals row (`data-slot="totals-row"`) whose every value is
-// the sum of the technician rows, and the deduction legend.
+// `TechnicianReport` — avatar + name, services count, gross, card-fee
+// deduction, supply deduction, commissionable amount, card tips — plus a
+// `tfoot` totals row (`data-slot="totals-row"`) whose every value is the sum
+// of the technician rows, and the deduction legend.
 //
 // Adapted from `design-system/prototypes/transaction/DayReport.jsx`
 // (`DrAllStaffView`, the `layout='page'` variant). Every value traces to a
@@ -23,8 +23,8 @@ export type AllStaffOverviewProps = {
   totals: ReportTotals;
 };
 
-// A deduction cell: an em-dash when the deduction is zero (or the tech is
-// exempt), otherwise the negative dollar amount.
+// A deduction cell: an em-dash when the deduction is zero, otherwise the
+// negative dollar amount.
 function deductionCell(cents: number): string {
   return cents === 0 ? "—" : `−${formatCurrency(cents / 100)}`;
 }
@@ -91,29 +91,16 @@ export function AllStaffOverview({ technicians, totals }: AllStaffOverviewProps)
                       <div style={{ fontWeight: 500, fontSize: "var(--text-sm)" }}>
                         {tech.displayName}
                       </div>
-                      {tech.hasNoDeductions ? (
-                        <div className="dr-exempt-tag" data-slot="exempt-tag">
-                          Exempt
-                        </div>
-                      ) : null}
                     </div>
                   </div>
                 </td>
                 <td className="num">{tech.serviceCount}</td>
                 <td className="num">{formatCurrency(tech.grossCents / 100)}</td>
                 <td className={`num dc${tech.cardFeeCents > 0 ? " on" : ""}`}>
-                  {tech.hasNoDeductions ? (
-                    <span className="dr-em-dash">—</span>
-                  ) : (
-                    deductionCell(tech.cardFeeCents)
-                  )}
+                  {deductionCell(tech.cardFeeCents)}
                 </td>
                 <td className={`num dc${tech.supplyCents > 0 ? " on" : ""}`}>
-                  {tech.hasNoDeductions ? (
-                    <span className="dr-em-dash">—</span>
-                  ) : (
-                    deductionCell(tech.supplyCents)
-                  )}
+                  {deductionCell(tech.supplyCents)}
                 </td>
                 <td className="num net-cell">{formatCurrency(tech.commissionableCents / 100)}</td>
                 <td className="num tip-cell">{formatCurrency(tech.cardTipsCents / 100)}</td>
@@ -144,11 +131,6 @@ export function AllStaffOverview({ technicians, totals }: AllStaffOverviewProps)
         <span>
           <strong>Supply</strong> covers the per-service supply cost a technician owes on the
           services they performed.
-        </span>
-        <span className="dr-legend-sep">·</span>
-        <span>
-          <span className="dr-exempt-inline">Exempt</span> technicians have no deductions —
-          commissionable equals gross.
         </span>
       </div>
     </div>
