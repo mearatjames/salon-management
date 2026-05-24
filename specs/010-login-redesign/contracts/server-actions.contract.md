@@ -97,7 +97,18 @@ audited events.
    ```
    On `AuthRetryableFetchError`, redirect to
    `/reset-password?error=network` and let the page render a
-   retry button.
+   retry button. On `AuthApiError` with `code === "same_password"`
+   (the user submitted their current password as the new one),
+   redirect to `/reset-password?error=same_password`. On any
+   other non-retryable rejection (weak-password policy, future
+   server-side rules, etc.), redirect to
+   `/reset-password?error=update_failed` — the dev console still
+   carries the forensic detail.
+
+   **Invariant**: `?error=too_short` is emitted ONLY by the
+   client-length check in step 2. The SDK call MUST NOT funnel
+   any failure into `too_short` — if the password reached the
+   SDK, it cleared the 8-character bar by definition.
 5. **Audit before redirect** (cross-action invariant 1):
    ```ts
    await recordAuth(
@@ -125,6 +136,12 @@ row per successful reset (data-model.md § Audit row).
 - `updatePassword → ?error=mismatch` when passwords don't match.
 - `updatePassword → ?error=expired` when no session.
 - `updatePassword → ?error=network` on AuthRetryableFetchError.
+- `updatePassword → ?error=same_password` when the SDK returns an
+  error with `code === "same_password"` (user re-used current
+  password).
+- `updatePassword → ?error=update_failed` when the SDK returns any
+  other non-retryable error (e.g. `code: "weak_password"`). The
+  SDK MUST NOT trigger `?error=too_short` under any circumstance.
 
 ## `signInWithMagicLink(formData)` — EXTENSION
 

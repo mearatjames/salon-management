@@ -15,8 +15,9 @@
 //
 //   2. **Form state** — the new-password form (`<ResetPasswordForm>`).
 //      Conditionally renders an `.auth-alert.auth-alert-error` above the
-//      form when `?error in {too_short, mismatch, network}` is present
-//      with copy from contracts/routes.contract.md § /reset-password.
+//      form when `?error in {too_short, mismatch, network, same_password,
+//      update_failed}` is present with copy from
+//      contracts/routes.contract.md § /reset-password.
 //
 // Both states share the two-panel layout from `app/(auth)/layout.tsx`.
 
@@ -111,6 +112,16 @@ export default async function ResetPasswordPage({
       {error === "network" && (
         <div className="auth-alert auth-alert-error" role="alert">
           Couldn&apos;t update your password. Check your connection and try again.
+        </div>
+      )}
+      {error === "same_password" && (
+        <div className="auth-alert auth-alert-error" role="alert">
+          Pick a password you haven&apos;t used before — this one matches your current password.
+        </div>
+      )}
+      {error === "update_failed" && (
+        <div className="auth-alert auth-alert-error" role="alert">
+          Couldn&apos;t update your password. Try again, or request a new reset link.
         </div>
       )}
       <ResetPasswordForm type={type} />
