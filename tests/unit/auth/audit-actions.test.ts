@@ -72,3 +72,16 @@ describe("audit — 020 cash_drawer.edited extension", () => {
     expect(deriveEntityType("cash_drawer.edited")).toBe("cash_drawer");
   });
 });
+
+// Feature 050 — ticket.line_tech_reassigned. The reassignPaidLineTech
+// server action writes a `ticket.line_tech_reassigned` audit row when an
+// owner/manager corrects the assigned tech on a paid line; the prefix
+// dispatch must route it to entity_type='ticket' (not 'auth') so the
+// forensic query for ticket-attribution edits sees it.
+const NEW_TICKET_REASSIGN_ACTIONS: AuditAction[] = ["ticket.line_tech_reassigned"];
+
+describe("audit — 050 ticket.line_tech_reassigned extension", () => {
+  it.each(NEW_TICKET_REASSIGN_ACTIONS)("treats %s as entity_type 'ticket'", (action) => {
+    expect(deriveEntityType(action)).toBe("ticket");
+  });
+});

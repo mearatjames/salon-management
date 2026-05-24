@@ -22,6 +22,14 @@ export type { PaymentMethod } from "@/lib/dashboard/aggregate";
 // ─── Read-model types (data-model.md § 2) ────────────────────────────────────
 
 export type TransactionLineItem = {
+  /**
+   * Feature 050 (T006). The `ticket_items` row id. Load-bearing for the
+   * reassign-paid-line-tech surface: the receipt drawer threads it into the
+   * server action so the per-line UPDATE targets the correct row. Sourced
+   * from `ProjectItemRow.id` (already selected by the page query — feature
+   * 049 added it for discount scope resolution).
+   */
+  readonly lineId: string;
   readonly name: string;
   readonly category: string | null;
   readonly kind: "service" | "discount" | "product";
@@ -62,6 +70,15 @@ export type TransactionDetail = {
   readonly totalCents: number;
   readonly serviceCount: number;
   readonly cashierName: string | null;
+  /**
+   * Feature 050 (T006). `true` when this ticket's pay period has been
+   * finalized — either the `pay_periods` row's `status = 'closed'`, OR
+   * ≥ 1 `payroll_payouts` row references it. The Transactions page
+   * stamps this per-tx via `lib/payroll/finalized.ts#isPayPeriodFinalized`
+   * (T015). Any direct projection call site that does not stamp it leaves
+   * the default `false` — the projector itself has no DB access.
+   */
+  readonly payPeriodFinalized: boolean;
 };
 
 export type TransactionKpis = {
@@ -229,6 +246,7 @@ export function projectTransactions(input: ProjectTransactionsInput): readonly T
         targetNames = resolved.length > 0 ? resolved : null;
       }
       return {
+        lineId: it.id,
         name: it.name_snapshot,
         category: it.ref_id ? (categoryByServiceId.get(it.ref_id) ?? null) : null,
         kind,
@@ -279,6 +297,10 @@ export function projectTransactions(input: ProjectTransactionsInput): readonly T
       cashierName: ticket.closed_by_staff_id
         ? (staffById.get(ticket.closed_by_staff_id)?.display_name ?? null)
         : null,
+      // Feature 050 (T006): default `false` — the projector is pure and has
+      // no DB access. The Transactions page stamps the live value per-tx
+      // (T015) using `isPayPeriodFinalized` keyed by the period's startsOn.
+      payPeriodFinalized: false,
     });
   }
 

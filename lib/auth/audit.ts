@@ -53,6 +53,8 @@ export type AuditAction =
   | "ticket.line_added"
   | "ticket.line_removed"
   | "ticket.line_tech_assigned"
+  // Added by feature 050 (entity_type "ticket")
+  | "ticket.line_tech_reassigned"
   | "ticket.discarded"
   | "payment.captured"
   // Added by feature 012 (entity_type "user")
