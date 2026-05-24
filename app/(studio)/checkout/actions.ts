@@ -151,11 +151,14 @@ function assertUuid(value: unknown, label: string): asserts value is string {
 
 async function recomputeTicketTotals(
   supabase: ReturnType<typeof createSupabaseServiceRoleClient>,
-  ticketId: string
+  ticketId: string,
+  viewer?: { deviceUserId: string | null; actingAsStaffId: string | null }
 ): Promise<{ subtotalCents: number; totalCents: number }> {
   const { data, error } = await supabase
     .from("ticket_items")
-    .select("id, kind, unit_price_cents, qty, price_unconfirmed, discount_pct")
+    .select(
+      "id, kind, unit_price_cents, qty, price_unconfirmed, discount_pct, discount_target_line_ids"
+    )
     .eq("ticket_id", ticketId);
 
   if (error) {
@@ -164,18 +167,138 @@ async function recomputeTicketTotals(
 
   const rows = (data ?? []).map((r) => ({ ...r }));
 
+  // Feature 049 (T029 / US3): build the live-service-id set FIRST so the
+  // auto-removal pass can compute survivingTargets per scoped discount.
+  const liveServiceIds = new Set<string>(
+    rows.filter((r) => r.kind === "service").map((r) => r.id as string)
+  );
+
+  // Feature 049 (T029 / US3) — auto-removal pass. For each scoped
+  // discount row:
+  //   - survivingTargets = discount_target_line_ids ∩ liveServiceIds.
+  //   - empty → DELETE the row + emit `discount.removed` audit with
+  //     `auto_removed: true, orphaned_targets: [...]` (pre-removal targets).
+  //   - partial → UPDATE the row's `discount_target_line_ids = survivingTargets`
+  //     and proceed with the math pass against the surviving set.
+  // This happens BEFORE the math + before scopedRows/allServicesRows
+  // partitioning so the math pass operates only on live targets.
+  // Per FR-016 — auto-removal MUST NOT block payment, MUST NOT surface an
+  // error, MUST NOT require operator confirmation.
+  const rowsToDrop = new Set<string>();
+  for (const row of rows) {
+    if (row.kind !== "discount") continue;
+    const targets = row.discount_target_line_ids as string[] | null;
+    if (targets == null) continue; // unscoped — nothing to do
+    const surviving = targets.filter((id) => liveServiceIds.has(id));
+    if (surviving.length === 0) {
+      // Auto-remove. DELETE first so a hypothetical re-entrant recompute
+      // never sees the orphaned row, THEN emit the audit.
+      const { error: delErr } = await supabase.from("ticket_items").delete().eq("id", row.id);
+      if (delErr) {
+        throw new Error(
+          `recomputeTicketTotals discount-row auto-delete failed (${row.id}): ${delErr.message}`
+        );
+      }
+      await recordAudit(
+        "discount.removed",
+        viewer?.deviceUserId ?? null,
+        row.id as string,
+        {
+          ticket_id: ticketId,
+          auto_removed: true,
+          orphaned_targets: targets,
+        },
+        viewer?.actingAsStaffId ?? null
+      );
+      rowsToDrop.add(row.id as string);
+    } else if (surviving.length < targets.length) {
+      // Partial loss — narrow the persisted scope to the survivors.
+      const { error: updErr } = await supabase
+        .from("ticket_items")
+        .update({ discount_target_line_ids: surviving })
+        .eq("id", row.id);
+      if (updErr) {
+        throw new Error(
+          `recomputeTicketTotals discount-row scope-update failed (${row.id}): ${updErr.message}`
+        );
+      }
+      row.discount_target_line_ids = surviving;
+    }
+  }
+
+  // Drop auto-removed rows from the in-memory row set so the math pass
+  // ignores them (their DELETE already happened above).
+  const liveRows = rows.filter((r) => !rowsToDrop.has(r.id as string));
+
   // 1) Service subtotal — only confirmed service rows contribute.
-  const serviceSubtotal = rows
+  const serviceSubtotal = liveRows
     .filter((row) => row.kind === "service" && row.price_unconfirmed === false)
     .reduce((sum, row) => sum + row.unit_price_cents * row.qty, 0);
 
-  // 2) Re-price each percent-discount row against the fresh service
-  //    subtotal. Only UPDATE rows whose stored amount has actually
-  //    drifted to avoid useless writes (and audit-trigger noise, when
-  //    we add one later).
-  for (const row of rows) {
-    if (row.kind === "discount" && row.discount_pct != null) {
-      const newAmount = -Math.round((Number(row.discount_pct) * serviceSubtotal) / 100);
+  // Feature 049 — id → confirmed-service-price lookup so scoped discount
+  // rows can compute their targeted subtotal in O(n). Only confirmed
+  // service rows count (unconfirmed service lines are invisible to the
+  // subtotal AND to any scoped discount that happens to target them).
+  const servicePriceById = new Map<string, number>();
+  for (const row of liveRows) {
+    if (row.kind === "service" && row.price_unconfirmed === false) {
+      servicePriceById.set(row.id as string, row.unit_price_cents * row.qty);
+    }
+  }
+
+  // 2) Re-price each discount row in the FR-009 partition order:
+  //    PASS 1 — scoped (discount_target_line_ids != null) against
+  //             Σ(targeted service prices). Percent: -round(pct × tgt /
+  //             100). Flat: caps at -targetedSubtotal (FR-004).
+  //    PASS 2 — all-services (discount_target_line_ids null) against the
+  //             POST-SCOPED service subtotal (serviceSubtotal + Σ scoped).
+  //
+  // Only UPDATE rows whose stored amount actually drifted — preserves
+  // today's "skip useless writes" behavior and keeps audit-trigger noise
+  // low (when we add one later).
+  type Row = (typeof liveRows)[number];
+  const scopedRows: Row[] = [];
+  const allServicesRows: Row[] = [];
+  for (const row of liveRows) {
+    if (row.kind !== "discount") continue;
+    if (row.discount_target_line_ids != null) scopedRows.push(row);
+    else allServicesRows.push(row);
+  }
+
+  // PASS 1 — scoped.
+  let scopedAmountSum = 0;
+  for (const row of scopedRows) {
+    const targets = (row.discount_target_line_ids as string[] | null) ?? [];
+    const targetedSubtotal = targets.reduce((sum, id) => sum + (servicePriceById.get(id) ?? 0), 0);
+    let newAmount: number;
+    if (row.discount_pct != null) {
+      newAmount = -Math.round((Number(row.discount_pct) * targetedSubtotal) / 100);
+    } else {
+      // Flat — `unit_price_cents` is already negative (or zero). Cap at
+      // the targeted subtotal so an overshoot floors at the scope.
+      newAmount = Math.max(row.unit_price_cents * row.qty, -targetedSubtotal);
+    }
+    if (newAmount !== row.unit_price_cents) {
+      const { error: rowErr } = await supabase
+        .from("ticket_items")
+        .update({ unit_price_cents: newAmount })
+        .eq("id", row.id);
+      if (rowErr) {
+        throw new Error(
+          `recomputeTicketTotals discount-row update failed (${row.id}): ${rowErr.message}`
+        );
+      }
+      row.unit_price_cents = newAmount;
+    }
+    scopedAmountSum += row.unit_price_cents * row.qty;
+  }
+
+  // PASS 2 — all-services. Percent recomputes against post-scoped
+  // service subtotal; flat ships verbatim.
+  const postScopedServiceSubtotal = serviceSubtotal + scopedAmountSum;
+  for (const row of allServicesRows) {
+    if (row.discount_pct != null) {
+      const newAmount = -Math.round((Number(row.discount_pct) * postScopedServiceSubtotal) / 100);
       if (newAmount !== row.unit_price_cents) {
         const { error: rowErr } = await supabase
           .from("ticket_items")
@@ -189,10 +312,11 @@ async function recomputeTicketTotals(
         row.unit_price_cents = newAmount;
       }
     }
+    // Flat: unit_price_cents stays as-is.
   }
 
   // 3) Discount total — sum over the (now-fresh) discount rows.
-  const discountTotal = rows
+  const discountTotal = liveRows
     .filter((row) => row.kind === "discount")
     .reduce((sum, row) => sum + row.unit_price_cents * row.qty, 0);
 
@@ -320,7 +444,10 @@ export async function addServiceLine(input: AddServiceLineInput): Promise<
   }
 
   // 5) Recompute + persist totals (R2).
-  const totals = await recomputeTicketTotals(supabase, input.ticketId);
+  const totals = await recomputeTicketTotals(supabase, input.ticketId, {
+    deviceUserId: viewer.deviceUserId,
+    actingAsStaffId: viewer.staff.id,
+  });
 
   // 6) Audit.
   await recordAudit(
@@ -399,7 +526,10 @@ export async function removeLine(
     throw new Error(`removeLine delete failed: ${delErr.message}`);
   }
 
-  const totals = await recomputeTicketTotals(supabase, input.ticketId);
+  const totals = await recomputeTicketTotals(supabase, input.ticketId, {
+    deviceUserId: viewer.deviceUserId,
+    actingAsStaffId: viewer.staff.id,
+  });
 
   await recordAudit(
     "ticket.line_removed",
@@ -609,7 +739,10 @@ export async function setLinePrice(
 
   // 4) Recompute totals (folds any percent-discount rows against the
   //    fresh service subtotal).
-  const totals = await recomputeTicketTotals(supabase, input.ticketId);
+  const totals = await recomputeTicketTotals(supabase, input.ticketId, {
+    deviceUserId: viewer.deviceUserId,
+    actingAsStaffId: viewer.staff.id,
+  });
 
   // 5) Audit.
   await recordAudit(
@@ -863,6 +996,19 @@ export type AddDiscountLineInput = {
   shape: "flat" | "percent";
   value: number;
   note?: string;
+  /**
+   * Feature 049-per-service-discount (T011). When provided, the discount
+   * is scoped to the listed service-line ids on this same ticket
+   * (`ticket_items.discount_target_line_ids`). `null`/`undefined`/omitted
+   * = "applies to all services" (today's default — backward-compatible).
+   * Validation (per contracts/server-actions § 1):
+   *   - each entry is a uuid + dedupe → non-empty (else `scope_empty`)
+   *   - every entry resolves to a `kind='service'` row on this ticket
+   *     (else `scope_target_unknown` if the row doesn't exist / is a
+   *     discount row, or `scope_off_ticket` if it's on a different
+   *     ticket).
+   */
+  targetLineIds?: string[] | null;
 };
 
 export async function addDiscountLine(input: AddDiscountLineInput): Promise<{
@@ -913,6 +1059,32 @@ export async function addDiscountLine(input: AddDiscountLineInput): Promise<{
     );
   }
 
+  // Feature 049 (T011) — `targetLineIds` shape validation. The full resolver
+  // (same-ticket service-row lookup) runs after we have the supabase
+  // client; this pass just rejects obvious shape issues so the error
+  // surfaces match the typed contract before any DB work.
+  let dedupedTargetIds: string[] | null = null;
+  if (input.targetLineIds !== undefined && input.targetLineIds !== null) {
+    if (!Array.isArray(input.targetLineIds)) {
+      throw new DiscountInvalidError(
+        `targetLineIds must be an array (got ${typeof input.targetLineIds})`,
+        "scope_empty"
+      );
+    }
+    for (const entry of input.targetLineIds) {
+      if (typeof entry !== "string" || !UUID_SHAPE.test(entry)) {
+        throw new DiscountInvalidError(
+          `targetLineIds entry must be a uuid (got ${JSON.stringify(entry)})`,
+          "scope_target_unknown"
+        );
+      }
+    }
+    dedupedTargetIds = Array.from(new Set(input.targetLineIds));
+    if (dedupedTargetIds.length === 0) {
+      throw new DiscountInvalidError("targetLineIds is empty after dedupe", "scope_empty");
+    }
+  }
+
   const viewer = await requireStudioSession();
   const supabase = createSupabaseServiceRoleClient();
 
@@ -943,9 +1115,52 @@ export async function addDiscountLine(input: AddDiscountLineInput): Promise<{
   //    here. The read stays so the wire is in place.
   await getSetting<number | null>("discount.manager_threshold_cents");
 
+  // 3b) Feature 049 — scope resolver. For each target id confirm it's a
+  //     `kind='service'` row on THIS ticket. Two failure modes per the
+  //     contract:
+  //       - row not found at all (or its kind !== 'service') →
+  //         `scope_target_unknown`
+  //       - row exists but on a different ticket → `scope_off_ticket`
+  //     Constitution Principle II — re-validate every id server-side
+  //     even if the UI is supposed to dedupe.
+  if (dedupedTargetIds !== null) {
+    const { data: targetRows, error: scopeErr } = await supabase
+      .from("ticket_items")
+      .select("id, ticket_id, kind")
+      .in("id", dedupedTargetIds);
+    if (scopeErr) {
+      throw new Error(`addDiscountLine scope resolver failed: ${scopeErr.message}`);
+    }
+    const rowsById = new Map<string, { id: string; ticket_id: string; kind: string }>();
+    for (const r of targetRows ?? []) {
+      rowsById.set(r.id as string, {
+        id: r.id as string,
+        ticket_id: r.ticket_id as string,
+        kind: r.kind as string,
+      });
+    }
+    for (const id of dedupedTargetIds) {
+      const row = rowsById.get(id);
+      if (!row || row.kind !== "service") {
+        throw new DiscountInvalidError(
+          `targetLineIds entry ${id} is not a service line on this ticket`,
+          "scope_target_unknown"
+        );
+      }
+      if (row.ticket_id !== input.ticketId) {
+        throw new DiscountInvalidError(
+          `targetLineIds entry ${id} belongs to a different ticket`,
+          "scope_off_ticket"
+        );
+      }
+    }
+  }
+
   // 4) Insert the discount row. For percent shape, unit_price_cents starts
   //    at 0; recomputeTicketTotals computes and writes the negative amount
-  //    against the live service subtotal.
+  //    against the live service subtotal. Feature 049: the
+  //    `discount_target_line_ids` column carries the deduped scope (or
+  //    null for "all services").
   const insertValues = {
     ticket_id: input.ticketId,
     kind: "discount" as const,
@@ -956,6 +1171,7 @@ export async function addDiscountLine(input: AddDiscountLineInput): Promise<{
     qty: 1,
     discount_pct: input.shape === "percent" ? input.value : null,
     note: input.note ?? null,
+    discount_target_line_ids: dedupedTargetIds,
   };
 
   const { data: lineRow, error: insErr } = await supabase
@@ -969,24 +1185,278 @@ export async function addDiscountLine(input: AddDiscountLineInput): Promise<{
 
   // 5) Recompute totals — for percent shape this writes the correct
   //    unit_price_cents back to the discount row.
-  const totals = await recomputeTicketTotals(supabase, input.ticketId);
+  const totals = await recomputeTicketTotals(supabase, input.ticketId, {
+    deviceUserId: viewer.deviceUserId,
+    actingAsStaffId: viewer.staff.id,
+  });
 
-  // 6) Audit. entity_id = newLineId (NOT the ticket id).
+  // 6) Audit. entity_id = newLineId (NOT the ticket id). Feature 049:
+  //    emit the `scope` key ONLY when scoped — an unscoped discount's
+  //    audit row matches today's shape verbatim.
+  const auditPayload: Record<string, unknown> = {
+    ticket_id: input.ticketId,
+    shape: input.shape,
+    value: input.value,
+    note: input.note ?? null,
+  };
+  if (dedupedTargetIds !== null) {
+    auditPayload.scope = { kind: "selected_services", line_ids: dedupedTargetIds };
+  }
   await recordAudit(
     "discount.added",
     viewer.deviceUserId,
     lineRow.id,
-    {
-      ticket_id: input.ticketId,
-      shape: input.shape,
-      value: input.value,
-      note: input.note ?? null,
-    },
+    auditPayload,
     viewer.staff.id
   );
 
   return {
     lineId: lineRow.id,
+    subtotalCents: totals.subtotalCents,
+    totalCents: totals.totalCents,
+    ...(discardedCount > 0 ? { draftsDiscarded: discardedCount } : {}),
+  };
+}
+
+// ----------------------------------------------------------------------
+// 8b. editDiscountLine — feature 049-per-service-discount (T031). Contract:
+//     `specs/049-per-service-discount/contracts/server-actions.md § 2`.
+//
+//     In-place edit of an existing discount row's shape/value/note/scope.
+//     Validation surface mirrors `addDiscountLine` exactly:
+//       - shape ∈ {flat, percent}; per-shape range (`flat_value_non_positive`
+//         / `percent_out_of_range`)
+//       - note ≤ 80 chars (`note_too_long`)
+//       - targetLineIds (optional): each entry a uuid + dedupe → non-empty
+//         (else `scope_empty`); every entry resolves to a same-ticket
+//         service row (else `scope_target_unknown` / `scope_off_ticket`)
+//       - lineId must reference a `kind = 'discount'` row on this ticket
+//         (else `not_a_discount_line`)
+//
+//     Emits `discount.edited` audit with before/after blocks per
+//     `data-model.md § 6`:
+//       { ticket_id, before: { shape, value, note, scope }, after: {...} }
+// ----------------------------------------------------------------------
+
+export type EditDiscountLineInput = {
+  ticketId: string;
+  lineId: string;
+  shape: "flat" | "percent";
+  value: number;
+  note?: string;
+  /** Per-service scope. Same semantics as `addDiscountLine.targetLineIds`. */
+  targetLineIds?: string[] | null;
+};
+
+type DiscountAuditScope = { kind: "selected_services"; line_ids: string[] } | null;
+type DiscountAuditBlock = {
+  shape: "flat" | "percent";
+  value: number;
+  note: string | null;
+  scope: DiscountAuditScope;
+};
+
+export async function editDiscountLine(input: EditDiscountLineInput): Promise<{
+  subtotalCents: number;
+  totalCents: number;
+  draftsDiscarded?: number;
+}> {
+  // 1) Input-shape validation (mirrors addDiscountLine).
+  assertUuid(input.ticketId, "editDiscountLine.ticketId");
+  assertUuid(input.lineId, "editDiscountLine.lineId");
+
+  if (input.shape !== "flat" && input.shape !== "percent") {
+    throw new DiscountInvalidError(
+      `unknown discount shape: ${JSON.stringify(input.shape)}`,
+      "flat_value_non_positive"
+    );
+  }
+  if (input.shape === "flat") {
+    if (!Number.isInteger(input.value) || input.value <= 0) {
+      throw new DiscountInvalidError(
+        `flat discount value must be a positive integer cents (got ${input.value})`,
+        "flat_value_non_positive"
+      );
+    }
+  } else {
+    if (!Number.isInteger(input.value) || input.value < 1 || input.value > 100) {
+      throw new DiscountInvalidError(
+        `percent discount value must be an integer in [1, 100] (got ${input.value})`,
+        "percent_out_of_range"
+      );
+    }
+  }
+  if (input.note != null && input.note.length > 80) {
+    throw new DiscountInvalidError(
+      `discount note must be ≤ 80 characters (got ${input.note.length})`,
+      "note_too_long"
+    );
+  }
+
+  let dedupedTargetIds: string[] | null = null;
+  if (input.targetLineIds !== undefined && input.targetLineIds !== null) {
+    if (!Array.isArray(input.targetLineIds)) {
+      throw new DiscountInvalidError(
+        `targetLineIds must be an array (got ${typeof input.targetLineIds})`,
+        "scope_empty"
+      );
+    }
+    for (const entry of input.targetLineIds) {
+      if (typeof entry !== "string" || !UUID_SHAPE.test(entry)) {
+        throw new DiscountInvalidError(
+          `targetLineIds entry must be a uuid (got ${JSON.stringify(entry)})`,
+          "scope_target_unknown"
+        );
+      }
+    }
+    dedupedTargetIds = Array.from(new Set(input.targetLineIds));
+    if (dedupedTargetIds.length === 0) {
+      throw new DiscountInvalidError("targetLineIds is empty after dedupe", "scope_empty");
+    }
+  }
+
+  const viewer = await requireStudioSession();
+  const supabase = createSupabaseServiceRoleClient();
+
+  // 2) Cart-edit invalidation (FR-019a).
+  const { discardedCount } = await discardDraftLegs(
+    input.ticketId,
+    viewer.staff.id,
+    viewer.deviceUserId,
+    supabase
+  );
+
+  // 3) Ticket must be open.
+  const { data: ticket, error: tkErr } = await supabase
+    .from("tickets")
+    .select("id, status")
+    .eq("id", input.ticketId)
+    .single();
+  if (tkErr || !ticket) {
+    throw new Error(`editDiscountLine ticket read failed: ${tkErr?.message ?? "not found"}`);
+  }
+  if (ticket.status !== "open") {
+    throw new TicketNotOpenError();
+  }
+
+  // 4) Read the named line — capture BEFORE state + confirm membership +
+  //    confirm kind='discount'.
+  const { data: lineRow, error: readErr } = await supabase
+    .from("ticket_items")
+    .select(
+      "id, ticket_id, kind, unit_price_cents, qty, discount_pct, note, discount_target_line_ids"
+    )
+    .eq("id", input.lineId)
+    .single();
+  if (readErr || !lineRow) {
+    throw new Error(`editDiscountLine line read failed: ${readErr?.message ?? "not found"}`);
+  }
+  if (lineRow.ticket_id !== input.ticketId) {
+    throw new Error(
+      `editDiscountLine: line ${input.lineId} does not belong to ticket ${input.ticketId}`
+    );
+  }
+  if (lineRow.kind !== "discount") {
+    throw new DiscountInvalidError("not a discount line", "not_a_discount_line");
+  }
+
+  // 5) Scope resolver — same-ticket service-row check (Constitution
+  //    Principle II — re-validate every id server-side).
+  if (dedupedTargetIds !== null) {
+    const { data: targetRows, error: scopeErr } = await supabase
+      .from("ticket_items")
+      .select("id, ticket_id, kind")
+      .in("id", dedupedTargetIds);
+    if (scopeErr) {
+      throw new Error(`editDiscountLine scope resolver failed: ${scopeErr.message}`);
+    }
+    const rowsById = new Map<string, { id: string; ticket_id: string; kind: string }>();
+    for (const r of targetRows ?? []) {
+      rowsById.set(r.id as string, {
+        id: r.id as string,
+        ticket_id: r.ticket_id as string,
+        kind: r.kind as string,
+      });
+    }
+    for (const id of dedupedTargetIds) {
+      const row = rowsById.get(id);
+      if (!row || row.kind !== "service") {
+        throw new DiscountInvalidError(
+          `targetLineIds entry ${id} is not a service line on this ticket`,
+          "scope_target_unknown"
+        );
+      }
+      if (row.ticket_id !== input.ticketId) {
+        throw new DiscountInvalidError(
+          `targetLineIds entry ${id} belongs to a different ticket`,
+          "scope_off_ticket"
+        );
+      }
+    }
+  }
+
+  // 6) Capture the BEFORE block (pre-update values).
+  const beforeShape: "flat" | "percent" = lineRow.discount_pct != null ? "percent" : "flat";
+  const beforeValue: number =
+    lineRow.discount_pct != null
+      ? Number(lineRow.discount_pct)
+      : // unit_price_cents is negative for flat; convert back to positive
+        -Number(lineRow.unit_price_cents);
+  const beforeNote = (lineRow.note ?? null) as string | null;
+  const beforeTargets = (lineRow.discount_target_line_ids ?? null) as string[] | null;
+  const before: DiscountAuditBlock = {
+    shape: beforeShape,
+    value: beforeValue,
+    note: beforeNote,
+    scope: beforeTargets != null ? { kind: "selected_services", line_ids: beforeTargets } : null,
+  };
+
+  // 7) UPDATE the discount row with the new fields. Mirror addDiscountLine's
+  //    write shape: percent rows seed unit_price_cents=0 (recompute writes
+  //    the real amount); flat rows store the negative cents directly.
+  const updateValues = {
+    unit_price_cents: input.shape === "flat" ? -input.value : 0,
+    discount_pct: input.shape === "percent" ? input.value : null,
+    note: input.note ?? null,
+    name_snapshot: discountNameSnapshot(input.shape, input.value),
+    discount_target_line_ids: dedupedTargetIds,
+  };
+  const { error: updErr } = await supabase
+    .from("ticket_items")
+    .update(updateValues)
+    .eq("id", input.lineId);
+  if (updErr) {
+    throw new Error(`editDiscountLine update failed: ${updErr.message}`);
+  }
+
+  // 8) Recompute totals — for percent shape this writes the correct
+  //    unit_price_cents back to the discount row.
+  const totals = await recomputeTicketTotals(supabase, input.ticketId, {
+    deviceUserId: viewer.deviceUserId,
+    actingAsStaffId: viewer.staff.id,
+  });
+
+  // 9) Audit. before/after blocks per data-model.md § 6.
+  const after: DiscountAuditBlock = {
+    shape: input.shape,
+    value: input.value,
+    note: input.note ?? null,
+    scope:
+      dedupedTargetIds != null ? { kind: "selected_services", line_ids: dedupedTargetIds } : null,
+  };
+  await recordAudit(
+    "discount.edited",
+    viewer.deviceUserId,
+    input.lineId,
+    {
+      ticket_id: input.ticketId,
+      before,
+      after,
+    },
+    viewer.staff.id
+  );
+
+  return {
     subtotalCents: totals.subtotalCents,
     totalCents: totals.totalCents,
     ...(discardedCount > 0 ? { draftsDiscarded: discardedCount } : {}),
@@ -1073,7 +1543,10 @@ export async function removeDiscountLine(
   }
 
   // 4) Recompute totals.
-  const totals = await recomputeTicketTotals(supabase, input.ticketId);
+  const totals = await recomputeTicketTotals(supabase, input.ticketId, {
+    deviceUserId: viewer.deviceUserId,
+    actingAsStaffId: viewer.staff.id,
+  });
 
   // 5) Audit. Reconstruct the original entry shape/value from the captured
   //    fields. discount_pct can be a `numeric(5,2)` so coerce to Number.

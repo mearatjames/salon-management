@@ -36,6 +36,7 @@ import {
   cancelTerminalPayment,
   composeDraftLeg,
   discardTicket,
+  editDiscountLine,
   emailBillStub,
   lookupGiftCard,
   redeemGiftCardWholeTicket,
@@ -267,6 +268,18 @@ export function CheckoutScreen({
   // 013-cart-polish US3: discount sheet open state. The sheet itself owns its
   // working amount/note + radio state; this island just toggles visibility.
   const [discountSheetOpen, setDiscountSheetOpen] = useState(false);
+  // Feature 049 (T033 / US3): edit-mode state. When non-null, the
+  // DiscountSheet mounts with `initial={...}` prefilling shape/value/note/
+  // scope, and the save handler routes through `editDiscountLine`
+  // (persisted) or a local-cart replace (ephemeral). The lineId tracks
+  // the row being edited.
+  const [editDiscountSheet, setEditDiscountSheet] = useState<{
+    lineId: string;
+    shape: "flat" | "percent";
+    value: number;
+    note: string | null;
+    targetLineIds: string[] | null;
+  } | null>(null);
   // 013-cart-polish US4: BillSheet shows a frozen snapshot of the cart at
   // open time. The snapshot is captured by deep-cloning the live lines and
   // freezing in the totals so subsequent cart edits don't mutate what the
@@ -365,11 +378,17 @@ export function CheckoutScreen({
         // `recomputeTicketTotals`). The server stays the authority — see
         // `lib/pos/cart.ts` comments.
         lines.map((l) => ({
+          // Feature 049 (T009 + T016) — `id` is required so scoped discounts
+          // can resolve their `discountTargetIds` against the live line
+          // list. The ephemeral / optimistic discount append carries the
+          // scope on `l.discountTargetIds`; service rows pass undefined.
+          id: l.id,
           kind: l.kind,
           unitPriceCents: l.unitPriceCents,
           qty: l.qty,
           priceUnconfirmed: l.priceUnconfirmed,
           discountPct: l.discountPct,
+          discountTargetIds: l.discountTargetIds ?? null,
         }))
       ),
     [lines]
@@ -495,12 +514,48 @@ export function CheckoutScreen({
 
   function handleRemoveLine(line: CartLineView) {
     const snapshot = lines;
-    setLines((prev) => prev.filter((l) => l.id !== line.id));
+    // Feature 049 (T030 / US3): when a service line goes away, any scoped
+    // discount whose targets no longer intersect the live service set must
+    // disappear in the SAME render (FR-010 / FR-016). For partial-loss
+    // scopes (≥ 1 surviving target), narrow `discountTargetIds` to the
+    // survivors so the scope label collapses in-place. Both behaviors land
+    // inside ONE `setLines` update so React only renders once (no flash
+    // where the discount briefly hangs around).
+    setLines((prev) => {
+      const withoutRemoved = prev.filter((l) => l.id !== line.id);
+      // Only service-line removals can orphan a scoped discount; a discount
+      // removal is a no-op for other discount rows' targets.
+      if (line.kind !== "service") return withoutRemoved;
+      const liveServiceIds = new Set(
+        withoutRemoved.filter((l) => l.kind === "service").map((l) => l.id)
+      );
+      const result: CartLineView[] = [];
+      for (const l of withoutRemoved) {
+        if (l.kind !== "discount" || l.discountTargetIds == null) {
+          result.push(l);
+          continue;
+        }
+        const surviving = l.discountTargetIds.filter((id) => liveServiceIds.has(id));
+        if (surviving.length === 0) {
+          // Auto-remove — drop the row from the rendered cart.
+          continue;
+        }
+        if (surviving.length === l.discountTargetIds.length) {
+          result.push(l);
+        } else {
+          // Partial loss — narrow targets to the survivors so the scope
+          // label collapses (e.g. `2 services` → `Pedicure`).
+          result.push({ ...l, discountTargetIds: surviving });
+        }
+      }
+      return result;
+    });
     setErrorBanner(null);
 
     // Feature 043 (T013): ephemeral mode — the cart is an in-memory draft.
     // Removing a line is a local-state mutation only; no server action,
-    // no audit.
+    // no audit. The auto-removal of orphaned scoped discounts happens
+    // inside the same `setLines` update above (FR-010 / FR-016).
     if (isEphemeral) return;
 
     // Skip the round-trip for optimistic-only temp lines (the server
@@ -536,12 +591,15 @@ export function CheckoutScreen({
     shape: "flat" | "percent";
     value: number;
     note: string | undefined;
+    targetLineIds: string[] | null;
   }): Promise<void> {
     setErrorBanner(null);
 
     // Feature 043 (T013): ephemeral mode — append the discount row to
     // local React state with a client-generated UUID. No server action,
     // no audit; the row is folded into the draft at submission.
+    // Feature 049 (T016): carry `discountTargetIds` so `computeTotals`
+    // can apply the scope client-side without a round-trip.
     if (isEphemeral) {
       setLines((prev) => [
         ...prev,
@@ -556,6 +614,7 @@ export function CheckoutScreen({
           kind: "discount",
           note: payload.note ?? null,
           discountPct: payload.shape === "percent" ? payload.value : null,
+          discountTargetIds: payload.targetLineIds,
           serviceMeta: null,
         },
       ]);
@@ -569,6 +628,10 @@ export function CheckoutScreen({
         shape: payload.shape,
         value: payload.value,
         note: payload.note,
+        // Feature 049 (T016): forward the scope. `null` is the default
+        // "applies to all services" semantics — server treats null/omitted
+        // identically.
+        targetLineIds: payload.targetLineIds,
       });
       // Append the new discount row to the local view so the cart total
       // recomputes immediately. The displayed amount for percent rows is
@@ -587,6 +650,7 @@ export function CheckoutScreen({
           kind: "discount",
           note: payload.note ?? null,
           discountPct: payload.shape === "percent" ? payload.value : null,
+          discountTargetIds: payload.targetLineIds,
           serviceMeta: null,
         },
       ]);
@@ -601,6 +665,89 @@ export function CheckoutScreen({
         setErrorBanner("This ticket is no longer open.");
       } else {
         setErrorBanner("Couldn’t add that discount. Try again.");
+      }
+      // Re-throw so DiscountSheet's .catch can re-enable Save.
+      throw err;
+    }
+  }
+
+  // Feature 049 (T033 / US3 — FR-017). Open the discount sheet in edit mode
+  // for the given discount row. Captures the row's current shape/value/note/
+  // scope into `editDiscountSheet`; the sheet's `initial` prop prefills the
+  // form, and `handleEditDiscountSave` is the corresponding save handler.
+  function handleOpenEditDiscount(line: CartLineView) {
+    if (line.kind !== "discount") return;
+    const shape: "flat" | "percent" = line.discountPct != null ? "percent" : "flat";
+    const value: number = line.discountPct != null ? line.discountPct : -line.unitPriceCents;
+    setEditDiscountSheet({
+      lineId: line.id,
+      shape,
+      value,
+      note: line.note,
+      targetLineIds: line.discountTargetIds != null ? [...line.discountTargetIds] : null,
+    });
+  }
+
+  // Feature 049 (T033 / US3). Save handler for the edit-mode discount sheet.
+  // Persisted mode → editDiscountLine + local replace of the row's fields
+  // so the displayed amount/label/scope reflect the edit. Ephemeral mode →
+  // pure local replace (no audit; the row hasn't been persisted yet).
+  // Error mapping mirrors `handleAddDiscount`.
+  async function handleEditDiscountSave(payload: {
+    shape: "flat" | "percent";
+    value: number;
+    note: string | undefined;
+    targetLineIds: string[] | null;
+  }): Promise<void> {
+    if (!editDiscountSheet) return;
+    setErrorBanner(null);
+    const lineId = editDiscountSheet.lineId;
+
+    const newName = payload.shape === "percent" ? `Discount · ${payload.value}%` : "Discount";
+
+    const localReplace = () => {
+      setLines((prev) =>
+        prev.map((l) =>
+          l.id === lineId
+            ? {
+                ...l,
+                name: newName,
+                unitPriceCents: payload.shape === "flat" ? -payload.value : 0,
+                note: payload.note ?? null,
+                discountPct: payload.shape === "percent" ? payload.value : null,
+                discountTargetIds: payload.targetLineIds,
+              }
+            : l
+        )
+      );
+    };
+
+    // Ephemeral mode — no round trip, no audit; the row hasn't been persisted.
+    if (isEphemeral) {
+      localReplace();
+      setEditDiscountSheet(null);
+      return;
+    }
+
+    try {
+      await editDiscountLine({
+        ticketId,
+        lineId,
+        shape: payload.shape,
+        value: payload.value,
+        note: payload.note,
+        targetLineIds: payload.targetLineIds,
+      });
+      localReplace();
+      setEditDiscountSheet(null);
+    } catch (err) {
+      if (err instanceof DiscountInvalidError) {
+        setErrorBanner("That discount isn’t valid. Check the amount and try again.");
+      } else if (err instanceof TicketNotOpenError) {
+        setEditDiscountSheet(null);
+        setErrorBanner("This ticket is no longer open.");
+      } else {
+        setErrorBanner("Couldn’t save that discount. Try again.");
       }
       // Re-throw so DiscountSheet's .catch can re-enable Save.
       throw err;
@@ -727,6 +874,12 @@ export function CheckoutScreen({
           // amount (the local row stores a negative `unitPriceCents`).
           value: l.discountPct != null ? l.discountPct : -l.unitPriceCents,
           note: l.note,
+          // Feature 049 (T016) — forward the discount's per-service scope.
+          // `null`/undefined = "all services" (today's default); non-null
+          // = the live `clientLineId` array `validateAndResolveDraft` /
+          // `pos_create_ticket_from_draft` map to the freshly-inserted
+          // `ticket_items.id`s on the persisted row.
+          targetClientLineIds: l.discountTargetIds ? [...l.discountTargetIds] : null,
         };
       }
       return {
@@ -1081,25 +1234,19 @@ export function CheckoutScreen({
   // current service subtotal so the snapshot matches what the bill totals
   // display. capturedAt drives the bill's decorative Check # field.
   function handleOpenBill() {
-    const liveServiceSubtotalCents = lines
-      .filter((l) => l.kind === "service" && !l.priceUnconfirmed)
-      .reduce((sum, l) => sum + l.unitPriceCents * l.qty, 0);
-
-    const snapshotLines = lines.map((l) => {
-      const displayUnitPriceCents =
-        l.kind === "discount" && l.discountPct != null
-          ? -Math.round((l.discountPct * liveServiceSubtotalCents) / 100)
-          : l.unitPriceCents;
-      return {
-        id: l.id,
-        kind: l.kind,
-        name: l.name,
-        unitPriceCents: displayUnitPriceCents,
-        qty: l.qty,
-        note: l.note,
-        discountPct: l.discountPct,
-      };
-    });
+    // Per-row snapshot amounts come from `totals.lineAmountsById` — the
+    // kernel did the FR-009 stacking math once already (see
+    // `lib/pos/cart.ts`). Reading from the map keeps the snapshot's
+    // per-row numbers in lockstep with the totals printed below.
+    const snapshotLines = lines.map((l) => ({
+      id: l.id,
+      kind: l.kind,
+      name: l.name,
+      unitPriceCents: totals.lineAmountsById.get(l.id) ?? l.unitPriceCents * l.qty,
+      qty: l.qty,
+      note: l.note,
+      discountPct: l.discountPct,
+    }));
 
     setBillSnapshot({
       lines: structuredClone(snapshotLines),
@@ -1930,35 +2077,77 @@ export function CheckoutScreen({
                   : "Pick a tech first, then tap a service."}
               </p>
             ) : (
-              // US3: percent-discount rows display an amount that is derived
-              // from the live service subtotal — the local `unitPriceCents`
-              // for a percent row may be stale (server's recompute writes the
-              // amount but the action contract returns only totals). We mirror
-              // `computeTotals`/`recomputeTicketTotals` here so the per-row
-              // amount the operator sees matches what's persisted.
+              // Feature 049 (T021, US2): for each discount row, derive the
+              // scope-kind / scope-target-count + a human-readable scope
+              // label from the live `lines[]`. Single-target → that
+              // service's `name`; N>1 → "N services". Null/empty scope
+              // → no suffix. The label is appended to `line.name` so the
+              // existing CartRowWithTech render path doesn't need to
+              // know about scope semantics. A `display: contents` wrapper
+              // carries the `cart-discount-row` data slot + scope attrs
+              // alongside the existing `cart-line` slot so the new US2
+              // selectors and the existing US1 selectors both resolve.
+              //
+              // Per-row display amounts come from `totals.lineAmountsById`
+              // — the kernel did the FR-009 math once already; we just read
+              // each line's contribution here. (See `lib/pos/cart.ts` —
+              // this map was added specifically to eliminate the duplicated
+              // stacking pass that drifted twice on PR #137.)
               (() => {
-                const liveServiceSubtotalCents = lines
-                  .filter((l) => l.kind === "service" && !l.priceUnconfirmed)
-                  .reduce((sum, l) => sum + l.unitPriceCents * l.qty, 0);
+                const lineNameById = new Map(lines.map((l) => [l.id, l.name]));
                 return lines.map((line) => {
-                  const displayLine =
-                    line.kind === "discount" && line.discountPct != null
-                      ? {
-                          ...line,
-                          unitPriceCents: -Math.round(
-                            (line.discountPct * liveServiceSubtotalCents) / 100
-                          ),
-                        }
-                      : line;
+                  const recomputedUnitPriceCents =
+                    totals.lineAmountsById.get(line.id) ?? line.unitPriceCents * line.qty;
+
+                  if (line.kind !== "discount") {
+                    return (
+                      <CartRowWithTech
+                        key={line.id}
+                        line={line}
+                        staffById={staffById}
+                        onRemove={() => handleRemoveLine(line)}
+                        onEditPrice={() => handleEditPrice(line)}
+                        onSetTech={(staffId) => handleSetLineTech(line, staffId)}
+                      />
+                    );
+                  }
+
+                  const targetIds = line.discountTargetIds ?? null;
+                  const targetCount = targetIds?.length ?? 0;
+                  const scopeKind = targetCount > 0 ? "selected" : "all";
+                  let scopeLabel: string | null = null;
+                  if (targetCount === 1) {
+                    // Defensive fallback when a target id can't be resolved
+                    // (shouldn't happen — US3 ships auto-removal — but the
+                    // single-target lookup must not crash on stale state).
+                    scopeLabel = lineNameById.get(targetIds![0]!) ?? "1 service";
+                  } else if (targetCount > 1) {
+                    scopeLabel = `${targetCount} services`;
+                  }
+
+                  const displayLine = {
+                    ...line,
+                    name: scopeLabel ? `${line.name} · ${scopeLabel}` : line.name,
+                    unitPriceCents: recomputedUnitPriceCents,
+                  };
+
                   return (
-                    <CartRowWithTech
+                    <div
                       key={line.id}
-                      line={displayLine}
-                      staffById={staffById}
-                      onRemove={() => handleRemoveLine(line)}
-                      onEditPrice={() => handleEditPrice(line)}
-                      onSetTech={(staffId) => handleSetLineTech(line, staffId)}
-                    />
+                      data-slot="cart-discount-row"
+                      data-scope-kind={scopeKind}
+                      data-scope-target-count={String(targetCount)}
+                      style={{ display: "contents" }}
+                    >
+                      <CartRowWithTech
+                        line={displayLine}
+                        staffById={staffById}
+                        onRemove={() => handleRemoveLine(line)}
+                        onEditPrice={() => handleEditPrice(line)}
+                        onSetTech={(staffId) => handleSetLineTech(line, staffId)}
+                        onEditDiscount={() => handleOpenEditDiscount(line)}
+                      />
+                    </div>
                   );
                 });
               })()
@@ -2110,10 +2299,51 @@ export function CheckoutScreen({
 
       {discountSheetOpen ? (
         <DiscountSheet
+          // Feature 049 (T016) — source the "Applies to" chip-picker from
+          // the live service rows in the cart. Service rows expose `id`
+          // (persisted ticket_items.id OR ephemeral clientLineId — same
+          // field), `name`, `unitPriceCents`, and `priceUnconfirmed`. The
+          // discount-sheet renders one chip per service line so the
+          // operator can scope the discount to a subset of them.
+          serviceLines={lines
+            .filter((l) => l.kind === "service")
+            .map((l) => ({
+              id: l.id,
+              name: l.name,
+              unitPriceCents: l.unitPriceCents,
+              priceUnconfirmed: l.priceUnconfirmed,
+            }))}
           onSave={async (payload) => {
             await handleAddDiscount(payload);
           }}
           onCancel={() => setDiscountSheetOpen(false)}
+        />
+      ) : null}
+
+      {/* Feature 049 (T033 / US3 — FR-017). Edit-mode sheet. Mounted only
+          while `editDiscountSheet` is non-null; reuses the same DiscountSheet
+          shell with the `initial` prop set so the form prefills + footer
+          reads "Save changes". */}
+      {editDiscountSheet ? (
+        <DiscountSheet
+          serviceLines={lines
+            .filter((l) => l.kind === "service")
+            .map((l) => ({
+              id: l.id,
+              name: l.name,
+              unitPriceCents: l.unitPriceCents,
+              priceUnconfirmed: l.priceUnconfirmed,
+            }))}
+          initial={{
+            shape: editDiscountSheet.shape,
+            value: editDiscountSheet.value,
+            note: editDiscountSheet.note,
+            targetLineIds: editDiscountSheet.targetLineIds,
+          }}
+          onSave={async (payload) => {
+            await handleEditDiscountSave(payload);
+          }}
+          onCancel={() => setEditDiscountSheet(null)}
         />
       ) : null}
 

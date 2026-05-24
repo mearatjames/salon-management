@@ -171,7 +171,8 @@ tickets (
 ticket_items (
   id, ticket_id, kind,                             -- service | discount
   ref_id?, name_snapshot, qty, unit_price_cents,
-  discount_pct?                                    -- when kind=discount and percent-style
+  discount_pct?,                                   -- when kind=discount and percent-style
+  discount_target_line_ids uuid[] null             -- per-service discount scope (049); NULL = applies to entire ticket
 )
 payments (
   id, ticket_id, method,                           -- cash | square_card | square_egift

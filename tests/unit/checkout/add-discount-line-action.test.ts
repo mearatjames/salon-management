@@ -492,4 +492,395 @@ describe("addDiscountLine", () => {
 
     expect(recordAudit).not.toHaveBeenCalled();
   });
+
+  // -------- 049-per-service-discount: targetLineIds validation surface ----
+  //
+  // The new `targetLineIds` argument extends `AddDiscountLineInput` per
+  // `contracts/server-actions.md § 1`. Validation order: shape/value/note
+  // first (covered above), then for `targetLineIds` (when provided):
+  //   1. each entry is a uuid + dedupe → non-empty → else `scope_empty`
+  //   2. each entry resolves to a same-ticket service row → else
+  //      `scope_target_unknown` (entry not in `ticket_items`) or
+  //      `scope_off_ticket` (entry IS a ticket_items row but ticket_id != arg).
+  // The `discount.added` audit payload carries `scope: { kind:
+  // "selected_services", line_ids: [...] }` only when scoped.
+
+  const SERVICE_LINE_ID = "44444444-4444-4444-4444-444444444444";
+  const OTHER_SERVICE_LINE_ID = "55555555-5555-5555-5555-555555555555";
+  const OFF_TICKET_LINE_ID = "66666666-6666-6666-6666-666666666666";
+  const UNKNOWN_LINE_ID = "77777777-7777-7777-7777-777777777777";
+
+  /**
+   * Variant of the mock that also serves a `ticket_items.select("id,
+   * ticket_id, kind").in("id", [...])` lookup used by the scope resolver
+   * to confirm every target is a same-ticket service row.
+   */
+  function makeMockClientWithScopeLookup(opts: {
+    ticketStatus: "open" | "paid" | "discarded";
+    recomputeRows: RecomputeRow[];
+    /** Rows the scope-resolver `ticket_items.select(...).in("id", ids)` returns. */
+    scopeRows?: Array<{ id: string; ticket_id: string; kind: "service" | "discount" }>;
+  }) {
+    const writes: Array<{
+      op: "insert" | "update";
+      table: string;
+      values: Record<string, unknown>;
+      id?: string;
+    }> = [];
+
+    const fromSpy = vi.fn((table: string) => {
+      if (table === "tickets") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              single: vi.fn(async () => ({
+                data: { id: TICKET_ID, status: opts.ticketStatus },
+                error: null,
+              })),
+            })),
+          })),
+          update: vi.fn((values: Record<string, unknown>) => ({
+            eq: vi.fn(async (_col: string, id: string) => {
+              writes.push({ op: "update", table, values, id });
+              return { error: null };
+            }),
+          })),
+        };
+      }
+      if (table === "payments") {
+        const emptyResult = { data: [], error: null };
+        function makeTerminalEq() {
+          const thenable = {
+            then: (
+              onFulfilled: (v: typeof emptyResult) => unknown,
+              onRejected?: (r: unknown) => unknown
+            ) => Promise.resolve(emptyResult).then(onFulfilled, onRejected),
+            limit: () => Promise.resolve(emptyResult),
+          };
+          return thenable;
+        }
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(() => makeTerminalEq()),
+            })),
+          })),
+          delete: vi.fn(() => ({
+            eq: vi.fn(() => ({
+              eq: vi.fn(async () => ({ error: null })),
+            })),
+          })),
+        };
+      }
+      if (table === "ticket_items") {
+        return {
+          insert: vi.fn((values: Record<string, unknown>) => {
+            writes.push({ op: "insert", table, values });
+            return {
+              select: vi.fn(() => ({
+                single: vi.fn(async () => ({
+                  data: { id: NEW_LINE_ID },
+                  error: null,
+                })),
+              })),
+            };
+          }),
+          // Two-arity select: the scope resolver uses
+          // .select("id,ticket_id,kind").in("id", ids); the recompute uses
+          // .select("id, kind, ...").eq("ticket_id", ticketId). We discriminate
+          // by which terminal method (`.in` vs `.eq`) is called.
+          select: vi.fn(() => ({
+            in: vi.fn(async (_col: string, _ids: string[]) => ({
+              data: opts.scopeRows ?? [],
+              error: null,
+            })),
+            eq: vi.fn((col: string) => {
+              if (col === "ticket_id") {
+                return Promise.resolve({
+                  data: opts.recomputeRows.map((r) => ({
+                    id: r.id,
+                    kind: r.kind,
+                    unit_price_cents: r.unit_price_cents,
+                    qty: r.qty,
+                    price_unconfirmed: r.price_unconfirmed,
+                    discount_pct: r.discount_pct,
+                    discount_target_line_ids: null,
+                  })),
+                  error: null,
+                });
+              }
+              return {
+                single: vi.fn(async () => ({ data: null, error: null })),
+              };
+            }),
+          })),
+          update: vi.fn((values: Record<string, unknown>) => ({
+            eq: vi.fn(async (_col: string, id: string) => {
+              writes.push({ op: "update", table, values, id });
+              const row = opts.recomputeRows.find((r) => r.id === id);
+              if (row && typeof values.unit_price_cents === "number") {
+                row.unit_price_cents = values.unit_price_cents;
+              }
+              return { error: null };
+            }),
+          })),
+        };
+      }
+      return {};
+    });
+
+    (createSupabaseServiceRoleClient as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: fromSpy,
+    });
+
+    return { fromSpy, writes };
+  }
+
+  it("(049 a) targetLineIds=[] → DiscountInvalidError{reason:'scope_empty'}", async () => {
+    makeMockClientWithScopeLookup({
+      ticketStatus: "open",
+      recomputeRows: [],
+      scopeRows: [],
+    });
+
+    let caught: unknown = null;
+    try {
+      await addDiscountLine({
+        ticketId: TICKET_ID,
+        shape: "percent",
+        value: 10,
+        targetLineIds: [],
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(DiscountInvalidError);
+    expect((caught as DiscountInvalidError).reason).toBe("scope_empty");
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("(049 b) targetLineIds=[dup, dup] dedupes to [dup] (non-empty, accepted)", async () => {
+    // A single duplicate-only array dedupes to one entry — non-empty after
+    // dedupe, so it must NOT throw scope_empty. The resolver then accepts
+    // the single id as a real service row on this ticket.
+    const recomputeRows: RecomputeRow[] = [
+      {
+        id: SERVICE_LINE_ID,
+        kind: "service",
+        unit_price_cents: 5000,
+        qty: 1,
+        price_unconfirmed: false,
+        discount_pct: null,
+      },
+      {
+        id: NEW_LINE_ID,
+        kind: "discount",
+        unit_price_cents: 0,
+        qty: 1,
+        price_unconfirmed: false,
+        discount_pct: 10,
+      },
+    ];
+    makeMockClientWithScopeLookup({
+      ticketStatus: "open",
+      recomputeRows,
+      scopeRows: [{ id: SERVICE_LINE_ID, ticket_id: TICKET_ID, kind: "service" }],
+    });
+
+    const result = await addDiscountLine({
+      ticketId: TICKET_ID,
+      shape: "percent",
+      value: 10,
+      targetLineIds: [SERVICE_LINE_ID, SERVICE_LINE_ID],
+    });
+    expect(result.lineId).toBe(NEW_LINE_ID);
+    // Audit fired with scope present + the deduped id list.
+    expect(recordAudit).toHaveBeenCalledTimes(1);
+    const [, , , payload] = (recordAudit as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(payload).toMatchObject({
+      scope: { kind: "selected_services", line_ids: [SERVICE_LINE_ID] },
+    });
+  });
+
+  it("(049 c) targetLineIds with an unknown id → DiscountInvalidError{reason:'scope_target_unknown'}", async () => {
+    makeMockClientWithScopeLookup({
+      ticketStatus: "open",
+      recomputeRows: [],
+      // Scope-lookup returns ONLY the known id; UNKNOWN_LINE_ID is not in
+      // ticket_items at all.
+      scopeRows: [{ id: SERVICE_LINE_ID, ticket_id: TICKET_ID, kind: "service" }],
+    });
+
+    let caught: unknown = null;
+    try {
+      await addDiscountLine({
+        ticketId: TICKET_ID,
+        shape: "percent",
+        value: 10,
+        targetLineIds: [SERVICE_LINE_ID, UNKNOWN_LINE_ID],
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(DiscountInvalidError);
+    expect((caught as DiscountInvalidError).reason).toBe("scope_target_unknown");
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("(049 d) targetLineIds with an id from another ticket → DiscountInvalidError{reason:'scope_off_ticket'}", async () => {
+    makeMockClientWithScopeLookup({
+      ticketStatus: "open",
+      recomputeRows: [],
+      // The id exists in ticket_items but on a DIFFERENT ticket.
+      scopeRows: [
+        {
+          id: OFF_TICKET_LINE_ID,
+          ticket_id: "99999999-9999-9999-9999-999999999999",
+          kind: "service",
+        },
+      ],
+    });
+
+    let caught: unknown = null;
+    try {
+      await addDiscountLine({
+        ticketId: TICKET_ID,
+        shape: "percent",
+        value: 10,
+        targetLineIds: [OFF_TICKET_LINE_ID],
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(DiscountInvalidError);
+    expect((caught as DiscountInvalidError).reason).toBe("scope_off_ticket");
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("(049 e) targetLineIds pointing at a discount row → DiscountInvalidError{reason:'scope_target_unknown'}", async () => {
+    // A discount target must resolve to a kind='service' row. Pointing at
+    // an existing same-ticket discount row is "unknown" from the service-
+    // target resolver's perspective.
+    makeMockClientWithScopeLookup({
+      ticketStatus: "open",
+      recomputeRows: [],
+      scopeRows: [{ id: OTHER_SERVICE_LINE_ID, ticket_id: TICKET_ID, kind: "discount" }],
+    });
+
+    let caught: unknown = null;
+    try {
+      await addDiscountLine({
+        ticketId: TICKET_ID,
+        shape: "percent",
+        value: 10,
+        targetLineIds: [OTHER_SERVICE_LINE_ID],
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(DiscountInvalidError);
+    expect((caught as DiscountInvalidError).reason).toBe("scope_target_unknown");
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("(049 f) scoped success — writes discount_target_line_ids on insert and emits scope in audit", async () => {
+    const recomputeRows: RecomputeRow[] = [
+      {
+        id: SERVICE_LINE_ID,
+        kind: "service",
+        unit_price_cents: 6000,
+        qty: 1,
+        price_unconfirmed: false,
+        discount_pct: null,
+      },
+      {
+        id: OTHER_SERVICE_LINE_ID,
+        kind: "service",
+        unit_price_cents: 4000,
+        qty: 1,
+        price_unconfirmed: false,
+        discount_pct: null,
+      },
+      {
+        id: NEW_LINE_ID,
+        kind: "discount",
+        unit_price_cents: 0,
+        qty: 1,
+        price_unconfirmed: false,
+        discount_pct: 50,
+      },
+    ];
+    const { writes } = makeMockClientWithScopeLookup({
+      ticketStatus: "open",
+      recomputeRows,
+      scopeRows: [{ id: SERVICE_LINE_ID, ticket_id: TICKET_ID, kind: "service" }],
+    });
+
+    const result = await addDiscountLine({
+      ticketId: TICKET_ID,
+      shape: "percent",
+      value: 50,
+      targetLineIds: [SERVICE_LINE_ID],
+    });
+
+    expect(result.lineId).toBe(NEW_LINE_ID);
+
+    // Insert carried the scope column.
+    const insert = writes.find((w) => w.op === "insert" && w.table === "ticket_items");
+    expect(insert).toBeDefined();
+    expect(insert!.values).toMatchObject({
+      ticket_id: TICKET_ID,
+      kind: "discount",
+      discount_pct: 50,
+      discount_target_line_ids: [SERVICE_LINE_ID],
+    });
+
+    // Audit payload carries scope (only on scoped — unscoped passes omitted).
+    expect(recordAudit).toHaveBeenCalledTimes(1);
+    const [verb, , entityId, payload] = (recordAudit as unknown as ReturnType<typeof vi.fn>).mock
+      .calls[0];
+    expect(verb).toBe("discount.added");
+    expect(entityId).toBe(NEW_LINE_ID);
+    expect(payload).toMatchObject({
+      ticket_id: TICKET_ID,
+      shape: "percent",
+      value: 50,
+      scope: { kind: "selected_services", line_ids: [SERVICE_LINE_ID] },
+    });
+  });
+
+  it("(049 g) unscoped (targetLineIds omitted) → audit payload has NO scope key", async () => {
+    const recomputeRows: RecomputeRow[] = [
+      {
+        id: SERVICE_LINE_ID,
+        kind: "service",
+        unit_price_cents: 5000,
+        qty: 1,
+        price_unconfirmed: false,
+        discount_pct: null,
+      },
+      {
+        id: NEW_LINE_ID,
+        kind: "discount",
+        unit_price_cents: -500,
+        qty: 1,
+        price_unconfirmed: false,
+        discount_pct: null,
+      },
+    ];
+    makeMockClientWithScopeLookup({
+      ticketStatus: "open",
+      recomputeRows,
+    });
+
+    await addDiscountLine({
+      ticketId: TICKET_ID,
+      shape: "flat",
+      value: 500,
+    });
+
+    expect(recordAudit).toHaveBeenCalledTimes(1);
+    const [, , , payload] = (recordAudit as unknown as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(payload).not.toHaveProperty("scope");
+  });
 });
