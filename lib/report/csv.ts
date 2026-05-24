@@ -18,7 +18,6 @@ import type { ReportWindow } from "@/lib/report/window";
 // `TechnicianReport` field order — the row builders below map carefully.
 const HEADER: readonly string[] = [
   "Tech",
-  "Exempt",
   "Services",
   "Gross",
   "Card Fee",
@@ -49,11 +48,10 @@ function row(cells: readonly (string | number)[]): string {
 /**
  * Builds the Report-page export CSV for `report` over `window`.
  *
- *  - a header row (the nine contract-C5 columns);
+ *  - a header row (the eight contract-C5 columns);
  *  - one row per `TechnicianReport` (already sorted `displayName` asc) —
- *    `Exempt` is `Yes`/`No` from `hasNoDeductions`, money columns are
- *    two-decimal dollars derived from the `*Cents` fields;
- *  - a trailing `TOTAL` row built from `ReportTotals` (blank `Exempt`).
+ *    money columns are two-decimal dollars derived from the `*Cents` fields;
+ *  - a trailing `TOTAL` row built from `ReportTotals`.
  *
  * Every value is double-quoted; rows are joined with `\n` (no trailing
  * newline). `window` is accepted for parity with the client island's
@@ -67,7 +65,6 @@ export function buildReportCsv(report: ReportReadModel, _window: ReportWindow): 
     lines.push(
       row([
         tech.displayName,
-        tech.hasNoDeductions ? "Yes" : "No",
         tech.serviceCount,
         dollars(tech.grossCents),
         dollars(tech.cardFeeCents),
@@ -83,7 +80,6 @@ export function buildReportCsv(report: ReportReadModel, _window: ReportWindow): 
   lines.push(
     row([
       "TOTAL",
-      "", // Exempt is blank on the totals row.
       t.serviceCount,
       dollars(t.grossCents),
       dollars(t.cardFeeCents),
