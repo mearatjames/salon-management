@@ -278,4 +278,56 @@ describe("updatePassword — session + network branches", () => {
     // No audit row written when the SDK update fails.
     expect(recordAuth).not.toHaveBeenCalled();
   });
+
+  // Issue #136 — SDK code "same_password" used to be funneled into
+  // ?error=too_short, which lied to the user about the real problem.
+  // updatePassword now routes it to its own branch.
+  it("redirects to /reset-password?error=same_password when the SDK returns code='same_password'", async () => {
+    mockSupabase(undefined, async () => ({
+      data: null,
+      error: {
+        code: "same_password",
+        message: "New password should be different from the old password.",
+      },
+    }));
+
+    let thrown: unknown;
+    try {
+      await updatePassword(
+        formData({ password: "tang-nails-dev-new", confirm: "tang-nails-dev-new" })
+      );
+    } catch (err) {
+      thrown = err;
+    }
+    const url = redirectUrlFrom(thrown);
+    expect(url).toBe("/reset-password?error=same_password");
+
+    // No audit row written when the SDK rejected the update.
+    expect(recordAuth).not.toHaveBeenCalled();
+  });
+
+  // Issue #136 — every other non-retryable SDK error (weak-password
+  // policy, future server-side rules, etc.) routes to update_failed,
+  // not the old too_short catch-all.
+  it("redirects to /reset-password?error=update_failed on a non-retryable SDK error with an unrecognised code", async () => {
+    mockSupabase(undefined, async () => ({
+      data: null,
+      error: { code: "weak_password", message: "Password is too weak." },
+    }));
+
+    let thrown: unknown;
+    try {
+      await updatePassword(
+        formData({ password: "tang-nails-dev-new", confirm: "tang-nails-dev-new" })
+      );
+    } catch (err) {
+      thrown = err;
+    }
+    const url = redirectUrlFrom(thrown);
+    expect(url).toBe("/reset-password?error=update_failed");
+
+    // The old behaviour funneled this into too_short — assert that's gone.
+    expect(url).not.toContain("too_short");
+    expect(recordAuth).not.toHaveBeenCalled();
+  });
 });
