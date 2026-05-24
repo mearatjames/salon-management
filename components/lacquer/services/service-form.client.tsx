@@ -553,8 +553,8 @@ export function ServiceForm({
           {boundsError ? (
             <span style={errorHintStyle}>{ERROR_HINT[boundsError] ?? boundsError}</span>
           ) : null}
-          <div className="service-variable-price-note">
-            <label htmlFor="service-form-price-note" style={subLabelStyle}>
+          <div style={fieldStyle}>
+            <label htmlFor="service-form-price-note" style={labelStyle}>
               Note (optional)
             </label>
             <input
@@ -568,7 +568,6 @@ export function ServiceForm({
               placeholder="Depends on design complexity"
               style={{
                 ...inputStyle,
-                marginTop: "var(--space-1)",
                 cursor: disabled ? "not-allowed" : "text",
                 opacity: disabled ? 0.6 : 1,
               }}

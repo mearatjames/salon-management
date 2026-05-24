@@ -113,11 +113,14 @@
    resolves to a `var(--*)` token from `styles/tokens.css`.
    ========================================================================== */
 
-/* Single-column catalog: header + list. The drawer is an off-canvas overlay
-   on the right (see `.services-drawer`) — there is no two-column grid like
-   the staff page. `min-height: 0` lets the inner list scroll on its own.
-   The page lives at top-level `/services` (no Settings layout above it), so
-   it owns its own padding instead of inheriting `.settings-content`'s. */
+/* Page wrapper: catalog list + always-mounted edit panel. The page lives at
+   top-level `/services` (no Settings layout above it), so it owns its own
+   padding instead of inheriting `.settings-content`'s. At >= 1024px the
+   two-pane grid bounds the catalog and panel separately (the catalog scrolls
+   its own column; the panel sizes to its content), so the page itself never
+   scrolls and the panel footer (Save / Cancel / Archive) stays in view
+   regardless of catalog length. At <= 1023px the panel stacks beneath the
+   list and the page handles scroll. */
 .settings-services-grid {
   display: flex;
   flex-direction: column;
@@ -125,7 +128,13 @@
   flex: 1;
   min-height: 0;
   padding: var(--space-6) var(--space-8);
-  overflow: auto;
+  overflow: hidden;
+}
+
+@media (max-width: 1023px) {
+  .settings-services-grid {
+    overflow: auto;
+  }
 }
 
 /* Off-canvas right-side drawer for Add / Edit. The width is derived from the
@@ -299,12 +308,6 @@
   gap: var(--space-3);
 }
 
-.service-variable-price-note {
-  margin-top: var(--space-2);
-  font-size: var(--text-sm);
-  color: var(--muted-foreground);
-}
-
 /* === 021-services-deductions === */
 
 /* --- .services-two-pane ---
@@ -314,10 +317,19 @@
    marginally tighter than the prototype's 18px. Adding an `--space-18` would
    violate the spacing scale (CLAUDE.md § 7). At narrow viewports (<= 1023px)
    the panel collapses to a single column so the inspector flows beneath the
-   list instead of crushing it. */
+   list instead of crushing it.
+
+   `grid-template-rows: minmax(0, 1fr)` pins the implicit row to the bounded
+   grid container height (the default `auto` row would re-stretch to the
+   catalog's content height, dragging the panel along — issue #145).
+   `align-items: start` stops the panel from stretching to row height; the
+   catalog opts back in via `align-self: stretch` so it can scroll its own
+   column. */
 .services-two-pane {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: start;
   gap: var(--space-4);
   flex: 1;
   min-height: 0;
@@ -326,14 +338,49 @@
 @media (max-width: 1023px) {
   .services-two-pane {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    align-items: stretch;
     gap: var(--space-3);
+  }
+}
+
+/* Catalog list — at desktop widths, fills the bounded grid row and scrolls
+   its groups container so a long catalog doesn't push the page (and the
+   panel footer) below the viewport. The `<section data-slot="services-list">`
+   is rendered with inline `display: flex; flex-direction: column` styles in
+   `components/lacquer/services/catalog-list.client.tsx`; these supplements
+   add the row-fill + internal scroll without touching the inline-styled JSX.
+   At narrow widths the catalog returns to natural height and the page
+   handles scroll (see `.settings-services-grid` mobile branch). */
+@media (min-width: 1024px) {
+  .services-two-pane > [data-slot="services-list"] {
+    align-self: stretch;
+    min-height: 0;
+  }
+
+  .services-two-pane > [data-slot="services-list"] > [data-slot="services-groups"] {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
   }
 }
 
 /* --- .services-edit-panel ---
    Always-mounted card surface housing the EditPanel header + scroll area +
    footer. No fixed/absolute positioning, no backdrop — this is the new
-   two-pane replacement for the off-canvas drawer. */
+   two-pane replacement for the off-canvas drawer.
+
+   At desktop widths the panel sizes to its content and caps at the grid
+   row height so the footer (Save / Cancel / Archive) stays visible
+   without scrolling past the catalog list (issue #145). When the form is
+   taller than the row, `max-height: 100%` plus the `__scroll` child's
+   `overflow-y: auto` engages internal scroll so the footer still pins to
+   the bottom.
+
+   The `max-height: 100%` is desktop-only because the mobile branch
+   stacks the panel below the catalog in an `auto`-sized grid row;
+   resolving `max-height: 100%` against an auto row creates a circular
+   constraint that collapses the panel's flex `__scroll` child to 0. */
 .services-edit-panel {
   display: flex;
   flex-direction: column;
@@ -345,7 +392,12 @@
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-xs);
   min-height: 0;
-  height: 100%;
+}
+
+@media (min-width: 1024px) {
+  .services-edit-panel {
+    max-height: 100%;
+  }
 }
 
 /* Header: color swatch (24px — prototype spec'd 26 — snapped to scale) +
