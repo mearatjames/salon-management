@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain  *(2 open clarification questions: Q1 split-tender Order scope, Q2 discount granularity — both awaiting user choice)*
+- [x] No [NEEDS CLARIFICATION] markers remain  *(All 3 clarifications resolved in session 2026-05-24: split-tender scope, discount granularity, orphan-Order disposition.)*
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -31,7 +31,7 @@
 
 ## Notes
 
-- Two clarifying questions remain open in the spec under `## Requirements → Clarifications` (Q1 and Q2). The user needs to pick from the suggested answers (or provide custom answers) before `/speckit-clarify` or `/speckit-plan`.
+- All three clarifying questions resolved in `/speckit-clarify` session 2026-05-24; answers are logged at the top of `spec.md` under `## Clarifications` and the requirements have been updated in place.
 - The spec keeps implementation details (Orders API, line-item field names, idempotency hash details) out of the user-facing sections; those live in the issue and will be re-introduced in the plan stage.
-- Square SDK terminology ("Orders API", "applied_discounts", "OrderLineItem") appears only inside the Q1/Q2 clarification context blocks so the user can make an informed product decision; the rest of the spec speaks in user-facing language.
 - "Tax behaviour" is captured as a hard requirement (FR-005) rather than a clarification — the totals-match-exactly contract leaves no product decision to make.
+- Square SDK terminology (`applied_discounts`, `discount_target_line_ids`, `amountMoney`, `terminal.checkouts.create`) is used sparingly in FR-003, FR-008, and the edge-case list where the precise data-model attachment point is the requirement; the rest of the spec speaks in user-facing language.

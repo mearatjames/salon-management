@@ -10,6 +10,14 @@
 
 **Source issue**: [#149](https://github.com/mearatjames/salon-management/issues/149)
 
+## Clarifications
+
+### Session 2026-05-24
+
+- Q: Split-tender card-leg Order scope → A: Single-tender card sales send an itemized Order; split-tender card legs continue to send a non-itemized `amountMoney`-only checkout (today's behaviour preserved).
+- Q: Per-service discount granularity → A: Discounts whose `discount_target_line_ids` is set are sent line-level on the Square Order (attached to the targeted line items via `applied_discounts`); discounts without targeting are sent Order-level.
+- Q: Orphan Order disposition on permanent failure → A: Best-effort cancel of the orphan Order when the subsequent terminal checkout permanently fails or the operator cancels before customer interaction. A failed cancel call is logged but does not block the operator UI or retry path; idempotency still collapses checkout retries onto the same Order.
+
 ## User Scenarios & Testing
 
 ### User Story 1 — Owner reconciles Square dashboard with itemized charges (Priority: P1)
@@ -61,11 +69,11 @@ For every itemized terminal sale, the subtotal, discount total, tax, tip, and gr
 
 ### Edge Cases
 
-- **Split-tender card leg (`card` + `cash` or `card` + `gift`)**: when the card portion is only part of the ticket — for example, $40 card against a $100 ticket whose line items total $100 — what should the Order sent to Square contain? See Clarifications Q1.
-- **Per-service-targeted discount (feature 049)**: when a ticket has a discount whose `discount_target_line_ids` scopes it to specific services, should the Order apply that discount only to those line items (richer Square reporting), or apply it as a single Order-level discount (simpler, slightly less accurate)? See Clarifications Q2.
-- **Order created, terminal checkout creation fails**: a network or Square error between the two SDK calls leaves an Order in Square with no associated checkout or payment. The system MUST collapse retries (same ticket + payment attempt = same Order, not a fresh one) and SHOULD cancel/void the orphan Order on permanent failure so the Square dashboard does not show empty Orders.
-- **Operator cancels at the waiting screen before the customer taps**: the existing cancel flow remains; an Order may have been created but no payment attached. System behaviour for the orphan Order is the same as the previous bullet.
-- **Customer declines on the terminal**: the Order remains but unpaid; the Tang Nails payment row is marked failed exactly as today. Subsequent re-attempts produce a fresh payment row and therefore a fresh Order (or reuse the same Order if the retry collapses by idempotency — see Q1 / Q3).
+- **Split-tender card leg (`card` + `cash` or `card` + `gift`)**: card legs of a split-tender sale continue to send a non-itemized `amountMoney`-only checkout (no Order). The Square dashboard for those legs continues to show "Custom amount" exactly as today; itemization applies only to single-tender card sales. (See Clarifications session 2026-05-24.)
+- **Per-service-targeted discount (feature 049)**: when a discount row has `discount_target_line_ids` set, the Order MUST attach that discount line-level to the corresponding Square line items (via `applied_discounts`) rather than applying it Order-wide. Untargeted discounts continue to be sent as Order-level discounts. (See Clarifications session 2026-05-24.)
+- **Order created, terminal checkout creation fails**: a network or Square error between the two SDK calls leaves an Order in Square with no associated checkout or payment. The system MUST collapse retries (same ticket + payment attempt = same Order, not a fresh one). On permanent failure, the system MUST make a best-effort attempt to cancel the orphan Order so the Square dashboard does not show empty Orders; a failure of that cancel call MUST be logged but MUST NOT block the operator UI or any retry path.
+- **Operator cancels at the waiting screen before the customer taps**: the existing cancel flow remains; an Order may have been created but no payment attached. The system MUST make the same best-effort cancel attempt on the orphan Order described in the previous bullet.
+- **Customer declines on the terminal**: the Order remains but unpaid; the Tang Nails payment row is marked failed exactly as today. Subsequent re-attempts produce a fresh payment row and therefore a fresh Order (per FR-007); a retry of the same payment attempt collapses onto the same Order via the deterministic idempotency key (per FR-006).
 - **Tip is added by the customer on the terminal**: the tip is captured after the Order is created, exactly as today. The Order's recorded totals must reflect the final tip Square reports, not the pre-tip subtotal.
 - **Ad-hoc service name characters**: service `name_snapshot` is user-edited text. Names with quotes, ampersands, emoji, or extreme length must not break Order creation; they MUST render on the dashboard as-is or be truncated only to Square's documented limits.
 - **Zero-priced service line** (a complimentary service): must appear on the Order as a $0 line item (not omitted), so the receipt still shows what was performed.
@@ -75,55 +83,20 @@ For every itemized terminal sale, the subtotal, discount total, tax, tip, and gr
 
 ### Functional Requirements
 
-- **FR-001**: When a card payment is sent to the Square Terminal for an open ticket, the system MUST create a Square Order containing every service line on the ticket as an individual Order line item.
+- **FR-001**: When a **single-tender** card payment is sent to the Square Terminal for an open ticket (the card is the only payment method covering the full ticket total), the system MUST create a Square Order containing every service line on the ticket as an individual Order line item. Split-tender card legs MUST continue to send a non-itemized `amountMoney`-only checkout — they are out of scope for itemization in this feature.
 - **FR-002**: Each Order line item MUST carry the service's display name (as shown to the operator and customer in Tang Nails) and the unit price the operator confirmed; quantity MUST mirror the ticket-line quantity.
-- **FR-003**: When the ticket contains one or more discount lines, the system MUST represent those discounts on the Order so they appear on the Square dashboard and printed receipt as discounts (not as negative line items).
+- **FR-003**: When the ticket contains one or more discount lines, the system MUST represent those discounts on the Order so they appear on the Square dashboard and printed receipt as discounts (not as negative line items). Discount rows whose `discount_target_line_ids` is set MUST be attached line-level to the targeted Order line items; discount rows without targeting MUST be applied Order-level. The resulting Square discount totals MUST match the Tang Nails discount totals to the cent.
 - **FR-004**: The grand total Square charges and records MUST exactly match the amount Tang Nails displayed to the operator and customer for that payment (current behaviour: cent-accurate parity with `amountMoney`).
 - **FR-005**: The system MUST prevent Square's automatic tax inheritance from a location's default tax rate from altering the recorded charge; recorded tax MUST equal what Tang Nails calculated (currently $0).
 - **FR-006**: Retrying the same payment attempt (same ticket + same in-flight payment row) MUST NOT produce a duplicate Order on the Square side; the retry MUST collapse onto the original Order.
 - **FR-007**: A fresh card payment attempt for the same ticket after a prior failure MUST produce a brand-new Order (preserving the existing per-attempt-row contract).
-- **FR-008**: When Order creation succeeds but the subsequent terminal checkout creation fails, the system MUST surface the same operator-facing failure experience as today (the operator sees an actionable error and can retry or switch payment method); the orphan Order MUST NOT block retries.
+- **FR-008**: When Order creation succeeds but the subsequent terminal checkout creation fails, the system MUST surface the same operator-facing failure experience as today (the operator sees an actionable error and can retry or switch payment method); the orphan Order MUST NOT block retries. The system MUST make a best-effort attempt to cancel the orphan Order; if that cancel call fails, the error MUST be logged but MUST NOT surface to the operator and MUST NOT prevent retry or method-switch.
 - **FR-009**: The system MUST tag each Order with the Tang Nails ticket identifier so the Order is traceable from Square back to the originating ticket without manual lookup.
 - **FR-010**: Cancellation of a terminal checkout from the waiting screen MUST continue to honour the existing "Square wins" race semantics; itemization changes MUST NOT introduce a new ambiguity for the cancel path.
 - **FR-011**: When the customer adds a tip on the terminal, Square's recorded tip on the Order MUST equal the tip Tang Nails persists against the payment row.
 - **FR-012**: All previously supported terminal flows (single-tender card, success, cancellation, decline, polling fallback, webhook settlement) MUST continue to work end-to-end with no regression in the operator-facing UI.
 - **FR-013**: For audit purposes, the system MUST persist a reference to the Square Order alongside the existing `square_terminal_checkout_id` so support can pull the Order without recomputing it from the Square API.
 - **FR-014**: Pre-existing operator-facing copy on the waiting screen, settle screen, and dashboard MUST NOT change as a result of this feature.
-
-### Clarifications
-
-#### Q1: Split-tender card-leg Order scope
-
-**Context**: A ticket totalling $100 with two services may be paid as $40 card + $60 cash (or card + gift). Today the card-leg path sends only `amountMoney = $40` to the terminal with no itemization. After this feature, what should the Order attached to the $40 card leg contain?
-
-**What we need to know**: Should the Order represent the full ticket itemization (rich dashboard story but Order total > Square-charged amount), only the card portion (Order total matches the charge but discount/services don't map cleanly to a partial amount), or should split-tender card legs fall back to the current non-itemized behaviour?
-
-**Suggested Answers**:
-
-| Option | Answer | Implications |
-|--------|--------|--------------|
-| A      | Single-tender card sales send an itemized Order; split-tender card legs continue to send a non-itemized `amountMoney`-only checkout. | Simplest, ships the headline value immediately, preserves existing split-tender behaviour. The Square dashboard for split-tender card legs continues to show "Custom amount". |
-| B      | Every card leg sends an Order; for split-tender, the Order itemizes the full ticket and the leg amount is recorded via the terminal's `amountMoney` (Square will show the Order has a partial payment attached). | Richest reporting, but Square dashboard shows Order total $100 with payment $40 — may confuse owners reconciling. |
-| C      | Every card leg sends an Order; for split-tender, the Order contains a single proportional "Card portion of ticket #X" line item at the leg amount. | Cleanest totals (Order total = charge), but loses the per-service itemization that motivates the feature when the sale is split. |
-| Custom | Provide your own answer | — |
-
-**Your choice**: _Awaiting user response_
-
-#### Q2: Per-service discount granularity
-
-**Context**: Feature 049 (per-service discount) introduced `discount_target_line_ids` on discount rows so a discount can scope to a subset of services on the ticket. Square supports both Order-level discounts (one discount on the whole Order) and line-level discounts (a discount attached to specific line items via `applied_discounts`).
-
-**What we need to know**: When a Tang Nails ticket has a discount with `discount_target_line_ids` set, should the Order also scope that discount to those exact line items, or should every discount be sent as an Order-level discount regardless of scope?
-
-**Suggested Answers**:
-
-| Option | Answer | Implications |
-|--------|--------|--------------|
-| A      | Discounts with `discount_target_line_ids` set are sent line-level (attached to the targeted Square line items); discounts without targeting are sent Order-level. | Matches Tang Nails' internal model exactly. Best owner-reconciliation story. Slightly more implementation work and more places to test. |
-| B      | All discounts are always sent as Order-level — one discount line per discount row, regardless of internal targeting. | Simpler. Owners viewing the Square dashboard see "10% off -$10.50" without knowing which services it applied to, which matches today's pre-049 cart UX. |
-| Custom | Provide your own answer | — |
-
-**Your choice**: _Awaiting user response_
 
 ### Key Entities
 
@@ -137,13 +110,14 @@ For every itemized terminal sale, the subtotal, discount total, tax, tip, and gr
 
 ### Measurable Outcomes
 
-- **SC-001**: For 100% of itemized card sales (per Q1's chosen scope), the Square dashboard displays each Tang Nails service line as its own line item with the matching name and unit price.
+- **SC-001**: For 100% of single-tender card sales, the Square dashboard displays each Tang Nails service line as its own line item with the matching name and unit price.
 - **SC-002**: For 100% of itemized card sales with at least one discount, the Square dashboard renders the discount with its label and amount (not as a negative line item or hidden inside the total).
 - **SC-003**: For 100% of completed itemized card sales, the Square-recorded subtotal, discount total, tax, tip, and grand total match the corresponding Tang Nails values to the cent.
 - **SC-004**: When the same card payment attempt is retried (same ticket + payment row), Square shows exactly one Order — zero duplicate Orders observed across at least 20 retry scenarios in QA.
 - **SC-005**: Mean operator-visible time from "Send to terminal" tap to "waiting for customer" screen does not regress by more than 500 ms compared to today's non-itemized flow (Order create + checkout create is two SDK round-trips instead of one).
 - **SC-006**: For 100% of card sales, the previously-recorded operator-facing failure rate (Square-unreachable, decline, cancel) is unchanged within statistical noise after this feature ships.
 - **SC-007**: Owners self-report on at least one post-launch reconciliation pass that they no longer need to open Tang Nails to identify what each Square dashboard charge corresponds to.
+- **SC-008**: After a simulated `terminal.checkouts.create` failure path, 100% of resulting orphan Orders are either canceled or have a logged cancel-attempt failure — zero silent orphans are introduced into the Square dashboard during QA scenarios.
 
 ## Assumptions
 
