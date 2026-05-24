@@ -429,9 +429,8 @@ test.describe("US1: all-staff report overview", () => {
       expect(await cellText(techARow, 5)).toBe(EXPECT.techA.commissionable);
       expect(await cellText(techARow, 6)).toBe(EXPECT.techA.tips);
 
-      // TECH_B — fully exempt: no-deduction indicator, em-dash deduction cells,
+      // TECH_B — fully exempt: em-dash deduction cells (no per-line deduction),
       // commissionable equals gross.
-      await expect(techBRow.locator('[data-slot="exempt-tag"]')).toBeVisible();
       expect(await cellText(techBRow, 2)).toBe(EXPECT.techB.gross);
       expect(await cellText(techBRow, 3)).toBe("—");
       expect(await cellText(techBRow, 4)).toBe("—");
@@ -493,8 +492,6 @@ test.describe("US1: all-staff report overview", () => {
       await expect(page.locator(`.dr-tech-card[data-tech-id="${TECH_A}"]`)).toBeVisible();
       const techBCard = page.locator(`.dr-tech-card[data-tech-id="${TECH_B}"]`);
       await expect(techBCard).toBeVisible();
-      // The exempt technician's card shows the "Exempt" tag.
-      await expect(techBCard.locator('[data-slot="exempt-tag"]')).toBeVisible();
     });
   });
 
@@ -639,9 +636,7 @@ test.describe("US2: per-technician transaction detail", () => {
     const detail = page.locator(`[data-slot="tech-detail"][data-tech-id="${TECH_B}"]`);
     await expect(detail).toBeVisible();
 
-    // The exempt technician's no-deduction badge renders in the header.
-    await expect(detail.locator('[data-slot="exempt-tag"]')).toBeVisible();
-    // No "Deducted" figure for an exempt tech.
+    // No "Deducted" figure when the tech has zero deductions in the window.
     await expect(detail.locator(".dr-detail-head")).not.toContainText("Deducted");
 
     // The "Card fee" / "Supply" column headers are absent.
@@ -980,15 +975,15 @@ test.describe("US5: print and export the report", () => {
     const csv = Buffer.concat(chunks).toString("utf-8");
     const lines = csv.split("\n");
 
-    // Header row — the nine contract-C5 columns, every value double-quoted.
+    // Header row — the eight contract-C5 columns, every value double-quoted.
     expect(lines[0]).toBe(
-      '"Tech","Exempt","Services","Gross","Card Fee","Supply",' +
+      '"Tech","Services","Gross","Card Fee","Supply",' +
         '"Total Deductions","Commissionable","Card Tips"'
     );
 
-    // The final row is the TOTAL row with a blank Exempt cell.
+    // The final row is the TOTAL row.
     const totalLine = lines[lines.length - 1];
-    expect(totalLine.startsWith('"TOTAL",""')).toBe(true);
+    expect(totalLine.startsWith('"TOTAL"')).toBe(true);
 
     // Strips the surrounding double quotes from one CSV line's cells.
     const fields = (line: string): string[] =>
@@ -1004,27 +999,24 @@ test.describe("US5: print and export the report", () => {
 
     const adaCsv = techRow(TECH_A_NAME);
     expect(adaCsv).toBeDefined();
-    // TECH_A — non-exempt: Exempt "No"; gross/cardFee/supply/commissionable/
-    // tips match EXPECT.techA (parsed as numbers — drop the `$` and sign).
-    expect(adaCsv![1]).toBe("No");
-    expect(adaCsv![2]).toBe("2"); // serviceCount — TK_1 + TK_2
-    expect(Number(adaCsv![3])).toBe(parseCell(EXPECT.techA.gross)); // 130
-    expect(Number(adaCsv![4])).toBe(-parseCell(EXPECT.techA.cardFee)); // 3
-    expect(Number(adaCsv![5])).toBe(-parseCell(EXPECT.techA.supply)); // 5
-    expect(Number(adaCsv![7])).toBe(parseCell(EXPECT.techA.commissionable)); // 122
-    expect(Number(adaCsv![8])).toBe(parseCell(EXPECT.techA.tips)); // 10
+    // TECH_A — non-exempt: gross/cardFee/supply/commissionable/tips match
+    // EXPECT.techA (parsed as numbers — drop the `$` and sign).
+    expect(adaCsv![1]).toBe("2"); // serviceCount — TK_1 + TK_2
+    expect(Number(adaCsv![2])).toBe(parseCell(EXPECT.techA.gross)); // 130
+    expect(Number(adaCsv![3])).toBe(-parseCell(EXPECT.techA.cardFee)); // 3
+    expect(Number(adaCsv![4])).toBe(-parseCell(EXPECT.techA.supply)); // 5
+    expect(Number(adaCsv![6])).toBe(parseCell(EXPECT.techA.commissionable)); // 122
+    expect(Number(adaCsv![7])).toBe(parseCell(EXPECT.techA.tips)); // 10
 
     const beaCsv = techRow(TECH_B_NAME);
     expect(beaCsv).toBeDefined();
-    // TECH_B — fully exempt: Exempt "Yes"; zero deductions; commissionable
-    // equals gross.
-    expect(beaCsv![1]).toBe("Yes");
-    expect(Number(beaCsv![3])).toBe(parseCell(EXPECT.techB.gross)); // 80
-    expect(Number(beaCsv![4])).toBe(0); // card fee
-    expect(Number(beaCsv![5])).toBe(0); // supply
-    expect(Number(beaCsv![6])).toBe(0); // total deductions
-    expect(Number(beaCsv![7])).toBe(parseCell(EXPECT.techB.commissionable)); // 80
-    expect(Number(beaCsv![8])).toBe(parseCell(EXPECT.techB.tips)); // 12
+    // TECH_B — fully exempt: zero deductions; commissionable equals gross.
+    expect(Number(beaCsv![2])).toBe(parseCell(EXPECT.techB.gross)); // 80
+    expect(Number(beaCsv![3])).toBe(0); // card fee
+    expect(Number(beaCsv![4])).toBe(0); // supply
+    expect(Number(beaCsv![5])).toBe(0); // total deductions
+    expect(Number(beaCsv![6])).toBe(parseCell(EXPECT.techB.commissionable)); // 80
+    expect(Number(beaCsv![7])).toBe(parseCell(EXPECT.techB.tips)); // 12
   });
 
   test("(t) the print stylesheet hides the studio chrome and controls", async ({ page }) => {

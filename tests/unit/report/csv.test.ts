@@ -15,7 +15,7 @@ import { buildReportCsv } from "@/lib/report/csv";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
-// A non-exempt technician — every deduction column is non-zero.
+// A technician with non-zero deductions in every column.
 const ADA: TechnicianReport = {
   staffId: "s-ada",
   displayName: "Ada Non-Exempt",
@@ -28,11 +28,10 @@ const ADA: TechnicianReport = {
   totalDeductionsCents: 800,
   commissionableCents: 12_200,
   cardTipsCents: 1_000,
-  hasNoDeductions: false,
   transactions: [],
 };
 
-// A fully exempt technician — `hasNoDeductions` true, zero deductions.
+// A technician with zero deductions in the window — every deduction column 0.
 const BEA: TechnicianReport = {
   staffId: "s-bea",
   displayName: "Bea Exempt",
@@ -45,7 +44,6 @@ const BEA: TechnicianReport = {
   totalDeductionsCents: 0,
   commissionableCents: 8_000,
   cardTipsCents: 1_200,
-  hasNoDeductions: true,
   transactions: [],
 };
 
@@ -87,11 +85,10 @@ function fields(line: string): string[] {
 // ─── Header row ──────────────────────────────────────────────────────────────
 
 describe("buildReportCsv — header row", () => {
-  it("emits exactly the nine contract C5 columns in order", () => {
+  it("emits exactly the eight contract C5 columns in order", () => {
     const lines = buildReportCsv(REPORT, WINDOW).split("\n");
     expect(fields(lines[0])).toEqual([
       "Tech",
-      "Exempt",
       "Services",
       "Gross",
       "Card Fee",
@@ -118,60 +115,53 @@ describe("buildReportCsv — one row per technician", () => {
     expect(fields(lines[2])[0]).toBe("Bea Exempt");
   });
 
-  it("Exempt is `No` for a deducting tech, `Yes` for an exempt tech", () => {
-    const lines = buildReportCsv(REPORT, WINDOW).split("\n");
-    expect(fields(lines[1])[1]).toBe("No");
-    expect(fields(lines[2])[1]).toBe("Yes");
-  });
-
   it("Services is the integer service count", () => {
     const lines = buildReportCsv(REPORT, WINDOW).split("\n");
-    expect(fields(lines[1])[2]).toBe("3");
-    expect(fields(lines[2])[2]).toBe("1");
+    expect(fields(lines[1])[1]).toBe("3");
+    expect(fields(lines[2])[1]).toBe("1");
   });
 
   it("money columns are two-decimal dollars from the *Cents fields", () => {
     const ada = fields(buildReportCsv(REPORT, WINDOW).split("\n")[1]);
     // Gross, Card Fee, Supply, Total Deductions, Commissionable, Card Tips.
-    expect(ada[3]).toBe("130.00"); // grossCents 13000
-    expect(ada[4]).toBe("3.00"); // cardFeeCents 300
-    expect(ada[5]).toBe("5.00"); // supplyCents 500
-    expect(ada[6]).toBe("8.00"); // totalDeductionsCents 800
-    expect(ada[7]).toBe("122.00"); // commissionableCents 12200
-    expect(ada[8]).toBe("10.00"); // cardTipsCents 1000
+    expect(ada[2]).toBe("130.00"); // grossCents 13000
+    expect(ada[3]).toBe("3.00"); // cardFeeCents 300
+    expect(ada[4]).toBe("5.00"); // supplyCents 500
+    expect(ada[5]).toBe("8.00"); // totalDeductionsCents 800
+    expect(ada[6]).toBe("122.00"); // commissionableCents 12200
+    expect(ada[7]).toBe("10.00"); // cardTipsCents 1000
   });
 
-  it("an exempt tech's deduction columns render 0.00", () => {
+  it("a zero-deduction tech's deduction columns render 0.00", () => {
     const bea = fields(buildReportCsv(REPORT, WINDOW).split("\n")[2]);
-    expect(bea[3]).toBe("80.00"); // gross
-    expect(bea[4]).toBe("0.00"); // card fee
-    expect(bea[5]).toBe("0.00"); // supply
-    expect(bea[6]).toBe("0.00"); // total deductions
-    expect(bea[7]).toBe("80.00"); // commissionable
-    expect(bea[8]).toBe("12.00"); // card tips
+    expect(bea[2]).toBe("80.00"); // gross
+    expect(bea[3]).toBe("0.00"); // card fee
+    expect(bea[4]).toBe("0.00"); // supply
+    expect(bea[5]).toBe("0.00"); // total deductions
+    expect(bea[6]).toBe("80.00"); // commissionable
+    expect(bea[7]).toBe("12.00"); // card tips
   });
 });
 
 // ─── TOTAL row ───────────────────────────────────────────────────────────────
 
 describe("buildReportCsv — TOTAL row", () => {
-  it("the last row is the TOTAL row with a blank Exempt cell", () => {
+  it("the last row is the TOTAL row", () => {
     const lines = buildReportCsv(REPORT, WINDOW).split("\n");
     const total = fields(lines[lines.length - 1]);
     expect(total[0]).toBe("TOTAL");
-    expect(total[1]).toBe("");
   });
 
   it("the TOTAL row carries `ReportTotals` value-for-value", () => {
     const lines = buildReportCsv(REPORT, WINDOW).split("\n");
     const total = fields(lines[lines.length - 1]);
-    expect(total[2]).toBe("4"); // serviceCount
-    expect(total[3]).toBe("210.00"); // grossCents 21000
-    expect(total[4]).toBe("3.00"); // cardFeeCents 300
-    expect(total[5]).toBe("5.00"); // supplyCents 500
-    expect(total[6]).toBe("8.00"); // totalDeductionsCents 800
-    expect(total[7]).toBe("202.00"); // commissionableCents 20200
-    expect(total[8]).toBe("22.00"); // cardTipsCents 2200
+    expect(total[1]).toBe("4"); // serviceCount
+    expect(total[2]).toBe("210.00"); // grossCents 21000
+    expect(total[3]).toBe("3.00"); // cardFeeCents 300
+    expect(total[4]).toBe("5.00"); // supplyCents 500
+    expect(total[5]).toBe("8.00"); // totalDeductionsCents 800
+    expect(total[6]).toBe("202.00"); // commissionableCents 20200
+    expect(total[7]).toBe("22.00"); // cardTipsCents 2200
   });
 });
 
@@ -215,6 +205,7 @@ describe("buildReportCsv — formatting invariants", () => {
     expect(fields(lines[0])[0]).toBe("Tech");
     const total = fields(lines[1]);
     expect(total[0]).toBe("TOTAL");
-    expect(total[3]).toBe("0.00");
+    // Gross is the third cell now (after the Exempt column was dropped).
+    expect(total[2]).toBe("0.00");
   });
 });

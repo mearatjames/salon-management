@@ -1,8 +1,9 @@
 // ReportStaffList — the left panel of the Report page body (US1).
 //
 // Presentational component. Renders an "All Staff" button followed by one
-// card per `TechnicianReport` — avatar, name, "Exempt" tag, service count,
-// gross / deduct / net, and card tips.
+// card per `TechnicianReport` — avatar, name, service count, gross / deduct
+// / net, and card tips. The Deduct line collapses when the tech's
+// `totalDeductionsCents === 0` so a zero-deduction card stays compact.
 //
 // Props `selectedTechId` / `onSelect` are exposed for US2's drill-down: when
 // `onSelect` is absent (US1) the "All Staff" button and the tech cards render
@@ -73,6 +74,7 @@ export function ReportStaffList({
 
       <div className="dr-tech-list">
         {technicians.map((tech) => {
+          const hasDeductions = tech.totalDeductionsCents > 0;
           const body = (
             <>
               <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
@@ -82,11 +84,6 @@ export function ReportStaffList({
                     <span style={{ fontWeight: 600, fontSize: "var(--text-sm)" }}>
                       {tech.displayName}
                     </span>
-                    {tech.hasNoDeductions ? (
-                      <span className="dr-exempt-tag" data-slot="exempt-tag">
-                        Exempt
-                      </span>
-                    ) : null}
                   </div>
                   <div style={{ fontSize: "var(--text-xs)", color: "var(--muted-foreground)" }}>
                     {tech.serviceCount} services
@@ -99,14 +96,14 @@ export function ReportStaffList({
                   <span className="dr-cn-l">Gross</span>
                   <span className="dr-cn-v">{formatCurrency(tech.grossCents / 100)}</span>
                 </div>
-                {tech.hasNoDeductions ? null : (
+                {hasDeductions ? (
                   <div className="dr-card-num">
                     <span className="dr-cn-l">Deduct</span>
                     <span className="dr-cn-v neg">
                       −{formatCurrency(tech.totalDeductionsCents / 100)}
                     </span>
                   </div>
-                )}
+                ) : null}
                 <div className="dr-card-num">
                   <span className="dr-cn-l">Net</span>
                   <span className="dr-cn-v bold">

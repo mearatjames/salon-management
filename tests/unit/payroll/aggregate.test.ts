@@ -74,7 +74,6 @@ function techReport(over: { staffId: string } & Partial<TechnicianReport>): Tech
     totalDeductionsCents: over.totalDeductionsCents ?? 0,
     commissionableCents: over.commissionableCents ?? 0,
     cardTipsCents: over.cardTipsCents ?? 0,
-    hasNoDeductions: over.hasNoDeductions ?? true,
     transactions: over.transactions ?? [],
   };
 }

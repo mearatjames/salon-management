@@ -106,7 +106,6 @@ export type TechnicianReport = {
   readonly totalDeductionsCents: number;
   readonly commissionableCents: number;
   readonly cardTipsCents: number;
-  readonly hasNoDeductions: boolean;
   readonly transactions: readonly ReportTransaction[];
 };
 
@@ -465,7 +464,6 @@ export function projectReport(input: ProjectReportInput): ReportReadModel {
         totalDeductionsCents,
         commissionableCents: a.grossCents - totalDeductionsCents,
         cardTipsCents: a.cardTipsCents,
-        hasNoDeductions: totalDeductionsCents === 0,
         transactions,
       };
     })

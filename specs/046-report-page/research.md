@@ -125,20 +125,21 @@ price) — it must not appear under any technician.
 **Rationale**: FR-009. A discount is salon-level, earned by no technician; a
 product is deferred scope (Constitution V — no products in v1).
 
-## R7 — "Exempt" / "no deductions" is behavioral, not config-derived
+## R7 — Deduction-column collapse is behavioral, not config-derived
 
-**Decision**: A technician is shown with the "No deductions" / "Exempt"
-indicator, and their detail view omits the deduction columns, **iff their
-computed total deductions for the period are exactly 0**. The report does not
-read a single "exempt" flag.
+**Decision**: The tech-detail view omits the deduction columns **iff the
+technician's computed total deductions for the period are exactly 0**. No
+"Exempt" / "No deductions" badge is shown — the numeric columns convey "no
+deductions" without an editorialized label (see issue #138 — the earlier badge
+was derived from this same $0-deductions math and was misleading when a
+non-exempt tech happened to have a $0-deduction period).
 
-**Rationale**: This one rule satisfies every relevant requirement at once:
-FR-018 ("*a technician with no deductions applied*"), FR-025 ("*for an exempt
-technician … omit the deduction columns*"), US1-AS3 (fully-exempt tech), and the
-"Partially exempt technician" edge case (a tech with *some* deductions is
-correctly *not* flagged). A fully config-exempt tech naturally computes to 0; so
-does a tech whose period was all-cash with no supply services — and "no
-deductions" is accurate for both.
+**Rationale**: A $0-deduction period is genuinely a $0-deduction period —
+collapsing the empty Card fee / Supply columns keeps the detail view tidy.
+But labeling those techs "Exempt" overstated what the math actually says:
+nothing about whether the staff exemption flags (`card_fee_exempt`,
+`supply_mode`) are set. The actual exempt flags drive payout math
+(`lib/report/aggregate.ts:143-197`) and are not surfaced as a UI label.
 
 **Alternatives rejected**: The prototype's binary `isExempt` set
 (`{maya, linh}`) — a hardcoded mock; cannot express partial supply exemption.
