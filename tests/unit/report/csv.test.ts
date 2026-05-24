@@ -57,6 +57,7 @@ const TOTALS: ReportTotals = {
   totalDeductionsCents: 800,
   commissionableCents: 20_200,
   cardTipsCents: 2_200,
+  discountsCents: 0,
 };
 
 const REPORT: ReportReadModel = {
@@ -197,6 +198,7 @@ describe("buildReportCsv — formatting invariants", () => {
         totalDeductionsCents: 0,
         commissionableCents: 0,
         cardTipsCents: 0,
+        discountsCents: 0,
       },
       isEmpty: true,
     };

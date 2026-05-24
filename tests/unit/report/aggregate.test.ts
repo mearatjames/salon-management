@@ -682,3 +682,157 @@ describe("projectReport — fully-exempt tech yields zero deductions", () => {
     expect(m.technicians[0].cardFeeCents).toBe(0);
   });
 });
+
+// ─── projectReport — totals.discountsCents (issue #139) ──────────────────────
+
+describe("projectReport — totals.discountsCents", () => {
+  it("empty input → discountsCents = 0", () => {
+    expect(projectReport(input()).totals.discountsCents).toBe(0);
+  });
+
+  it("no discount items → discountsCents = 0", () => {
+    const m = projectReport(
+      input({
+        tickets: [{ id: "tx1", status: "paid", closed_at: "2026-05-16T20:00:00.000Z" }],
+        items: [
+          {
+            ticket_id: "tx1",
+            kind: "service",
+            ref_id: "svc1",
+            name_snapshot: "Mani",
+            unit_price_cents: 4000,
+            qty: 1,
+            assigned_staff_id: "tech1",
+          },
+        ],
+        payments: [{ ticket_id: "tx1", method: "cash", status: "succeeded", tip_cents: 0 }],
+        staff: [staff()],
+        services: [service()],
+      })
+    );
+    expect(m.totals.discountsCents).toBe(0);
+  });
+
+  it("legacy all-services discount → sums |unit_price × qty|, gross unchanged", () => {
+    const m = projectReport(
+      input({
+        tickets: [{ id: "tx1", status: "paid", closed_at: "2026-05-16T20:00:00.000Z" }],
+        items: [
+          {
+            ticket_id: "tx1",
+            kind: "service",
+            ref_id: "svc1",
+            name_snapshot: "Mani",
+            unit_price_cents: 5000,
+            qty: 1,
+            assigned_staff_id: "tech1",
+          },
+          {
+            ticket_id: "tx1",
+            kind: "discount",
+            ref_id: null,
+            name_snapshot: "Loyalty discount",
+            unit_price_cents: -500,
+            qty: 1,
+            assigned_staff_id: null,
+          },
+        ],
+        payments: [{ ticket_id: "tx1", method: "cash", status: "succeeded", tip_cents: 0 }],
+        staff: [staff()],
+        services: [service()],
+      })
+    );
+    expect(m.totals.discountsCents).toBe(500);
+    // Gross is unchanged — discount lines never feed per-tech / period gross.
+    expect(m.totals.grossCents).toBe(5000);
+  });
+
+  it("scoped per-service discount → sums |unit_price × qty|", () => {
+    const m = projectReport(
+      input({
+        tickets: [{ id: "tx1", status: "paid", closed_at: "2026-05-16T20:00:00.000Z" }],
+        items: [
+          {
+            ticket_id: "tx1",
+            kind: "service",
+            ref_id: "svc1",
+            name_snapshot: "Pedi",
+            unit_price_cents: 6000,
+            qty: 1,
+            assigned_staff_id: "tech1",
+          },
+          {
+            ticket_id: "tx1",
+            kind: "discount",
+            ref_id: null,
+            name_snapshot: "Pedi 10% off",
+            unit_price_cents: -600,
+            qty: 1,
+            assigned_staff_id: null,
+          },
+        ],
+        payments: [{ ticket_id: "tx1", method: "card", status: "succeeded", tip_cents: 0 }],
+        staff: [staff()],
+        services: [service()],
+      })
+    );
+    expect(m.totals.discountsCents).toBe(600);
+  });
+
+  it("mixed: multiple tickets with scoped and all-services discounts → sums all", () => {
+    const m = projectReport(
+      input({
+        tickets: [
+          { id: "tx1", status: "paid", closed_at: "2026-05-16T18:00:00.000Z" },
+          { id: "tx2", status: "paid", closed_at: "2026-05-16T20:00:00.000Z" },
+        ],
+        items: [
+          {
+            ticket_id: "tx1",
+            kind: "service",
+            ref_id: "svc1",
+            name_snapshot: "Mani",
+            unit_price_cents: 4000,
+            qty: 1,
+            assigned_staff_id: "tech1",
+          },
+          {
+            ticket_id: "tx1",
+            kind: "discount",
+            ref_id: null,
+            name_snapshot: "Promo",
+            unit_price_cents: -1000,
+            qty: 1,
+            assigned_staff_id: null,
+          },
+          {
+            ticket_id: "tx2",
+            kind: "service",
+            ref_id: "svc1",
+            name_snapshot: "Pedi",
+            unit_price_cents: 6000,
+            qty: 2,
+            assigned_staff_id: "tech1",
+          },
+          {
+            ticket_id: "tx2",
+            kind: "discount",
+            ref_id: null,
+            name_snapshot: "Pedi $5 off",
+            unit_price_cents: -250,
+            qty: 2,
+            assigned_staff_id: null,
+          },
+        ],
+        payments: [
+          { ticket_id: "tx1", method: "cash", status: "succeeded", tip_cents: 0 },
+          { ticket_id: "tx2", method: "cash", status: "succeeded", tip_cents: 0 },
+        ],
+        staff: [staff()],
+        services: [service()],
+      })
+    );
+    // tx1: |−1000 × 1| = 1000; tx2: |−250 × 2| = 500. Total = 1500.
+    expect(m.totals.discountsCents).toBe(1500);
+  });
+});

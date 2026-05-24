@@ -42,6 +42,12 @@ const TK_3 = "70000000-0000-0000-0000-0000000000e3"; // TECH_B · supply svc · 
 const ITEM_1 = "70000000-0000-0000-0000-0000000000f1";
 const ITEM_2 = "70000000-0000-0000-0000-0000000000f2";
 const ITEM_3 = "70000000-0000-0000-0000-0000000000f3";
+// Issue #139: a legacy all-services discount line on TK_2. Discount lines
+// have `ref_id=null` and `assigned_staff_id=null` (migration 0007 CHECK
+// constraint). The line surfaces in `totals.discountsCents` (US1 test (k))
+// but does NOT enter per-tech math (projectReport filters kind='service').
+const ITEM_DISC_2 = "70000000-0000-0000-0000-0000000000f4";
+const DISCOUNT_CENTS = 500;
 const PMT_1 = "70000000-0000-0000-0000-00000000a001";
 const PMT_2 = "70000000-0000-0000-0000-00000000a002";
 const PMT_3 = "70000000-0000-0000-0000-00000000a003";
@@ -243,6 +249,20 @@ async function insertFixture(): Promise<void> {
         unit_price_cents: 8000,
         qty: 1,
         assigned_staff_id: TECH_B,
+        price_unconfirmed: false,
+      },
+      // Issue #139: a $5 all-services discount on TK_2 — surfaces in the
+      // Gross revenue subline ("$X discounted") without changing per-tech
+      // gross / commissionable values (those filter to kind='service').
+      {
+        id: ITEM_DISC_2,
+        ticket_id: TK_2,
+        kind: "discount",
+        ref_id: null,
+        name_snapshot: "Report loyalty discount [rpt]",
+        unit_price_cents: -DISCOUNT_CENTS,
+        qty: 1,
+        assigned_staff_id: null,
         price_unconfirmed: false,
       },
     ],
@@ -492,6 +512,36 @@ test.describe("US1: all-staff report overview", () => {
       await expect(page.locator(`.dr-tech-card[data-tech-id="${TECH_A}"]`)).toBeVisible();
       const techBCard = page.locator(`.dr-tech-card[data-tech-id="${TECH_B}"]`);
       await expect(techBCard).toBeVisible();
+    });
+
+    test("(k) the Gross revenue subline surfaces the period's discount total (issue #139)", async ({
+      page,
+    }) => {
+      await page.goto("/report");
+
+      // The fixture seeds a $5 discount on TK_2, so the conditional segment
+      // renders. The exact total is a window-wide aggregate other parallel
+      // specs may also contribute to (research R17), so assert format and a
+      // lower bound on cents — never an exact value.
+      const segment = page.locator('[data-slot="discounts-given"]');
+      await expect(segment).toBeVisible();
+
+      const text = (await segment.innerText()).trim();
+      expect(text).toMatch(/^\$\d[\d,]*(?:\.\d{2})? discounted$/);
+
+      // Reconcile lower bound: this fixture contributes $5; the period total
+      // must be at least that, regardless of what other workers seeded.
+      const dollars = parseCell(text.replace(" discounted", ""));
+      expect(dollars).toBeGreaterThanOrEqual(DISCOUNT_CENTS / 100);
+
+      // The Gross revenue value itself is independent of the discount segment
+      // (FR-018 — commission is on the pre-discount base). It renders as a
+      // formatted dollar amount regardless.
+      const grossValue = page
+        .locator('[data-slot="report-summary"] .dr-stat')
+        .first()
+        .locator(".dr-stat-v");
+      await expect(grossValue).toHaveText(/^\$[\d,]+$/);
     });
   });
 
