@@ -91,6 +91,15 @@ export type CreateCheckoutInput = {
   amountCents: number;
   deviceId: string;
   referenceId: string;
+  /**
+   * Feature 051 (US1 single-tender itemized branch): when set, the SDK
+   * request sends `checkout.orderId` and OMITS `checkout.amountMoney`.
+   * Square renders the line items + discounts from the referenced Order
+   * on the terminal screen, the dashboard, and the receipts. When
+   * absent (today's split-tender + cash-only-card path), the request
+   * falls back to `checkout.amountMoney` exactly as before.
+   */
+  orderId?: string;
 };
 
 export type CreateCheckoutResult = {
@@ -122,18 +131,30 @@ export async function createCheckout(input: CreateCheckoutInput): Promise<Create
 
   // The SDK accepts a typed CreateTerminalCheckoutRequest. We construct it
   // manually so the test-mocked fake gets a stable arg shape.
+  //
+  // Feature 051 (US1) — when `orderId` is set we additionally send
+  // `checkout.orderId` so Square renders the referenced Order's line
+  // items + discounts on the terminal + receipts (instead of the
+  // legacy "Custom amount" row). The Square v44 SDK still requires
+  // `amountMoney` even on the orderId branch (Square cross-checks it
+  // against the Order's grand total), so we send the cart total in
+  // both branches and only the `orderId` key differs.
+  const checkout: Record<string, unknown> = {
+    referenceId: input.referenceId,
+    deviceOptions: { deviceId: input.deviceId },
+    amountMoney: {
+      amount: BigInt(input.amountCents),
+      currency: "USD",
+    },
+  };
+  if (input.orderId) {
+    checkout.orderId = input.orderId;
+  }
   const response = (await client.terminal.checkouts.create({
     idempotencyKey,
-    checkout: {
-      amountMoney: {
-        amount: BigInt(input.amountCents),
-        currency: "USD",
-      },
-      referenceId: input.referenceId,
-      deviceOptions: {
-        deviceId: input.deviceId,
-      },
-    },
+    // SDK typing accepts the discriminated shape; tests assert on it directly.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    checkout: checkout as any,
   })) as unknown as { checkout?: { id?: string; status?: string } };
 
   const checkoutId = response.checkout?.id;
@@ -182,12 +203,53 @@ export async function getCheckout(checkoutId: string): Promise<GetCheckoutResult
   const tipCents =
     tipRaw == null ? null : typeof tipRaw === "bigint" ? Number(tipRaw) : Number(tipRaw);
   const paymentIds = c.payment_ids ?? c.paymentIds ?? [];
+  const squarePaymentId = paymentIds[0] ?? null;
+  // A buyer-entered tip lands on the Payment, not the checkout (see
+  // getPaymentTipCents). Order-linked checkouts (feature 051) never echo it
+  // onto checkout.tip_money, so fall back to the Payment when it's absent.
+  const resolvedTipCents =
+    tipCents == null && squarePaymentId != null
+      ? await getPaymentTipCents(squarePaymentId)
+      : tipCents;
   return {
     squareTerminalCheckoutId: c.id ?? checkoutId,
     status: mapSquareStatus(c.status),
-    tipCents,
-    squarePaymentId: paymentIds[0] ?? null,
+    tipCents: resolvedTipCents,
+    squarePaymentId,
   };
+}
+
+/**
+ * Fetch the buyer-entered tip recorded on a Square Payment, in cents.
+ *
+ * A tip the buyer adds on the Terminal lands on the Payment object
+ * (`payment.tip_money`), NOT on the TerminalCheckout — Square only sets
+ * `checkout.tip_money` for a developer-supplied fixed tip when tipping is
+ * disabled. Order-linked checkouts (feature 051) never echo the buyer tip
+ * onto the checkout, so the completion paths fall back to this read so the
+ * recorded `tip_cents` matches what the card was charged (Constitution III).
+ *
+ * Best-effort: returns `null` (never throws) so a tip-read failure can't
+ * block settling the payment. `null` means "no tip information available";
+ * the caller keeps whatever tip it already had (typically 0).
+ */
+export async function getPaymentTipCents(paymentId: string): Promise<number | null> {
+  const connection = await readDecryptedTokens();
+  if (!connection) return null;
+  const client = getSquareClient(connection.accessToken);
+  try {
+    const response = (await client.payments.get({ paymentId })) as unknown as {
+      payment?: {
+        tip_money?: { amount?: number | bigint };
+        tipMoney?: { amount?: number | bigint };
+      };
+    };
+    const tipRaw = response.payment?.tip_money?.amount ?? response.payment?.tipMoney?.amount;
+    return tipRaw == null ? null : Number(tipRaw);
+  } catch (err) {
+    console.warn("square.terminal.getPaymentTipCents: SDK call failed", { paymentId, err });
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -221,10 +283,18 @@ export async function cancelCheckout(checkoutId: string): Promise<CancelCheckout
   const tipCents =
     tipRaw == null ? null : typeof tipRaw === "bigint" ? Number(tipRaw) : Number(tipRaw);
   const paymentIds = c.payment_ids ?? c.paymentIds ?? [];
+  const squarePaymentId = paymentIds[0] ?? null;
+  // Cancel-race settle: when Square reports COMPLETED (the buyer paid before
+  // the cancel landed), the buyer tip is on the Payment, not the checkout
+  // (feature 051 order-linked). Fall back to the Payment when absent.
+  const resolvedTipCents =
+    tipCents == null && squarePaymentId != null
+      ? await getPaymentTipCents(squarePaymentId)
+      : tipCents;
   return {
     status: mapSquareStatus(c.status),
-    tipCents,
-    squarePaymentId: paymentIds[0] ?? null,
+    tipCents: resolvedTipCents,
+    squarePaymentId,
   };
 }
 

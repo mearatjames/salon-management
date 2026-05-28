@@ -15,6 +15,7 @@
 import crypto from "node:crypto";
 
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
+import { getPaymentTipCents } from "@/lib/square/terminal";
 
 /**
  * Verify a Square webhook signature.
@@ -227,7 +228,13 @@ export async function handleTerminalCheckoutUpdated(
     return { ok: true, ignored: true, reason: "unknown_checkout" };
   }
 
-  const tipCents = checkout.tip_money?.amount ?? 0;
+  // A buyer-entered tip lands on the Payment, not the checkout — Square only
+  // sets checkout.tip_money for a developer-supplied fixed tip when tipping is
+  // disabled. Order-linked checkouts (feature 051) never echo the buyer tip
+  // onto the checkout, so an absent checkout.tip_money is resolved from the
+  // linked Payment below (COMPLETED branch only). `null` here = "not on the
+  // checkout"; a present `{ amount: 0 }` means an explicit no-tip and is kept.
+  const checkoutTipCents = checkout.tip_money?.amount ?? null;
   const squarePaymentId = checkout.payment_ids?.[0] ?? null;
   const raw = checkout as unknown as Record<string, unknown>;
 
@@ -245,6 +252,14 @@ export async function handleTerminalCheckoutUpdated(
   };
 
   if (status === "COMPLETED") {
+    // Resolve the buyer tip from the linked Payment when the checkout didn't
+    // carry one (the order-linked path). Best-effort: getPaymentTipCents
+    // returns null on any Square error, leaving tip at 0 rather than blocking
+    // settlement — a missed tip is recoverable, a stuck payment is not.
+    const tipCents =
+      checkoutTipCents == null && squarePaymentId != null
+        ? ((await getPaymentTipCents(squarePaymentId)) ?? 0)
+        : (checkoutTipCents ?? 0);
     const args: CardPaymentArgs = {
       p_payment_id: paymentRow.id,
       p_new_status: "succeeded",

@@ -71,6 +71,18 @@ import {
   retrieveGiftCardFromGAN,
   type LookupResult,
 } from "@/lib/square/gift-cards";
+// Feature 051 (US1) — single-tender itemized branch. Resolves the salon's
+// primary location id on demand + sends a Square Order whose line items +
+// discounts mirror `ticket_items` so the Square dashboard, receipts, and
+// terminal screen all render the per-service breakdown instead of a single
+// "Custom amount" row.
+import { getSquareLocationId } from "@/lib/square/oauth";
+import {
+  cancelOrder as squareCancelOrder,
+  createOrder as squareCreateOrder,
+  EmptyOrderError,
+  type TicketItemRow as SquareOrderTicketItemRow,
+} from "@/lib/square/orders";
 
 /**
  * Square returns 400 INVALID_REQUEST_ERROR with detail mentioning the
@@ -1871,20 +1883,148 @@ export async function sendCardToTerminal(
     paymentId = insertedPayment.id;
   }
 
+  // Feature 051 (US1) — branch detection. A single-tender card sale (the
+  // card covers the FULL ticket total and there is no `existingDraftId`)
+  // takes the itemized branch: we send Square an Order whose line items +
+  // discounts mirror `ticket_items`, persist the order id on the payment
+  // row for support traceability, then push the Terminal checkout against
+  // the Order (`checkout.orderId`, no `checkout.amountMoney`). Anything
+  // else is split-tender and continues with today's `amountMoney`-only
+  // path verbatim.
+  //
+  // Phase 5 will read `orderId` + `orderVersion` to issue a best-effort
+  // `cancelOrder` when the terminal-create fails after the order succeeds;
+  // we capture both now so that edit is purely additive.
+  const isSingleTender = !existingDraftId && paymentAmountCents === ticket.total_cents;
+  let orderId: string | null = null;
+  // `orderVersion` is threaded from `createOrder`'s response into the
+  // Phase 5 best-effort `cancelOrder({ orderId, orderVersion, locationId })`
+  // call in the catch branch around `squareCreateCheckout`.
+  let orderVersion: number | null = null;
+  let locationId: string | null = null;
+
+  if (isSingleTender) {
+    // 4b) Read the ticket items the Order will mirror. `created_at` order
+    //     matches the cart UI so the Square dashboard renders rows in
+    //     the same sequence as Tang Nails.
+    const { data: itemRows, error: itemsErr } = await supabase
+      .from("ticket_items")
+      .select("id, kind, name_snapshot, unit_price_cents, qty, discount_target_line_ids")
+      .eq("ticket_id", ticketId)
+      .order("created_at", { ascending: true });
+    if (itemsErr) {
+      throw new Error(`sendCardToTerminal items-for-order read failed: ${itemsErr.message}`);
+    }
+
+    try {
+      locationId = await getSquareLocationId();
+      const created = await squareCreateOrder({
+        ticketId,
+        paymentId,
+        locationId,
+        ticketItems: (itemRows ?? []) as SquareOrderTicketItemRow[],
+      });
+      orderId = created.orderId;
+      orderVersion = created.orderVersion;
+    } catch (err) {
+      // `createOrder` failed (Square unreachable, `EmptyOrderError`, etc.)
+      // Square didn't mint an Order so there's nothing to clean up there.
+      // Mirror the existing failure block below: mark the payment failed,
+      // emit `payment.failed` audit, throw the operator-stable error.
+      const errorMsg =
+        err instanceof EmptyOrderError
+          ? `Could not assemble the itemized order — try again (${err.message})`
+          : err instanceof Error
+            ? err.message
+            : String(err);
+      await supabase
+        .from("payments")
+        .update({
+          status: "failed",
+          failure_reason: "square_unreachable",
+          processed_at: new Date().toISOString(),
+        })
+        .eq("id", paymentId);
+      await recordAudit(
+        "payment.failed",
+        viewer.deviceUserId,
+        paymentId,
+        {
+          ticket_id: ticketId,
+          method: "card",
+          amount_cents: paymentAmountCents,
+          tip_cents: 0,
+          failure_reason: "square_unreachable",
+          square_payment_id: null,
+        },
+        viewer.staff.id
+      );
+      throw new SquareCheckoutCreateFailedError(
+        "Could not reach Square to start the terminal checkout — try again",
+        errorMsg
+      );
+    }
+
+    // Persist the Square Order id BEFORE the terminal-create attempt.
+    // If `squareCreateCheckout` then fails, support can still find the
+    // orphan Order via `payments.square_order_id` regardless of whether
+    // a Phase 5 orphan-cancel succeeded.
+    const { error: orderIdErr } = await supabase
+      .from("payments")
+      .update({ square_order_id: orderId })
+      .eq("id", paymentId);
+    if (orderIdErr) {
+      // Defensive — a DB write failure here is exceptionally rare and
+      // would leak an orphan Order. Translate to the operator-stable
+      // error class and let the caller retry with a fresh `paymentId`.
+      throw new SquareCheckoutCreateFailedError(
+        "Square accepted the order but our record didn't update — try again",
+        orderIdErr.message
+      );
+    }
+  }
+
   // 5) Push the checkout to Square. The SDK throws on non-2xx.
   let squareTerminalCheckoutId: string;
   try {
+    // Single-tender adds `orderId` so Square's terminal screen + receipts
+    // render line items from the referenced Order; the Square v44 SDK
+    // still requires `amountMoney` on this branch (it cross-checks it
+    // against the Order's grand total). Split-tender continues with the
+    // legacy `amountMoney`-only payload verbatim.
     const result = await squareCreateCheckout({
       ticketId,
       paymentId,
       amountCents: paymentAmountCents,
       deviceId: resolvedDeviceId,
       referenceId: ticketId,
+      ...(isSingleTender && orderId ? { orderId } : {}),
     });
     squareTerminalCheckoutId = result.squareTerminalCheckoutId;
   } catch (err) {
     // 6a) Square unreachable. Mark the row failed and emit audit (the RPC
     //     isn't invoked here — direct write + audit).
+    //
+    // Phase 5 (US3 / T020): the single-tender branch already minted an
+    // Order before the failing `squareCreateCheckout` call. Best-effort
+    // cancel that orphan via `cancelOrder({ orderId, orderVersion,
+    // locationId })` so it never lingers in Square's dashboard. Any
+    // error from the cancel attempt is logged to `console.warn` and
+    // swallowed — the operator-facing failure is the original
+    // `SquareCheckoutCreateFailedError`, never a cancel error. The
+    // orphan staying behind is acceptable; support has
+    // `payments.square_order_id` to find it.
+    if (orderId !== null && orderVersion !== null && locationId !== null) {
+      try {
+        await squareCancelOrder({ orderId, orderVersion, locationId });
+      } catch (cancelErr) {
+        console.warn("orphan order cancel failed; orphan remains in Square dashboard", {
+          orderId,
+          checkoutError: String(err),
+          cancelError: String(cancelErr),
+        });
+      }
+    }
     const squareErrorMsg = err instanceof Error ? err.message : String(err);
     await supabase
       .from("payments")
@@ -1905,6 +2045,7 @@ export async function sendCardToTerminal(
         tip_cents: 0,
         failure_reason: "square_unreachable",
         square_payment_id: null,
+        ...(orderId !== null ? { square_order_id: orderId } : {}),
       },
       viewer.staff.id
     );
@@ -1938,6 +2079,26 @@ export async function sendCardToTerminal(
       updErr.message
     );
   }
+
+  // Feature 051 (T011) — `payment.created` audit. Emitted AFTER the
+  // checkout id is persisted so the row + the audit agree on the trace.
+  // Payload carries `square_terminal_checkout_id` and, on the single-
+  // tender itemized branch, `square_order_id` (FR-013 + Constitution
+  // Principle III audit-payload extension). `payment.captured` stays
+  // owned by the settlement RPC.
+  await recordAudit(
+    "payment.created",
+    viewer.deviceUserId,
+    paymentId,
+    {
+      ticket_id: ticketId,
+      method: "card",
+      amount_cents: paymentAmountCents,
+      square_terminal_checkout_id: squareTerminalCheckoutId,
+      ...(orderId !== null ? { square_order_id: orderId } : {}),
+    },
+    viewer.staff.id
+  );
 
   return { ticketId, paymentId, squareTerminalCheckoutId };
 }

@@ -46,6 +46,19 @@ type CancelCheckoutArgs = {
   responseStatus: "CANCELED" | "COMPLETED" | "NETWORK_ERROR";
 };
 
+export type RecordedOrderCreate = {
+  url: string;
+  body: unknown;
+  responseOrderId: string;
+};
+
+export type RecordedOrderUpdate = {
+  url: string;
+  orderId: string;
+  body: unknown;
+  responseVersion: number;
+};
+
 export type SquareStub = {
   stubListDevices(devices: DeviceStub[]): void;
   stubCreateCheckout(args: CreateCheckoutArgs): { checkoutId: string };
@@ -60,6 +73,15 @@ export type SquareStub = {
    * The suppression lasts until the helper returned by it is invoked.
    */
   withSuppressedGiftWebhook(): { restore(): void };
+  /**
+   * Captured request bodies from intercepted Square calls. Specs assert
+   * on these to check the wire payload (e.g. line items, taxes, totals
+   * sent to `POST /v2/orders` for feature 051).
+   */
+  recorded: {
+    orderCreates: RecordedOrderCreate[];
+    orderUpdates: RecordedOrderUpdate[];
+  };
 };
 
 // ---------------------------------------------------------------------
@@ -129,6 +151,14 @@ export async function squareStub(context: BrowserContext, baseURL: string): Prom
   let suppressGiftWebhook = false;
   let giftCardCounter = 0;
   let giftPaymentCounter = 0;
+  // Feature 051 — itemized order recorders. Captured request bodies for
+  // POST /v2/orders and PUT /v2/orders/:id so specs can assert on the
+  // wire payload (line items, taxes, totals). Per-id version map tracks
+  // the order's current Square version across create + update calls so
+  // PUT responses see correct version progression (mirrors Square).
+  const recordedOrderCreates: RecordedOrderCreate[] = [];
+  const recordedOrderUpdates: RecordedOrderUpdate[] = [];
+  const orderVersions = new Map<string, number>();
 
   await context.route(
     (url) => url.hostname === SANDBOX_HOST || url.hostname === PROD_HOST,
@@ -431,6 +461,75 @@ export async function squareStub(context: BrowserContext, baseURL: string): Prom
         });
       }
 
+      // Feature 051: POST /v2/orders — itemized order creation. Returns
+      // a fixed `ord_test_<uuid>` per call with `version: 1`. The request
+      // body is recorded so specs can assert on the wire payload (line
+      // items, taxes, totals).
+      if (method === "POST" && /^\/v2\/orders\/?$/.test(path)) {
+        let parsedCreateBody: unknown = null;
+        try {
+          parsedCreateBody = JSON.parse(route.request().postData() ?? "{}");
+        } catch {
+          parsedCreateBody = null;
+        }
+        const orderId = `ord_test_${crypto.randomUUID()}`;
+        orderVersions.set(orderId, 1);
+        recordedOrderCreates.push({
+          url: route.request().url(),
+          body: parsedCreateBody,
+          responseOrderId: orderId,
+        });
+        const createResponseBody = {
+          order: {
+            id: orderId,
+            version: 1,
+            location_id: "main",
+            state: "OPEN",
+          },
+        };
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(createResponseBody),
+        });
+      }
+
+      // Feature 051: PUT /v2/orders/:id — itemized order update. Returns
+      // 200 with the updated order body. The order's `version` is
+      // incremented to mirror Square's version progression so callers
+      // see distinct versions across create + update.
+      const orderUpdateMatch = /^\/v2\/orders\/([A-Za-z0-9_-]+)\/?$/.exec(path);
+      if (method === "PUT" && orderUpdateMatch?.[1]) {
+        const orderId = orderUpdateMatch[1];
+        let parsedUpdateBody: unknown = null;
+        try {
+          parsedUpdateBody = JSON.parse(route.request().postData() ?? "{}");
+        } catch {
+          parsedUpdateBody = null;
+        }
+        const nextVersion = (orderVersions.get(orderId) ?? 0) + 1;
+        orderVersions.set(orderId, nextVersion);
+        recordedOrderUpdates.push({
+          url: route.request().url(),
+          orderId,
+          body: parsedUpdateBody,
+          responseVersion: nextVersion,
+        });
+        const updateResponseBody = {
+          order: {
+            id: orderId,
+            version: nextVersion,
+            location_id: "main",
+            state: "OPEN",
+          },
+        };
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(updateResponseBody),
+        });
+      }
+
       // Anything else against a Square host is a live hit.
       liveHits.push(`${method} ${url.hostname}${path}`);
       return route.abort();
@@ -483,6 +582,10 @@ export async function squareStub(context: BrowserContext, baseURL: string): Prom
           suppressGiftWebhook = false;
         },
       };
+    },
+    recorded: {
+      orderCreates: recordedOrderCreates,
+      orderUpdates: recordedOrderUpdates,
     },
   };
 }

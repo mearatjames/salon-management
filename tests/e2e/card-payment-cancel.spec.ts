@@ -361,4 +361,84 @@ test.describe("US3: Cancel and recover", () => {
 
     stub.assertNoLiveSquareCalls();
   });
+
+  // -----------------------------------------------------------------
+  // (n) Phase 5 / US3 / T022 — Orphan-Order cancel happy path.
+  //
+  // Square accepts the itemized Order (`POST /v2/orders → 200`) but
+  // then fails the Terminal checkout (`POST /v2/terminals/checkouts
+  // → 500`). The action must best-effort cancel the orphan Order via
+  // `PUT /v2/orders/:id` with `order.state === 'CANCELED'`, leave the
+  // payment row `failed` (`square_unreachable`), and surface the same
+  // `SquareCheckoutCreateFailedError` banner the operator sees today
+  // ("Could not reach Square. Try again or pick a different method.").
+  // -----------------------------------------------------------------
+  test("(n) US3: terminal-checkout 500 after orders 200 → action cancels the orphan Order via PUT /v2/orders/:id", async ({
+    page,
+    context,
+    baseURL,
+  }) => {
+    if (!supabaseUp) test.skip();
+    const deviceId = "device:STUB_CANCEL_N";
+    await serverStub.setDevices([{ id: deviceId, name: "Lobby Terminal", status: "PAIRED" }]);
+
+    await page.goto("/settings/square");
+    await connectSquareViaStub(page, context, baseURL!, deviceId);
+
+    const stub: SquareStub = await squareStub(context, baseURL!);
+    stub.stubListDevices([{ id: deviceId, name: "Lobby Terminal", status: "PAIRED" }]);
+
+    // Build a single-tender cart so `sendCardToTerminal` takes the
+    // Phase 3 itemized branch (which mints the orphan Order Phase 5
+    // must cancel).
+    await page.goto("/dashboard");
+    await page.locator("[data-slot='new-transaction-cta']").click();
+    await page.waitForURL(/\/checkout$/, { timeout: 10_000 });
+
+    await page.locator("[data-slot='checkout-tech-row'] [data-staff-name='Jordan Lee']").click();
+    await page
+      .locator("[data-slot='service-tile'][data-service-id='20000000-0000-0000-0000-000000000001']")
+      .click();
+    await expect(page.locator("[data-slot='checkout-total-amount']")).toHaveText("$25.00");
+
+    // Arm the fault BEFORE the action runs. The orders.create call
+    // still succeeds (default stub path) and mints `ord_stub_*`; the
+    // very next terminals/checkouts POST responds with 500 so the
+    // action's catch branch fires the orphan-cancel.
+    await serverStub.failNextCheckoutCreate({ status: 500 });
+
+    await page.locator("[data-slot='payment-tile'][data-method='card']").click();
+    await page.locator("[data-slot='send-to-terminal-button']").click();
+
+    // Operator-facing error banner appears on the picker. Note: in
+    // dev + prod Server Action throws strip the error class identity
+    // across the boundary, so `instanceof SquareCheckoutCreateFailedError`
+    // on the client never matches and the banner falls through to the
+    // generic copy on the bottom of the catch in
+    // `checkout-screen.client.tsx`. This is the SAME text the operator
+    // sees today for any `SquareCheckoutCreateFailedError` thrown by
+    // `sendCardToTerminal` — Phase 5 must NOT change it (T022).
+    await expect(page.locator("[data-slot='checkout-error-banner']")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.locator("[data-slot='checkout-error-banner']")).toContainText(
+      "Couldn’t start the card payment. Try again."
+    );
+
+    // The orphan-cancel hit the stub. Exactly one PUT against the
+    // minted Order id, body carrying `order.state === 'CANCELED'`.
+    const updates = await serverStub.recordedOrderUpdates();
+    expect(updates.length).toBe(1);
+    const updateBody = updates[0].body as { order?: { state?: string } } | null;
+    expect(updateBody?.order?.state).toBe("CANCELED");
+
+    // Sanity: the create recorder shows exactly one orders.create call —
+    // proves the cancel targets the SAME Order id we minted (no
+    // accidental second mint between the failure and the cancel).
+    const creates = await serverStub.recordedOrderCreates();
+    expect(creates.length).toBe(1);
+    expect(updates[0].orderId).toBe(creates[0].responseOrderId);
+
+    stub.assertNoLiveSquareCalls();
+  });
 });

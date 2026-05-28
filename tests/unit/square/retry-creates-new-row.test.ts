@@ -39,6 +39,13 @@ const fakeCreate = vi.fn();
 const fakeGet = vi.fn();
 const fakeCancel = vi.fn();
 
+// Feature 051 — `client.orders.create` is called via `lib/square/orders`
+// on the single-tender branch. Stub it so the action's itemized path
+// stays hermetic (no Square SDK round-trip from this test).
+const fakeOrdersCreate = vi.fn(async () => ({
+  order: { id: "ord_stub_retry", version: 1 },
+}));
+
 vi.mock("@/lib/square/client", () => ({
   getSquareClient: vi.fn(() => ({
     terminal: {
@@ -47,6 +54,9 @@ vi.mock("@/lib/square/client", () => ({
         get: fakeGet,
         cancel: fakeCancel,
       },
+    },
+    orders: {
+      create: fakeOrdersCreate,
     },
     devices: { list: vi.fn() },
   })),
@@ -61,6 +71,10 @@ vi.mock("@/lib/square/oauth", () => ({
     merchantId: "MERCHANT_TEST",
     merchantName: "Test Salon",
   })),
+  // Feature 051 — single-tender itemized branch resolves the salon's
+  // primary location id; stub it so the action's itemized path stays
+  // hermetic (no Square SDK round-trip).
+  getSquareLocationId: vi.fn(async () => "loc_stub_retry"),
 }));
 
 vi.mock("@/lib/auth/session", () => ({
