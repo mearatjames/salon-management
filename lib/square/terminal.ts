@@ -203,12 +203,53 @@ export async function getCheckout(checkoutId: string): Promise<GetCheckoutResult
   const tipCents =
     tipRaw == null ? null : typeof tipRaw === "bigint" ? Number(tipRaw) : Number(tipRaw);
   const paymentIds = c.payment_ids ?? c.paymentIds ?? [];
+  const squarePaymentId = paymentIds[0] ?? null;
+  // A buyer-entered tip lands on the Payment, not the checkout (see
+  // getPaymentTipCents). Order-linked checkouts (feature 051) never echo it
+  // onto checkout.tip_money, so fall back to the Payment when it's absent.
+  const resolvedTipCents =
+    tipCents == null && squarePaymentId != null
+      ? await getPaymentTipCents(squarePaymentId)
+      : tipCents;
   return {
     squareTerminalCheckoutId: c.id ?? checkoutId,
     status: mapSquareStatus(c.status),
-    tipCents,
-    squarePaymentId: paymentIds[0] ?? null,
+    tipCents: resolvedTipCents,
+    squarePaymentId,
   };
+}
+
+/**
+ * Fetch the buyer-entered tip recorded on a Square Payment, in cents.
+ *
+ * A tip the buyer adds on the Terminal lands on the Payment object
+ * (`payment.tip_money`), NOT on the TerminalCheckout — Square only sets
+ * `checkout.tip_money` for a developer-supplied fixed tip when tipping is
+ * disabled. Order-linked checkouts (feature 051) never echo the buyer tip
+ * onto the checkout, so the completion paths fall back to this read so the
+ * recorded `tip_cents` matches what the card was charged (Constitution III).
+ *
+ * Best-effort: returns `null` (never throws) so a tip-read failure can't
+ * block settling the payment. `null` means "no tip information available";
+ * the caller keeps whatever tip it already had (typically 0).
+ */
+export async function getPaymentTipCents(paymentId: string): Promise<number | null> {
+  const connection = await readDecryptedTokens();
+  if (!connection) return null;
+  const client = getSquareClient(connection.accessToken);
+  try {
+    const response = (await client.payments.get({ paymentId })) as unknown as {
+      payment?: {
+        tip_money?: { amount?: number | bigint };
+        tipMoney?: { amount?: number | bigint };
+      };
+    };
+    const tipRaw = response.payment?.tip_money?.amount ?? response.payment?.tipMoney?.amount;
+    return tipRaw == null ? null : Number(tipRaw);
+  } catch (err) {
+    console.warn("square.terminal.getPaymentTipCents: SDK call failed", { paymentId, err });
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------
@@ -242,10 +283,18 @@ export async function cancelCheckout(checkoutId: string): Promise<CancelCheckout
   const tipCents =
     tipRaw == null ? null : typeof tipRaw === "bigint" ? Number(tipRaw) : Number(tipRaw);
   const paymentIds = c.payment_ids ?? c.paymentIds ?? [];
+  const squarePaymentId = paymentIds[0] ?? null;
+  // Cancel-race settle: when Square reports COMPLETED (the buyer paid before
+  // the cancel landed), the buyer tip is on the Payment, not the checkout
+  // (feature 051 order-linked). Fall back to the Payment when absent.
+  const resolvedTipCents =
+    tipCents == null && squarePaymentId != null
+      ? await getPaymentTipCents(squarePaymentId)
+      : tipCents;
   return {
     status: mapSquareStatus(c.status),
-    tipCents,
-    squarePaymentId: paymentIds[0] ?? null,
+    tipCents: resolvedTipCents,
+    squarePaymentId,
   };
 }
 

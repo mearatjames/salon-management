@@ -25,6 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const fakeCreate = vi.fn();
 const fakeGet = vi.fn();
 const fakeCancel = vi.fn();
+const fakePaymentsGet = vi.fn();
 // Feature 051 — itemized order creation. The `lib/square/orders.ts` wrapper
 // calls `client.orders.create`; we mock it here so US1 cases (a)–(g), (k)
 // can assert on the request shape.
@@ -42,6 +43,7 @@ vi.mock("@/lib/square/client", () => ({
     orders: {
       create: fakeOrdersCreate,
     },
+    payments: { get: fakePaymentsGet },
     devices: { list: vi.fn() },
   })),
 }));
@@ -202,6 +204,76 @@ describe("lib/square/terminal — getCheckout status mapping", () => {
     const result = await getCheckout("tco_ABC");
     expect(result.tipCents).toBe(1200);
     expect(result.squarePaymentId).toBe("pay_ABC");
+  });
+});
+
+// ---------------------------------------------------------------------
+// Feature 051 follow-up — a buyer-entered tip lands on the Payment, not the
+// TerminalCheckout. Order-linked checkouts never echo tip_money onto the
+// checkout, so getCheckout (polling fallback) and cancelCheckout (cancel-race
+// settle) must read the tip from the linked Payment. Otherwise tip_cents is
+// recorded as 0 while the card was charged the tip (Constitution III).
+// ---------------------------------------------------------------------
+
+describe("lib/square/terminal — buyer tip falls back to the Payment when the checkout omits it", () => {
+  beforeEach(() => {
+    fakeGet.mockReset();
+    fakeCancel.mockReset();
+    fakePaymentsGet.mockReset();
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("getCheckout: COMPLETED with no checkout.tip_money reads tip from the linked Payment", async () => {
+    const { getCheckout } = await import("@/lib/square/terminal");
+
+    fakeGet.mockResolvedValueOnce({
+      checkout: { id: "tco_T", status: "COMPLETED", payment_ids: ["pay_T"] },
+    });
+    fakePaymentsGet.mockResolvedValueOnce({
+      payment: { id: "pay_T", tipMoney: { amount: BigInt(700) } },
+    });
+
+    const result = await getCheckout("tco_T");
+
+    expect(result.tipCents).toBe(700);
+    expect(fakePaymentsGet).toHaveBeenCalledWith({ paymentId: "pay_T" });
+  });
+
+  it("getCheckout: does NOT fetch the Payment when the checkout already carries tip_money", async () => {
+    const { getCheckout } = await import("@/lib/square/terminal");
+
+    fakeGet.mockResolvedValueOnce({
+      checkout: {
+        id: "tco_T",
+        status: "COMPLETED",
+        payment_ids: ["pay_T"],
+        tip_money: { amount: 300, currency: "USD" },
+      },
+    });
+
+    const result = await getCheckout("tco_T");
+
+    expect(result.tipCents).toBe(300);
+    expect(fakePaymentsGet).not.toHaveBeenCalled();
+  });
+
+  it("cancelCheckout: race-COMPLETED with no checkout.tip_money reads tip from the linked Payment", async () => {
+    const { cancelCheckout } = await import("@/lib/square/terminal");
+
+    fakeCancel.mockResolvedValueOnce({
+      checkout: { id: "tco_T", status: "COMPLETED", payment_ids: ["pay_C"] },
+    });
+    fakePaymentsGet.mockResolvedValueOnce({
+      payment: { id: "pay_C", tipMoney: { amount: BigInt(450) } },
+    });
+
+    const result = await cancelCheckout("tco_T");
+
+    expect(result.tipCents).toBe(450);
+    expect(fakePaymentsGet).toHaveBeenCalledWith({ paymentId: "pay_C" });
   });
 });
 
