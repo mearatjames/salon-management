@@ -309,6 +309,16 @@ test.describe("US2: owner refunds a past sale from the dashboard feed", () => {
     ]);
     expect(audit2).toHaveLength(1);
     expect((audit2[0].payload as { resulting_status?: string }).resulting_status).toBe("refunded");
+
+    // ── Scenario 3 (feature 052 follow-up): the fully-refunded sale stays in
+    //    the Transactions ledger with a "Refunded" badge — it must NOT vanish.
+    await page.goto("/transactions");
+    const ledgerRow = page.locator(`.tp-table tbody tr[data-tx-id="${tk}"]`);
+    await expect(ledgerRow).toBeVisible({ timeout: 15_000 });
+    await expect(ledgerRow.locator('[data-slot="tx-reversal-badge"]')).toHaveAttribute(
+      "data-reversal",
+      "refunded"
+    );
   });
 
   test("over-remainder amount is server-refused and zero-total submit is blocked", async ({

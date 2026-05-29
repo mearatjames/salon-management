@@ -35,6 +35,12 @@ import { resolveWindow, type PeriodWindow } from "./window";
 
 type AnySupabase = SupabaseClient<Database>;
 
+// Feature 052: the Transactions ledger surfaces completed sales AND their
+// reversals — a void/refund keeps the sale in the history with a status
+// badge (it does not vanish). All four carry `closed_at`/`closed_by_staff_id`
+// (the closed-consistency CHECK), so the `closed_at` window query is valid.
+const LEDGER_STATUSES = ["paid", "void", "refunded", "partially_refunded"] as const;
+
 // ── queryTransactions ─────────────────────────────────────────────────────
 //
 // Every `status = 'paid'` ticket with `closed_at ∈ [window.start, window.end)`,
@@ -49,7 +55,7 @@ export async function queryTransactions(
   const ticketsRes = await supabase
     .from("tickets")
     .select("id, status, subtotal_cents, tax_cents, total_cents, closed_at, closed_by_staff_id")
-    .eq("status", "paid")
+    .in("status", LEDGER_STATUSES)
     .gte("closed_at", window.start.toISOString())
     .lt("closed_at", window.end.toISOString())
     .order("closed_at", { ascending: false });
@@ -73,8 +79,11 @@ export async function queryTransactions(
       )
       .in("ticket_id", ticketIds),
     supabase
+      // Feature 052: `kind` lets the projection separate original payment
+      // legs from refund legs (the latter feed `refundedCents`, not the
+      // payment breakdown). Only succeeded legs count.
       .from("payments")
-      .select("ticket_id, method, status, amount_cents, tip_cents")
+      .select("ticket_id, method, status, kind, amount_cents, tip_cents")
       .in("ticket_id", ticketIds)
       .eq("status", "succeeded"),
     supabase.from("staff").select("id, display_name, color_token"),
@@ -103,8 +112,9 @@ export async function queryTransactions(
 
 // ── queryPeriodCount ──────────────────────────────────────────────────────
 //
-// Count of `status = 'paid'` tickets with `closed_at` in the window. Used for
-// the KPI "vs previous period" delta against the *previous* window.
+// Count of ledger tickets (paid + reversed) with `closed_at` in the window.
+// Used for the KPI "vs previous period" delta against the *previous* window —
+// scoped to the same statuses the current period's count includes.
 
 export async function queryPeriodCount(
   supabase: AnySupabase,
@@ -113,7 +123,7 @@ export async function queryPeriodCount(
   const res = await supabase
     .from("tickets")
     .select("id", { count: "exact", head: true })
-    .eq("status", "paid")
+    .in("status", LEDGER_STATUSES)
     .gte("closed_at", window.start.toISOString())
     .lt("closed_at", window.end.toISOString());
 

@@ -313,6 +313,16 @@ test.describe("US1: owner voids a same-day cash sale", () => {
     expect(auditRows).toHaveLength(1);
     expect(auditRows[0].acting_as_staff_id).toBe(staffFixture.owner.id);
     expect(auditRows[0].entity_id).toBe(tk);
+
+    // Feature 052 follow-up: the voided sale stays in the Transactions ledger
+    // with a "Voided" badge — it must not disappear from the history.
+    await page.goto("/transactions");
+    const ledgerRow = page.locator(`.tp-table tbody tr[data-tx-id="${tk}"]`);
+    await expect(ledgerRow).toBeVisible({ timeout: 15_000 });
+    await expect(ledgerRow.locator('[data-slot="tx-reversal-badge"]')).toHaveAttribute(
+      "data-reversal",
+      "void"
+    );
   });
 
   test("already-voided ticket offers no re-void affordance", async ({ page, staffFixture }) => {

@@ -46,6 +46,14 @@ export type TransactionsTableProps = {
   onClearFilters?: () => void;
 };
 
+// Feature 052: short badge label per reversal outcome. Sentence case,
+// numerals-not-applicable — Constitution Principle I copy rules.
+const REVERSAL_LABEL: Record<NonNullable<TransactionDetail["reversal"]>, string> = {
+  void: "Voided",
+  refunded: "Refunded",
+  partially_refunded: "Partially refunded",
+};
+
 // The non-discount service names of a transaction, summarised to one cell.
 function serviceSummary(transaction: TransactionDetail): string {
   const names = transaction.items
@@ -147,11 +155,32 @@ export function TransactionsTable({
                 <tr
                   key={transaction.id}
                   data-tx-id={transaction.id}
-                  className={selectedId === transaction.id ? "selected" : undefined}
+                  // `refunded` (a prototype row treatment: muted + struck
+                  // amounts) flags any reversal — the `.tp-net` span opts back
+                  // out of the strike to show the retained net.
+                  className={
+                    [
+                      selectedId === transaction.id ? "selected" : "",
+                      transaction.reversal ? "refunded" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || undefined
+                  }
                   onClick={() => onRowClick?.(transaction)}
                 >
                   <td className="time">{transaction.time}</td>
-                  <td className="id">{transaction.displayId}</td>
+                  <td className="id">
+                    {transaction.displayId}
+                    {transaction.reversal ? (
+                      <span
+                        className="tp-reversal-badge"
+                        data-slot="tx-reversal-badge"
+                        data-reversal={transaction.reversal}
+                      >
+                        {REVERSAL_LABEL[transaction.reversal]}
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="client">
                     <b>{transaction.client}</b>
                   </td>
@@ -164,7 +193,14 @@ export function TransactionsTable({
                   </td>
                   <td className="num">{formatCurrency(transaction.subtotalCents / 100)}</td>
                   <td className="num">{formatCurrency(transaction.tipCents / 100)}</td>
-                  <td className="num total">{formatCurrency(transaction.totalCents / 100)}</td>
+                  <td className="num total">
+                    {formatCurrency(transaction.totalCents / 100)}
+                    {transaction.reversal ? (
+                      <span className="tp-net" data-slot="tx-net">
+                        net {formatCurrency(transaction.netTotalCents / 100)}
+                      </span>
+                    ) : null}
+                  </td>
                 </tr>
               ))}
             </tbody>

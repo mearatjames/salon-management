@@ -113,6 +113,7 @@ function baseInput(): MutableInput {
         ticket_id: "ticket-0001",
         method: "card",
         status: "succeeded",
+        kind: "payment",
         amount_cents: 5400,
         tip_cents: 600,
       },
@@ -155,6 +156,7 @@ describe("projectTransactions — single ticket", () => {
       ticket_id: "ticket-0001",
       method: "cash",
       status: "failed",
+      kind: "payment",
       amount_cents: 999,
       tip_cents: 0,
     });
@@ -225,6 +227,7 @@ describe("projectTransactions — single ticket", () => {
         ticket_id: "ticket-0001",
         method: "card",
         status: "succeeded",
+        kind: "payment",
         amount_cents: 3000,
         tip_cents: 300,
       },
@@ -232,6 +235,7 @@ describe("projectTransactions — single ticket", () => {
         ticket_id: "ticket-0001",
         method: "cash",
         status: "succeeded",
+        kind: "payment",
         amount_cents: 2400,
         tip_cents: 300,
       },
@@ -276,6 +280,7 @@ describe("projectTransactions — multiple tickets, newest-first", () => {
       ticket_id: "ticket-0002",
       method: "cash",
       status: "succeeded",
+      kind: "payment",
       amount_cents: 3000,
       tip_cents: 0,
     });
@@ -284,10 +289,74 @@ describe("projectTransactions — multiple tickets, newest-first", () => {
   });
 });
 
+// ─── projectTransactions — reversals (feature 052) ───────────────────────────
+
+describe("projectTransactions — reversals", () => {
+  it("partial refund: refund leg excluded from payments; reversal + refundedCents + net set", () => {
+    const input = baseInput();
+    input.tickets[0].status = "partially_refunded";
+    input.payments.push({
+      ticket_id: "ticket-0001",
+      method: "card",
+      status: "succeeded",
+      kind: "refund",
+      amount_cents: 2000,
+      tip_cents: 0,
+    });
+    const [tx] = projectTransactions(input);
+    expect(tx.reversal).toBe("partially_refunded");
+    expect(tx.refundedCents).toBe(2000);
+    expect(tx.payments).toHaveLength(1); // the refund leg is NOT a payment
+    expect(tx.method).toBe("card"); // refund method does not make it a split
+    expect(tx.totalCents).toBe(6600); // original charged, unchanged
+    expect(tx.netTotalCents).toBe(4600); // 6600 − 2000
+  });
+
+  it("full void: net is the retained remainder; reversal = 'void'", () => {
+    const input = baseInput();
+    input.tickets[0].status = "void";
+    input.payments.push({
+      ticket_id: "ticket-0001",
+      method: "card",
+      status: "succeeded",
+      kind: "refund",
+      amount_cents: 5400, // mirrors the payment's amount_cents (tip excluded)
+      tip_cents: 0,
+    });
+    const [tx] = projectTransactions(input);
+    expect(tx.reversal).toBe("void");
+    expect(tx.refundedCents).toBe(5400);
+    expect(tx.netTotalCents).toBe(1200); // 6600 − 5400
+  });
+
+  it("a non-succeeded refund leg does not reduce the net", () => {
+    const input = baseInput();
+    input.tickets[0].status = "partially_refunded";
+    input.payments.push({
+      ticket_id: "ticket-0001",
+      method: "card",
+      status: "pending", // not yet settled
+      kind: "refund",
+      amount_cents: 2000,
+      tip_cents: 0,
+    });
+    const [tx] = projectTransactions(input);
+    expect(tx.refundedCents).toBe(0);
+    expect(tx.netTotalCents).toBe(6600);
+  });
+
+  it("a normal paid ticket has reversal=null, refundedCents=0, net=total", () => {
+    const [tx] = projectTransactions(baseInput());
+    expect(tx.reversal).toBeNull();
+    expect(tx.refundedCents).toBe(0);
+    expect(tx.netTotalCents).toBe(tx.totalCents);
+  });
+});
+
 // ─── computeKpis ─────────────────────────────────────────────────────────────
 
 function tx(partial: Partial<TransactionDetail>): TransactionDetail {
-  return {
+  const base = {
     id: "t",
     displayId: "#000000",
     client: "Walk-in",
@@ -297,15 +366,24 @@ function tx(partial: Partial<TransactionDetail>): TransactionDetail {
     techIds: [],
     items: [],
     payments: [],
-    method: "card",
+    method: "card" as const,
     subtotalCents: 0,
     taxCents: 0,
     tipCents: 0,
     totalCents: 0,
+    reversal: null,
+    refundedCents: 0,
+    netTotalCents: 0,
     serviceCount: 0,
     cashierName: null,
     payPeriodFinalized: false,
     ...partial,
+  };
+  // Default netTotalCents from the resolved total/refund unless the test set
+  // it explicitly — keeps non-reversal cases (net == total) terse.
+  return {
+    ...base,
+    netTotalCents: partial.netTotalCents ?? Math.max(0, base.totalCents - base.refundedCents),
   };
 }
 
@@ -342,6 +420,28 @@ describe("computeKpis", () => {
     expect(k.avgTicketCents).toBe(7500);
     expect(k.avgServicesPerSale).toBe(1.5);
   });
+
+  it("revenue is NET of refunds — a void contributes 0, a partial its remainder", () => {
+    const k = computeKpis([
+      tx({ totalCents: 6000, netTotalCents: 6000, serviceCount: 1 }),
+      tx({
+        totalCents: 6000,
+        reversal: "void",
+        refundedCents: 6000,
+        netTotalCents: 0,
+        serviceCount: 1,
+      }),
+      tx({
+        totalCents: 5000,
+        reversal: "partially_refunded",
+        refundedCents: 2000,
+        netTotalCents: 3000,
+        serviceCount: 1,
+      }),
+    ]);
+    expect(k.count).toBe(3); // reversed sales still count as ledger rows
+    expect(k.grossRevenueCents).toBe(9000); // 6000 + 0 + 3000
+  });
 });
 
 // ─── groupByDay ──────────────────────────────────────────────────────────────
@@ -362,6 +462,23 @@ describe("groupByDay", () => {
     expect(may16?.count).toBe(2);
     expect(may16?.revenueCents).toBe(9600);
     expect(may16?.tipsCents).toBe(600);
+  });
+
+  it("day-group revenue is net of refunds", () => {
+    const groups = groupByDay([
+      tx({ id: "a", dayKey: "2026-05-16", totalCents: 6000, netTotalCents: 6000 }),
+      tx({
+        id: "b",
+        dayKey: "2026-05-16",
+        totalCents: 4000,
+        reversal: "refunded",
+        refundedCents: 4000,
+        netTotalCents: 0,
+      }),
+    ]);
+    const may16 = groups.find((g) => g.dayKey === "2026-05-16");
+    expect(may16?.count).toBe(2);
+    expect(may16?.revenueCents).toBe(6000); // 6000 + 0 (refunded contributes net 0)
   });
 
   it("orders groups by dayKey descending (newest day first)", () => {

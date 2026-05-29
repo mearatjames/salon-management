@@ -589,6 +589,37 @@
 .tp-table tbody tr.refunded .num {
   text-decoration: line-through;
 }
+
+/* Feature 052: reversal status badge (Transactions table + receipt drawer).
+   A neutral chip; the row's `.refunded` muting carries the "reversed" tone,
+   so the badge stays understated (no semantic-color fill). */
+.tp-reversal-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  text-decoration: none;
+}
+/* The retained net, shown beneath the struck original total — opts out of the
+   `.refunded` strike and reads in the foreground tone. */
+.tp-table tbody tr.refunded .num .tp-net,
+.tp-net {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--foreground);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-decoration: none;
+}
 .tp-table tbody td {
   padding: var(--space-3);
   vertical-align: middle;

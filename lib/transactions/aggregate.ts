@@ -68,6 +68,25 @@ export type TransactionDetail = {
   readonly taxCents: number;
   readonly tipCents: number;
   readonly totalCents: number;
+  /**
+   * Feature 052: the reversal outcome, or `null` for a normal paid sale.
+   * Drives the status badge in the table + drawer. A reversed ticket still
+   * shows its original `totalCents` (what was charged); the reversal is
+   * conveyed by this badge + `refundedCents`.
+   */
+  readonly reversal: "void" | "refunded" | "partially_refunded" | null;
+  /**
+   * Feature 052: sum of this ticket's SUCCEEDED `kind='refund'` legs (0 for
+   * a normal sale). The net the sale actually kept is `netTotalCents`.
+   */
+  readonly refundedCents: number;
+  /**
+   * Feature 052: `totalCents − refundedCents`, clamped ≥ 0 — the revenue the
+   * sale actually retained after reversals. KPIs + day-group revenue sum
+   * this, so a void contributes 0 and a partial refund contributes the
+   * remainder.
+   */
+  readonly netTotalCents: number;
   readonly serviceCount: number;
   readonly cashierName: string | null;
   /**
@@ -138,6 +157,10 @@ export type ProjectPaymentRow = {
   readonly ticket_id: string;
   readonly method: string; // 'card' | 'cash' | 'gift'
   readonly status: string; // 'succeeded' | 'pending' | 'failed'
+  // Feature 052: 'payment' (original) | 'refund' (a reversal leg). Refund
+  // rows must NOT be counted as payments — they feed `refundedCents` and
+  // reduce the net instead.
+  readonly kind: string;
   readonly amount_cents: number;
   readonly tip_cents: number;
 };
@@ -268,7 +291,15 @@ export function projectTransactions(input: ProjectTransactionsInput): readonly T
       if (id && !techIds.includes(id)) techIds.push(id);
     }
 
-    const txPayments: TransactionPayment[] = ticketPaymentRows.map((p) => ({
+    // Feature 052: only ORIGINAL (`kind='payment'`) legs are payments; a
+    // `kind='refund'` row is a reversal and feeds `refundedCents`. Splitting
+    // here keeps `payments`/`method`/`tipCents` describing what was charged.
+    const originalRows = ticketPaymentRows.filter((p) => p.kind !== "refund");
+    const refundedCents = ticketPaymentRows
+      .filter((p) => p.kind === "refund")
+      .reduce((sum, p) => sum + p.amount_cents, 0);
+
+    const txPayments: TransactionPayment[] = originalRows.map((p) => ({
       method: p.method === "card" || p.method === "cash" || p.method === "gift" ? p.method : "cash",
       amountCents: p.amount_cents,
       tipCents: p.tip_cents,
@@ -277,6 +308,15 @@ export function projectTransactions(input: ProjectTransactionsInput): readonly T
     const tipCents = txPayments.reduce((sum, p) => sum + p.tipCents, 0);
     const subtotalCents = ticket.subtotal_cents;
     const taxCents = ticket.tax_cents;
+    const totalCents = subtotalCents + taxCents + tipCents;
+
+    const reversal: TransactionDetail["reversal"] =
+      ticket.status === "void" ||
+      ticket.status === "refunded" ||
+      ticket.status === "partially_refunded"
+        ? ticket.status
+        : null;
+    const netTotalCents = Math.max(0, totalCents - refundedCents);
 
     rows.push({
       id: ticket.id,
@@ -292,7 +332,10 @@ export function projectTransactions(input: ProjectTransactionsInput): readonly T
       subtotalCents,
       taxCents,
       tipCents,
-      totalCents: subtotalCents + taxCents + tipCents,
+      totalCents,
+      reversal,
+      refundedCents,
+      netTotalCents,
       serviceCount,
       cashierName: ticket.closed_by_staff_id
         ? (staffById.get(ticket.closed_by_staff_id)?.display_name ?? null)
@@ -322,7 +365,10 @@ export function computeKpis(transactions: readonly TransactionDetail[]): Transac
   let servicesRendered = 0;
   let tipsCents = 0;
   for (const tx of transactions) {
-    grossRevenueCents += tx.totalCents;
+    // Feature 052: revenue is NET of refunds — a void contributes 0, a
+    // partial refund contributes the remainder. Tips remain the recorded
+    // amount (partial refunds operate on `amount_cents`, not tips).
+    grossRevenueCents += tx.netTotalCents;
     servicesRendered += tx.serviceCount;
     tipsCents += tx.tipCents;
   }
@@ -356,7 +402,8 @@ export function groupByDay(transactions: readonly TransactionDetail[]): readonly
     let revenueCents = 0;
     let tipsCents = 0;
     for (const tx of txs) {
-      revenueCents += tx.totalCents;
+      // Net of refunds (feature 052) — matches the KPI revenue definition.
+      revenueCents += tx.netTotalCents;
       tipsCents += tx.tipCents;
     }
     groups.push({ dayKey, transactions: txs, count: txs.length, revenueCents, tipsCents });
