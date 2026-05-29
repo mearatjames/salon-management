@@ -283,6 +283,16 @@ test.describe("US1: owner voids a same-day cash sale", () => {
       )
       .toBe("void");
 
+    // After the void's router.refresh() the page must render the read-only
+    // reversed notice — NOT the editable open-cart (which would re-open the
+    // ticket and miscount the refund row as a second payment leg).
+    await expect(page.locator('[data-slot="checkout-reversed"]')).toBeVisible();
+    await expect(page.locator('[data-slot="checkout-reversed"]')).toHaveAttribute(
+      "data-reversal-status",
+      "void"
+    );
+    await expect(page.locator('[data-slot="checkout-paid"]')).toHaveCount(0);
+
     const { data: refunds } = await admin
       .from("payments")
       .select("id, kind, status, amount_cents, refunds_payment_id")
@@ -316,8 +326,15 @@ test.describe("US1: owner voids a same-day cash sale", () => {
 
     await page.goto(`/checkout/${tk}`);
 
-    // A void ticket isn't the paid DoneScreen — no void affordance.
+    // A void ticket renders the read-only reversed notice — not the paid
+    // DoneScreen (no void affordance) and NOT the editable open-cart.
+    await expect(page.locator('[data-slot="checkout-reversed"]')).toBeVisible();
+    await expect(page.locator('[data-slot="checkout-reversed"]')).toHaveAttribute(
+      "data-reversal-status",
+      "void"
+    );
     await expect(page.locator(VOID_BTN)).toHaveCount(0);
+    await expect(page.locator('[data-slot="checkout-paid"]')).toHaveCount(0);
   });
 
   test("prior-day paid ticket offers no void affordance", async ({ page, staffFixture }) => {

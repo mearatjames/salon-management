@@ -75,6 +75,7 @@ export default async function CheckoutTicketPage({
       "method, amount_cents, tip_cents, gift_card_id, square_payment_id, square_terminal_checkout_id, square_gift_card_payment_id"
     )
     .eq("ticket_id", ticketId)
+    .eq("kind", "payment")
     .eq("status", "succeeded")
     .order("processed_at", { ascending: false, nullsFirst: false })
     .limit(1)
@@ -88,6 +89,10 @@ export default async function CheckoutTicketPage({
     .from("payments")
     .select("id, method, amount_cents, status, gift_card_id")
     .eq("ticket_id", ticketId)
+    // Only original payment legs hydrate the split-tender footer — a
+    // `kind='refund'` row (created by a void/refund) must never be counted as
+    // a payment leg, or the cart would read "paid 2× the total" (feature 052).
+    .eq("kind", "payment")
     .in("status", ["draft", "pending", "succeeded"])
     .order("created_at", { ascending: true });
 
@@ -272,6 +277,61 @@ export default async function CheckoutTicketPage({
           }}
         >
           Back to dashboard
+        </Link>
+      </div>
+    );
+  }
+
+  // Feature 052 (US1/US2): a reversed ticket is a closed, read-only outcome —
+  // NOT an editable cart. Without this branch a `void`/`refunded`/
+  // `partially_refunded` ticket would fall through to the open-cart
+  // `CheckoutScreen` (e.g. right after a void's `router.refresh()`), which both
+  // re-opens the editable cart and miscounts the refund row as a second
+  // payment leg. Render a terminal notice with a link to the reversal record.
+  if (
+    ticket.status === "void" ||
+    ticket.status === "refunded" ||
+    ticket.status === "partially_refunded"
+  ) {
+    const notice =
+      ticket.status === "void"
+        ? "This sale was voided."
+        : ticket.status === "refunded"
+          ? "This sale was refunded."
+          : "This sale was partially refunded.";
+    return (
+      <div
+        className="checkout-shell"
+        data-slot="checkout-reversed"
+        data-reversal-status={ticket.status}
+        style={{
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "var(--space-12)",
+          textAlign: "center",
+          gap: "var(--space-3)",
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            fontSize: "var(--text-lg)",
+            color: "var(--foreground)",
+            fontWeight: 500,
+          }}
+        >
+          {notice}
+        </p>
+        <Link
+          href="/transactions"
+          style={{
+            color: "var(--primary)",
+            fontSize: "var(--text-sm)",
+            fontWeight: 500,
+            textDecoration: "underline",
+          }}
+        >
+          View transactions
         </Link>
       </div>
     );
