@@ -31,5 +31,8 @@
 
 ## Notes
 
-- All items pass. The void-eligibility window was resolved 2026-05-28 (current salon-local calendar day) and encoded into FR-007, Assumptions, and Resolved Decisions.
-- The spec intentionally keeps the manager-PIN gate described as a capability (not a component/API) to stay implementation-agnostic; concrete component/server-action names from the input (`ManagerPinDialog`, `verifyManagerPin`, etc.) belong in the plan.
+- All items pass. Three decisions resolved 2026-05-28 (see spec "Clarifications" / "Resolved Decisions"):
+  1. Authorization is by **acting-staff role** (active owner/manager), not a manager-PIN override — enforced in UI and server-side.
+  2. Reversals are attributed to a **single acting owner/manager**; no separate authorizer field.
+  3. The **discount approval gate was dropped** from this feature; the void-eligibility window is the current salon-local calendar day.
+- Scope is now two user stories (void, refund). The manager-PIN component (`ManagerPinDialog`, `verifyManagerPin`) and the discount-gate story are no longer in scope.
