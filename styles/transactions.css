@@ -586,7 +586,12 @@
 .tp-table tbody tr.refunded {
   color: var(--muted-foreground);
 }
-.tp-table tbody tr.refunded .num {
+/* Feature 052: only the original total is struck (paired with the net below).
+   Subtotal/tip stay plain-but-muted, and the net is never struck — a blanket
+   `.num { line-through }` would strike the net too (a child can't reliably
+   cancel an ancestor's text-decoration). */
+.tp-table tbody tr.refunded .num .tp-orig-total {
+  display: block;
   text-decoration: line-through;
 }
 

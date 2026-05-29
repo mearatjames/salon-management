@@ -199,12 +199,22 @@ export function TransactionsTable({
                   <td className="num">{formatCurrency(transaction.subtotalCents / 100)}</td>
                   <td className="num">{formatCurrency(transaction.tipCents / 100)}</td>
                   <td className="num total">
-                    {formatCurrency(transaction.totalCents / 100)}
                     {transaction.reversal ? (
-                      <span className="tp-net" data-slot="tx-net">
-                        net {formatCurrency(transaction.netTotalCents / 100)}
-                      </span>
-                    ) : null}
+                      <>
+                        {/* Only the ORIGINAL total is struck (it was reduced);
+                            the net below is the real current value and stays
+                            un-struck — even at $0 it reads "net $0", not a
+                            crossed-out number. */}
+                        <span className="tp-orig-total">
+                          {formatCurrency(transaction.totalCents / 100)}
+                        </span>
+                        <span className="tp-net" data-slot="tx-net">
+                          net {formatCurrency(transaction.netTotalCents / 100)}
+                        </span>
+                      </>
+                    ) : (
+                      formatCurrency(transaction.totalCents / 100)
+                    )}
                   </td>
                 </tr>
               ))}
