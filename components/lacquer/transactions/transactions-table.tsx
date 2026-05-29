@@ -46,12 +46,13 @@ export type TransactionsTableProps = {
   onClearFilters?: () => void;
 };
 
-// Feature 052: short badge label per reversal outcome. Sentence case,
-// numerals-not-applicable — Constitution Principle I copy rules.
+// Feature 052: compact badge label per reversal outcome for the dense table
+// row — "Partial" keeps the pill inside the fixed-width client column (the
+// receipt drawer spells out "Partially refunded"). Sentence case (Principle I).
 const REVERSAL_LABEL: Record<NonNullable<TransactionDetail["reversal"]>, string> = {
   void: "Voided",
   refunded: "Refunded",
-  partially_refunded: "Partially refunded",
+  partially_refunded: "Partial",
 };
 
 // The non-discount service names of a transaction, summarised to one cell.
@@ -169,20 +170,24 @@ export function TransactionsTable({
                   onClick={() => onRowClick?.(transaction)}
                 >
                   <td className="time">{transaction.time}</td>
-                  <td className="id">
-                    {transaction.displayId}
-                    {transaction.reversal ? (
-                      <span
-                        className="tp-reversal-badge"
-                        data-slot="tx-reversal-badge"
-                        data-reversal={transaction.reversal}
-                      >
-                        {REVERSAL_LABEL[transaction.reversal]}
-                      </span>
-                    ) : null}
-                  </td>
+                  <td className="id">{transaction.displayId}</td>
                   <td className="client">
-                    <b>{transaction.client}</b>
+                    {/* The reversal badge lives here (not the fixed 96px mono
+                        ID column, where it overflowed into this cell): the
+                        client column can wrap, so the badge stacks under the
+                        name. */}
+                    <span className="tp-client-cell">
+                      <b>{transaction.client}</b>
+                      {transaction.reversal ? (
+                        <span
+                          className="tp-reversal-badge"
+                          data-slot="tx-reversal-badge"
+                          data-reversal={transaction.reversal}
+                        >
+                          {REVERSAL_LABEL[transaction.reversal]}
+                        </span>
+                      ) : null}
+                    </span>
                   </td>
                   <td className="services">{serviceSummary(transaction)}</td>
                   <td>

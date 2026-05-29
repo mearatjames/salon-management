@@ -593,10 +593,17 @@
 /* Feature 052: reversal status badge (Transactions table + receipt drawer).
    A neutral chip; the row's `.refunded` muting carries the "reversed" tone,
    so the badge stays understated (no semantic-color fill). */
+/* Client cell stacks the name + (optional) reversal badge so the badge never
+   competes for the narrow fixed-width columns. */
+.tp-client-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
 .tp-reversal-badge {
   display: inline-flex;
   align-items: center;
-  margin-left: var(--space-2);
   padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-full);
