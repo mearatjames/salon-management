@@ -252,6 +252,7 @@ export async function startSquareServerStub(port = 4567): Promise<ServerHandle> 
   let webhookBaseUrl: string | null = null;
   let giftCardCounter = 0;
   let giftPaymentCounter = 0;
+  let refundCounter = 0;
   const webhookKey = loadWebhookKey();
   const calls: RecordedCall[] = [];
   // Feature 051 — itemized order recorders. The server-side Square SDK
@@ -276,6 +277,7 @@ export async function startSquareServerStub(port = 4567): Promise<ServerHandle> 
     webhookBaseUrl = null;
     giftCardCounter = 0;
     giftPaymentCounter = 0;
+    refundCounter = 0;
     calls.length = 0;
     recordedOrderCreates.length = 0;
     recordedOrderUpdates.length = 0;
@@ -728,6 +730,37 @@ export async function startSquareServerStub(port = 4567): Promise<ServerHandle> 
           id: paymentId,
           status: "COMPLETED",
           source_type: "GIFT_CARD",
+        },
+      });
+    }
+
+    // Feature 052 - POST /v2/refunds (RefundsApi.refundPayment). Used by
+    // `lib/square/refunds.ts:refundCardPayment` for the void/refund card +
+    // gift legs. Returns a deterministic COMPLETED refund so the
+    // finalize-void / finalize-refund RPCs can flip those legs to
+    // `succeeded` + `square_refund_id`. A high-resolution component keeps
+    // the id unique across runs that share the same Supabase DB (the
+    // `payments_unique_square_refund_idx` would otherwise collide).
+    if (method === "POST" && /^\/v2\/refunds\/?$/.test(path)) {
+      const body = await readBody(req);
+      let parsed: {
+        payment_id?: string;
+        amount_money?: { amount?: number; currency?: string };
+      } = {};
+      try {
+        parsed = JSON.parse(body) as typeof parsed;
+      } catch {
+        // fall through; treated as malformed
+      }
+      refundCounter += 1;
+      const squareRefundId = `rf_stub_${Date.now()}_${refundCounter}`;
+      const amount = parsed.amount_money?.amount ?? 0;
+      return json(res, 200, {
+        refund: {
+          id: squareRefundId,
+          status: "COMPLETED",
+          payment_id: parsed.payment_id ?? "",
+          amount_money: { amount, currency: "USD" },
         },
       });
     }

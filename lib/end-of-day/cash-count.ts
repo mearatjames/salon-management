@@ -263,6 +263,7 @@ export async function loadCashCount(
       const isRefund = (p.kind as unknown as string) === "refund";
       return {
         id: p.id,
+        ticketId: p.ticket_id,
         processedAt: new Date(p.processed_at),
         kind: isRefund ? "refund" : "payment",
         client: "Walk-in",

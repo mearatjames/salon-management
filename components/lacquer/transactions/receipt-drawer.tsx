@@ -34,6 +34,7 @@ import { formatDayLabel } from "@/lib/transactions/format";
 import { MethodPill } from "@/components/lacquer/method-pill";
 import { TechStack } from "@/components/lacquer/tech-stack";
 import { ReceiptLineTechChip } from "@/components/lacquer/transactions/receipt-line-tech-chip";
+import { RefundEntry } from "@/components/lacquer/transactions/refund-entry.client";
 
 export type ReceiptDrawerProps = {
   /** The transaction to render the receipt for. */
@@ -294,6 +295,15 @@ export function ReceiptDrawer({
               </div>
             </div>
           </div>
+
+          {/* Refund — feature 052 (US2). Owner/manager only, within the
+              still-open pay period (`canEdit`). Reveals the shared
+              RefundCompositionSheet for this ticket. */}
+          {canEdit ? (
+            <div className="tp-d-section" data-slot="receipt-refund-section">
+              <RefundEntry ticketId={transaction.id} canRefund variant="drawer" />
+            </div>
+          ) : null}
         </div>
       </aside>
     </>

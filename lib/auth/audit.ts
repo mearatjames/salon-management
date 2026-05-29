@@ -110,7 +110,14 @@ export type AuditAction =
   // Added by feature 047 (entity_type "payroll")
   | "payroll.payout_recorded"
   | "payroll.payout_undone"
-  | "payroll.period_closed";
+  | "payroll.period_closed"
+  // Added by feature 052 (entity_type "payment") — emitted inside the
+  // finalize RPCs (pos_finalize_void / pos_finalize_refund) after the
+  // Square refunds confirm. entity_type derives to "payment" via the
+  // existing `payment.` prefix dispatch in deriveEntityType — no dispatch
+  // edit needed (research D7 / contracts/audit.contract.md).
+  | "payment.void_issued"
+  | "payment.refund_issued";
 
 export function deriveEntityType(
   action: AuditAction

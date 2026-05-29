@@ -21,6 +21,8 @@ import { CheckoutScreen } from "../checkout-screen.client";
 import { DoneScreen } from "@/components/lacquer/checkout/done-screen";
 import { requireStudioSession } from "@/lib/auth/session";
 import { createSupabaseServerClient } from "@/lib/db/server";
+import { getSalonTimezone } from "@/lib/db/settings";
+import { salonDateString } from "@/lib/time/format";
 import { getSetting } from "@/lib/settings/read";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +34,7 @@ export default async function CheckoutTicketPage({
 }: {
   params: Promise<{ ticketId: string }>;
 }) {
-  await requireStudioSession();
+  const viewer = await requireStudioSession();
 
   const { ticketId } = await params;
   if (!UUID_SHAPE.test(ticketId)) {
@@ -199,6 +201,29 @@ export default async function CheckoutTicketPage({
       last4 = giftCard?.last4_mask ?? null;
     }
 
+    // Feature 052 (US1) — same-day void affordance. Eligible when the viewer
+    // is owner/manager AND the ticket closed on the current salon-local day
+    // AND no reversal has been issued yet (no kind='refund' leg). The
+    // `voidSale` RPC re-checks all three server-side; this gate just decides
+    // whether the affordance renders (defense in depth, FR/D5).
+    let voidAffordance: { ticketId: string; chargedCents: number } | null = null;
+    const isPrivileged = viewer.staff.role === "owner" || viewer.staff.role === "manager";
+    if (isPrivileged && ticket.closed_at) {
+      const tz = await getSalonTimezone(supabase);
+      const closedDay = salonDateString(tz, new Date(ticket.closed_at));
+      const today = salonDateString(tz, new Date());
+      if (closedDay === today) {
+        const { count: reversalCount } = await supabase
+          .from("payments")
+          .select("id", { count: "exact", head: true })
+          .eq("ticket_id", ticketId)
+          .eq("kind", "refund");
+        if ((reversalCount ?? 0) === 0) {
+          voidAffordance = { ticketId, chargedCents: ticket.total_cents };
+        }
+      }
+    }
+
     return (
       <div className="checkout-shell" data-slot="checkout-paid">
         <DoneScreen
@@ -208,6 +233,7 @@ export default async function CheckoutTicketPage({
           tipPercent={tipPercent}
           last4={last4}
           reference={reference}
+          voidAffordance={voidAffordance}
         />
       </div>
     );

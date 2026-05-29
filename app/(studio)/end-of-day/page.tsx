@@ -111,7 +111,7 @@ export default async function EndOfDayPage() {
 
       {/* Two-column body. */}
       <div className="eod-body">
-        <CashList rows={snapshot.rows} expectedCents={snapshot.expectedCents} />
+        <CashList rows={snapshot.rows} expectedCents={snapshot.expectedCents} canRefund />
         <div style={{ width: 1, background: "var(--border)", flexShrink: 0 }} aria-hidden="true" />
         {isOpen ? (
           <CashCount expectedCents={snapshot.expectedCents} />

@@ -23,6 +23,12 @@ export type TechBadge = {
 export type CashRow = {
   /** Underlying payment id (or refund id when refunds materialise). */
   id: string;
+  /**
+   * Feature 052 (US2): the `tickets.id` this cash payment belongs to —
+   * load-bearing for the owner/manager refund affordance, which opens the
+   * shared refund composition sheet for the ticket.
+   */
+  ticketId: string;
   /** Local-time-rendered processing instant. */
   processedAt: Date;
   /** 'payment' for sales; 'refund' for the synthetic refund row. */

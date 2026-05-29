@@ -25,6 +25,7 @@ import {
 function makeRow(overrides: Partial<CashRow> = {}): CashRow {
   return {
     id: overrides.id ?? "row-1",
+    ticketId: overrides.ticketId ?? "ticket-1",
     processedAt: overrides.processedAt ?? new Date("2026-05-17T15:00:00.000Z"),
     kind: overrides.kind ?? "payment",
     client: overrides.client ?? "Jane Doe",

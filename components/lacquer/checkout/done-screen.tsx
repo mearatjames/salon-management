@@ -15,6 +15,7 @@ import Link from "next/link";
 import { Check, LayoutDashboard, Plus } from "lucide-react";
 
 import { SwitchStaffButton } from "@/components/lacquer/switch-staff-button";
+import { VoidConfirmDialog } from "@/components/lacquer/checkout/void-confirm-dialog";
 
 export type DoneScreenProps = {
   chargedCents: number;
@@ -36,6 +37,15 @@ export type DoneScreenProps = {
   last4?: string | null;
   /** Square payment / terminal-checkout reference id — Square-settled only. */
   reference?: string | null;
+  /**
+   * Feature 052 (US1) — when present, render the owner/manager "Void sale"
+   * affordance + confirmation dialog. The parent (the `/checkout/[ticketId]`
+   * page) computes eligibility server-side: viewer role ∈ {owner, manager}
+   * AND the ticket is same-day paid (salon-local `closed_at`) AND not
+   * already reversed. `null`/omitted → no affordance (technicians,
+   * prior-day sales, already-reversed tickets).
+   */
+  voidAffordance?: { ticketId: string; chargedCents: number } | null;
 };
 
 function fmt(cents: number): string {
@@ -55,6 +65,7 @@ export function DoneScreen({
   tipPercent = null,
   last4 = null,
   reference = null,
+  voidAffordance = null,
 }: DoneScreenProps) {
   // Card + gift settle on the Square Terminal, which collects the tip and
   // returns a payment reference; cash is handled in-app with no tip line.
@@ -108,6 +119,14 @@ export function DoneScreen({
         </Link>
         <SwitchStaffButton />
       </div>
+      {voidAffordance && (
+        <div className="checkout-done-void" data-slot="done-void">
+          <VoidConfirmDialog
+            ticketId={voidAffordance.ticketId}
+            chargedCents={voidAffordance.chargedCents}
+          />
+        </div>
+      )}
     </div>
   );
 }

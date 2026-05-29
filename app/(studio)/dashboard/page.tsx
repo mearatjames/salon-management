@@ -15,7 +15,7 @@ import { SecondaryActions } from "@/components/lacquer/secondary-actions";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  await requireStudioSession();
+  const viewer = await requireStudioSession();
   const supabase = await createSupabaseServerClient();
   const data = await loadDashboard(supabase);
 
@@ -66,7 +66,11 @@ export default async function DashboardPage() {
               <div className="muted">Quick actions</div>
               <SecondaryActions actions={data.quickActions} cols={1} />
             </div>
-            <RecentTransactionsFeed rows={data.recent} staff={data.staff} />
+            <RecentTransactionsFeed
+              rows={data.recent}
+              staff={data.staff}
+              viewerRole={viewer.staff.role}
+            />
           </div>
         </div>
       </div>

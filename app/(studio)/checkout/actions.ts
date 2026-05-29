@@ -27,6 +27,7 @@
 // imports still narrow correctly.
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 
 import { recordAudit } from "@/lib/auth/audit";
 import { requireStudioSession } from "@/lib/auth/session";
@@ -60,12 +61,18 @@ import {
   TicketEmptyError,
   TicketHasUnpricedItemsError,
   TicketNotOpenError,
+  // Feature 052 (US1) — void & refund.
+  PermissionDeniedError,
+  SquareRefundFailedError,
+  VoidNotAllowedError,
 } from "./_errors";
 import {
+  buildRefundIdempotencyKey,
   cancelCheckout as squareCancelCheckout,
   createCheckout as squareCreateCheckout,
   getCheckout as squareGetCheckout,
 } from "@/lib/square/terminal";
+import { refundCardPayment } from "@/lib/square/refunds";
 import {
   createGiftCardPayment,
   retrieveGiftCardFromGAN,
@@ -2894,4 +2901,147 @@ export async function activateCashDraft(
     status: "succeeded",
     ticketFlippedToPaid: Boolean(firstRow.ticket_flipped_to_paid),
   };
+}
+
+// ----------------------------------------------------------------------
+// voidSale — feature 052-privileged-action-overrides (US1). Contract:
+// `specs/052-privileged-action-overrides/contracts/server-actions.contract.md`.
+//
+// Same-day full reversal of a paid ticket. Owner/manager only. Two-phase
+// Square settlement (research D4):
+//   1. `pos_void_ticket` (service-role) locks the ticket + its succeeded
+//      payments, refuses with `ticket_not_void_eligible` unless the ticket
+//      is paid, closed on the current salon-local day, and not already
+//      reversed; then inserts a kind='refund' mirror row per succeeded
+//      payment (cash→succeeded, card/gift→pending) and returns them.
+//   2. For each card/gift leg, fire `refundCardPayment(...)` with a
+//      deterministic idempotency key. On ANY throw we mark the still-
+//      pending refund legs `failed`, abort, and throw
+//      `SquareRefundFailedError` — the ticket stays `paid`, fully
+//      recoverable (SC-007).
+//   3. `pos_finalize_void` flips the card/gift legs → succeeded +
+//      square_refund_id, sets the ticket to `void` + closed_*, and writes
+//      the single `payment.void_issued` audit row.
+//
+// The idempotency key's first arg is the ORIGINAL payment id; the RPC's
+// returned rows expose `original_payment_id` + the original's
+// `square_payment_id` alongside the new `refund_payment_id`, so the action
+// can build the key + fire the Square refund without any extra readback.
+// ----------------------------------------------------------------------
+
+export type VoidSaleInput = { ticketId: string };
+
+export type VoidSaleResult = {
+  ticketId: string;
+  status: "void";
+  refundedCents: number;
+};
+
+type VoidRefundRow = {
+  refund_payment_id: string;
+  original_payment_id: string;
+  method: "cash" | "card" | "gift";
+  square_payment_id: string | null;
+  amount_cents: number;
+};
+
+export async function voidSale(input: VoidSaleInput): Promise<VoidSaleResult> {
+  // 1) Parse input.
+  assertUuid(input.ticketId, "voidSale.ticketId");
+
+  // 2) Auth.
+  const viewer = await requireStudioSession();
+
+  // 3) Role gate — owner/manager only (FR; defense in depth above the
+  //    DoneScreen's affordance-absence for technicians).
+  if (viewer.staff.role !== "owner" && viewer.staff.role !== "manager") {
+    throw new PermissionDeniedError();
+  }
+
+  const supabase = createSupabaseServiceRoleClient();
+
+  // 4) Prepare phase — create the mirror refund rows under lock. Maps the
+  //    RPC's `ticket_not_void_eligible` → VoidNotAllowedError.
+  const { data: prepData, error: prepErr } = await supabase.rpc("pos_void_ticket", {
+    p_ticket_id: input.ticketId,
+    p_operator: viewer.staff.id,
+  } as unknown as Parameters<typeof supabase.rpc<"pos_void_ticket">>[1]);
+  if (prepErr) {
+    const msg = prepErr.message ?? "";
+    if (msg.includes("ticket_not_void_eligible")) {
+      throw new VoidNotAllowedError();
+    }
+    throw new Error(`voidSale prepare RPC failed: ${msg}`);
+  }
+
+  const refundRows = (Array.isArray(prepData) ? prepData : []) as VoidRefundRow[];
+  const refundedCents = refundRows.reduce((sum, r) => sum + r.amount_cents, 0);
+
+  // 5) Card/gift legs need a Square refund; cash legs are already settled.
+  const squareLegs = refundRows.filter((r) => r.method === "card" || r.method === "gift");
+
+  if (squareLegs.length > 0) {
+    // 6) Fire the Square refunds. On ANY throw → mark every pending refund
+    //    leg `failed`, abort, and surface SquareRefundFailedError. The
+    //    ticket is untouched (still `paid`) and the operator can retry.
+    const refundResults: Array<{ refund_payment_id: string; square_refund_id: string }> = [];
+    try {
+      for (const leg of squareLegs) {
+        if (!leg.square_payment_id) {
+          throw new SquareRefundFailedError(
+            "a card/gift leg is missing its Square payment reference"
+          );
+        }
+        const { squareRefundId } = await refundCardPayment({
+          squarePaymentId: leg.square_payment_id,
+          amountCents: leg.amount_cents,
+          idempotencyKey: buildRefundIdempotencyKey(leg.original_payment_id, leg.refund_payment_id),
+        });
+        refundResults.push({
+          refund_payment_id: leg.refund_payment_id,
+          square_refund_id: squareRefundId,
+        });
+      }
+    } catch (err) {
+      await supabase
+        .from("payments")
+        .update({ status: "failed" })
+        .in(
+          "id",
+          squareLegs.map((r) => r.refund_payment_id)
+        )
+        .eq("status", "pending");
+      if (err instanceof SquareRefundFailedError) throw err;
+      throw new SquareRefundFailedError(
+        "Square couldn't process the refund. The sale is unchanged.",
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+
+    // 7a) Finalize with the settled Square refund ids.
+    const { error: finErr } = await supabase.rpc("pos_finalize_void", {
+      p_ticket_id: input.ticketId,
+      p_refund_results: refundResults,
+    } as unknown as Parameters<typeof supabase.rpc<"pos_finalize_void">>[1]);
+    if (finErr) {
+      throw new Error(`voidSale finalize RPC failed: ${finErr.message}`);
+    }
+  } else {
+    // 7b) Cash-only reversal — no Square calls; finalize with an empty
+    //     refund-results array (the cash legs are already `succeeded`).
+    const { error: finErr } = await supabase.rpc("pos_finalize_void", {
+      p_ticket_id: input.ticketId,
+      p_refund_results: [],
+    } as unknown as Parameters<typeof supabase.rpc<"pos_finalize_void">>[1]);
+    if (finErr) {
+      throw new Error(`voidSale finalize RPC failed: ${finErr.message}`);
+    }
+  }
+
+  // 8) Revalidate every surface that renders this ticket's status.
+  revalidatePath("/checkout");
+  revalidatePath("/dashboard");
+  revalidatePath("/transactions");
+
+  return { ticketId: input.ticketId, status: "void", refundedCents };
 }
