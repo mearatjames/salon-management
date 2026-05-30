@@ -130,7 +130,7 @@
 /* ===== KPI band — 4 tiles ===== */
 .pr-kpis {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   margin: 0 var(--space-8);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -1288,4 +1288,444 @@
 .pr-history-row-label {
   font-size: var(--text-xs);
   color: var(--muted-foreground);
+}
+
+/* ===== Manual payout adjustments (feature 053, US2) ======================== */
+/* The adjustments card on the tech-detail side rail, its lines list, the
+   Add/Deduct dialog form, plus the ledger / breakdown fold-in. Every value
+   traces to a `styles/tokens.css` token (Constitution Principle I). The refund
+   note / flag classes (`.pl-refund-flag`, `.pr-reversal-note`, `.pl-bd-note`)
+   are intentionally OMITTED — FR-006 keeps payroll refund-blind. */
+
+/* ----- Adjustments card (side rail, below the breakdown) ----- */
+.pp-adj-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.pp-adj-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.pp-adj-empty {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  line-height: var(--leading-normal);
+}
+/* "Period closed" lock badge in the card head when the card is read-only
+   (a paid tech or a closed period). Mirrors `.pr-readonly-badge`, sized as a
+   card-header chip. Lucide `Lock` at 1.5px. */
+.pp-adj-lock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border: 1px solid var(--border);
+  font: 500 var(--text-xs) var(--font-sans);
+  white-space: nowrap;
+}
+.pp-adj-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.pp-adj-line {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--card);
+}
+.pp-adj-line-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.pp-adj-line-reason {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--foreground);
+}
+.pp-adj-line-meta {
+  font-size: var(--text-xs);
+  color: var(--muted-foreground);
+  line-height: var(--leading-normal);
+  font-variant-numeric: tabular-nums;
+}
+.pp-adj-line-r {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+.pp-adj-line-amount {
+  font: 600 var(--text-sm) var(--font-sans);
+  font-variant-numeric: tabular-nums;
+}
+.pp-adj-line-amount.add {
+  color: var(--success);
+}
+.pp-adj-line-amount.deduct {
+  color: var(--destructive);
+}
+.pp-adj-line-actions {
+  display: flex;
+  gap: var(--space-1);
+}
+.pp-adj-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.pp-adj-icon-btn:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+.pp-adj-icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* The card's running net-payout summary line + the add-adjustment trigger. */
+.pp-adj-net {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+.pp-adj-net-l {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+.pp-adj-net-v {
+  font: 600 var(--text-lg) var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-snug);
+  color: var(--rose-700);
+}
+.pp-adj-net-v.negative {
+  color: var(--destructive);
+}
+.pp-adj-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: var(--space-10);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font: 500 var(--text-sm) var(--font-sans);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+}
+.pp-adj-add-btn:hover {
+  background: var(--accent);
+  border-color: var(--neutral-300);
+}
+.pp-adj-add-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ----- Adjustment dialog shell + form ----- */
+.adj-modal-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.adj-modal-title {
+  font: 600 var(--text-md) var(--font-sans);
+  line-height: var(--leading-snug);
+  color: var(--foreground);
+}
+.adj-modal-sub {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  line-height: var(--leading-normal);
+}
+.adj-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.adj-form-banner {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in oklch, var(--destructive) 35%, var(--border));
+  background: color-mix(in oklch, var(--destructive) 8%, var(--card));
+  color: var(--foreground);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: var(--leading-snug);
+}
+.adj-field-label {
+  display: block;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+  margin-bottom: var(--space-2);
+}
+
+/* Add / Deduct direction toggle. */
+.adj-dir {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-1);
+}
+.adj-dir-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: var(--space-10);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font: 500 var(--text-sm) var(--font-sans);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.adj-dir-btn:hover {
+  background: var(--muted);
+}
+.adj-dir-btn.on-add {
+  border-color: var(--success);
+  background: color-mix(in oklch, var(--success) 8%, transparent);
+  color: var(--success);
+}
+.adj-dir-btn.on-deduct {
+  border-color: var(--destructive);
+  background: color-mix(in oklch, var(--destructive) 8%, transparent);
+  color: var(--destructive);
+}
+
+/* Amount input with the leading currency symbol. */
+.adj-amount {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--space-10);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: var(--card);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.adj-amount:focus-within {
+  border-color: var(--primary);
+}
+.adj-amount-sign {
+  font: 500 var(--text-lg) var(--font-sans);
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.adj-amount-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: 600 var(--text-lg) var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+.adj-amount-input::placeholder {
+  color: var(--neutral-400);
+  font-weight: 400;
+}
+
+/* Reason preset chips + the free-text input. */
+.adj-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.adj-chip {
+  display: inline-flex;
+  align-items: center;
+  height: var(--space-8);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font: 500 var(--text-xs) var(--font-sans);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+.adj-chip:hover {
+  background: var(--muted);
+}
+.adj-chip.on {
+  border-color: var(--primary);
+  background: color-mix(in oklch, var(--primary) 8%, transparent);
+  color: var(--rose-700);
+}
+.adj-reason-input {
+  width: 100%;
+  height: var(--space-10);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--foreground);
+  font: 400 var(--text-sm) var(--font-sans);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+.adj-reason-input:focus {
+  border-color: var(--primary);
+}
+.adj-reason-input::placeholder {
+  color: var(--neutral-400);
+}
+
+/* Live before / after net-payout preview. */
+.adj-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  border: 1px solid var(--border);
+}
+.adj-preview-l {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted-foreground);
+}
+.adj-preview-r {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+.adj-preview-before {
+  font-size: var(--text-sm);
+  color: var(--muted-foreground);
+  text-decoration: line-through;
+}
+.adj-preview-after {
+  font: 600 var(--text-lg) var(--font-sans);
+  letter-spacing: var(--tracking-snug);
+  color: var(--rose-700);
+}
+.adj-preview-after.negative {
+  color: var(--destructive);
+}
+.adj-preview svg {
+  color: var(--muted-foreground);
+}
+
+/* Dialog footer actions — Cancel + confirm. */
+.adj-form-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}
+.adj-form-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: var(--space-10);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  font: 500 var(--text-sm) var(--font-sans);
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+.adj-form-btn.ghost {
+  background: transparent;
+  color: var(--foreground);
+}
+.adj-form-btn.ghost:hover {
+  background: var(--accent);
+}
+.adj-form-btn.primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.adj-form-btn.primary:hover {
+  background: var(--rose-700);
+}
+.adj-form-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ----- Ledger + breakdown fold-in ----- */
+/* Ledger "Adj." cell — signed, coloured. */
+.pl-adj.add {
+  color: var(--success);
+}
+.pl-adj.deduct {
+  color: var(--destructive);
+}
+.pl-adj.zero {
+  color: var(--muted-foreground);
+}
+
+/* Breakdown rows: a cash sub-row, one row per adjustment, a net-payout total. */
+.pl-bd-row.cash-sub .pl-bd-r {
+  font-weight: 500;
+}
+.pl-bd-row.adj .pl-bd-l {
+  color: var(--muted-foreground);
+}
+.pl-bd-row.adj .pl-bd-r.add {
+  color: var(--success);
+}
+.pl-bd-row.adj .pl-bd-r.deduct {
+  color: var(--destructive);
+}
+.pl-bd-row.adj .pl-bd-r.add::before {
+  content: "+";
+  margin-right: 1px;
+}
+.pl-bd-row.total .pl-bd-r.negative {
+  color: var(--destructive);
 }

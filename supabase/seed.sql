@@ -565,3 +565,82 @@ begin
   ) on conflict (pay_period_id, staff_id) do nothing;
 end
 $$;
+
+-- ---------------------------------------------------------------------------
+-- Feature 053 (Payroll reversals & adjustments) — two reversed tickets in the
+-- CURRENT OPEN pay period (May 16 – 31, 2026) so the US1 e2e can assert that a
+-- partial refund and a void land in payroll. Both are dated May 20, 2026 — a
+-- prior day INSIDE the open window, deliberately NOT today (today is salon-
+-- local May 30) so the today-scoped EOD-cash and dashboard baselines are not
+-- perturbed. Both belong to Maya (10000000-…-001), the canonical seeded tech;
+-- US1 e2e asserts against Maya's payout. Guarded on the seed owner so this
+-- NEVER runs against production. Fixed UUIDs in the '31000000-…' range
+-- (tickets) and '32000000-…' range (payments); idempotent via on-conflict.
+--
+-- Refund representation (per migrations 0026/0027):
+--   * A refund is a NEW payments row, kind='refund', POSITIVE amount_cents
+--     (refunded portion), tip_cents=0, method copied from the original,
+--     refunds_payment_id -> the original payment, status 'succeeded' (cash
+--     refunds are immediately succeeded). Original ticket_items stay UNTOUCHED.
+--   * Ticket status is 'partially_refunded' when Σ succeeded refunds < Σ
+--     succeeded original payments; 'void' for a fully-reversed same-day sale.
+--
+--   * Partial refund: $60 single-tech service (Maya), original cash payment
+--     $60 succeeded + a $20 refund row (amount 2000, kind refund, tip 0,
+--     refunds_payment_id -> original), ticket status 'partially_refunded'.
+--   * Void: $60 single-tech service (Maya), original cash payment $60 +
+--     a full $60 refund mirror row, ticket status 'void' (nets $0).
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_maya uuid := '10000000-0000-0000-0000-000000000001';
+  v_svc_spa_pedi uuid := '20000000-0000-0000-0000-000000000004';
+  -- A prior day inside the open period (May 16 – 31), NOT today.
+  v_when timestamptz := ('2026-05-20'::timestamp + interval '14 hours') at time zone 'America/Los_Angeles';
+  -- Original payment ids referenced by the refund rows' refunds_payment_id.
+  v_pr_orig_pay   uuid := '32000000-0000-0000-0000-000000000011';
+  v_void_orig_pay uuid := '32000000-0000-0000-0000-000000000021';
+begin
+  if not exists (select 1 from auth.users where email = 'owner@tangnails.dev') then
+    return;
+  end if;
+
+  -- ---- Ticket A ---- PARTIALLY REFUNDED: $60 service (Maya), $20 refunded.
+  insert into public.tickets (id, status, subtotal_cents, tax_cents, total_cents, opened_by_staff_id, closed_by_staff_id, closed_at)
+  values ('31000000-0000-0000-0000-000000000001', 'partially_refunded', 6000, 0, 6000, v_maya, v_maya, v_when)
+  on conflict (id) do nothing;
+
+  insert into public.ticket_items (ticket_id, kind, ref_id, name_snapshot, unit_price_cents, qty, assigned_staff_id, price_unconfirmed)
+  values ('31000000-0000-0000-0000-000000000001', 'service', v_svc_spa_pedi, 'Spa pedicure', 6000, 1, v_maya, false)
+  on conflict do nothing;
+
+  -- Original cash payment $60, succeeded.
+  insert into public.payments (id, ticket_id, method, kind, amount_cents, tip_cents, status, taken_by_staff_id, processed_at)
+  values (v_pr_orig_pay, '31000000-0000-0000-0000-000000000001', 'cash', 'payment', 6000, 0, 'succeeded', v_maya, v_when)
+  on conflict (id) do nothing;
+
+  -- Refund row: $20 (2000c), kind refund, tip 0, same method, points at original, succeeded.
+  insert into public.payments (id, ticket_id, method, kind, amount_cents, tip_cents, status, taken_by_staff_id, processed_at, refunds_payment_id)
+  values ('32000000-0000-0000-0000-000000000012', '31000000-0000-0000-0000-000000000001', 'cash', 'refund', 2000, 0, 'succeeded', v_maya, v_when + interval '5 minutes', v_pr_orig_pay)
+  on conflict (id) do nothing;
+
+  -- ---- Ticket B ---- VOID: $60 service (Maya), fully reversed (nets $0).
+  insert into public.tickets (id, status, subtotal_cents, tax_cents, total_cents, opened_by_staff_id, closed_by_staff_id, closed_at)
+  values ('31000000-0000-0000-0000-000000000002', 'void', 6000, 0, 6000, v_maya, v_maya, v_when)
+  on conflict (id) do nothing;
+
+  insert into public.ticket_items (ticket_id, kind, ref_id, name_snapshot, unit_price_cents, qty, assigned_staff_id, price_unconfirmed)
+  values ('31000000-0000-0000-0000-000000000002', 'service', v_svc_spa_pedi, 'Spa pedicure', 6000, 1, v_maya, false)
+  on conflict do nothing;
+
+  -- Original cash payment $60, succeeded.
+  insert into public.payments (id, ticket_id, method, kind, amount_cents, tip_cents, status, taken_by_staff_id, processed_at)
+  values (v_void_orig_pay, '31000000-0000-0000-0000-000000000002', 'cash', 'payment', 6000, 0, 'succeeded', v_maya, v_when)
+  on conflict (id) do nothing;
+
+  -- Full $60 refund mirror row, succeeded -> nets $0.
+  insert into public.payments (id, ticket_id, method, kind, amount_cents, tip_cents, status, taken_by_staff_id, processed_at, refunds_payment_id)
+  values ('32000000-0000-0000-0000-000000000022', '31000000-0000-0000-0000-000000000002', 'cash', 'refund', 6000, 0, 'succeeded', v_maya, v_when + interval '5 minutes', v_void_orig_pay)
+  on conflict (id) do nothing;
+end
+$$;

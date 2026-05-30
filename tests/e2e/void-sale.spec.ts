@@ -363,6 +363,97 @@ test.describe("US1: owner voids a same-day cash sale", () => {
   });
 });
 
+// ─── 053-US1: a voided sale pays $0 on /payroll ──────────────────────────────
+//
+// Feature 053 (Payroll reversals): a void still pays $0 and is excluded from
+// the technician's payout. Here we set this worker's owner a commission rate,
+// seed a same-day $50 sale, void it through the UI, then open /payroll and
+// assert the owner's row is `no_work` / $0 — the voided sale earns nothing even
+// with a commission rate set. Parallel-safe: the owner row is this worker's own
+// seeded data (its only seeded ticket this test).
+
+const LEDGER_ROW = (id: string) => `tr[data-slot="ledger-row"][data-tech-id="${id}"]`;
+
+async function cellTextV(
+  rowLocator: ReturnType<import("@playwright/test").Page["locator"]>,
+  idx: number
+): Promise<string> {
+  return (await rowLocator.locator("td").nth(idx).innerText()).trim();
+}
+
+function parseMoneyV(text: string): number {
+  const t = text.trim();
+  if (t === "—") return 0;
+  const negative = t.startsWith("−") || t.startsWith("-");
+  const digits = t.replace(/[−$,\s-]/g, "");
+  if (digits === "") return 0;
+  return (negative ? -1 : 1) * Number(digits);
+}
+
+async function setOwnerCommission(fixture: StaffFixture, pct: number): Promise<void> {
+  const { error } = await adminClient()
+    .from("staff")
+    .update({ service_commission_pct: pct, tip_split_pct: 1.0, check_portion_cents: 0 })
+    .eq("id", fixture.owner.id);
+  if (error) throw new Error(`void payroll rate update failed: ${error.message}`);
+}
+
+test.describe("053-US1: a voided sale pays $0 on /payroll", () => {
+  test.use({
+    storageState: async ({ authState }, provide) => {
+      await provide(authState.owner);
+    },
+  });
+
+  test.afterEach(async ({ staffFixture }) => {
+    if (!supabaseUp) return;
+    await clearTicket(staffFixture, "e1");
+    await staffFixture.reset();
+  });
+
+  test("voiding a same-day sale → owner earns $0 (no_work) for it", async ({
+    page,
+    staffFixture,
+  }) => {
+    const admin = adminClient();
+    await setOwnerCommission(staffFixture, 0.5);
+    const tk = await seedPaidTicket({
+      fixture: staffFixture,
+      tag: "e1",
+      closedAt: todayInstant(),
+      legs: [{ method: "cash", amountCents: 5000 }],
+    });
+
+    // Void from the paid DoneScreen.
+    await page.goto(`/checkout/${tk}`);
+    await expect(page.locator(VOID_BTN)).toBeVisible();
+    await page.locator(VOID_BTN).click();
+    await expect(page.locator(VOID_CONFIRM)).toBeVisible();
+    await page.locator(VOID_CONFIRM).click();
+    await expect
+      .poll(
+        async () => {
+          const { data } = await admin.from("tickets").select("status").eq("id", tk).single();
+          return data?.status ?? null;
+        },
+        { timeout: 10_000 }
+      )
+      .toBe("void");
+
+    // On /payroll the owner earns nothing from the voided sale — the void is
+    // excluded from the Report fetch entirely → no TechnicianReport → no_work.
+    await page.goto("/payroll");
+    const ownerRow = page.locator(LEDGER_ROW(staffFixture.owner.id));
+    await expect(ownerRow).toBeVisible({ timeout: 15_000 });
+    await expect(ownerRow.locator('[data-slot="state-pill"]')).toHaveAttribute(
+      "data-state",
+      "no_work"
+    );
+    // Income-after-split column reads $0 (or em-dash → 0).
+    expect(parseMoneyV(await cellTextV(ownerRow, 3))).toBe(0);
+  });
+});
+
 // ─── US1: technician sees no affordance (role gate) ──────────────────────────
 //
 // The DoneScreen renders the void affordance only for owner/manager. A

@@ -19,6 +19,7 @@ import {
   applyRates,
   projectDailyActivity,
   projectPayrollLedger,
+  type AdjustmentLine,
   type PayrollPayoutRow,
   type PayrollStaffRow,
   type ProjectDailyActivityInput,
@@ -74,6 +75,7 @@ function techReport(over: { staffId: string } & Partial<TechnicianReport>): Tech
     totalDeductionsCents: over.totalDeductionsCents ?? 0,
     commissionableCents: over.commissionableCents ?? 0,
     cardTipsCents: over.cardTipsCents ?? 0,
+    refundedCents: over.refundedCents ?? 0,
     transactions: over.transactions ?? [],
   };
 }
@@ -431,6 +433,62 @@ describe("projectPayrollLedger — totals and counts", () => {
   });
 });
 
+// ─── projectPayrollLedger — refund preservation (feature 053, US1) ───────────
+//
+// Constitution IV (Test-First) — refund preservation is authored and confirmed
+// passing only once the widened report fetch flows the ORIGINAL
+// `commissionableCents` through (research R1). The payroll math itself does NOT
+// change: a refunded ticket's tech keeps full commission (the Report aggregate
+// carries the original commissionable; the refund is a separate axis the Report
+// display subtracts, never payroll). A window whose only sale was voided yields
+// a `no_work` / $0 row (voids are excluded from the Report fetch entirely, so
+// they never produce a `TechnicianReport`).
+
+describe("projectPayrollLedger — refund preservation (US1)", () => {
+  it("a refunded ticket's tech keeps FULL commission on the original commissionable", () => {
+    // The Report aggregate carries the original (pre-refund) commissionable —
+    // a $60 service refunded $20 still reports commissionableCents = 6000. The
+    // ledger must pay commission on 6000, not on the net $40.
+    const model = projectPayrollLedger({
+      period: OPEN_PERIOD,
+      staff: [staff({ id: "s1", display_name: "Maya", service_commission_pct: 0.9 })],
+      technicianReports: [
+        techReport({
+          staffId: "s1",
+          transactionCount: 1,
+          grossCents: 6000,
+          commissionableCents: 6000, // ORIGINAL — refund not subtracted here
+          cardTipsCents: 0,
+        }),
+      ],
+      payouts: [],
+      recordedByNames: {},
+    });
+    const row = model.rows[0];
+    expect(row.state).toBe("pending");
+    expect(row.commissionableCents).toBe(6000);
+    // 6000 × 0.9 = 5400 — full commission, refund-blind.
+    expect(row.incomeAfterSplitCents).toBe(5400);
+  });
+
+  it("a window whose only sale was voided yields a no_work / $0 row", () => {
+    // Voids are excluded from the Report fetch, so the tech has NO
+    // TechnicianReport for the window → zero earnings → no_work.
+    const model = projectPayrollLedger({
+      period: OPEN_PERIOD,
+      staff: [staff({ id: "s1", display_name: "Maya", service_commission_pct: 0.9 })],
+      technicianReports: [],
+      payouts: [],
+      recordedByNames: {},
+    });
+    const row = model.rows[0];
+    expect(row.state).toBe("no_work");
+    expect(row.commissionableCents).toBe(0);
+    expect(row.incomeAfterSplitCents).toBe(0);
+    expect(row.cashPaymentCents).toBe(0);
+  });
+});
+
 // ─── projectDailyActivity — per-day grouping for the tech detail screen ───────
 //
 // Constitution IV — the daily-activity math is the tech-detail screen's load-
@@ -455,6 +513,7 @@ function tx(over: { closedAtIso: string } & Partial<ReportTransaction>): ReportT
     tipPct: over.tipPct ?? null,
     deductionLines: over.deductionLines ?? [],
     isExpandable: over.isExpandable ?? false,
+    refundedCents: over.refundedCents ?? 0,
   };
 }
 
@@ -579,5 +638,182 @@ describe("projectDailyActivity — per-day grouping", () => {
     const result = projectDailyActivity(baseInput({ transactions: [] }));
     expect(result.workingDayCount).toBe(0);
     expect(result.avgPerWorkingDayCents).toBe(0);
+  });
+});
+
+// ─── projectPayrollLedger — manual payout adjustments (feature 053, US2) ──────
+//
+// Constitution IV (Test-First) — the adjustment fold-in is part of the payroll
+// money math, authored and confirmed FAILING before `lib/payroll/aggregate.ts`
+// grows the `adjustmentsByStaff` input + the per-row / totals net-payout fields.
+//
+// Rules:
+//   - per-row `adjustments` mirrors the staff's `AdjustmentLine[]` ([] when none);
+//   - `adjustmentsCents` = signed Σ of the staff's adjustment amounts;
+//   - `netPayoutCents` = `cashPaymentCents + adjustmentsCents` (may be < 0);
+//   - totals gain `adjustmentsCents` (Σ over rows) + `netPayoutCents` (Σ over rows);
+//   - `cashRemainingCents` (KPI cash-to-pay) uses Σ net of non-paid eligible rows.
+
+function adj(over: Partial<AdjustmentLine> & { id: string; amountCents: number }): AdjustmentLine {
+  return {
+    id: over.id,
+    amountCents: over.amountCents,
+    reason: over.reason ?? "Correction",
+    createdByName: over.createdByName ?? "Maya Patel",
+    createdAtLabel: over.createdAtLabel ?? "May 20, 2:14 PM",
+    edited: over.edited ?? false,
+  };
+}
+
+describe("projectPayrollLedger — manual payout adjustments (US2)", () => {
+  it("a row with no adjustments has [] / 0 / netPayout == cashPayment", () => {
+    const model = projectPayrollLedger({
+      period: OPEN_PERIOD,
+      staff: [staff({ id: "s1", display_name: "Ada", service_commission_pct: 0.6 })],
+      technicianReports: [techReport({ staffId: "s1", commissionableCents: 100_000 })],
+      payouts: [],
+      recordedByNames: {},
+      adjustmentsByStaff: {},
+    });
+    const row = model.rows[0];
+    expect(row.adjustments).toEqual([]);
+    expect(row.adjustmentsCents).toBe(0);
+    // 100000 × 0.6 = 60000, no tips, no check → cash 60000.
+    expect(row.cashPaymentCents).toBe(60_000);
+    expect(row.netPayoutCents).toBe(60_000);
+  });
+
+  it("folds a staff's adjustment lines into the row, signing the sum", () => {
+    const model = projectPayrollLedger({
+      period: OPEN_PERIOD,
+      staff: [staff({ id: "s1", display_name: "Ada", service_commission_pct: 0.6 })],
+      technicianReports: [techReport({ staffId: "s1", commissionableCents: 100_000 })],
+      payouts: [],
+      recordedByNames: {},
+      adjustmentsByStaff: {
+        s1: [
+          adj({ id: "a1", amountCents: 2_000, reason: "Cash advance" }),
+          adj({ id: "a2", amountCents: -500, reason: "Product charge" }),
+        ],
+      },
+    });
+    const row = model.rows[0];
+    expect(row.adjustments).toHaveLength(2);
+    expect(row.adjustments[0].id).toBe("a1");
+    // signed Σ = 2000 + (−500) = 1500.
+    expect(row.adjustmentsCents).toBe(1_500);
+    // cash 60000 + 1500 = 61500.
+    expect(row.netPayoutCents).toBe(61_500);
+  });
+
+  it("a deduction exceeding earnings yields a negative netPayoutCents", () => {
+    const model = projectPayrollLedger({
+      period: OPEN_PERIOD,
+      staff: [staff({ id: "s1", display_name: "Ada", service_commission_pct: 0.6 })],
+      technicianReports: [techReport({ staffId: "s1", commissionableCents: 10_000 })],
+      payouts: [],
+      recordedByNames: {},
+      adjustmentsByStaff: {
+        s1: [adj({ id: "a1", amountCents: -20_000, reason: "Redo on the house" })],
+      },
+    });
+    const row = model.rows[0];
+    // cash = 10000 × 0.6 = 6000; net = 6000 − 20000 = −14000.
+    expect(row.cashPaymentCents).toBe(6_000);
+    expect(row.adjustmentsCents).toBe(-20_000);
+    expect(row.netPayoutCents).toBe(-14_000);
+  });
+
+  it("totals gain Σ adjustmentsCents and Σ netPayoutCents over rows", () => {
+    const model = projectPayrollLedger({
+      period: OPEN_PERIOD,
+      staff: [
+        staff({ id: "s1", display_name: "Ada", service_commission_pct: 0.6 }),
+        staff({ id: "s2", display_name: "Bea", service_commission_pct: 0.5 }),
+      ],
+      technicianReports: [
+        techReport({ staffId: "s1", commissionableCents: 100_000 }), // cash 60000
+        techReport({ staffId: "s2", commissionableCents: 40_000 }), // cash 20000
+      ],
+      payouts: [],
+      recordedByNames: {},
+      adjustmentsByStaff: {
+        s1: [adj({ id: "a1", amountCents: 1_500 })],
+        s2: [adj({ id: "a2", amountCents: -500 })],
+      },
+    });
+    // Σ adjustments = 1500 − 500 = 1000.
+    expect(model.totals.adjustmentsCents).toBe(1_000);
+    // Σ net = (60000+1500) + (20000−500) = 61500 + 19500 = 81000.
+    expect(model.totals.netPayoutCents).toBe(81_000);
+  });
+
+  it("cashRemainingCents uses net payout of non-paid eligible rows", () => {
+    const paidS1: PayrollPayoutRow = {
+      staff_id: "s1",
+      paid: true,
+      method: "cash",
+      paid_on: "2026-05-20",
+      recorded_by_staff_id: "owner1",
+      commissionable_cents: 100_000,
+      income_after_split_cents: 60_000,
+      card_tips_cents: 0,
+      tips_after_split_cents: 0,
+      check_portion_cents: 0,
+      cash_payment_cents: 60_000,
+      service_commission_pct: 0.6,
+      tip_split_pct: 1,
+    };
+    const model = projectPayrollLedger({
+      period: OPEN_PERIOD,
+      staff: [
+        staff({ id: "s1", display_name: "Ada", service_commission_pct: 0.6 }), // paid
+        staff({ id: "s2", display_name: "Bea", service_commission_pct: 0.5 }), // pending
+        staff({ id: "s3", display_name: "Cy", service_commission_pct: 0.5 }), // no_work
+      ],
+      technicianReports: [
+        techReport({ staffId: "s1", commissionableCents: 100_000 }),
+        techReport({ staffId: "s2", commissionableCents: 40_000 }), // cash 20000
+      ],
+      payouts: [paidS1],
+      recordedByNames: { owner1: "Maya" },
+      adjustmentsByStaff: {
+        s2: [adj({ id: "a2", amountCents: -2_000, reason: "Product charge" })],
+      },
+    });
+    // cashRemaining = non-paid eligible net = Bea's 20000 − 2000 = 18000.
+    expect(model.cashRemainingCents).toBe(18_000);
+  });
+
+  it("paid/closed rows still read + sum their adjustments (locked, no drift)", () => {
+    const paidS1: PayrollPayoutRow = {
+      staff_id: "s1",
+      paid: true,
+      method: "cash",
+      paid_on: "2026-05-20",
+      recorded_by_staff_id: "owner1",
+      commissionable_cents: 100_000,
+      income_after_split_cents: 60_000,
+      card_tips_cents: 0,
+      tips_after_split_cents: 0,
+      check_portion_cents: 0,
+      cash_payment_cents: 60_000,
+      service_commission_pct: 0.6,
+      tip_split_pct: 1,
+    };
+    const model = projectPayrollLedger({
+      period: OPEN_PERIOD,
+      staff: [staff({ id: "s1", display_name: "Ada", service_commission_pct: 0.6 })],
+      technicianReports: [techReport({ staffId: "s1", commissionableCents: 100_000 })],
+      payouts: [paidS1],
+      recordedByNames: { owner1: "Maya" },
+      adjustmentsByStaff: {
+        s1: [adj({ id: "a1", amountCents: -1_000, reason: "Cash advance" })],
+      },
+    });
+    const row = model.rows[0];
+    expect(row.adjustments).toHaveLength(1);
+    expect(row.adjustmentsCents).toBe(-1_000);
+    expect(row.netPayoutCents).toBe(59_000);
   });
 });

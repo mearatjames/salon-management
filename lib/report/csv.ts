@@ -11,7 +11,7 @@
 //
 // See data-model.md and contracts/report-read-model.md § C5.
 
-import type { ReportReadModel } from "@/lib/report/aggregate";
+import { netRevenueCents, type ReportReadModel } from "@/lib/report/aggregate";
 import type { ReportWindow } from "@/lib/report/window";
 
 // The header row, verbatim per contract C5. The column order differs from the
@@ -70,7 +70,9 @@ export function buildReportCsv(report: ReportReadModel, _window: ReportWindow): 
         dollars(tech.cardFeeCents),
         dollars(tech.supplyCents),
         dollars(tech.totalDeductionsCents),
-        dollars(tech.commissionableCents),
+        // Feature 053: the Commissionable column is the NET figure (original
+        // commissionable − refunds, clamped ≥ 0) — FR-006, no refund flag.
+        dollars(netRevenueCents(tech.commissionableCents, tech.refundedCents)),
         dollars(tech.cardTipsCents),
       ])
     );
@@ -85,7 +87,7 @@ export function buildReportCsv(report: ReportReadModel, _window: ReportWindow): 
       dollars(t.cardFeeCents),
       dollars(t.supplyCents),
       dollars(t.totalDeductionsCents),
-      dollars(t.commissionableCents),
+      dollars(netRevenueCents(t.commissionableCents, t.refundedCents)),
       dollars(t.cardTipsCents),
     ])
   );

@@ -683,6 +683,269 @@ describe("projectReport — fully-exempt tech yields zero deductions", () => {
   });
 });
 
+// ─── projectReport — refund awareness (feature 053, US1) ─────────────────────
+//
+// Constitution IV (Test-First) — refund-aware projection is authored and
+// confirmed FAILING before `lib/report/aggregate.ts` carries `refundedCents`.
+//
+// The reversal money rule (data-model §2): the existing money fields keep
+// their ORIGINAL (pre-refund) meaning; a new `refundedCents` (≥ 0) carries the
+// succeeded refund allocated to the tech / window. Net revenue is
+// `commissionableCents − refundedCents` (clamped ≥ 0) — computed by the Report
+// display layer, NOT here. `void` tickets are excluded entirely (not fetched,
+// so they never reach `projectReport`). Card tips are never refunded.
+
+describe("projectReport — refund awareness (US1)", () => {
+  it("single-tech FULL refund: commissionable stays the original, refundedCents = full", () => {
+    const m = projectReport(
+      input({
+        tickets: [{ id: "tx1", status: "refunded", closed_at: "2026-05-20T20:00:00.000Z" }],
+        items: [
+          {
+            ticket_id: "tx1",
+            kind: "service",
+            ref_id: "svc1",
+            name_snapshot: "Spa pedicure",
+            unit_price_cents: 6000,
+            qty: 1,
+            assigned_staff_id: "tech1",
+          },
+        ],
+        payments: [
+          {
+            ticket_id: "tx1",
+            method: "cash",
+            status: "succeeded",
+            tip_cents: 0,
+            kind: "payment",
+            amount_cents: 6000,
+          },
+          {
+            ticket_id: "tx1",
+            method: "cash",
+            status: "succeeded",
+            tip_cents: 0,
+            kind: "refund",
+            amount_cents: 6000,
+          },
+        ],
+        staff: [staff()],
+        services: [service()],
+      })
+    );
+    const t = m.technicians[0];
+    // The cash payment kind='payment' is the gross base; the refund kind row's
+    // amount feeds refundedCents, NOT gross.
+    expect(t.grossCents).toBe(6000);
+    expect(t.commissionableCents).toBe(6000); // ORIGINAL — preserved for payroll
+    expect(t.refundedCents).toBe(6000);
+    expect(m.totals.refundedCents).toBe(6000);
+  });
+
+  it("single-tech PARTIAL refund: original commissionable + refundedCents = partial", () => {
+    const m = projectReport(
+      input({
+        tickets: [
+          { id: "tx1", status: "partially_refunded", closed_at: "2026-05-20T20:00:00.000Z" },
+        ],
+        items: [
+          {
+            ticket_id: "tx1",
+            kind: "service",
+            ref_id: "svc1",
+            name_snapshot: "Spa pedicure",
+            unit_price_cents: 6000,
+            qty: 1,
+            assigned_staff_id: "tech1",
+          },
+        ],
+        payments: [
+          {
+            ticket_id: "tx1",
+            method: "cash",
+            status: "succeeded",
+            tip_cents: 0,
+            kind: "payment",
+            amount_cents: 6000,
+          },
+          // The $20 partial refund — only the refund payment's amount_cents matters.
+          {
+            ticket_id: "tx1",
+            method: "cash",
+            status: "succeeded",
+            tip_cents: 0,
+            kind: "refund",
+            amount_cents: 2000,
+          },
+        ],
+        staff: [staff()],
+        services: [service()],
+      })
+    );
+    const t = m.technicians[0];
+    expect(t.commissionableCents).toBe(6000); // original
+    expect(t.refundedCents).toBe(2000);
+    expect(m.totals.refundedCents).toBe(2000);
+  });
+
+  it("multi-tech ticket refund splits proportionally by service subtotal, Σ exact", () => {
+    // One refunded ticket, two techs with subtotals 4000 / 6000 (Σ 10000), a
+    // $1000 refund. Largest-remainder split by subtotal → 400 / 600.
+    const m = projectReport(
+      input({
+        tickets: [
+          { id: "tx1", status: "partially_refunded", closed_at: "2026-05-20T20:00:00.000Z" },
+        ],
+        items: [
+          {
+            ticket_id: "tx1",
+            kind: "service",
+            ref_id: "svc1",
+            name_snapshot: "Mani",
+            unit_price_cents: 4000,
+            qty: 1,
+            assigned_staff_id: "tech1",
+          },
+          {
+            ticket_id: "tx1",
+            kind: "service",
+            ref_id: "svc1",
+            name_snapshot: "Pedi",
+            unit_price_cents: 6000,
+            qty: 1,
+            assigned_staff_id: "tech2",
+          },
+        ],
+        payments: [
+          {
+            ticket_id: "tx1",
+            method: "cash",
+            status: "succeeded",
+            tip_cents: 0,
+            kind: "payment",
+            amount_cents: 10000,
+          },
+          {
+            ticket_id: "tx1",
+            method: "cash",
+            status: "succeeded",
+            tip_cents: 0,
+            kind: "refund",
+            amount_cents: 1000,
+          },
+        ],
+        staff: [staff(), staff({ id: "tech2", display_name: "Nina" })],
+        services: [service({ card_fee_mode: "exempt" })],
+      })
+    );
+    const byId = new Map(m.technicians.map((t) => [t.staffId, t]));
+    expect(byId.get("tech1")!.refundedCents).toBe(400);
+    expect(byId.get("tech2")!.refundedCents).toBe(600);
+    // Σ allocation === ticket refund, exactly.
+    expect(byId.get("tech1")!.refundedCents + byId.get("tech2")!.refundedCents).toBe(1000);
+    expect(m.totals.refundedCents).toBe(1000);
+  });
+
+  it("void tickets never reach projectReport (excluded by the fetch) → no refund", () => {
+    // The query layer filters voids out before projection; a projection over no
+    // tickets is the empty model with refundedCents = 0.
+    const m = projectReport(input({ tickets: [] }));
+    expect(m.totals.refundedCents).toBe(0);
+    expect(m.isEmpty).toBe(true);
+  });
+
+  it("over-refund does not drive commissionable negative — net clamps ≥ 0 at display", () => {
+    // refundedCents may exceed commissionable (a refund larger than the gross).
+    // The aggregate keeps both originals; net = max(0, commissionable − refund).
+    const m = projectReport(
+      input({
+        tickets: [{ id: "tx1", status: "refunded", closed_at: "2026-05-20T20:00:00.000Z" }],
+        items: [
+          {
+            ticket_id: "tx1",
+            kind: "service",
+            ref_id: "svc1",
+            name_snapshot: "Spa pedicure",
+            unit_price_cents: 6000,
+            qty: 1,
+            assigned_staff_id: "tech1",
+          },
+        ],
+        payments: [
+          {
+            ticket_id: "tx1",
+            method: "cash",
+            status: "succeeded",
+            tip_cents: 0,
+            kind: "payment",
+            amount_cents: 6000,
+          },
+          {
+            ticket_id: "tx1",
+            method: "cash",
+            status: "succeeded",
+            tip_cents: 0,
+            kind: "refund",
+            amount_cents: 9000,
+          }, // larger than the $60 commissionable
+        ],
+        staff: [staff()],
+        services: [service()],
+      })
+    );
+    const t = m.technicians[0];
+    expect(t.commissionableCents).toBe(6000);
+    expect(t.refundedCents).toBe(9000);
+    // The display-layer clamp: net never below 0.
+    expect(Math.max(0, t.commissionableCents - t.refundedCents)).toBe(0);
+  });
+
+  it("card tips are unaffected by refunds (tips are never refunded)", () => {
+    const m = projectReport(
+      input({
+        tickets: [
+          { id: "tx1", status: "partially_refunded", closed_at: "2026-05-20T20:00:00.000Z" },
+        ],
+        items: [
+          {
+            ticket_id: "tx1",
+            kind: "service",
+            ref_id: "svc1",
+            name_snapshot: "Spa pedicure",
+            unit_price_cents: 6000,
+            qty: 1,
+            assigned_staff_id: "tech1",
+          },
+        ],
+        payments: [
+          {
+            ticket_id: "tx1",
+            method: "card",
+            status: "succeeded",
+            tip_cents: 1500,
+            kind: "payment",
+            amount_cents: 6000,
+          },
+          {
+            ticket_id: "tx1",
+            method: "card",
+            status: "succeeded",
+            tip_cents: 0,
+            kind: "refund",
+            amount_cents: 2000,
+          },
+        ],
+        staff: [staff()],
+        services: [service({ card_fee_mode: "exempt" })],
+      })
+    );
+    const t = m.technicians[0];
+    // The full card tip survives the refund untouched.
+    expect(t.cardTipsCents).toBe(1500);
+    expect(t.refundedCents).toBe(2000);
+  });
+});
+
 // ─── projectReport — totals.discountsCents (issue #139) ──────────────────────
 
 describe("projectReport — totals.discountsCents", () => {

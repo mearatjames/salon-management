@@ -29,11 +29,13 @@ import { salonNow, semiMonthlyWindowAt } from "@/lib/time/period-windows";
 import {
   projectDailyActivity,
   projectPayrollLedger,
+  type AdjustmentLine,
   type PayrollLedgerModel,
   type PayrollPayoutRow,
   type PayrollStaffRow,
   type TechDetailModel,
 } from "./aggregate";
+import { formatAdjustmentTimestamp } from "./format";
 import { payPeriodRefFromRow, resolvePayPeriod, type PayPeriodRef } from "./window";
 
 type AnySupabase = SupabaseClient<Database>;
@@ -227,6 +229,46 @@ async function assemblePayrollLedger(
   const recordedByNames: Record<string, string> = {};
   for (const s of allStaff) recordedByNames[s.id] = s.display_name;
 
+  // 5b. Manual payout adjustments for this period (feature 053, US2). One query,
+  //     grouped client-side into `AdjustmentLine[]` per staff. The creator name
+  //     resolves from the staff-name map; the timestamp is salon-formatted;
+  //     `edited` reflects a non-null `updated_at`.
+  const adjustmentsByStaff: Record<string, AdjustmentLine[]> = {};
+  if (period.id) {
+    const adjRes = await supabase
+      .from("payout_adjustments")
+      .select(
+        "id, staff_id, amount_cents, reason, created_by_staff_id, created_by_user_id, created_at, updated_at"
+      )
+      .eq("pay_period_id", period.id)
+      .order("created_at", { ascending: true });
+    type AdjustmentRow = {
+      id: string;
+      staff_id: string;
+      amount_cents: number;
+      reason: string;
+      created_by_staff_id: string | null;
+      created_by_user_id: string | null;
+      created_at: string;
+      updated_at: string | null;
+    };
+    const adjustmentRows = ((adjRes as { data: AdjustmentRow[] | null }).data ??
+      []) as readonly AdjustmentRow[];
+    for (const a of adjustmentRows) {
+      const line: AdjustmentLine = {
+        id: a.id,
+        amountCents: a.amount_cents,
+        reason: a.reason,
+        createdByName: a.created_by_staff_id
+          ? (recordedByNames[a.created_by_staff_id] ?? null)
+          : null,
+        createdAtLabel: formatAdjustmentTimestamp(a.created_at, tz),
+        edited: a.updated_at !== null,
+      };
+      (adjustmentsByStaff[a.staff_id] ??= []).push(line);
+    }
+  }
+
   // 6. Pure projection.
   const model = projectPayrollLedger({
     period,
@@ -234,6 +276,7 @@ async function assemblePayrollLedger(
     technicianReports: report.technicians,
     payouts,
     recordedByNames,
+    adjustmentsByStaff,
   });
 
   // The period switcher offers the open period plus the recent closed ones.
@@ -359,6 +402,21 @@ export async function loadPayrollHistory(
   for (const p of payouts) {
     const prev = totalByPeriod.get(p.pay_period_id) ?? 0;
     totalByPeriod.set(p.pay_period_id, prev + p.cash_payment_cents + p.check_portion_cents);
+  }
+
+  // 2b. Manual payout adjustments per closed period (feature 053, US2) — fold
+  //     each period's signed Σ into its paid total so History reflects cash +
+  //     check + adjustments (the net handed out).
+  const adjRes = await supabase
+    .from("payout_adjustments")
+    .select("pay_period_id, amount_cents")
+    .in("pay_period_id", periodIds);
+  type HistoryAdjustmentRow = { pay_period_id: string; amount_cents: number };
+  const adjustments = ((adjRes as { data: HistoryAdjustmentRow[] | null }).data ??
+    []) as readonly HistoryAdjustmentRow[];
+  for (const a of adjustments) {
+    const prev = totalByPeriod.get(a.pay_period_id) ?? 0;
+    totalByPeriod.set(a.pay_period_id, prev + a.amount_cents);
   }
 
   // 3. Resolve the closing staff display names.

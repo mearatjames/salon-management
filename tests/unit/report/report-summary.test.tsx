@@ -19,6 +19,7 @@ function totals(over: Partial<ReportTotals> = {}): ReportTotals {
     totalDeductionsCents: 1_100,
     commissionableCents: 118_900,
     cardTipsCents: 2_200,
+    refundedCents: 0,
     discountsCents: 0,
     ...over,
   };

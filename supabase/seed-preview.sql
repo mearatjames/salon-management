@@ -532,6 +532,104 @@ end
 $$;
 
 -- =====================================================================
+-- Feature 053 (Payroll reversals & adjustments) — two reversed tickets so
+-- the preview project's Payroll page shows a partial refund and a void in
+-- the current open period. Dated 4 salon-local days ago (a prior day, NOT
+-- today) so the today-scoped EOD-cash / dashboard surfaces stay clean. The
+-- preview seed creates no pay_periods (the app derives the open period
+-- lazily), so a recent prior day reliably lands in the current open window.
+-- Both belong to the owner (first active staff), matching the dev seed's
+-- "reversals belong to one tech" convention. Standalone DO block; the rows
+-- reference an existing primary-pool service for a realistic line. Fixed
+-- md5-derived UUIDs keep it idempotent.
+--
+-- Refund representation (per migrations 0026/0027): a refund is a NEW
+-- payments row, kind='refund', POSITIVE amount_cents, tip_cents=0, method
+-- copied from the original, refunds_payment_id -> the original, status
+-- 'succeeded'. Original ticket_items stay untouched. Ticket status:
+-- 'partially_refunded' (Σ refunds < Σ original) / 'void' (fully reversed).
+-- =====================================================================
+do $$
+declare
+  v_tz        text;
+  v_today     date;
+  v_owner     uuid;
+  v_svc_id    uuid;
+  v_svc_name  text;
+  v_when      timestamptz;
+  v_pr_ticket   uuid := md5('preview-seed:053:ticket:partial')::uuid;
+  v_void_ticket uuid := md5('preview-seed:053:ticket:void')::uuid;
+  v_pr_orig     uuid := md5('preview-seed:053:pay:partial:orig')::uuid;
+  v_void_orig   uuid := md5('preview-seed:053:pay:void:orig')::uuid;
+begin
+  select coalesce(value #>> '{}', 'America/Los_Angeles') into v_tz
+    from public.settings where key = 'salon.timezone';
+  if v_tz is null then v_tz := 'America/Los_Angeles'; end if;
+  v_today := (now() at time zone v_tz)::date;
+  v_when  := ((v_today - 4)::timestamp + interval '14 hours') at time zone v_tz;
+
+  -- Owner (first active staff), to match the dev seed's single-tech convention.
+  select id into v_owner
+    from public.staff
+    where active = true and removed_at is null
+    order by case role when 'owner' then 0 when 'manager' then 1 else 2 end, display_name
+    limit 1;
+  if v_owner is null then
+    raise notice 'seed-preview 053: no active staff — nothing seeded.';
+    return;
+  end if;
+
+  -- Pick an existing primary-pool service for a realistic $60 line snapshot.
+  select id, name into v_svc_id, v_svc_name
+    from public.services
+    where active = true and price_cents > 0
+      and category in ('Manicure', 'Pedicure', 'Enhancement')
+    order by name
+    limit 1;
+  if v_svc_id is null then
+    raise notice 'seed-preview 053: no service found — nothing seeded.';
+    return;
+  end if;
+
+  -- ---- PARTIALLY REFUNDED: $60 service, $20 refunded ----
+  insert into public.tickets (id, status, subtotal_cents, tax_cents, total_cents, opened_by_staff_id, closed_by_staff_id, closed_at, created_at, updated_at)
+  values (v_pr_ticket, 'partially_refunded', 6000, 0, 6000, v_owner, v_owner, v_when, v_when - interval '20 minutes', v_when)
+  on conflict (id) do nothing;
+
+  insert into public.ticket_items (id, ticket_id, kind, ref_id, name_snapshot, unit_price_cents, qty, assigned_staff_id, price_unconfirmed, created_at)
+  values (md5('preview-seed:053:item:partial')::uuid, v_pr_ticket, 'service', v_svc_id, v_svc_name, 6000, 1, v_owner, false, v_when)
+  on conflict (id) do nothing;
+
+  insert into public.payments (id, ticket_id, method, kind, amount_cents, tip_cents, status, taken_by_staff_id, processed_at)
+  values (v_pr_orig, v_pr_ticket, 'cash', 'payment', 6000, 0, 'succeeded', v_owner, v_when)
+  on conflict (id) do nothing;
+
+  insert into public.payments (id, ticket_id, method, kind, amount_cents, tip_cents, status, taken_by_staff_id, processed_at, refunds_payment_id)
+  values (md5('preview-seed:053:pay:partial:refund')::uuid, v_pr_ticket, 'cash', 'refund', 2000, 0, 'succeeded', v_owner, v_when + interval '5 minutes', v_pr_orig)
+  on conflict (id) do nothing;
+
+  -- ---- VOID: $60 service, fully reversed (nets $0) ----
+  insert into public.tickets (id, status, subtotal_cents, tax_cents, total_cents, opened_by_staff_id, closed_by_staff_id, closed_at, created_at, updated_at)
+  values (v_void_ticket, 'void', 6000, 0, 6000, v_owner, v_owner, v_when, v_when - interval '20 minutes', v_when)
+  on conflict (id) do nothing;
+
+  insert into public.ticket_items (id, ticket_id, kind, ref_id, name_snapshot, unit_price_cents, qty, assigned_staff_id, price_unconfirmed, created_at)
+  values (md5('preview-seed:053:item:void')::uuid, v_void_ticket, 'service', v_svc_id, v_svc_name, 6000, 1, v_owner, false, v_when)
+  on conflict (id) do nothing;
+
+  insert into public.payments (id, ticket_id, method, kind, amount_cents, tip_cents, status, taken_by_staff_id, processed_at)
+  values (v_void_orig, v_void_ticket, 'cash', 'payment', 6000, 0, 'succeeded', v_owner, v_when)
+  on conflict (id) do nothing;
+
+  insert into public.payments (id, ticket_id, method, kind, amount_cents, tip_cents, status, taken_by_staff_id, processed_at, refunds_payment_id)
+  values (md5('preview-seed:053:pay:void:refund')::uuid, v_void_ticket, 'cash', 'refund', 6000, 0, 'succeeded', v_owner, v_when + interval '5 minutes', v_void_orig)
+  on conflict (id) do nothing;
+
+  raise notice 'seed-preview 053: partial-refund + void tickets ensured for % on %.', v_svc_name, (v_today - 4);
+end
+$$;
+
+-- =====================================================================
 -- CLEANUP — uncomment and run to remove the generated ticket history.
 -- The id ranges (days 0..29, up to 30 tickets/day) are a safe superset;
 -- md5s for rows that were never created simply match nothing.

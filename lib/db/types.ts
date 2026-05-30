@@ -361,6 +361,64 @@ export type Database = {
           },
         ];
       };
+      payout_adjustments: {
+        Row: {
+          amount_cents: number;
+          created_at: string;
+          created_by_staff_id: string;
+          created_by_user_id: string | null;
+          id: string;
+          pay_period_id: string;
+          reason: string;
+          staff_id: string;
+          updated_at: string | null;
+        };
+        Insert: {
+          amount_cents: number;
+          created_at?: string;
+          created_by_staff_id: string;
+          created_by_user_id?: string | null;
+          id?: string;
+          pay_period_id: string;
+          reason: string;
+          staff_id: string;
+          updated_at?: string | null;
+        };
+        Update: {
+          amount_cents?: number;
+          created_at?: string;
+          created_by_staff_id?: string;
+          created_by_user_id?: string | null;
+          id?: string;
+          pay_period_id?: string;
+          reason?: string;
+          staff_id?: string;
+          updated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "payout_adjustments_created_by_staff_id_fkey";
+            columns: ["created_by_staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payout_adjustments_pay_period_id_fkey";
+            columns: ["pay_period_id"];
+            isOneToOne: false;
+            referencedRelation: "pay_periods";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payout_adjustments_staff_id_fkey";
+            columns: ["staff_id"];
+            isOneToOne: false;
+            referencedRelation: "staff";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       payroll_payouts: {
         Row: {
           card_tips_cents: number;
@@ -934,6 +992,21 @@ export type Database = {
         Returns: string;
       };
       next_anon_counter: { Args: never; Returns: number };
+      payroll_add_adjustment: {
+        Args: {
+          p_amount_cents: number;
+          p_device_user_id: string;
+          p_operator: string;
+          p_pay_period_id: string;
+          p_reason: string;
+          p_staff_id: string;
+        };
+        Returns: string;
+      };
+      payroll_assert_adjustable: {
+        Args: { p_pay_period_id: string; p_staff_id: string };
+        Returns: undefined;
+      };
       payroll_close_period: {
         Args: {
           p_device_user_id: string;
@@ -943,6 +1016,24 @@ export type Database = {
           p_period_totals: Json;
         };
         Returns: undefined;
+      };
+      payroll_delete_adjustment: {
+        Args: {
+          p_adjustment_id: string;
+          p_device_user_id: string;
+          p_operator: string;
+        };
+        Returns: string;
+      };
+      payroll_edit_adjustment: {
+        Args: {
+          p_adjustment_id: string;
+          p_amount_cents: number;
+          p_device_user_id: string;
+          p_operator: string;
+          p_reason: string;
+        };
+        Returns: string;
       };
       payroll_record_payout: {
         Args: {

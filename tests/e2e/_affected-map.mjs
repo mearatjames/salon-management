@@ -183,15 +183,28 @@ export const AFFECTED_MAP = {
   "components/lacquer/transactions/**": ["tests/e2e/transactions.spec.ts"],
   "lib/transactions/**": ["tests/e2e/transactions.spec.ts"],
 
-  // Report page (feature 046).
+  // Report page (feature 046). Feature 053 (R1) decoupled revenue from
+  // payroll by widening the shared `lib/report/queries.ts` fetch — payroll
+  // earnings + the reversal specs now flow through the report lib, so a
+  // change there must also exercise the payroll/refund/void specs.
   "app/(studio)/report/**": ["tests/e2e/report.spec.ts"],
   "components/lacquer/report/**": ["tests/e2e/report.spec.ts"],
-  "lib/report/**": ["tests/e2e/report.spec.ts"],
+  "lib/report/**": [
+    "tests/e2e/report.spec.ts",
+    "tests/e2e/payroll.spec.ts",
+    "tests/e2e/refund-ticket.spec.ts",
+    "tests/e2e/void-sale.spec.ts",
+  ],
 
   // Payroll page (feature 047).
   "app/(studio)/payroll/**": ["tests/e2e/payroll.spec.ts"],
   "lib/payroll/**": ["tests/e2e/payroll.spec.ts"],
   "components/lacquer/payroll/**": ["tests/e2e/payroll.spec.ts"],
+
+  // Feature 053 — the payout-adjustments table + SECURITY DEFINER RPCs
+  // (migration 0028) are driven only over Supabase from the adjustment
+  // Server Actions; no spec imports the SQL, so map it explicitly.
+  "supabase/migrations/0028_payout_adjustments.sql": ["tests/e2e/payroll.spec.ts"],
 
   // Dashboard.
   "app/(studio)/dashboard/**": ["tests/e2e/dashboard.spec.ts"],

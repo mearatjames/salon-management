@@ -50,6 +50,21 @@ export type PayrollPayoutRow = {
   readonly tip_split_pct: number;
 };
 
+/**
+ * A single manual payout adjustment line (feature 053, US2). A signed
+ * cents amount the owner/manager adds to a tech's payout for a reason —
+ * positive adds to net payout, negative deducts. Pre-projected by the query
+ * layer (the `createdByName` resolved, the `createdAtLabel` salon-formatted).
+ */
+export type AdjustmentLine = {
+  readonly id: string;
+  readonly amountCents: number; // signed
+  readonly reason: string;
+  readonly createdByName: string | null;
+  readonly createdAtLabel: string; // pre-formatted salon-local
+  readonly edited: boolean; // updated_at non-null
+};
+
 export type ProjectPayrollLedgerInput = {
   readonly period: PayPeriodRef;
   /** Active staff rows — one ledger row is projected per staff member. */
@@ -60,6 +75,12 @@ export type ProjectPayrollLedgerInput = {
   readonly payouts: readonly PayrollPayoutRow[];
   /** `staff.id` → display name, for resolving `recordedByName`. */
   readonly recordedByNames: Readonly<Record<string, string>>;
+  /**
+   * `staff.id` → that tech's manual adjustment lines for the period. Folded
+   * into each row's `adjustments` / `adjustmentsCents` / `netPayoutCents`.
+   * Absent / empty ⇒ no adjustments for that tech (feature 053, US2).
+   */
+  readonly adjustmentsByStaff?: Readonly<Record<string, readonly AdjustmentLine[]>>;
 };
 
 // ─── Read-model types (serialisable, projected server-side) ─────────────────
@@ -78,6 +99,12 @@ export type PayrollLedgerRow = {
   readonly tipsAfterSplitCents: number; // cardTips × tip %
   readonly checkPortionCents: number;
   readonly cashPaymentCents: number; // max(0, incomeAfterSplit + tipsAfterSplit − check)
+  /** Manual adjustment lines for this tech this period — `[]` when none. */
+  readonly adjustments: readonly AdjustmentLine[];
+  /** Signed Σ of `adjustments` (feature 053, US2). */
+  readonly adjustmentsCents: number;
+  /** `cashPaymentCents + adjustmentsCents` — may be negative. */
+  readonly netPayoutCents: number;
   readonly state: "pending" | "paid" | "no_work" | "unpaid_closed";
   readonly payout: {
     readonly method: "cash" | "zelle" | "check" | null;
@@ -96,6 +123,10 @@ export type PayrollLedgerTotals = {
   readonly tipsAfterSplitCents: number;
   readonly checkPortionCents: number;
   readonly cashPaymentCents: number;
+  /** Σ over rows of the signed adjustment sums (feature 053, US2). */
+  readonly adjustmentsCents: number;
+  /** Σ over rows of `netPayoutCents`. */
+  readonly netPayoutCents: number;
 };
 
 export type PayrollLedgerModel = {
@@ -179,6 +210,8 @@ const ZERO_TOTALS: PayrollLedgerTotals = {
   tipsAfterSplitCents: 0,
   checkPortionCents: 0,
   cashPaymentCents: 0,
+  adjustmentsCents: 0,
+  netPayoutCents: 0,
 };
 
 /**
@@ -197,9 +230,23 @@ const ZERO_TOTALS: PayrollLedgerTotals = {
  */
 export function projectPayrollLedger(input: ProjectPayrollLedgerInput): PayrollLedgerModel {
   const { period, staff, technicianReports, payouts, recordedByNames } = input;
+  const adjustmentsByStaff = input.adjustmentsByStaff ?? {};
 
   const reportByStaff = new Map(technicianReports.map((t) => [t.staffId, t]));
   const payoutByStaff = new Map(payouts.map((p) => [p.staff_id, p]));
+
+  // Per-tech adjustment fold-in (feature 053, US2). The signed sum and the
+  // resulting net payout are derived the same way for paid/closed rows (locked,
+  // so the live sum equals the sum at payout/close — no drift) and live rows.
+  const foldAdjustments = (staffId: string, cashPaymentCents: number) => {
+    const adjustments = adjustmentsByStaff[staffId] ?? [];
+    const adjustmentsCents = adjustments.reduce((a, x) => a + x.amountCents, 0);
+    return {
+      adjustments,
+      adjustmentsCents,
+      netPayoutCents: cashPaymentCents + adjustmentsCents,
+    };
+  };
 
   const rows: PayrollLedgerRow[] = staff
     .map((s): PayrollLedgerRow => {
@@ -222,6 +269,7 @@ export function projectPayrollLedger(input: ProjectPayrollLedgerInput): PayrollL
           tipsAfterSplitCents: payout.tips_after_split_cents,
           checkPortionCents: payout.check_portion_cents,
           cashPaymentCents: payout.cash_payment_cents,
+          ...foldAdjustments(s.id, payout.cash_payment_cents),
           state: payout.paid ? "paid" : "unpaid_closed",
           payout: {
             method: payout.method,
@@ -234,6 +282,15 @@ export function projectPayrollLedger(input: ProjectPayrollLedgerInput): PayrollL
       }
 
       // No payout row — compute live from the current rates.
+      //
+      // Feature 053 (R1): refund preservation needs NO math change here. The
+      // Report aggregate carries the ORIGINAL (pre-refund) `commissionableCents`
+      // — a refunded/partially-refunded ticket's tech keeps full commission
+      // because the widened `loadReportPage` fetch (`status in
+      // [paid, refunded, partially_refunded]`) flows that original through. The
+      // refund is a separate axis the Report DISPLAY subtracts (net revenue),
+      // never payroll. Voids are excluded from the fetch entirely, so a
+      // void-only window yields no `TechnicianReport` → `no_work` / $0 below.
       const commissionableCents = report?.commissionableCents ?? 0;
       const cardTipsCents = report?.cardTipsCents ?? 0;
       const rated = applyRates({
@@ -260,6 +317,7 @@ export function projectPayrollLedger(input: ProjectPayrollLedgerInput): PayrollL
         tipsAfterSplitCents: rated.tipsAfterSplitCents,
         checkPortionCents: s.check_portion_cents,
         cashPaymentCents: rated.cashPaymentCents,
+        ...foldAdjustments(s.id, rated.cashPaymentCents),
         state: hasEarnings ? "pending" : "no_work",
         payout: null,
       };
@@ -281,14 +339,18 @@ export function projectPayrollLedger(input: ProjectPayrollLedgerInput): PayrollL
           tipsAfterSplitCents: rows.reduce((a, r) => a + r.tipsAfterSplitCents, 0),
           checkPortionCents: rows.reduce((a, r) => a + r.checkPortionCents, 0),
           cashPaymentCents: rows.reduce((a, r) => a + r.cashPaymentCents, 0),
+          adjustmentsCents: rows.reduce((a, r) => a + r.adjustmentsCents, 0),
+          netPayoutCents: rows.reduce((a, r) => a + r.netPayoutCents, 0),
         };
 
   const eligibleRows = rows.filter((r) => r.state !== "no_work");
   const eligibleCount = eligibleRows.length;
   const paidCount = rows.filter((r) => r.state === "paid").length;
+  // KPI "cash to pay" — net payout (cash + signed adjustments) of the non-paid
+  // eligible rows (feature 053, US2). May be negative on a heavy deduction.
   const cashRemainingCents = eligibleRows
     .filter((r) => r.state !== "paid")
-    .reduce((a, r) => a + r.cashPaymentCents, 0);
+    .reduce((a, r) => a + r.netPayoutCents, 0);
 
   return {
     period,

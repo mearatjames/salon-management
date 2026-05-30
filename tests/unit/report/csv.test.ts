@@ -28,6 +28,7 @@ const ADA: TechnicianReport = {
   totalDeductionsCents: 800,
   commissionableCents: 12_200,
   cardTipsCents: 1_000,
+  refundedCents: 0,
   transactions: [],
 };
 
@@ -44,6 +45,7 @@ const BEA: TechnicianReport = {
   totalDeductionsCents: 0,
   commissionableCents: 8_000,
   cardTipsCents: 1_200,
+  refundedCents: 0,
   transactions: [],
 };
 
@@ -57,6 +59,7 @@ const TOTALS: ReportTotals = {
   totalDeductionsCents: 800,
   commissionableCents: 20_200,
   cardTipsCents: 2_200,
+  refundedCents: 0,
   discountsCents: 0,
 };
 
@@ -198,6 +201,7 @@ describe("buildReportCsv — formatting invariants", () => {
         totalDeductionsCents: 0,
         commissionableCents: 0,
         cardTipsCents: 0,
+        refundedCents: 0,
         discountsCents: 0,
       },
       isEmpty: true,

@@ -82,3 +82,23 @@ export function formatClosedOn(closedAt: string, tz: string): string {
     timeZone: tz,
   }).format(instant);
 }
+
+/**
+ * A salon-local date + time stamp for a manual adjustment line — e.g.
+ * `"May 20, 2:14 PM"` (feature 053, US2). The input is a full ISO timestamp
+ * (`payout_adjustments.created_at`), read in the salon timezone so the day +
+ * time match the operator's wall clock. An empty / unparseable value → "".
+ */
+export function formatAdjustmentTimestamp(createdAt: string, tz: string): string {
+  if (!createdAt) return "";
+  const instant = new Date(createdAt);
+  if (Number.isNaN(instant.getTime())) return "";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: tz,
+  }).format(instant);
+}

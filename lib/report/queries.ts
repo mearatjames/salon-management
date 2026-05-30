@@ -43,6 +43,7 @@ const EMPTY_READ_MODEL: ReportReadModel = {
     totalDeductionsCents: 0,
     commissionableCents: 0,
     cardTipsCents: 0,
+    refundedCents: 0,
     discountsCents: 0,
   },
   isEmpty: true,
@@ -53,9 +54,11 @@ const EMPTY_READ_MODEL: ReportReadModel = {
  *
  * Orchestrates, in order:
  *  1. resolve the salon timezone;
- *  2. query `status='paid'` tickets with `closed_at ∈ [start, end)` — an empty
+ *  2. query `status ∈ {paid, refunded, partially_refunded}` tickets with
+ *     `closed_at ∈ [start, end)` (voids excluded — feature 053) — an empty
  *     ticket set returns the empty read model with no child queries;
- *  3. fetch `ticket_items` + succeeded `payments` for those tickets concurrently;
+ *  3. fetch `ticket_items` + succeeded `payments` (incl. refund rows) for those
+ *     tickets concurrently;
  *  4. resolve `services` for the distinct non-null `ref_id`s;
  *  5. resolve `staff` for the distinct service-item `assigned_staff_id`s — by
  *     id, with no `active` filter;
@@ -67,10 +70,14 @@ export async function loadReportPage(
 ): Promise<{ report: ReportReadModel; tz: string }> {
   const tz = await getSalonTimezone(supabase);
 
+  // Feature 053: widen the ticket fetch to carry reversed sales — a refunded
+  // or partially-refunded ticket still earned the tech commission (the Report
+  // display subtracts the refund for net revenue; payroll keeps the original).
+  // `void` / `discarded` stay excluded entirely — a voided sale nets $0.
   const ticketsRes = await supabase
     .from("tickets")
     .select("id, status, closed_at")
-    .eq("status", "paid")
+    .in("status", ["paid", "refunded", "partially_refunded"])
     .gte("closed_at", window.start.toISOString())
     .lt("closed_at", window.end.toISOString())
     .order("closed_at", { ascending: false });
@@ -90,8 +97,12 @@ export async function loadReportPage(
       .select("ticket_id, kind, ref_id, name_snapshot, unit_price_cents, qty, assigned_staff_id")
       .in("ticket_id", ticketIds),
     supabase
+      // Feature 053: select `kind, amount_cents` and keep refund rows — they
+      // are also `succeeded` once finalized. `projectReport` splits by `kind`
+      // (only `kind='payment'` feeds gross/tip; `kind='refund'` feeds the
+      // refund total).
       .from("payments")
-      .select("ticket_id, method, status, tip_cents")
+      .select("ticket_id, method, status, tip_cents, kind, amount_cents")
       .in("ticket_id", ticketIds)
       .eq("status", "succeeded"),
   ]);
