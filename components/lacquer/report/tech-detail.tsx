@@ -148,7 +148,7 @@ function TransactionRows({
                 <div className="dr-expand-sec">
                   <div className="dr-expand-ttl">Card tip received</div>
                   <div className="dr-expand-line" data-slot="breakdown-tip">
-                    <span className="dr-expand-name">{tx.tipPct ?? 0}% — paid out to tech</span>
+                    <span className="dr-expand-name">{tx.tipPct ?? 0}%</span>
                     <span className="dr-htotal-v tip num" style={{ fontSize: "var(--text-xs)" }}>
                       {formatCurrency(tx.cardTipCents / 100)}
                     </span>

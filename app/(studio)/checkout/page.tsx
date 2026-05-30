@@ -64,7 +64,7 @@ export default async function CheckoutEntryPage() {
     .order("name", { ascending: true });
 
   // US4 (T040): fetch the three salon-info settings keys in parallel with
-  // the rest of the page data so the BillSheet's masthead can render
+  // the rest of the page data so the ReceiptSheet's masthead can render
   // without a second round trip. Missing keys fall back to safe strings
   // per the spec's "Salon settings missing" edge case.
   const salonNamePromise = getSetting<string>("salon.name");

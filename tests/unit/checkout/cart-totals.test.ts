@@ -189,7 +189,7 @@ describe("computeTotals", () => {
     expect(result.chargeEligible).toBe(true);
     // The scoped percent's per-line amount reflects the targeted $60
     // subtotal, NOT the full $100 cart. Display surfaces (cart row,
-    // bill snapshot, draft resolver) read this map directly.
+    // receipt snapshot, draft resolver) read this map directly.
     expect(result.lineAmountsById.get("disc-1")).toBe(-3000);
   });
 

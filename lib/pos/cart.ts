@@ -78,7 +78,7 @@ export type CartItem = {
 };
 
 export type CartTotals = {
-  /** Pre-discount sum of confirmed service lines. Surfaced so the BillSheet
+  /** Pre-discount sum of confirmed service lines. Surfaced so the ReceiptSheet
    *  can use it as the "Subtotal" line AND as the gratuity baseline (per the
    *  spec's "Suggested-gratuity baseline on the bill" edge case — tip on the
    *  gross service amount, restaurant convention). */
@@ -96,7 +96,7 @@ export type CartTotals = {
    * negative contribution (FR-009 — scoped against the targeted subtotal,
    * all-services against the post-scoped service subtotal).
    *
-   * Surfaced so display surfaces (cart row, bill snapshot, draft resolver)
+   * Surfaced so display surfaces (cart row, receipt snapshot, draft resolver)
    * don't duplicate the kernel's math. Without this map, three call sites
    * re-derived FR-009 stacking and the duplication produced two visible
    * defects on PR #137 — fixed in 992fbe9 and feb846a, then deduped here.

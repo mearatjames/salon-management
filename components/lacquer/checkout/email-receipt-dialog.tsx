@@ -1,8 +1,8 @@
 "use client";
 
-// EmailBillDialog — T038 (US4). Small modal that captures an email address
-// for the `emailBillStub` Server Action (T036). Matches the family chrome
-// of PriceSheet / DiscountSheet / BillSheet (tx-sheet-backdrop + tx-sheet),
+// EmailReceiptDialog — T038 (US4). Small modal that captures an email address
+// for the `emailReceiptStub` Server Action (T036). Matches the family chrome
+// of PriceSheet / DiscountSheet / ReceiptSheet (tx-sheet-backdrop + tx-sheet),
 // keeping the visual language consistent.
 //
 // Validation:
@@ -18,7 +18,7 @@
 //     otherwise a generic message).
 //
 // The dialog does NOT know about the Server Action directly — the parent
-// (`checkout-screen.client.tsx`) wraps `emailBillStub` and passes the
+// (`checkout-screen.client.tsx`) wraps `emailReceiptStub` and passes the
 // async result back via `onSubmit`.
 
 import { useState } from "react";
@@ -30,12 +30,12 @@ import { X } from "lucide-react";
 // "the two validations match" (per T035).
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export type EmailBillDialogProps = {
+export type EmailReceiptDialogProps = {
   onSubmit: (address: string) => Promise<void>;
   onCancel: () => void;
 };
 
-export function EmailBillDialog({ onSubmit, onCancel }: EmailBillDialogProps) {
+export function EmailReceiptDialog({ onSubmit, onCancel }: EmailReceiptDialogProps) {
   const [address, setAddress] = useState<string>("");
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [sending, setSending] = useState<boolean>(false);
@@ -66,21 +66,21 @@ export function EmailBillDialog({ onSubmit, onCancel }: EmailBillDialogProps) {
   return (
     <div
       className="tx-sheet-backdrop"
-      data-slot="email-bill-dialog"
+      data-slot="email-receipt-dialog"
       onClick={onCancel}
       role="dialog"
       aria-modal="true"
-      aria-label="Email bill"
+      aria-label="Email receipt"
     >
       <div className="tx-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="tx-sheet-h">
-          <div style={{ fontWeight: 600, fontSize: "var(--text-base)" }}>Email bill</div>
+          <div style={{ fontWeight: 600, fontSize: "var(--text-base)" }}>Email receipt</div>
           <button
             type="button"
             className="tx-stepper-btn"
             onClick={onCancel}
             aria-label="Close email dialog"
-            data-slot="email-bill-close"
+            data-slot="email-receipt-close"
           >
             <X size={16} strokeWidth={1.5} aria-hidden="true" />
           </button>
@@ -89,7 +89,7 @@ export function EmailBillDialog({ onSubmit, onCancel }: EmailBillDialogProps) {
         <div className="tx-sheet-body">
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
             <label
-              htmlFor="email-bill-input"
+              htmlFor="email-receipt-input"
               style={{
                 fontSize: "var(--text-xs)",
                 textTransform: "uppercase",
@@ -101,8 +101,8 @@ export function EmailBillDialog({ onSubmit, onCancel }: EmailBillDialogProps) {
               Customer email
             </label>
             <input
-              id="email-bill-input"
-              data-slot="email-bill-input"
+              id="email-receipt-input"
+              data-slot="email-receipt-input"
               type="email"
               autoComplete="email"
               inputMode="email"
@@ -132,7 +132,7 @@ export function EmailBillDialog({ onSubmit, onCancel }: EmailBillDialogProps) {
             {inlineError ? (
               <div
                 role="alert"
-                data-slot="email-bill-error"
+                data-slot="email-receipt-error"
                 style={{
                   fontSize: "var(--text-xs)",
                   color: "var(--destructive)",
@@ -151,7 +151,7 @@ export function EmailBillDialog({ onSubmit, onCancel }: EmailBillDialogProps) {
             type="button"
             className="tx-btn secondary"
             onClick={onCancel}
-            data-slot="email-bill-cancel"
+            data-slot="email-receipt-cancel"
             disabled={sending}
           >
             Cancel
@@ -160,7 +160,7 @@ export function EmailBillDialog({ onSubmit, onCancel }: EmailBillDialogProps) {
             type="button"
             className="tx-btn"
             onClick={() => void handleSend()}
-            data-slot="email-bill-send"
+            data-slot="email-receipt-send"
             disabled={sending}
           >
             {sending ? "Sending…" : "Send"}

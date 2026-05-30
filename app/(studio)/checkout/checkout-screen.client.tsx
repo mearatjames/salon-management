@@ -37,7 +37,7 @@ import {
   composeDraftLeg,
   discardTicket,
   editDiscountLine,
-  emailBillStub,
+  emailReceiptStub,
   lookupGiftCard,
   redeemGiftCardWholeTicket,
   removeDiscountLine,
@@ -84,13 +84,13 @@ import { SplitCartFooter } from "@/components/lacquer/checkout/split-cart-footer
 import type { PaymentLegRowView } from "@/components/lacquer/checkout/payment-leg-row";
 import { subscribePaymentChanges } from "@/lib/realtime/payments";
 
-import { BillSheet, type BillSnapshot } from "@/components/lacquer/checkout/bill-sheet";
+import { ReceiptSheet, type ReceiptSnapshot } from "@/components/lacquer/checkout/receipt-sheet";
 import {
   CartRowWithTech,
   type CartLineView,
 } from "@/components/lacquer/checkout/cart-row-with-tech";
 import { DiscountSheet } from "@/components/lacquer/checkout/discount-sheet";
-import { EmailBillDialog } from "@/components/lacquer/checkout/email-bill-dialog";
+import { EmailReceiptDialog } from "@/components/lacquer/checkout/email-receipt-dialog";
 import { PaymentTiles, type PaymentMethod } from "@/components/lacquer/checkout/payment-tiles";
 import { PriceSheet } from "@/components/lacquer/checkout/price-sheet";
 import { ServiceTiles, type ServiceTileService } from "@/components/lacquer/checkout/service-tiles";
@@ -123,7 +123,7 @@ export type CheckoutScreenProps = {
   initialItems: CartLineView[];
   staff: Staff[];
   services: ServiceTileService[];
-  /** Salon-info settings for the BillSheet masthead (US4 / T040). */
+  /** Salon-info settings for the ReceiptSheet masthead (US4 / T040). */
   salonInfo: { name: string; address: string; phone: string };
   /** US2: presence of singleton `square_oauth` row. */
   squareConnected?: boolean;
@@ -280,12 +280,12 @@ export function CheckoutScreen({
     note: string | null;
     targetLineIds: string[] | null;
   } | null>(null);
-  // 013-cart-polish US4: BillSheet shows a frozen snapshot of the cart at
+  // 013-cart-polish US4: ReceiptSheet shows a frozen snapshot of the cart at
   // open time. The snapshot is captured by deep-cloning the live lines and
   // freezing in the totals so subsequent cart edits don't mutate what the
-  // operator is looking at on paper. EmailBillDialog is a separate modal
-  // mounted on top of the BillSheet.
-  const [billSnapshot, setBillSnapshot] = useState<BillSnapshot | null>(null);
+  // operator is looking at on paper. EmailReceiptDialog is a separate modal
+  // mounted on top of the ReceiptSheet.
+  const [receiptSnapshot, setReceiptSnapshot] = useState<ReceiptSnapshot | null>(null);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   // US2 (015) — card payment flow state.
   // stage: 'cart' = default, 'waiting' = terminal prompt in flight, 'card-failed' = inline retry UI.
@@ -397,7 +397,7 @@ export function CheckoutScreen({
   const takeCashEnabled = !inflight && paymentMethod === "cash" && totals.chargeEligible;
 
   // Issue #98: one method-aware charge button sits in the cart footer next
-  // to "Bill" — cash (or no method) → "Take cash", card → "Send to Square".
+  // to "Receipt" — cash (or no method) → "Take cash", card → "Send to Square".
   // The card CTA is no longer injected inside `PaymentTiles`.
   const chargeMethodIsCard = paymentMethod === "card";
   const hasUnpricedLines = lines.some((l) => l.priceUnconfirmed);
@@ -1227,13 +1227,13 @@ export function CheckoutScreen({
     returnToPickerFromWaiting();
   }
 
-  // US4 (T041): capture a frozen snapshot of the cart at the moment Bill
+  // US4 (T041): capture a frozen snapshot of the cart at the moment Receipt
   // is tapped. Deep-clone the lines so subsequent cart mutations don't
   // bleed into what the operator is looking at on paper (research.md § R14).
   // Percent-discount rows' unit_price_cents is recomputed against the
-  // current service subtotal so the snapshot matches what the bill totals
-  // display. capturedAt drives the bill's decorative Check # field.
-  function handleOpenBill() {
+  // current service subtotal so the snapshot matches what the receipt totals
+  // display. capturedAt drives the receipt's decorative Check # field.
+  function handleOpenReceipt() {
     // Per-row snapshot amounts come from `totals.lineAmountsById` — the
     // kernel did the FR-009 stacking math once already (see
     // `lib/pos/cart.ts`). Reading from the map keeps the snapshot's
@@ -1248,7 +1248,7 @@ export function CheckoutScreen({
       discountPct: l.discountPct,
     }));
 
-    setBillSnapshot({
+    setReceiptSnapshot({
       lines: structuredClone(snapshotLines),
       serviceSubtotalCents: totals.serviceSubtotalCents,
       discountTotalCents: totals.discountTotalCents,
@@ -1257,19 +1257,19 @@ export function CheckoutScreen({
     });
   }
 
-  // US4 (T041): wrap the emailBillStub action with the toast + cart-banner
+  // US4 (T041): wrap the emailReceiptStub action with the toast + cart-banner
   // surface. The dialog itself owns the in-flight + inline-error state;
   // we just dispatch the action and let the result propagate.
-  async function handleEmailBill(address: string): Promise<void> {
-    if (!billSnapshot) {
-      throw new Error("billSnapshot is null — should not happen");
+  async function handleEmailReceipt(address: string): Promise<void> {
+    if (!receiptSnapshot) {
+      throw new Error("receiptSnapshot is null — should not happen");
     }
-    await emailBillStub({
+    await emailReceiptStub({
       ticketId,
       address,
-      snapshot: billSnapshot,
+      snapshot: receiptSnapshot,
     });
-    toast.success(`Bill emailed to ${address}`);
+    toast.success(`Receipt emailed to ${address}`);
   }
 
   // ----------------------------------------------------------------------
@@ -1832,9 +1832,9 @@ export function CheckoutScreen({
     ? (lines.find((l) => l.id === priceSheet.lineId) ?? null)
     : null;
 
-  // Tech name for the bill's "Tech" meta row — the first service line's
+  // Tech name for the receipt's "Tech" meta row — the first service line's
   // assigned staff. Discount rows carry no tech, so look only at service rows.
-  const billTechName = ((): string | null => {
+  const receiptTechName = ((): string | null => {
     const firstService = lines.find((l) => l.kind === "service");
     if (!firstService || !firstService.assignedStaffId) return null;
     const s = staffById.get(firstService.assignedStaffId);
@@ -2207,11 +2207,11 @@ export function CheckoutScreen({
                 }}
                 onPickSplit={handlePickSplit}
               />
-              {/* US4 (T041): Bill + Charge sit side-by-side in the cart footer.
-                  Bill is the token-styled secondary button per the prototype;
-                  clicking it captures a frozen snapshot and opens the BillSheet
-                  overlay. The Bill button is enabled even when Charge isn't —
-                  the operator can print/email a bill at any point before payment. */}
+              {/* US4 (T041): Receipt + Charge sit side-by-side in the cart footer.
+                  Receipt is the token-styled secondary button per the prototype;
+                  clicking it captures a frozen snapshot and opens the ReceiptSheet
+                  overlay. The Receipt button is enabled even when Charge isn't —
+                  the operator can print/email a receipt at any point before payment. */}
               <div
                 style={{
                   display: "flex",
@@ -2221,15 +2221,15 @@ export function CheckoutScreen({
               >
                 <button
                   type="button"
-                  onClick={handleOpenBill}
-                  data-slot="bill-button"
+                  onClick={handleOpenReceipt}
+                  data-slot="receipt-button"
                   className="tx-btn secondary"
                   disabled={inflight || lines.length === 0}
                   style={{
                     height: "var(--space-10)",
                   }}
                 >
-                  <Printer size={16} strokeWidth={1.5} aria-hidden="true" /> Bill
+                  <Printer size={16} strokeWidth={1.5} aria-hidden="true" /> Receipt
                 </button>
                 <button
                   type="button"
@@ -2347,24 +2347,27 @@ export function CheckoutScreen({
         />
       ) : null}
 
-      {/* US4 (T041): Bill preview sheet. The snapshot is a frozen JS object —
+      {/* US4 (T041): Receipt preview sheet. The snapshot is a frozen JS object —
           cart edits underneath the sheet do not mutate it. Closing + re-
-          opening calls `handleOpenBill` again, which captures a fresh
+          opening calls `handleOpenReceipt` again, which captures a fresh
           snapshot from the live cart state. */}
-      {billSnapshot ? (
-        <BillSheet
-          snapshot={billSnapshot}
+      {receiptSnapshot ? (
+        <ReceiptSheet
+          snapshot={receiptSnapshot}
           salonInfo={salonInfo}
-          techName={billTechName}
+          techName={receiptTechName}
           guestLabel="Walk-in client"
-          onClose={() => setBillSnapshot(null)}
+          onClose={() => setReceiptSnapshot(null)}
           onPrint={() => window.print()}
           onEmail={() => setEmailDialogOpen(true)}
         />
       ) : null}
 
       {emailDialogOpen ? (
-        <EmailBillDialog onSubmit={handleEmailBill} onCancel={() => setEmailDialogOpen(false)} />
+        <EmailReceiptDialog
+          onSubmit={handleEmailReceipt}
+          onCancel={() => setEmailDialogOpen(false)}
+        />
       ) : null}
 
       {/* Feature 018 — Gift card flow sheets. */}

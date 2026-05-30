@@ -11,7 +11,7 @@
 // devicesAvailable >= 1`. When disabled, the tooltip explains why
 // (connect Square or pair a device). The method-aware charge button
 // (cash → "Take cash", card → "Send to Square") lives in the cart
-// footer next to "Bill" — see `checkout-screen.client.tsx` (issue #98).
+// footer next to "Receipt" — see `checkout-screen.client.tsx` (issue #98).
 
 import { Banknote, CreditCard, Gift, SplitSquareHorizontal } from "lucide-react";
 
