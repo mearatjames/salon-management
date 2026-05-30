@@ -117,8 +117,8 @@ function squareCancelTerminalStateFromError(err: unknown): "COMPLETED" | "CANCEL
 }
 
 // ----------------------------------------------------------------------
-// T035 (US4): shared email regex constant used by `emailBillStub` for
-// server-side address validation. The client (`email-bill-dialog.tsx`)
+// T035 (US4): shared email regex constant used by `emailReceiptStub` for
+// server-side address validation. The client (`email-receipt-dialog.tsx`)
 // duplicates this literal so the two validations stay textually identical
 // — rather than exporting from this `"use server"` file (which forbids
 // non-async exports) we keep the regex tiny and tolerate the duplication.
@@ -1590,16 +1590,16 @@ export async function removeDiscountLine(
 }
 
 // ----------------------------------------------------------------------
-// 10. emailBillStub — US4 / T036. Contract: `specs/013-cart-polish/contracts/
+// 10. emailReceiptStub — US4 / T036. Contract: `specs/013-cart-polish/contracts/
 //     server-actions.md § 4`.
 //
 //     Stub action — DOES NOT dispatch real mail. The audit row is the only
 //     persisted evidence the operator pressed Email. Validates the address
 //     server-side (defense in depth — the client also runs the same regex
-//     in `email-bill-dialog.tsx`). On invalid: throws
+//     in `email-receipt-dialog.tsx`). On invalid: throws
 //     EmailAddressInvalidError, no audit row, no external call. On valid:
-//     emits the `bill.emailed` audit row whose `payload.line_snapshot`
-//     forwards the full client-captured bill snapshot verbatim (large by
+//     emits the `receipt.emailed` audit row whose `payload.line_snapshot`
+//     forwards the full client-captured receipt snapshot verbatim (large by
 //     design — the audit is the only evidence of what the operator was
 //     looking at).
 //
@@ -1609,7 +1609,7 @@ export async function removeDiscountLine(
 //     whatever the client sent, the test asserts forwarding.
 // ----------------------------------------------------------------------
 
-export type EmailBillStubSnapshotLine = {
+export type EmailReceiptStubSnapshotLine = {
   id: string;
   kind: "service" | "discount";
   name: string;
@@ -1619,25 +1619,25 @@ export type EmailBillStubSnapshotLine = {
   discountPct: number | null;
 };
 
-export type EmailBillStubSnapshot = {
-  lines: EmailBillStubSnapshotLine[];
+export type EmailReceiptStubSnapshot = {
+  lines: EmailReceiptStubSnapshotLine[];
   serviceSubtotalCents: number;
   discountTotalCents: number;
   totalCents: number;
   capturedAt: string;
 };
 
-export type EmailBillStubInput = {
+export type EmailReceiptStubInput = {
   ticketId: string;
   address: string;
-  snapshot: EmailBillStubSnapshot;
+  snapshot: EmailReceiptStubSnapshot;
 };
 
-export async function emailBillStub(input: EmailBillStubInput): Promise<{ ok: true }> {
-  assertUuid(input.ticketId, "emailBillStub.ticketId");
+export async function emailReceiptStub(input: EmailReceiptStubInput): Promise<{ ok: true }> {
+  assertUuid(input.ticketId, "emailReceiptStub.ticketId");
 
   // Address validation — empty string fails the regex; the regex is the
-  // single source of truth (the client mirrors it in email-bill-dialog.tsx).
+  // single source of truth (the client mirrors it in email-receipt-dialog.tsx).
   if (typeof input.address !== "string" || !EMAIL.test(input.address)) {
     throw new EmailAddressInvalidError(
       `email address is invalid (got ${JSON.stringify(input.address)})`
@@ -1652,7 +1652,7 @@ export async function emailBillStub(input: EmailBillStubInput): Promise<{ ok: tr
   // table. The action does NOT verify the ticket exists — the audit row
   // stands as evidence regardless.
   await recordAudit(
-    "bill.emailed",
+    "receipt.emailed",
     viewer.deviceUserId,
     input.ticketId,
     {

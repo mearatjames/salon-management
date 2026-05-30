@@ -1,7 +1,7 @@
 // Server-only reader for the `public.settings` key/value table.
 //
 // Used by:
-//   - the bill preview's masthead (salon.name / salon.address / salon.phone)
+//   - the receipt preview's masthead (salon.name / salon.address / salon.phone)
 //   - the addDiscountLine Server Action (discount.manager_threshold_cents
 //     read — v1 ignores the value per FR-018; phase-8 plugs in the
 //     manager-PIN gate at that exact point)
