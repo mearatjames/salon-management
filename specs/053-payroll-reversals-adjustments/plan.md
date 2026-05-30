@@ -110,7 +110,7 @@ specs/053-payroll-reversals-adjustments/
 
 ```text
 supabase/migrations/
-└── 0028_payout_adjustments.sql        # NEW — table, RLS, 3 RPCs, assert helper
+└── 0029_payout_adjustments.sql        # NEW — table, RLS, 3 RPCs, assert helper
 
 lib/
 ├── report/

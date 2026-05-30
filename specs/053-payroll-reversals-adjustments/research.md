@@ -95,7 +95,7 @@ commission.
 **Decision.** A new append-but-mutable-while-open table, written only through
 SECURITY DEFINER RPCs, mirroring the `payroll_payouts` access model
 (select-only RLS for `authenticated`; all writes via service-role RPC). Migration
-**`0028_payout_adjustments.sql`** (next free number after `0027`).
+**`0029_payout_adjustments.sql`** (next free number after `0027`).
 
 Table `public.payout_adjustments`:
 
@@ -211,7 +211,7 @@ only for techs with work) or the period is read-only / the tech is paid.
 
 ## R6 — Test & migration footprint
 
-- **Migration:** `supabase/migrations/0028_payout_adjustments.sql` (table + RLS +
+- **Migration:** `supabase/migrations/0029_payout_adjustments.sql` (table + RLS +
   3 RPCs + the assert helper). Applied automatically by the preview/prod
   GitHub Actions (Constitution — schema-drift rule); never `db push` by hand.
 - **Unit (Vitest, test-first for money):** extend

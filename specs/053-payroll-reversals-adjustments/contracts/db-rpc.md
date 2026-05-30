@@ -1,4 +1,4 @@
-# Contract: DB RPCs — migration `0028_payout_adjustments.sql`
+# Contract: DB RPCs — migration `0029_payout_adjustments.sql`
 
 All `language plpgsql security definer set search_path = public, pg_temp`.
 Writes go only through these (RLS is select-only). Audit inserts mirror the

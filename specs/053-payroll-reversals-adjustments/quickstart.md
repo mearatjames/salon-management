@@ -11,7 +11,7 @@
 
 ## Key files
 
-- DB: `supabase/migrations/0028_payout_adjustments.sql` (table + RLS + 3 RPCs +
+- DB: `supabase/migrations/0029_payout_adjustments.sql` (table + RLS + 3 RPCs +
   `payroll_assert_adjustable`).
 - Math (pure, test-first): `lib/report/aggregate.ts` (refund allocation + net),
   `lib/payroll/aggregate.ts` (adjustments fold-in, net payout).

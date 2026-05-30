@@ -204,7 +204,7 @@ export const AFFECTED_MAP = {
   // Feature 053 — the payout-adjustments table + SECURITY DEFINER RPCs
   // (migration 0028) are driven only over Supabase from the adjustment
   // Server Actions; no spec imports the SQL, so map it explicitly.
-  "supabase/migrations/0028_payout_adjustments.sql": ["tests/e2e/payroll.spec.ts"],
+  "supabase/migrations/0029_payout_adjustments.sql": ["tests/e2e/payroll.spec.ts"],
 
   // Dashboard.
   "app/(studio)/dashboard/**": ["tests/e2e/dashboard.spec.ts"],
