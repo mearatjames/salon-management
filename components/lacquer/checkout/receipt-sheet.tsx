@@ -1,12 +1,14 @@
 "use client";
 
-// BillSheet — T037 (US4). Adapted 1:1 from
-// `design-system/prototypes/transaction/FlowSingleExtras.jsx::BillSheet`.
+// ReceiptSheet — T037 (US4). Adapted 1:1 from
+// `design-system/prototypes/transaction/FlowSingleExtras.jsx::BillSheet`
+// (the prototype symbol keeps the name `BillSheet`; this is its renamed
+// adaptation — see issue #152).
 //
-// Restaurant-style "drop the bill" preview that opens as a sheet overlay
+// Restaurant-style "drop the receipt" preview that opens as a sheet overlay
 // (same family chrome as PriceSheet / DiscountSheet — uses the shared
-// `.tx-sheet-backdrop` + a wider `.tx-bill-sheet` variant). The root of
-// the bill document carries the `lacquer-bill-doc` class; the print CSS
+// `.tx-sheet-backdrop` + a wider `.tx-receipt-sheet` variant). The root of
+// the receipt document carries the `lacquer-receipt-doc` class; the print CSS
 // in `checkout.css` targets that class to hide the rest of the chrome
 // under `@media print`.
 //
@@ -37,11 +39,11 @@
 //     ISO timestamp — purely decorative.
 //
 // All visuals trace to tokens in `styles/tokens.css`; the new classes
-// (`tx-bill-*`) are added to `checkout.css`.
+// (`tx-receipt-*`) are added to `checkout.css`.
 
 import { ChevronLeft, Mail, Printer, X } from "lucide-react";
 
-export type BillSnapshotLine = {
+export type ReceiptSnapshotLine = {
   id: string;
   kind: "service" | "discount";
   name: string;
@@ -51,16 +53,16 @@ export type BillSnapshotLine = {
   discountPct: number | null;
 };
 
-export type BillSnapshot = {
-  lines: BillSnapshotLine[];
+export type ReceiptSnapshot = {
+  lines: ReceiptSnapshotLine[];
   serviceSubtotalCents: number;
   discountTotalCents: number;
   totalCents: number;
   capturedAt: string;
 };
 
-export type BillSheetProps = {
-  snapshot: BillSnapshot;
+export type ReceiptSheetProps = {
+  snapshot: ReceiptSnapshot;
   salonInfo: { name: string; address: string; phone: string };
   techName: string | null;
   guestLabel: string;
@@ -82,7 +84,7 @@ const TIP_SUGGESTIONS: ReadonlyArray<{ label: string; pct: number }> = [
   { label: "Generous · 25%", pct: 0.25 },
 ];
 
-export function BillSheet({
+export function ReceiptSheet({
   snapshot,
   salonInfo,
   techName,
@@ -90,29 +92,29 @@ export function BillSheet({
   onClose,
   onPrint,
   onEmail,
-}: BillSheetProps) {
+}: ReceiptSheetProps) {
   // Item count for empty-state branch.
   const hasItems = snapshot.lines.length > 0;
   const hasDiscount = snapshot.discountTotalCents !== 0;
   const totalBeforeTipCents = snapshot.totalCents; // tax stays 0 this phase.
 
   // Decorative "Check #" — last 4 chars of the capturedAt ISO timestamp.
-  // The prototype hardcoded "0127"; we derive something unique-per-bill.
+  // The prototype hardcoded "0127"; we derive something unique-per-receipt.
   const checkSuffix = snapshot.capturedAt.replace(/\D/g, "").slice(-4) || "0000";
 
   return (
     <div
       className="tx-sheet-backdrop"
-      data-slot="bill-sheet"
+      data-slot="receipt-sheet"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
-      aria-label="Bill preview"
+      aria-label="Receipt preview"
     >
-      <div className="tx-bill-sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="tx-bill-sheet-h">
+      <div className="tx-receipt-sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="tx-receipt-sheet-h">
           <div>
-            <div style={{ fontWeight: 600, fontSize: "var(--text-base)" }}>Bill preview</div>
+            <div style={{ fontWeight: 600, fontSize: "var(--text-base)" }}>Receipt preview</div>
             <div
               style={{
                 fontSize: "var(--text-xs)",
@@ -127,18 +129,18 @@ export function BillSheet({
             type="button"
             className="tx-stepper-btn"
             onClick={onClose}
-            aria-label="Close bill preview"
-            data-slot="bill-sheet-close"
+            aria-label="Close receipt preview"
+            data-slot="receipt-sheet-close"
           >
             <X size={16} strokeWidth={1.5} aria-hidden="true" />
           </button>
         </div>
 
-        <div className="tx-bill-doc-wrap">
-          {/* The print CSS in checkout.css targets `.lacquer-bill-doc` to
+        <div className="tx-receipt-doc-wrap">
+          {/* The print CSS in checkout.css targets `.lacquer-receipt-doc` to
               hide every other element on the page under @media print. */}
-          <div className="lacquer-bill-doc tx-bill-doc" data-slot="bill-doc">
-            <div className="tx-bill-mast" data-slot="bill-mast">
+          <div className="lacquer-receipt-doc tx-receipt-doc" data-slot="receipt-doc">
+            <div className="tx-receipt-mast" data-slot="receipt-mast">
               <div className="logo">{salonInfo.name}</div>
               <div className="addr">
                 {salonInfo.address}
@@ -147,7 +149,7 @@ export function BillSheet({
               </div>
             </div>
 
-            <div className="tx-bill-meta">
+            <div className="tx-receipt-meta">
               <div>
                 <span className="lbl">Guest</span>
                 <span className="val">{guestLabel}</span>
@@ -166,9 +168,9 @@ export function BillSheet({
               </div>
             </div>
 
-            <div className="tx-bill-divider dashed" />
+            <div className="tx-receipt-divider dashed" />
 
-            <div className="tx-bill-items">
+            <div className="tx-receipt-items">
               {!hasItems ? (
                 <div
                   style={{
@@ -187,8 +189,8 @@ export function BillSheet({
                   return (
                     <div
                       key={line.id}
-                      className="tx-bill-row"
-                      data-slot="bill-item"
+                      className="tx-receipt-row"
+                      data-slot="receipt-item"
                       data-line-kind={line.kind}
                     >
                       <span className="qty tnum">{isDiscount ? "" : line.qty || 1}</span>
@@ -218,17 +220,17 @@ export function BillSheet({
               )}
             </div>
 
-            <div className="tx-bill-divider" />
+            <div className="tx-receipt-divider" />
 
-            <div className="tx-bill-totals">
+            <div className="tx-receipt-totals">
               <div className="row">
                 <span>Subtotal</span>
-                <span className="tnum" data-slot="bill-subtotal">
+                <span className="tnum" data-slot="receipt-subtotal">
                   {fmt(snapshot.serviceSubtotalCents)}
                 </span>
               </div>
               {hasDiscount ? (
-                <div className="row" data-slot="bill-discounts">
+                <div className="row" data-slot="receipt-discounts">
                   <span>Discounts</span>
                   <span className="tnum" style={{ color: "var(--destructive)" }}>
                     {fmt(snapshot.discountTotalCents)}
@@ -241,7 +243,7 @@ export function BillSheet({
               </div>
               <div className="row total">
                 <span>Total before tip</span>
-                <span className="tnum" data-slot="bill-total">
+                <span className="tnum" data-slot="receipt-total">
                   {fmt(totalBeforeTipCents)}
                 </span>
               </div>
@@ -252,13 +254,13 @@ export function BillSheet({
                 service subtotal (restaurant convention; spec Edge Case
                 "Suggested-gratuity baseline on the bill"). */}
             {snapshot.serviceSubtotalCents > 0 ? (
-              <div className="tx-bill-tip-block">
+              <div className="tx-receipt-tip-block">
                 <div className="lbl">Suggested gratuity</div>
                 {TIP_SUGGESTIONS.map((t) => {
                   const tipCents = Math.round(snapshot.serviceSubtotalCents * t.pct);
                   const allInCents = snapshot.totalCents + tipCents;
                   return (
-                    <div key={t.label} className="tx-bill-tip-row" data-slot="bill-tip-row">
+                    <div key={t.label} className="tx-receipt-tip-row" data-slot="receipt-tip-row">
                       <span className="t">{t.label}</span>
                       <span style={{ color: "var(--muted-foreground)" }} className="tnum">
                         {fmt(tipCents)}
@@ -270,9 +272,9 @@ export function BillSheet({
               </div>
             ) : null}
 
-            <div className="tx-bill-divider" />
+            <div className="tx-receipt-divider" />
 
-            <div className="tx-bill-write">
+            <div className="tx-receipt-write">
               <div className="row">
                 <span>Tip</span>
                 <span className="line" />
@@ -287,18 +289,18 @@ export function BillSheet({
               </div>
             </div>
 
-            <div className="tx-bill-foot">
+            <div className="tx-receipt-foot">
               <div>Thank you.</div>
             </div>
           </div>
         </div>
 
-        <div className="tx-bill-sheet-foot">
+        <div className="tx-receipt-sheet-foot">
           <button
             type="button"
             className="tx-btn ghost"
             onClick={onClose}
-            data-slot="bill-sheet-back"
+            data-slot="receipt-sheet-back"
           >
             <ChevronLeft size={16} strokeWidth={1.5} aria-hidden="true" /> Back to sale
           </button>
@@ -307,12 +309,17 @@ export function BillSheet({
             type="button"
             className="tx-btn secondary"
             onClick={onEmail}
-            data-slot="bill-sheet-email"
+            data-slot="receipt-sheet-email"
           >
             <Mail size={16} strokeWidth={1.5} aria-hidden="true" /> Email
           </button>
-          <button type="button" className="tx-btn" onClick={onPrint} data-slot="bill-sheet-print">
-            <Printer size={16} strokeWidth={1.5} aria-hidden="true" /> Print bill
+          <button
+            type="button"
+            className="tx-btn"
+            onClick={onPrint}
+            data-slot="receipt-sheet-print"
+          >
+            <Printer size={16} strokeWidth={1.5} aria-hidden="true" /> Print receipt
           </button>
         </div>
       </div>

@@ -70,7 +70,7 @@ export type AuditAction =
   | "line.price_set"
   | "discount.added"
   | "discount.removed"
-  | "bill.emailed"
+  | "receipt.emailed"
   // Added by feature 049 (entity_type "ticket")
   | "discount.edited"
   // Added by feature 015 (entity_type "payment"/"integration")
@@ -149,12 +149,12 @@ export function deriveEntityType(
   // prefix dispatch resolves correctly).
   if (action.startsWith("supply_type.")) return "supply_type";
   if (action.startsWith("service.")) return "service";
-  // Feature 013 — line/discount/bill verbs all entity_type="ticket".
+  // Feature 013 — line/discount/receipt verbs all entity_type="ticket".
   // Placed before staff.* / auth fall-throughs so the prefix dispatch
   // resolves before the staff-specific verb list.
   if (action.startsWith("line.")) return "ticket";
   if (action.startsWith("discount.")) return "ticket";
-  if (action.startsWith("bill.")) return "ticket";
+  if (action.startsWith("receipt.")) return "ticket";
   // Feature 015 — Square OAuth + device-management verbs.
   if (action.startsWith("integration.")) return "integration";
   // Feature 019 — cash_drawer.closed (lazy-open inside the close RPC).

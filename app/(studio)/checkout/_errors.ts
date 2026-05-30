@@ -142,7 +142,7 @@ export class CashPaymentFailedError extends CheckoutError {
 }
 
 // ----------------------------------------------------------------------
-// Feature 013-cart-polish — variable-price / discount / bill-email errors.
+// Feature 013-cart-polish — variable-price / discount / receipt-email errors.
 // Contract: `specs/013-cart-polish/contracts/server-actions.md § Errors`.
 // ----------------------------------------------------------------------
 
