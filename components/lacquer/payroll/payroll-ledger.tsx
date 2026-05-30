@@ -58,6 +58,19 @@ function StatePill({ row }: { row: PayrollLedgerRow }) {
   );
 }
 
+// A signed adjustment label, e.g. "+$12" / "−$5"; "—" for a zero sum.
+function signedCurrencyOrDash(cents: number): string {
+  if (cents === 0) return "—";
+  const sign = cents < 0 ? "−" : "+";
+  return `${sign}${formatCurrency(Math.abs(cents) / 100)}`;
+}
+
+// A net-payout label that carries its own minus sign when negative.
+function netCurrency(cents: number): string {
+  if (cents < 0) return `−${formatCurrency(Math.abs(cents) / 100)}`;
+  return formatCurrency(cents / 100);
+}
+
 export function PayrollLedger({ model, rows, periodQuery }: PayrollLedgerProps) {
   const { totals } = model;
 
@@ -74,6 +87,8 @@ export function PayrollLedger({ model, rows, periodQuery }: PayrollLedgerProps) 
             <th className="num">After split</th>
             <th className="num">Check</th>
             <th className="num">Cash</th>
+            <th className="num">Adj.</th>
+            <th className="num">Net payout</th>
             <th className="center">State</th>
             <th className="pp-chev-th" />
           </tr>
@@ -113,6 +128,21 @@ export function PayrollLedger({ model, rows, periodQuery }: PayrollLedgerProps) 
               <td className="num tip">{formatCurrency(row.tipsAfterSplitCents / 100)}</td>
               <td className="num muted">{formatCurrency(row.checkPortionCents / 100)}</td>
               <td className="num cash">{formatCurrency(row.cashPaymentCents / 100)}</td>
+              <td
+                className={`num pl-adj ${
+                  row.state === "no_work" || row.adjustmentsCents === 0
+                    ? "zero"
+                    : row.adjustmentsCents < 0
+                      ? "deduct"
+                      : "add"
+                }`}
+                data-slot="ledger-adj"
+              >
+                {row.state === "no_work" ? "—" : signedCurrencyOrDash(row.adjustmentsCents)}
+              </td>
+              <td className="num cash" data-slot="ledger-net-payout">
+                {row.state === "no_work" ? "—" : netCurrency(row.netPayoutCents)}
+              </td>
               <td className="center">
                 <StatePill row={row} />
               </td>
@@ -132,6 +162,18 @@ export function PayrollLedger({ model, rows, periodQuery }: PayrollLedgerProps) 
             <td className="num">{formatCurrency(totals.tipsAfterSplitCents / 100)}</td>
             <td className="num">{formatCurrency(totals.checkPortionCents / 100)}</td>
             <td className="num cash">{formatCurrency(totals.cashPaymentCents / 100)}</td>
+            <td
+              className={`num pl-adj ${
+                totals.adjustmentsCents === 0
+                  ? "zero"
+                  : totals.adjustmentsCents < 0
+                    ? "deduct"
+                    : "add"
+              }`}
+            >
+              {signedCurrencyOrDash(totals.adjustmentsCents)}
+            </td>
+            <td className="num cash">{netCurrency(totals.netPayoutCents)}</td>
             <td />
             <td />
           </tr>

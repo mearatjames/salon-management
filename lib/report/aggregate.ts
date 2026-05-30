@@ -41,6 +41,19 @@ export type ReportPaymentRow = {
   readonly method: string; // 'card' | 'cash' | 'gift'
   readonly status: string; // already filtered to 'succeeded'
   readonly tip_cents: number;
+  /**
+   * Feature 053: a payment row is either an original sale (`'payment'`) or a
+   * refund (`'refund'`). Only `kind='payment'` succeeded rows feed gross / tip
+   * / method; `kind='refund'` succeeded rows feed `refundedCents`. Optional so
+   * fixtures that omit it default to `'payment'` (the legacy meaning).
+   */
+  readonly kind?: string;
+  /**
+   * Feature 053: the refunded portion (positive cents) on a `kind='refund'`
+   * row. Read only for refund rows; payment rows ignore it. Optional for the
+   * same backward-compatibility reason as `kind`.
+   */
+  readonly amount_cents?: number;
 };
 
 export type ReportStaffRow = {
@@ -92,6 +105,12 @@ export type ReportTransaction = {
   readonly tipPct: number | null;
   readonly deductionLines: readonly ReportDeductionLine[];
   readonly isExpandable: boolean;
+  /**
+   * Feature 053: succeeded refund allocated to this tech on this ticket
+   * (≥ 0). The original money fields above stay pre-refund; net revenue =
+   * `commissionableCents − refundedCents` (clamped ≥ 0), computed at display.
+   */
+  readonly refundedCents: number;
 };
 
 export type TechnicianReport = {
@@ -106,6 +125,12 @@ export type TechnicianReport = {
   readonly totalDeductionsCents: number;
   readonly commissionableCents: number;
   readonly cardTipsCents: number;
+  /**
+   * Feature 053: Σ succeeded refunds allocated to this tech across the window
+   * (≥ 0). `commissionableCents` stays ORIGINAL; the Report display subtracts
+   * this (clamped ≥ 0) for net revenue, payroll consumes the original.
+   */
+  readonly refundedCents: number;
   readonly transactions: readonly ReportTransaction[];
 };
 
@@ -119,6 +144,12 @@ export type ReportTotals = {
   readonly totalDeductionsCents: number;
   readonly commissionableCents: number;
   readonly cardTipsCents: number;
+  /**
+   * Feature 053: Σ ALL succeeded refunds in the window (≥ 0). A separate axis
+   * from `commissionableCents` (which stays ORIGINAL); the Report display /
+   * CSV read net = `commissionableCents − refundedCents` (clamped ≥ 0).
+   */
+  readonly refundedCents: number;
   /**
    * Issue #139: total customer-facing discount given in the period. Sum of
    * `|unit_price_cents × qty|` over `kind = 'discount'` ticket_items, covering
@@ -136,6 +167,18 @@ export type ReportReadModel = {
 };
 
 export { deriveMethod };
+
+// ─── netRevenueCents — the refund-aware display figure (feature 053) ─────────
+
+/**
+ * Net revenue for the Report display / CSV (FR-006): the original
+ * commissionable income minus the succeeded refunds allocated to it, clamped
+ * at zero so an over-refund never shows negative. Payroll consumes the
+ * ORIGINAL `commissionableCents`; only the Report display subtracts the refund.
+ */
+export function netRevenueCents(commissionableCents: number, refundedCents: number): number {
+  return Math.max(0, commissionableCents - refundedCents);
+}
 
 // ─── effectiveCardFeeCents ──────────────────────────────────────────────────
 
@@ -260,6 +303,7 @@ const ZERO_TOTALS: ReportTotals = {
   totalDeductionsCents: 0,
   commissionableCents: 0,
   cardTipsCents: 0,
+  refundedCents: 0,
   discountsCents: 0,
 };
 
@@ -275,6 +319,7 @@ type TechAccum = {
   cardFeeCents: number;
   supplyCents: number;
   cardTipsCents: number;
+  refundedCents: number;
   transactions: ReportTransaction[];
 };
 
@@ -303,9 +348,21 @@ export function projectReport(input: ProjectReportInput): ReportReadModel {
     list.push(it);
     serviceItemsByTicket.set(it.ticket_id, list);
   }
+  // Split succeeded payments by `kind` (feature 053). Only `kind='payment'`
+  // (or a legacy row with no `kind`) feeds gross / tip / method; `kind='refund'`
+  // rows feed the per-ticket refund total via their `amount_cents`. Card tips
+  // are NEVER refunded — refund rows carry `tip_cents=0` and never touch tips.
   const paymentsByTicket = new Map<string, ReportPaymentRow[]>();
+  const refundByTicket = new Map<string, number>();
   for (const p of payments) {
     if (p.status !== "succeeded") continue;
+    if (p.kind === "refund") {
+      refundByTicket.set(
+        p.ticket_id,
+        (refundByTicket.get(p.ticket_id) ?? 0) + (p.amount_cents ?? 0)
+      );
+      continue;
+    }
     const list = paymentsByTicket.get(p.ticket_id) ?? [];
     list.push(p);
     paymentsByTicket.set(p.ticket_id, list);
@@ -327,6 +384,7 @@ export function projectReport(input: ProjectReportInput): ReportReadModel {
       cardFeeCents: 0,
       supplyCents: 0,
       cardTipsCents: 0,
+      refundedCents: 0,
       transactions: [],
     };
     techAccums.set(staffId, created);
@@ -401,6 +459,12 @@ export function projectReport(input: ProjectReportInput): ReportReadModel {
     const weights = ticketTechIds.map((id) => techSubtotals.get(id) ?? 0);
     const tipShares = splitCardTip(cardTipCents, weights);
 
+    // Feature 053: allocate this ticket's succeeded refund across its techs by
+    // the SAME per-tech service-subtotal weights, using the SAME largest-
+    // remainder helper as the tip split — Σ shares === ticket refund exactly.
+    const ticketRefundCents = refundByTicket.get(ticket.id) ?? 0;
+    const refundShares = splitCardTip(ticketRefundCents, weights);
+
     ticketTechIds.forEach((techId, idx) => {
       const accum = accumFor(techId);
       if (!accum) return;
@@ -422,6 +486,7 @@ export function projectReport(input: ProjectReportInput): ReportReadModel {
       }
 
       const txTip = tipShares[idx] ?? 0;
+      const txRefund = refundShares[idx] ?? 0;
       const techSubtotal = techSubtotals.get(techId) ?? 0;
       const tipPct =
         txTip > 0 && techSubtotal > 0 ? Math.round((txTip / techSubtotal) * 100) : null;
@@ -441,6 +506,7 @@ export function projectReport(input: ProjectReportInput): ReportReadModel {
         tipPct,
         deductionLines,
         isExpandable: deductionLines.length > 0 || txTip > 0,
+        refundedCents: txRefund,
       };
 
       accum.ticketIds.add(ticket.id);
@@ -449,6 +515,7 @@ export function projectReport(input: ProjectReportInput): ReportReadModel {
       accum.cardFeeCents += txCardFee;
       accum.supplyCents += txSupply;
       accum.cardTipsCents += txTip;
+      accum.refundedCents += txRefund;
       accum.transactions.push(transaction);
     });
   }
@@ -473,6 +540,7 @@ export function projectReport(input: ProjectReportInput): ReportReadModel {
         totalDeductionsCents,
         commissionableCents: a.grossCents - totalDeductionsCents,
         cardTipsCents: a.cardTipsCents,
+        refundedCents: a.refundedCents,
         transactions,
       };
     })
@@ -502,6 +570,7 @@ export function projectReport(input: ProjectReportInput): ReportReadModel {
     totalDeductionsCents: technicians.reduce((a, t) => a + t.totalDeductionsCents, 0),
     commissionableCents: technicians.reduce((a, t) => a + t.commissionableCents, 0),
     cardTipsCents: technicians.reduce((a, t) => a + t.cardTipsCents, 0),
+    refundedCents: technicians.reduce((a, t) => a + t.refundedCents, 0),
     discountsCents,
   };
 

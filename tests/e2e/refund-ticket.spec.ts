@@ -403,6 +403,92 @@ test.describe("US2: owner refunds a past sale from the dashboard feed", () => {
   });
 });
 
+// ─── 053-US1: a refunded sale keeps the tech's full commission on /payroll ────
+//
+// Feature 053 (Payroll reversals): a partial refund must NOT reduce the tech's
+// commission — the technician keeps commission on the ORIGINAL service amount
+// while the revenue Report nets the refund out. Here we seed a $60 single-tech
+// sale for this worker's owner inside the current open pay period, refund $20
+// through the UI, then open /payroll and assert the owner's commissionable /
+// income-after-split is computed on the full $60 (not the $40 net). Card tips
+// are unchanged. Parallel-safe: the owner row is this worker's own seeded data.
+
+const LEDGER_ROW = (id: string) => `tr[data-slot="ledger-row"][data-tech-id="${id}"]`;
+
+async function cellText(
+  rowLocator: ReturnType<import("@playwright/test").Page["locator"]>,
+  idx: number
+): Promise<string> {
+  return (await rowLocator.locator("td").nth(idx).innerText()).trim();
+}
+
+// "$197" → 197, "−$5" → -5, "—" → 0.
+function parseMoney(text: string): number {
+  const t = text.trim();
+  if (t === "—") return 0;
+  const negative = t.startsWith("−") || t.startsWith("-");
+  const digits = t.replace(/[−$,\s-]/g, "");
+  if (digits === "") return 0;
+  return (negative ? -1 : 1) * Number(digits);
+}
+
+async function setOwnerCommission(fixture: StaffFixture, pct: number): Promise<void> {
+  const { error } = await adminClient()
+    .from("staff")
+    .update({ service_commission_pct: pct, tip_split_pct: 1.0, check_portion_cents: 0 })
+    .eq("id", fixture.owner.id);
+  if (error) throw new Error(`refund payroll rate update failed: ${error.message}`);
+}
+
+test.describe("053-US1: a refunded sale preserves the tech's commission on /payroll", () => {
+  test.use({
+    storageState: async ({ authState }, provide) => {
+      await provide(authState.owner);
+    },
+  });
+
+  test.afterEach(async ({ staffFixture }) => {
+    if (!supabaseUp) return;
+    await clearTicket(staffFixture, "f1");
+    await staffFixture.reset();
+  });
+
+  test("partial refund of a $60 sale → owner keeps commission on the full $60", async ({
+    page,
+    staffFixture,
+  }) => {
+    await setOwnerCommission(staffFixture, 0.5);
+    const { tk, paymentId } = await seedPaidCashTicket({
+      fixture: staffFixture,
+      tag: "f1",
+      amountCents: 6000,
+    });
+
+    // Refund $20 of the $60 sale through the dashboard → drawer → sheet.
+    await page.goto("/dashboard");
+    const row = page.locator(`.tx-feed-row[data-tx-id="${tk}"]`);
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    await row.locator(REFUND_BTN).click();
+    await expect(page.locator(REFUND_SHEET)).toBeVisible();
+    const input = page.locator(refundInput(paymentId));
+    await input.fill("20.00");
+    await page.locator(REFUND_SUBMIT).click();
+    await expect.poll(() => ticketStatus(tk), { timeout: 10_000 }).toBe("partially_refunded");
+
+    // On /payroll the owner's income-after-split is computed on the ORIGINAL
+    // $60 — 6000 × 0.5 = 3000 → $30. The refund does NOT dock commission.
+    await page.goto("/payroll");
+    const ownerRow = page.locator(LEDGER_ROW(staffFixture.owner.id));
+    await expect(ownerRow).toBeVisible({ timeout: 15_000 });
+    // Columns: 0=Employee 1=Tickets 2=Income 3=After split 4=Card tips …
+    expect(parseMoney(await cellText(ownerRow, 3))).toBe(30);
+    await expect(ownerRow.locator('[data-slot="state-pill"]')).toHaveAttribute(
+      "data-state",
+      "pending"
+    );
+  });
+});
+
 // ─── US2: technician sees no Refund affordance (role gate) ───────────────────
 
 test.describe("US2: technician sees no Refund affordance", () => {

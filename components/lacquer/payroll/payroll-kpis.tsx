@@ -15,6 +15,19 @@ export type PayrollKpisProps = {
   model: PayrollLedgerModel;
 };
 
+// A signed adjustment label, e.g. "+$12" / "−$5"; "$0" when nothing yet.
+function signedCurrency(cents: number): string {
+  if (cents === 0) return formatCurrency(0);
+  const sign = cents < 0 ? "−" : "+";
+  return `${sign}${formatCurrency(Math.abs(cents) / 100)}`;
+}
+
+// A net cash-to-pay label that carries its own minus sign when negative.
+function netCurrency(cents: number): string {
+  if (cents < 0) return `−${formatCurrency(Math.abs(cents) / 100)}`;
+  return formatCurrency(cents / 100);
+}
+
 export function PayrollKpis({ model }: PayrollKpisProps) {
   const { totals } = model;
   // Owed to techs = the cash payout + the check portion (the full earned sum).
@@ -42,6 +55,14 @@ export function PayrollKpis({ model }: PayrollKpisProps) {
         <div className="pr-kpi-sub">
           <b>{formatCurrency(totals.checkPortionCents / 100)}</b> check ·{" "}
           <b>{formatCurrency(totals.cashPaymentCents / 100)}</b> cash
+        </div>
+      </div>
+
+      <div className="pr-kpi" data-slot="kpi-adjustments">
+        <div className="pr-kpi-label">Adjustments</div>
+        <div className="pr-kpi-value">{signedCurrency(totals.adjustmentsCents)}</div>
+        <div className="pr-kpi-sub">
+          Cash to pay <b>{netCurrency(model.cashRemainingCents)}</b>
         </div>
       </div>
 

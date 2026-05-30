@@ -8,6 +8,7 @@ import { getSalonTimezone } from "@/lib/db/settings";
 import { formatPayDate } from "@/lib/payroll/format";
 import { loadTechDetail } from "@/lib/payroll/queries";
 import { parsePayrollParams } from "@/lib/payroll/window";
+import { AdjustmentsCard } from "@/components/lacquer/payroll/adjustments-card.client";
 import { TechBreakdown } from "@/components/lacquer/payroll/tech-breakdown";
 import { TechDailyChart } from "@/components/lacquer/payroll/tech-daily-chart";
 import { TechDetailHeader } from "@/components/lacquer/payroll/tech-detail-header";
@@ -97,6 +98,16 @@ export default async function TechDetailPage({
         />
         <div className="pp-detail-side">
           <TechBreakdown row={detail.row} />
+          {!isNoWork && detail.period.id !== null && (
+            <AdjustmentsCard
+              payPeriodId={detail.period.id}
+              staffId={detail.row.staffId}
+              adjustments={detail.row.adjustments}
+              cashPaymentCents={detail.row.cashPaymentCents}
+              netPayoutCents={detail.row.netPayoutCents}
+              readOnly={detail.readOnly || detail.row.state === "paid"}
+            />
+          )}
           {canPay && (
             <TechPayAction
               payPeriodId={detail.period.id as string}

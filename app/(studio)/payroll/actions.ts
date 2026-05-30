@@ -69,6 +69,42 @@ export type ClosePeriodInput = {
   confirmedUnpaid: boolean;
 };
 
+export type AddAdjustmentInput = {
+  payPeriodId: string;
+  staffId: string;
+  /** Signed integer cents — positive adds, negative deducts. Never 0. */
+  amountCents: number;
+  /** Free-text reason, trimmed to 1–80 chars. */
+  reason: string;
+};
+
+export type EditAdjustmentInput = {
+  adjustmentId: string;
+  amountCents: number;
+  reason: string;
+};
+
+export type DeleteAdjustmentInput = {
+  adjustmentId: string;
+};
+
+// Adjustment amount + reason validation, shared by add + edit. Amount is an
+// integer cents value ≠ 0; reason is trimmed to 1–80 characters.
+const ADJ_REASON_MAX = 80;
+function validateAdjustment(amountCents: number, reason: string): string | null {
+  if (typeof reason !== "string") return null;
+  const trimmed = reason.trim();
+  if (
+    !Number.isInteger(amountCents) ||
+    amountCents === 0 ||
+    trimmed.length < 1 ||
+    trimmed.length > ADJ_REASON_MAX
+  ) {
+    return null;
+  }
+  return trimmed;
+}
+
 // ─── Postgres-error → result-code mapping ───────────────────────────────────
 //
 // The DEFINER RPCs `raise exception '<token>'` with errcode P0001; the token
@@ -96,6 +132,20 @@ function mapRpcError(error: { message?: string | null }): {
     return {
       code: "NOT_PAID",
       message: "This technician has no recorded payout to undo.",
+    };
+  }
+  if (msg.includes("payroll_adjustment_missing")) {
+    return {
+      code: "INVALID",
+      message: "That adjustment no longer exists.",
+    };
+  }
+  // The adjustment RPCs validate amount / reason as a backstop — the action
+  // validates first, so this should never surface to a user.
+  if (msg.includes("payroll_invalid")) {
+    return {
+      code: "INVALID",
+      message: "That adjustment is not valid.",
     };
   }
   if (msg.includes("payroll_cash_mismatch")) {
@@ -369,5 +419,192 @@ export async function closePeriod(input: ClosePeriodInput): Promise<ActionResult
 
   // 7. Bust the ledger — the period now renders read-only.
   revalidatePath("/payroll");
+  return { ok: true };
+}
+
+// ─── addAdjustment ───────────────────────────────────────────────────────────
+
+/**
+ * Adds a manual payout adjustment to a working tech in the OPEN period
+ * (feature 053, US2). Owner + manager only (NO PIN). The amount is a signed
+ * integer cents ≠ 0; the reason is trimmed 1–80. The open ledger is recomputed
+ * fresh — a closed/read-only period, a missing/`no_work` tech, or an
+ * already-paid tech is refused before any RPC call (FR-007, FR-012/013).
+ */
+export async function addAdjustment(
+  input: AddAdjustmentInput
+): Promise<ActionResult<{ adjustmentId: string }>> {
+  // 1. Viewer + role gate.
+  const viewer = await requireStudioSession();
+  if (!ROLES_ALLOWED.has(viewer.staff.role)) {
+    return {
+      ok: false,
+      code: "FORBIDDEN",
+      message: "Only owners and managers can add adjustments.",
+    };
+  }
+
+  // 2. Validate input shape + amount / reason.
+  const reason = validateAdjustment(input.amountCents, input.reason);
+  if (
+    typeof input.payPeriodId !== "string" ||
+    input.payPeriodId === "" ||
+    typeof input.staffId !== "string" ||
+    input.staffId === "" ||
+    reason === null
+  ) {
+    return { ok: false, code: "INVALID", message: "Invalid adjustment request." };
+  }
+
+  // 3. Recompute the OPEN ledger fresh — the adjustment only ever targets the
+  //    open period (the client is never trusted with the period state).
+  const supabase = await createSupabaseServerClient();
+  const tz = await getSalonTimezone(supabase);
+  const ledger = await loadPayrollLedger(supabase, tz, 0);
+
+  if (ledger.period.id !== input.payPeriodId || ledger.readOnly) {
+    return {
+      ok: false,
+      code: "PERIOD_CLOSED",
+      message: "This pay period is closed — adjustments can no longer change.",
+    };
+  }
+
+  const row = ledger.rows.find((r) => r.staffId === input.staffId);
+  if (!row || row.state === "no_work") {
+    return {
+      ok: false,
+      code: "INVALID",
+      message: "This technician has no work this period to adjust.",
+    };
+  }
+  if (row.state === "paid") {
+    return {
+      ok: false,
+      code: "ALREADY_PAID",
+      message: "This technician is already paid — adjustments are locked.",
+    };
+  }
+
+  // 4. Call the add RPC via the service role.
+  const admin = createSupabaseServiceRoleClient();
+  const { data, error } = await admin.rpc("payroll_add_adjustment", {
+    p_pay_period_id: input.payPeriodId,
+    p_staff_id: input.staffId,
+    p_amount_cents: input.amountCents,
+    p_reason: reason,
+    p_operator: viewer.staff.id,
+    p_device_user_id: viewer.deviceUserId,
+  });
+
+  if (error) {
+    return { ok: false, ...mapRpcError(error) };
+  }
+
+  // 5. Bust the ledger + this tech's detail screen.
+  revalidatePath("/payroll");
+  revalidatePath("/payroll/" + input.staffId);
+  return { ok: true, adjustmentId: data as string };
+}
+
+// ─── editAdjustment ──────────────────────────────────────────────────────────
+
+/**
+ * Edits an existing adjustment's amount + reason (feature 053, US2). Owner +
+ * manager only. The RPC re-derives the period / staff from the row and enforces
+ * the open-period lock (a closed period or a paid tech → refused); it returns
+ * the affected `staff_id` for the revalidate. An unknown id → `INVALID`.
+ *
+ * US3 lock (FR-012, no clawback): the server is the security boundary even when
+ * the UI renders the card read-only. `payroll_edit_adjustment` calls
+ * `payroll_assert_adjustable`, which raises `payroll_period_not_open` for a
+ * closed period (→ `PERIOD_CLOSED`) and `payroll_payout_exists` once the tech is
+ * paid (→ `ALREADY_PAID`). A stale edit fired after a close/payout is refused
+ * here, not silently applied.
+ */
+export async function editAdjustment(input: EditAdjustmentInput): Promise<ActionResult> {
+  // 1. Viewer + role gate.
+  const viewer = await requireStudioSession();
+  if (!ROLES_ALLOWED.has(viewer.staff.role)) {
+    return {
+      ok: false,
+      code: "FORBIDDEN",
+      message: "Only owners and managers can edit adjustments.",
+    };
+  }
+
+  // 2. Validate input shape + amount / reason.
+  const reason = validateAdjustment(input.amountCents, input.reason);
+  if (typeof input.adjustmentId !== "string" || input.adjustmentId === "" || reason === null) {
+    return { ok: false, code: "INVALID", message: "Invalid adjustment request." };
+  }
+
+  // 3. The RPC re-derives the period / staff and enforces the open lock.
+  const admin = createSupabaseServiceRoleClient();
+  const { data, error } = await admin.rpc("payroll_edit_adjustment", {
+    p_adjustment_id: input.adjustmentId,
+    p_amount_cents: input.amountCents,
+    p_reason: reason,
+    p_operator: viewer.staff.id,
+    p_device_user_id: viewer.deviceUserId,
+  });
+
+  if (error) {
+    return { ok: false, ...mapRpcError(error) };
+  }
+
+  // 4. Bust the ledger + the affected tech's detail screen.
+  revalidatePath("/payroll");
+  if (typeof data === "string" && data) {
+    revalidatePath("/payroll/" + data);
+  }
+  return { ok: true };
+}
+
+// ─── deleteAdjustment ────────────────────────────────────────────────────────
+
+/**
+ * Hard-deletes an adjustment (feature 053, US2). Owner + manager only. The RPC
+ * writes the audit row before the delete, enforces the open-period lock, and
+ * returns the affected `staff_id`. An unknown id → `INVALID`.
+ *
+ * US3 lock (FR-012, no clawback): same guard as edit — `payroll_assert_adjustable`
+ * inside `payroll_delete_adjustment` raises `payroll_period_not_open` for a closed
+ * period (→ `PERIOD_CLOSED`) and `payroll_payout_exists` once the tech is paid
+ * (→ `ALREADY_PAID`), so a stale delete cannot claw back a frozen adjustment.
+ */
+export async function deleteAdjustment(input: DeleteAdjustmentInput): Promise<ActionResult> {
+  // 1. Viewer + role gate.
+  const viewer = await requireStudioSession();
+  if (!ROLES_ALLOWED.has(viewer.staff.role)) {
+    return {
+      ok: false,
+      code: "FORBIDDEN",
+      message: "Only owners and managers can remove adjustments.",
+    };
+  }
+
+  // 2. Validate input shape.
+  if (typeof input.adjustmentId !== "string" || input.adjustmentId === "") {
+    return { ok: false, code: "INVALID", message: "Invalid adjustment request." };
+  }
+
+  // 3. The RPC enforces the open lock, audits, then hard-deletes.
+  const admin = createSupabaseServiceRoleClient();
+  const { data, error } = await admin.rpc("payroll_delete_adjustment", {
+    p_adjustment_id: input.adjustmentId,
+    p_operator: viewer.staff.id,
+    p_device_user_id: viewer.deviceUserId,
+  });
+
+  if (error) {
+    return { ok: false, ...mapRpcError(error) };
+  }
+
+  // 4. Bust the ledger + the affected tech's detail screen.
+  revalidatePath("/payroll");
+  if (typeof data === "string" && data) {
+    revalidatePath("/payroll/" + data);
+  }
   return { ok: true };
 }

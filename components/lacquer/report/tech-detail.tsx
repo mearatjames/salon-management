@@ -29,7 +29,11 @@
 import { ChevronDown } from "lucide-react";
 
 import { formatCurrency } from "@/lib/dashboard/format";
-import type { ReportTransaction, TechnicianReport } from "@/lib/report/aggregate";
+import {
+  netRevenueCents,
+  type ReportTransaction,
+  type TechnicianReport,
+} from "@/lib/report/aggregate";
 import { MethodPill } from "@/components/lacquer/method-pill";
 import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 
@@ -101,7 +105,12 @@ function TransactionRows({
             </td>
           </>
         ) : null}
-        <td className="num net-cell">{formatCurrency(tx.netCents / 100)}</td>
+        {/* Feature 053: per-transaction Net is refund-aware — the original net
+            (gross − deductions) minus this transaction's refund, clamped ≥ 0.
+            No refund flag (FR-006). */}
+        <td className="num net-cell">
+          {formatCurrency(netRevenueCents(tx.netCents, tx.refundedCents) / 100)}
+        </td>
         <td>
           <MethodPill method={tx.method} />
         </td>
@@ -203,7 +212,9 @@ export function TechDetail({ technician, expandedTxIds, onToggleTx }: TechDetail
           <div className="dr-htotal">
             <div className="dr-htotal-l">Commissionable</div>
             <div className="dr-htotal-v pos">
-              {formatCurrency(technician.commissionableCents / 100)}
+              {formatCurrency(
+                netRevenueCents(technician.commissionableCents, technician.refundedCents) / 100
+              )}
             </div>
           </div>
           <div className="dr-htotal">
@@ -257,7 +268,9 @@ export function TechDetail({ technician, expandedTxIds, onToggleTx }: TechDetail
                 </>
               ) : null}
               <td className="num net-cell">
-                {formatCurrency(technician.commissionableCents / 100)}
+                {formatCurrency(
+                  netRevenueCents(technician.commissionableCents, technician.refundedCents) / 100
+                )}
               </td>
               <td className="num tip-cell">{formatCurrency(technician.cardTipsCents / 100)}</td>
             </tr>

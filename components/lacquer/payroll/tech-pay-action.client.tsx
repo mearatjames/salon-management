@@ -53,6 +53,12 @@ function methodLabel(method: Method | null): string {
   return METHODS.find((m) => m.value === method)?.label ?? method;
 }
 
+// A net-payout label that carries its own minus sign when negative.
+function netCurrency(cents: number): string {
+  if (cents < 0) return `−${formatCurrency(Math.abs(cents) / 100)}`;
+  return formatCurrency(cents / 100);
+}
+
 export function TechPayAction({ payPeriodId, row, payDateLabel }: TechPayActionProps) {
   const router = useRouter();
   const [methodDraft, setMethodDraft] = useState<Method>("cash");
@@ -115,7 +121,10 @@ export function TechPayAction({ payPeriodId, row, payDateLabel }: TechPayActionP
                 {row.payout?.recordedByName
                   ? `Recorded by ${row.payout.recordedByName}`
                   : "Recorded payout"}{" "}
-                · {formatCurrency(row.cashPaymentCents / 100)} cash
+                ·{" "}
+                {row.adjustments.length > 0
+                  ? `${netCurrency(row.netPayoutCents)} net`
+                  : `${formatCurrency(row.cashPaymentCents / 100)} cash`}
               </div>
             </div>
           </div>
@@ -170,7 +179,7 @@ export function TechPayAction({ payPeriodId, row, payDateLabel }: TechPayActionP
             )}
             {pending
               ? "Recording…"
-              : `Mark ${formatCurrency(row.cashPaymentCents / 100)} paid by ${methodLabel(methodDraft)}`}
+              : `Mark ${netCurrency(row.netPayoutCents)} paid by ${methodLabel(methodDraft)}`}
           </button>
           <div className="pp-detail-pay-foot">
             Pay date is <b>{payDateLabel}</b>. This records an immutable payout you can undo while

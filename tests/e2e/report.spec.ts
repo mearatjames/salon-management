@@ -30,18 +30,25 @@ const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
 const TECH_A = "70000000-0000-0000-0000-0000000000a1"; // non-exempt
 const TECH_B = "70000000-0000-0000-0000-0000000000b2"; // fully exempt
+// Feature 053: a tech with a partially-refunded sale — the Report nets the
+// refund out of their commissionable (net) while payroll keeps the original.
+const TECH_C = "70000000-0000-0000-0000-0000000000c3"; // refund fixture, exempt
 const SVC_PLAIN = "70000000-0000-0000-0000-0000000000c1"; // card_fee_mode='default'
 const SVC_SUPPLY = "70000000-0000-0000-0000-0000000000c2"; // + supply_amount_cents
 const SUPPLY_TYPE = "70000000-0000-0000-0000-0000000000d1";
 const TK_1 = "70000000-0000-0000-0000-0000000000e1"; // TECH_A · supply svc · card
 const TK_2 = "70000000-0000-0000-0000-0000000000e2"; // TECH_A · plain svc · cash
 const TK_3 = "70000000-0000-0000-0000-0000000000e3"; // TECH_B · supply svc · card
+// Feature 053: TECH_C's partially-refunded $60 sale (plain svc, cash). $20 of
+// the $60 is refunded, so commissionable (net) reads $40 in the Report.
+const TK_4 = "70000000-0000-0000-0000-0000000000e4";
 // Deterministic ids for the per-ticket line item + payment so the fixture's
 // `upsert` is idempotent — a re-seed after an interrupted prior run can never
 // duplicate a line (which would inflate the rendered svc count, issue #92).
 const ITEM_1 = "70000000-0000-0000-0000-0000000000f1";
 const ITEM_2 = "70000000-0000-0000-0000-0000000000f2";
 const ITEM_3 = "70000000-0000-0000-0000-0000000000f3";
+const ITEM_4 = "70000000-0000-0000-0000-0000000000f5"; // TECH_C's $60 service line
 // Issue #139: a legacy all-services discount line on TK_2. Discount lines
 // have `ref_id=null` and `assigned_staff_id=null` (migration 0007 CHECK
 // constraint). The line surfaces in `totals.discountsCents` (US1 test (k))
@@ -51,9 +58,11 @@ const DISCOUNT_CENTS = 500;
 const PMT_1 = "70000000-0000-0000-0000-00000000a001";
 const PMT_2 = "70000000-0000-0000-0000-00000000a002";
 const PMT_3 = "70000000-0000-0000-0000-00000000a003";
+const PMT_4 = "70000000-0000-0000-0000-00000000a004"; // TECH_C's $60 cash payment
+const PMT_4_REFUND = "70000000-0000-0000-0000-00000000a014"; // $20 refund row
 
-const TICKET_IDS = [TK_1, TK_2, TK_3] as const;
-const STAFF_IDS = [TECH_A, TECH_B] as const;
+const TICKET_IDS = [TK_1, TK_2, TK_3, TK_4] as const;
+const STAFF_IDS = [TECH_A, TECH_B, TECH_C] as const;
 const SERVICE_IDS = [SVC_PLAIN, SVC_SUPPLY] as const;
 
 // Display names — the read model orders technicians by `displayName` asc, so
@@ -61,6 +70,8 @@ const SERVICE_IDS = [SVC_PLAIN, SVC_SUPPLY] as const;
 // globally unique against the seed + parallel specs.
 const TECH_A_NAME = "Report Ada Non-Exempt [rpt]";
 const TECH_B_NAME = "Report Bea Exempt [rpt]";
+// "Cy" sorts after Ada/Bea — keeps the displayName ordering deterministic.
+const TECH_C_NAME = "Report Cy Refund [rpt]";
 
 // PIN hash for "1234" — same value the seed + worker fixture use. Staff rows
 // need a non-null `pin_hash`; the value is never exercised (the fixture never
@@ -141,6 +152,21 @@ async function insertFixture(): Promise<void> {
         supply_mode: "exempt",
         supply_except: [],
       },
+      // Feature 053: TECH_C — exempt (no deductions) so the only difference
+      // between gross and commissionable is the refund. Drives the net-of-
+      // refund assertion below.
+      {
+        id: TECH_C,
+        user_id: null,
+        display_name: TECH_C_NAME,
+        role: "technician",
+        pin_hash: PIN_HASH_1234,
+        color_token: "--avatar-green",
+        active: true,
+        card_fee_exempt: true,
+        supply_mode: "exempt",
+        supply_except: [],
+      },
     ],
     { onConflict: "id" }
   );
@@ -208,6 +234,18 @@ async function insertFixture(): Promise<void> {
         closed_by_staff_id: TECH_B,
         closed_at: closedAt,
       },
+      // Feature 053: TECH_C's $60 sale, partially refunded $20 → status
+      // 'partially_refunded'. The widened report fetch includes it.
+      {
+        id: TK_4,
+        status: "partially_refunded",
+        subtotal_cents: 6000,
+        tax_cents: 0,
+        total_cents: 6000,
+        opened_by_staff_id: TECH_C,
+        closed_by_staff_id: TECH_C,
+        closed_at: closedAt,
+      },
     ],
     { onConflict: "id" }
   );
@@ -249,6 +287,18 @@ async function insertFixture(): Promise<void> {
         unit_price_cents: 8000,
         qty: 1,
         assigned_staff_id: TECH_B,
+        price_unconfirmed: false,
+      },
+      // Feature 053: TECH_C's $60 plain service line.
+      {
+        id: ITEM_4,
+        ticket_id: TK_4,
+        kind: "service",
+        ref_id: SVC_PLAIN,
+        name_snapshot: "Report plain service [rpt]",
+        unit_price_cents: 6000,
+        qty: 1,
+        assigned_staff_id: TECH_C,
         price_unconfirmed: false,
       },
       // Issue #139: a $5 all-services discount on TK_2 — surfaces in the
@@ -306,6 +356,32 @@ async function insertFixture(): Promise<void> {
         status: "succeeded",
         taken_by_staff_id: TECH_B,
         processed_at: closedAt,
+      },
+      // Feature 053: TECH_C's original $60 cash payment …
+      {
+        id: PMT_4,
+        ticket_id: TK_4,
+        method: "cash",
+        kind: "payment",
+        amount_cents: 6000,
+        tip_cents: 0,
+        status: "succeeded",
+        taken_by_staff_id: TECH_C,
+        processed_at: closedAt,
+      },
+      // … and the $20 refund row (kind='refund', succeeded). The Report nets it
+      // out of TECH_C's commissionable (net $40); payroll would keep the $60.
+      {
+        id: PMT_4_REFUND,
+        ticket_id: TK_4,
+        method: "cash",
+        kind: "refund",
+        amount_cents: 2000,
+        tip_cents: 0,
+        status: "succeeded",
+        taken_by_staff_id: TECH_C,
+        processed_at: closedAt,
+        refunds_payment_id: PMT_4,
       },
     ],
     { onConflict: "id" }
@@ -512,6 +588,26 @@ test.describe("US1: all-staff report overview", () => {
       await expect(page.locator(`.dr-tech-card[data-tech-id="${TECH_A}"]`)).toBeVisible();
       const techBCard = page.locator(`.dr-tech-card[data-tech-id="${TECH_B}"]`);
       await expect(techBCard).toBeVisible();
+    });
+
+    test("(053-net) a partially-refunded sale reads NET of the refund (gross $60, net $40)", async ({
+      page,
+    }) => {
+      await page.goto("/report");
+
+      // TECH_C's $60 sale was partially refunded $20. The overview row shows
+      // gross $60 but the commissionable (net) column nets the refund → $40.
+      // TECH_C is exempt (no card-fee / supply deductions), so the ONLY gap
+      // between gross and commissionable is the refund (feature 053, FR-004).
+      const techCRow = page.locator(`tr.dr-staff-row[data-tech-id="${TECH_C}"]`);
+      await expect(techCRow).toBeVisible();
+      // Columns: 0=Tech 1=Svcs 2=Gross 3=Card fee 4=Supply 5=Commissionable 6=Card tips.
+      expect(await cellText(techCRow, 2)).toBe("$60"); // gross — ORIGINAL
+      expect(await cellText(techCRow, 5)).toBe("$40"); // commissionable — NET of the $20 refund
+
+      // FR-006: no refund note / flag / badge anywhere on the row.
+      await expect(techCRow.locator('[data-slot="refund-note"]')).toHaveCount(0);
+      await expect(techCRow.locator('[data-slot="refund-flag"]')).toHaveCount(0);
     });
 
     test("(k) the Gross revenue subline surfaces the period's discount total (issue #139)", async ({

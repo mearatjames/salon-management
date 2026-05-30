@@ -234,6 +234,11 @@ async function clearPayroll(fixture: StaffFixture): Promise<void> {
     .from("payroll_payouts")
     .delete()
     .in("staff_id", [fixture.owner.id, fixture.manager.id, fixture.tech.id]);
+  // Drop any manual adjustments this worker's trio accumulated (053-US2).
+  await admin
+    .from("payout_adjustments")
+    .delete()
+    .in("staff_id", [fixture.owner.id, fixture.manager.id, fixture.tech.id]);
   await admin.from("payments").delete().in("ticket_id", tkList);
   await admin.from("ticket_items").delete().in("ticket_id", tkList);
   await admin.from("tickets").delete().in("id", tkList);
@@ -992,6 +997,430 @@ test.describe("US5: configure per-tech payroll rates", () => {
       await expect(page.locator('[data-slot="payroll-rates-commission-input"]')).toBeDisabled();
       await expect(page.locator('[data-slot="payroll-rates-tip-split-input"]')).toBeDisabled();
       await expect(page.locator('[data-slot="payroll-rates-check-portion-input"]')).toBeDisabled();
+    });
+  });
+});
+
+// ─── 053-US2: add, edit, and delete manual payout adjustments ────────────────
+//
+// The owner-tech earns this period (seedPayroll gives them a card ticket), so
+// their open-period detail screen renders the AdjustmentsCard with a live form.
+// A deduction drops the net payout and lists the line with creator + timestamp;
+// editing the amount moves the net; deleting restores it. The dialog confirm is
+// disabled for a zero amount and for an empty reason. The ledger Adj./Net-payout
+// columns and the Adjustments / Cash-to-pay KPIs reflect the change.
+//
+// Describe name carries the `US2` token so the scoped `-g "US2"` gate catches it.
+
+test.describe("053-US2: manual payout adjustments", () => {
+  test.describe("as owner", () => {
+    test.use({
+      storageState: async ({ authState }, provide) => {
+        await provide(authState.owner);
+      },
+    });
+
+    test("(a) add → edit → delete a deduction; net reconciles; KPIs + ledger follow", async ({
+      page,
+      staffFixture,
+    }) => {
+      await seedPayroll(staffFixture);
+
+      // The owner-tech earns ~$197 cash this period (see seedPayroll comment).
+      await page.goto(`/payroll/${staffFixture.owner.id}`);
+      await expect(page.locator('[data-slot="tech-detail-page"]')).toBeVisible();
+
+      const card = page.locator('[data-slot="adjustments-card"]');
+      await expect(card).toBeVisible();
+      await expect(card.locator('[data-slot="adjustments-empty"]')).toBeVisible();
+
+      const bignum = page.locator('[data-slot="cash-to-hand-over"]');
+      const netBefore = parseMoney(
+        (await bignum.locator(".pp-detail-bignum-v").textContent()) ?? "$0"
+      );
+      expect(netBefore).toBeGreaterThan(0);
+
+      // ── Open the add dialog ──
+      await card.locator('[data-slot="add-adjustment-trigger"]').click();
+      const dialog = page.locator('[data-slot="adjustment-dialog"]');
+      await expect(dialog).toBeVisible();
+
+      const confirm = dialog.locator('[data-slot="adjustment-confirm"]');
+      // Disabled with no amount / no reason yet.
+      await expect(confirm).toBeDisabled();
+
+      // Amount but still no reason → still disabled.
+      await dialog.locator('[data-slot="adjustment-amount-input"]').fill("10");
+      await expect(confirm).toBeDisabled();
+
+      // Reason but zero amount → disabled (clear the amount).
+      await dialog.locator('[data-slot="adjustment-amount-input"]').fill("");
+      await dialog.locator('[data-slot="reason-chip"]', { hasText: "Product charge" }).click();
+      await expect(confirm).toBeDisabled();
+
+      // ── A $25 deduction ──
+      await dialog.locator('[data-slot="direction-deduct"]').click();
+      await dialog.locator('[data-slot="adjustment-amount-input"]').fill("25");
+      await expect(confirm).toBeEnabled();
+      await confirm.click();
+      // The dialog closes once the action resolves (success → onDone).
+      await expect(dialog).toBeHidden({ timeout: 15_000 });
+
+      // The card's in-place `router.refresh()` is best-effort, so we verify the
+      // AUTHORITATIVE persisted result after a hard reload — the same way the
+      // US3 recordPayout test (and feature 047) confirm a payroll mutation.
+      const admin = adminClient();
+      await expect
+        .poll(
+          async () => {
+            const { data } = await admin
+              .from("payout_adjustments")
+              .select("amount_cents")
+              .eq("staff_id", staffFixture.owner.id);
+            return data?.length ?? 0;
+          },
+          { timeout: 15_000 }
+        )
+        .toBe(1);
+      await page.reload();
+      const line = card.locator('[data-slot="adjustment-line"]').first();
+      await expect(line).toBeVisible({ timeout: 15_000 });
+      await expect(line.locator('[data-slot="adjustment-amount"]')).toContainText("−$25");
+      await expect(line.locator(".pp-adj-line-meta")).toContainText(staffFixture.owner.displayName);
+
+      // Net payout dropped by $25.
+      const netAfterAdd = parseMoney(
+        (await bignum.locator(".pp-detail-bignum-v").textContent()) ?? "$0"
+      );
+      expect(netAfterAdd).toBe(netBefore - 25);
+
+      // The ledger reflects the Adj. + Net-payout columns + the KPIs.
+      await page.goto("/payroll");
+      const row = page.locator(
+        `tr[data-slot="ledger-row"][data-tech-id="${staffFixture.owner.id}"]`
+      );
+      await expect(row.locator('[data-slot="ledger-adj"]')).toContainText("−$25", {
+        timeout: 15_000,
+      });
+      await expect(row.locator('[data-slot="ledger-net-payout"]')).toContainText(
+        `$${netBefore - 25}`
+      );
+      const kpiAdj = page.locator('[data-slot="kpi-adjustments"]');
+      await expect(kpiAdj).toBeVisible();
+      await expect(kpiAdj).toContainText("−$25");
+      await expect(kpiAdj).toContainText("Cash to pay");
+
+      // ── Edit the amount to a $5 deduction ──
+      await page.goto(`/payroll/${staffFixture.owner.id}`);
+      await expect(card.locator('[data-slot="adjustment-line"]').first()).toBeVisible({
+        timeout: 15_000,
+      });
+      await card.locator('[data-slot="adjustment-line"]').first().scrollIntoViewIfNeeded();
+      await card.locator('[data-slot="adjustment-edit"]').first().click();
+      await expect(dialog).toBeVisible();
+      await dialog.locator('[data-slot="adjustment-amount-input"]').fill("5");
+      await dialog.locator('[data-slot="adjustment-confirm"]').click();
+      await expect(dialog).toBeHidden({ timeout: 15_000 });
+
+      // Verify the edit persisted, then reload for the reflected figures.
+      await expect
+        .poll(
+          async () => {
+            const { data } = await admin
+              .from("payout_adjustments")
+              .select("amount_cents")
+              .eq("staff_id", staffFixture.owner.id)
+              .maybeSingle();
+            return data?.amount_cents ?? null;
+          },
+          { timeout: 15_000 }
+        )
+        .toBe(-500);
+      await page.reload();
+      await expect(
+        card
+          .locator('[data-slot="adjustment-line"]')
+          .first()
+          .locator('[data-slot="adjustment-amount"]')
+      ).toContainText("−$5", { timeout: 15_000 });
+      const netAfterEdit = parseMoney(
+        (await bignum.locator(".pp-detail-bignum-v").textContent()) ?? "$0"
+      );
+      expect(netAfterEdit).toBe(netBefore - 5);
+
+      // ── Delete the adjustment → line gone, net restored ──
+      await card.locator('[data-slot="adjustment-delete"]').first().click();
+      await expect
+        .poll(
+          async () => {
+            const { data } = await admin
+              .from("payout_adjustments")
+              .select("id")
+              .eq("staff_id", staffFixture.owner.id);
+            return data?.length ?? 0;
+          },
+          { timeout: 15_000 }
+        )
+        .toBe(0);
+      await page.reload();
+      await expect(card.locator('[data-slot="adjustments-empty"]')).toBeVisible({
+        timeout: 15_000,
+      });
+      const netAfterDelete = parseMoney(
+        (await bignum.locator(".pp-detail-bignum-v").textContent()) ?? "$0"
+      );
+      expect(netAfterDelete).toBe(netBefore);
+    });
+  });
+});
+
+// ─── 053-US3: adjustments lock once the period is closed or the tech is paid ──
+//
+// The no-clawback rule (FR-012): once a tech is paid or the period is closed,
+// the adjustments card freezes — the prior lines + the net still show, but every
+// write affordance is gone and a "Period closed" lock badge replaces them. The
+// server is the real boundary, so a stale mutation fired after the lock is
+// REFUSED by the RPC guard (`payroll_assert_adjustable`):
+//   - a paid-out tech → `payroll_payout_exists`
+//   - a closed period → `payroll_period_not_open`
+//
+// Two parallel-safe slices:
+//   (a) The paid-out-tech path is driven through the UI on the worker's own
+//       owner-tech: add an adjustment, mark the tech paid, reload, assert the
+//       card is read-only (lock badge, no add / edit / delete) with the line +
+//       net still visible — then prove a stale add/edit RPC is refused.
+//   (b) The closed-period path is exercised at the RPC layer on a DISPOSABLE
+//       worker-scoped period (closing the shared open period would be terminal
+//       and corrupt other specs): insert an adjustment, close the period, then
+//       assert every adjustment mutation RPC is refused with
+//       `payroll_period_not_open` while the row stays put (frozen, not clawed).
+//
+// Describe name carries the `US3` token so the scoped `-g "US3"` gate catches it.
+
+// A disposable adjustment id for the worker's closed-period slice.
+function disposableAdjId(w: number): string {
+  return `71000000-0000-0000-00${workerHex(w)}-0000000000a9`;
+}
+
+async function clearDisposableAdjustments(fixture: StaffFixture): Promise<void> {
+  const admin = adminClient();
+  await admin.from("payout_adjustments").delete().eq("id", disposableAdjId(fixture.workerIndex));
+}
+
+test.describe("053-US3: adjustments lock when closed or paid out", () => {
+  test.describe("as owner", () => {
+    test.use({
+      storageState: async ({ authState }, provide) => {
+        await provide(authState.owner);
+      },
+    });
+
+    test.afterEach(async ({ staffFixture }) => {
+      if (!supabaseUp) return;
+      await clearDisposableAdjustments(staffFixture);
+      await clearDisposablePeriod(staffFixture);
+    });
+
+    test("(a) a paid-out tech freezes the card; the line + net stay; stale writes are refused", async ({
+      page,
+      staffFixture,
+    }) => {
+      await seedPayroll(staffFixture);
+
+      // The owner-tech earns this period — open the detail screen with the live
+      // adjustments card.
+      await page.goto(`/payroll/${staffFixture.owner.id}`);
+      await expect(page.locator('[data-slot="tech-detail-page"]')).toBeVisible();
+
+      const card = page.locator('[data-slot="adjustments-card"]');
+      await expect(card).toBeVisible();
+
+      // ── Add a $30 deduction while the period is open + the tech unpaid ──
+      await card.locator('[data-slot="add-adjustment-trigger"]').click();
+      const dialog = page.locator('[data-slot="adjustment-dialog"]');
+      await expect(dialog).toBeVisible();
+      await dialog.locator('[data-slot="direction-deduct"]').click();
+      await dialog.locator('[data-slot="adjustment-amount-input"]').fill("30");
+      await dialog.locator('[data-slot="reason-chip"]', { hasText: "Correction" }).click();
+      await dialog.locator('[data-slot="adjustment-confirm"]').click();
+      await expect(dialog).toBeHidden({ timeout: 15_000 });
+
+      // The in-place refresh is best-effort; confirm the persisted row (and grab
+      // its id for the stale-edit attempt later), then reload to see it listed.
+      const admin = adminClient();
+      await expect
+        .poll(
+          async () => {
+            const { data } = await admin
+              .from("payout_adjustments")
+              .select("id")
+              .eq("staff_id", staffFixture.owner.id);
+            return data?.length ?? 0;
+          },
+          { timeout: 15_000 }
+        )
+        .toBe(1);
+      const { data: adjRows } = await admin
+        .from("payout_adjustments")
+        .select("id")
+        .eq("staff_id", staffFixture.owner.id);
+      const adjId = adjRows?.[0]?.id as string;
+      expect(adjId).toBeTruthy();
+      await page.reload();
+      await expect(card.locator('[data-slot="adjustment-line"]')).toHaveCount(1);
+
+      // ── Mark the tech paid (Zelle) ──
+      const payCard = page.locator('[data-slot="tech-pay-action"]');
+      await expect(payCard).toBeVisible();
+      await payCard.locator('[data-slot="pay-method"][data-method="zelle"]').click();
+      await payCard.locator('[data-slot="mark-paid"]').click();
+      // recordPayout is best-effort in-place; confirm the persisted payout row.
+      await expect
+        .poll(
+          async () => {
+            const { data } = await admin
+              .from("payroll_payouts")
+              .select("id")
+              .eq("staff_id", staffFixture.owner.id);
+            return data?.length ?? 0;
+          },
+          { timeout: 15_000 }
+        )
+        .toBe(1);
+
+      // ── Reload → the card is now read-only (the tech is paid) ──
+      await page.reload();
+      await expect(card).toBeVisible();
+
+      // The "Period closed" lock badge replaces the write affordances. Generous
+      // timeout: this fires right after a reload, so under the parallel `main`
+      // pool the RSC re-render can lag the default expect window.
+      await expect(card.locator('[data-slot="adjustments-lock-badge"]')).toBeVisible({
+        timeout: 15_000,
+      });
+      // No Add trigger, no per-line edit / delete buttons.
+      await expect(card.locator('[data-slot="add-adjustment-trigger"]')).toHaveCount(0);
+      await expect(card.locator('[data-slot="adjustment-edit"]')).toHaveCount(0);
+      await expect(card.locator('[data-slot="adjustment-delete"]')).toHaveCount(0);
+
+      // The frozen line + the net are STILL shown (no clawback — FR-012).
+      const line = card.locator('[data-slot="adjustment-line"]').first();
+      await expect(line).toBeVisible();
+      await expect(line.locator('[data-slot="adjustment-amount"]')).toContainText("−$30");
+      await expect(card.locator('[data-slot="adjustments-net"]')).toBeVisible();
+
+      // ── The server is the real boundary: a stale mutation is refused. ──
+      const { data: payoutRow } = await admin
+        .from("payroll_payouts")
+        .select("pay_period_id")
+        .eq("staff_id", staffFixture.owner.id)
+        .single();
+      const payPeriodId = payoutRow?.pay_period_id as string;
+      expect(payPeriodId).toBeTruthy();
+
+      // A stale add for the now-paid tech → `payroll_payout_exists`.
+      const { error: addErr } = await admin.rpc("payroll_add_adjustment", {
+        p_pay_period_id: payPeriodId,
+        p_staff_id: staffFixture.owner.id,
+        p_amount_cents: -500,
+        p_reason: "Stale add after payout",
+        p_operator: staffFixture.owner.id,
+        p_device_user_id: null,
+      });
+      expect(addErr).not.toBeNull();
+      expect(addErr?.message ?? "").toContain("payroll_payout_exists");
+
+      // A stale edit of the existing line → also `payroll_payout_exists`.
+      const { error: editErr } = await admin.rpc("payroll_edit_adjustment", {
+        p_adjustment_id: adjId,
+        p_amount_cents: -100,
+        p_reason: "Stale edit after payout",
+        p_operator: staffFixture.owner.id,
+        p_device_user_id: null,
+      });
+      expect(editErr).not.toBeNull();
+      expect(editErr?.message ?? "").toContain("payroll_payout_exists");
+
+      // The frozen line is unchanged — the stale writes did not claw it back.
+      const { data: afterRow } = await admin
+        .from("payout_adjustments")
+        .select("amount_cents")
+        .eq("id", adjId)
+        .single();
+      expect(afterRow?.amount_cents).toBe(-3000);
+    });
+
+    test("(b) closing a period refuses every adjustment mutation RPC", async ({ staffFixture }) => {
+      const admin = adminClient();
+      const period = disposablePeriod(staffFixture.workerIndex);
+      const adjId = disposableAdjId(staffFixture.workerIndex);
+
+      // A fresh OPEN disposable period with one adjustment on the worker's tech.
+      await clearDisposableAdjustments(staffFixture);
+      await clearDisposablePeriod(staffFixture);
+      const { error: insErr } = await admin.from("pay_periods").insert({
+        id: period.id,
+        starts_on: period.startsOn,
+        ends_on: period.endsOn,
+        pay_date: period.payDate,
+        status: "open",
+      });
+      expect(insErr).toBeNull();
+
+      const { error: adjErr } = await admin.from("payout_adjustments").insert({
+        id: adjId,
+        pay_period_id: period.id,
+        staff_id: staffFixture.tech.id,
+        amount_cents: -1500,
+        reason: "Frozen by close",
+        created_by_staff_id: staffFixture.owner.id,
+      });
+      expect(adjErr).toBeNull();
+
+      // Close the period — terminal.
+      const { error: closeErr } = await admin.rpc("payroll_close_period", {
+        p_pay_period_id: period.id,
+        p_frozen_rows: [],
+        p_period_totals: {},
+        p_operator: staffFixture.owner.id,
+        p_device_user_id: null,
+      });
+      expect(closeErr).toBeNull();
+
+      // Every adjustment mutation is now refused with `payroll_period_not_open`.
+      const { error: addErr } = await admin.rpc("payroll_add_adjustment", {
+        p_pay_period_id: period.id,
+        p_staff_id: staffFixture.tech.id,
+        p_amount_cents: -500,
+        p_reason: "Stale add after close",
+        p_operator: staffFixture.owner.id,
+        p_device_user_id: null,
+      });
+      expect(addErr?.message ?? "").toContain("payroll_period_not_open");
+
+      const { error: editErr } = await admin.rpc("payroll_edit_adjustment", {
+        p_adjustment_id: adjId,
+        p_amount_cents: -100,
+        p_reason: "Stale edit after close",
+        p_operator: staffFixture.owner.id,
+        p_device_user_id: null,
+      });
+      expect(editErr?.message ?? "").toContain("payroll_period_not_open");
+
+      const { error: delErr } = await admin.rpc("payroll_delete_adjustment", {
+        p_adjustment_id: adjId,
+        p_operator: staffFixture.owner.id,
+        p_device_user_id: null,
+      });
+      expect(delErr?.message ?? "").toContain("payroll_period_not_open");
+
+      // The frozen line survived every refused mutation — no clawback (FR-012).
+      const { data: stillThere } = await admin
+        .from("payout_adjustments")
+        .select("amount_cents")
+        .eq("id", adjId)
+        .single();
+      expect(stillThere?.amount_cents).toBe(-1500);
     });
   });
 });

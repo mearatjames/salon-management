@@ -18,9 +18,16 @@ export type TechBreakdownProps = {
   row: PayrollLedgerRow;
 };
 
+// A net-payout label that carries its own minus sign when negative.
+function netCurrency(cents: number): string {
+  if (cents < 0) return `−${formatCurrency(Math.abs(cents) / 100)}`;
+  return formatCurrency(cents / 100);
+}
+
 export function TechBreakdown({ row }: TechBreakdownProps) {
   const isNoWork = row.state === "no_work";
   const totalEarnedCents = row.incomeAfterSplitCents + row.tipsAfterSplitCents;
+  const hasAdjustments = row.adjustments.length > 0;
 
   return (
     <div className="pp-detail-card" data-slot="tech-breakdown">
@@ -61,10 +68,43 @@ export function TechBreakdown({ row }: TechBreakdownProps) {
             </div>
             <div className="pl-bd-r minus">{formatCurrency(row.checkPortionCents / 100)}</div>
           </div>
-          <div className="pl-bd-row total">
-            <div className="pl-bd-l">Cash payment</div>
-            <div className="pl-bd-r">{formatCurrency(row.cashPaymentCents / 100)}</div>
-          </div>
+
+          {hasAdjustments ? (
+            <>
+              <div className="pl-bd-row cash-sub" data-slot="breakdown-cash-sub">
+                <div className="pl-bd-l">Cash payment</div>
+                <div className="pl-bd-r">{formatCurrency(row.cashPaymentCents / 100)}</div>
+              </div>
+              {row.adjustments.map((adj) => {
+                const isAdd = adj.amountCents >= 0;
+                return (
+                  <div
+                    className="pl-bd-row adj"
+                    data-slot="breakdown-adjustment"
+                    data-adj-id={adj.id}
+                    key={adj.id}
+                  >
+                    <div className="pl-bd-l">{adj.reason}</div>
+                    <div className={`pl-bd-r ${isAdd ? "add" : "deduct"}`}>
+                      {isAdd ? "" : "−"}
+                      {formatCurrency(Math.abs(adj.amountCents) / 100)}
+                    </div>
+                  </div>
+                );
+              })}
+              <div className="pl-bd-row total" data-slot="breakdown-net-payout">
+                <div className="pl-bd-l">Net payout</div>
+                <div className={`pl-bd-r${row.netPayoutCents < 0 ? " negative" : ""}`}>
+                  {netCurrency(row.netPayoutCents)}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="pl-bd-row total">
+              <div className="pl-bd-l">Cash payment</div>
+              <div className="pl-bd-r">{formatCurrency(row.cashPaymentCents / 100)}</div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -54,8 +54,21 @@ function StateBadge({ row }: { row: PayrollLedgerRow }) {
   );
 }
 
+// A net-payout label that carries its own minus sign when negative.
+function netCurrency(cents: number): string {
+  if (cents < 0) return `−${formatCurrency(Math.abs(cents) / 100)}`;
+  return formatCurrency(cents / 100);
+}
+
+// A signed adjustment label, e.g. "+$12" / "−$5".
+function signedCurrency(cents: number): string {
+  const sign = cents < 0 ? "−" : "+";
+  return `${sign}${formatCurrency(Math.abs(cents) / 100)}`;
+}
+
 export function TechDetailHeader({ row }: TechDetailHeaderProps) {
   const isNoWork = row.state === "no_work";
+  const hasAdjustments = row.adjustments.length > 0;
 
   return (
     <div className="pp-detail-header" data-slot="tech-detail-header">
@@ -88,10 +101,19 @@ export function TechDetailHeader({ row }: TechDetailHeaderProps) {
         <StateBadge row={row} />
         {!isNoWork && (
           <div className="pp-detail-bignum" data-slot="cash-to-hand-over">
-            <div className="pp-detail-bignum-l">Cash to hand over</div>
-            <div className="pp-detail-bignum-v">{formatCurrency(row.cashPaymentCents / 100)}</div>
+            <div className="pp-detail-bignum-l">
+              {hasAdjustments ? "Net payout" : "Cash to hand over"}
+            </div>
+            <div className="pp-detail-bignum-v">{netCurrency(row.netPayoutCents)}</div>
             <div className="pp-detail-bignum-s">
-              + {formatCurrency(row.checkPortionCents / 100)} reported on check
+              {hasAdjustments ? (
+                <>
+                  <span className="tnum">{formatCurrency(row.cashPaymentCents / 100)}</span> cash ·{" "}
+                  <span className="tnum">{signedCurrency(row.adjustmentsCents)}</span> adj
+                </>
+              ) : (
+                <>+ {formatCurrency(row.checkPortionCents / 100)} reported on check</>
+              )}
             </div>
           </div>
         )}

@@ -15,7 +15,7 @@
 // `styles/report.css` / `styles/tokens.css` token (Constitution Principle I).
 
 import { formatCurrency } from "@/lib/dashboard/format";
-import type { ReportTotals, TechnicianReport } from "@/lib/report/aggregate";
+import { netRevenueCents, type ReportTotals, type TechnicianReport } from "@/lib/report/aggregate";
 import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 
 export type ReportStaffListProps = {
@@ -107,7 +107,10 @@ export function ReportStaffList({
                 <div className="dr-card-num">
                   <span className="dr-cn-l">Net</span>
                   <span className="dr-cn-v bold">
-                    {formatCurrency(tech.commissionableCents / 100)}
+                    {/* Feature 053: net of refunds, clamped ≥ 0 (FR-006 — no flag). */}
+                    {formatCurrency(
+                      netRevenueCents(tech.commissionableCents, tech.refundedCents) / 100
+                    )}
                   </span>
                 </div>
               </div>

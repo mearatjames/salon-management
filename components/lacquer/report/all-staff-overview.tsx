@@ -15,7 +15,7 @@
 import { Info } from "lucide-react";
 
 import { formatCurrency } from "@/lib/dashboard/format";
-import type { ReportTotals, TechnicianReport } from "@/lib/report/aggregate";
+import { netRevenueCents, type ReportTotals, type TechnicianReport } from "@/lib/report/aggregate";
 import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
 
 export type AllStaffOverviewProps = {
@@ -54,7 +54,9 @@ export function AllStaffOverview({ technicians, totals }: AllStaffOverviewProps)
           <div className="dr-htotal">
             <div className="dr-htotal-l">Commissionable</div>
             <div className="dr-htotal-v pos">
-              {formatCurrency(totals.commissionableCents / 100)}
+              {formatCurrency(
+                netRevenueCents(totals.commissionableCents, totals.refundedCents) / 100
+              )}
             </div>
           </div>
           <div className="dr-htotal">
@@ -102,7 +104,12 @@ export function AllStaffOverview({ technicians, totals }: AllStaffOverviewProps)
                 <td className={`num dc${tech.supplyCents > 0 ? " on" : ""}`}>
                   {deductionCell(tech.supplyCents)}
                 </td>
-                <td className="num net-cell">{formatCurrency(tech.commissionableCents / 100)}</td>
+                <td className="num net-cell">
+                  {/* Feature 053: net of refunds, clamped ≥ 0 (FR-006 — no flag). */}
+                  {formatCurrency(
+                    netRevenueCents(tech.commissionableCents, tech.refundedCents) / 100
+                  )}
+                </td>
                 <td className="num tip-cell">{formatCurrency(tech.cardTipsCents / 100)}</td>
               </tr>
             ))}
@@ -114,7 +121,11 @@ export function AllStaffOverview({ technicians, totals }: AllStaffOverviewProps)
               <td className="num">{formatCurrency(totals.grossCents / 100)}</td>
               <td className="num dc on">{deductionCell(totals.cardFeeCents)}</td>
               <td className="num dc on">{deductionCell(totals.supplyCents)}</td>
-              <td className="num net-cell">{formatCurrency(totals.commissionableCents / 100)}</td>
+              <td className="num net-cell">
+                {formatCurrency(
+                  netRevenueCents(totals.commissionableCents, totals.refundedCents) / 100
+                )}
+              </td>
               <td className="num tip-cell">{formatCurrency(totals.cardTipsCents / 100)}</td>
             </tr>
           </tfoot>
