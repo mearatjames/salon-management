@@ -346,3 +346,55 @@ export class DraftLegNotFoundError extends CheckoutError {
     this.name = "DraftLegNotFoundError";
   }
 }
+
+// ----------------------------------------------------------------------
+// Feature 052-privileged-action-overrides — void & refund errors.
+// Contract: `specs/052-privileged-action-overrides/contracts/
+// server-actions.contract.md`. These follow the same `.name`-discriminated
+// convention as the classes above; the void/refund actions throw them and
+// callers narrow with `instanceof` / `.name`.
+//
+// `PermissionDeniedError` is reused from the transactions module (it is a
+// plain standalone class there, not part of the CheckoutError union) and
+// re-exported below so both checkout + transactions share one definition.
+// ----------------------------------------------------------------------
+
+export class VoidNotAllowedError extends Error {
+  constructor(message = "This sale can't be voided — only same-day paid sales are eligible.") {
+    super(message);
+    this.name = "VoidNotAllowedError";
+  }
+}
+
+export class RefundExceedsRemainingError extends Error {
+  constructor(message = "A refund line exceeds the payment's unrefunded remainder.") {
+    super(message);
+    this.name = "RefundExceedsRemainingError";
+  }
+}
+
+export class PaymentNotOnTicketError extends Error {
+  constructor(message = "That payment isn't part of this ticket.") {
+    super(message);
+    this.name = "PaymentNotOnTicketError";
+  }
+}
+
+export class SquareRefundFailedError extends Error {
+  readonly squareError?: string;
+  constructor(
+    message = "Square couldn't process the refund. The sale is unchanged.",
+    squareError?: string
+  ) {
+    super(message);
+    this.name = "SquareRefundFailedError";
+    this.squareError = squareError;
+  }
+}
+
+// Re-export the shared PermissionDeniedError (defined in the transactions
+// module as a standalone class) so void/refund call sites in checkout can
+// throw it from a single import surface without a deep cross-feature
+// import. The single definition stays in
+// `app/(studio)/transactions/_errors.ts`.
+export { PermissionDeniedError } from "@/app/(studio)/transactions/_errors";

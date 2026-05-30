@@ -123,7 +123,7 @@ export async function querySummaryRows(
 // ── queryTodayFeed ────────────────────────────────────────────────────────
 
 type TodayFeedItem = SummarizeItem & { ticket_id: string };
-type TodayFeedPayment = SummarizePayment & { processed_at: string };
+type TodayFeedPayment = SummarizePayment & { processed_at: string; kind: string };
 
 export async function queryTodayFeed(
   supabase: AnySupabase,
@@ -132,10 +132,14 @@ export async function queryTodayFeed(
 ): Promise<readonly TransactionRow[]> {
   const [start, end] = todayWindow(tz, now);
 
+  // Feature 052: the live feed shows completed sales AND refunded ones
+  // (partial or full) with a badge — a refunded sale is still a real sale
+  // that happened today. A voided sale is excluded (a same-day cancellation,
+  // not a sale). Revenue summaries are computed separately and stay net.
   const ticketsRes = await supabase
     .from("tickets")
     .select("id, status, subtotal_cents, tax_cents, total_cents, closed_at")
-    .eq("status", "paid")
+    .in("status", ["paid", "refunded", "partially_refunded"])
     .gte("closed_at", start.toISOString())
     .lte("closed_at", end.toISOString())
     .order("closed_at", { ascending: false });
@@ -155,8 +159,10 @@ export async function queryTodayFeed(
       .select("ticket_id, kind, qty, name_snapshot, assigned_staff_id, unit_price_cents")
       .in("ticket_id", ticketIds),
     supabase
+      // Feature 052: `kind` separates original legs from refund legs so the
+      // method/total describe the sale and refunds feed the net.
       .from("payments")
-      .select("ticket_id, method, status, amount_cents, tip_cents, processed_at")
+      .select("ticket_id, method, status, kind, amount_cents, tip_cents, processed_at")
       .in("ticket_id", ticketIds)
       .eq("status", "succeeded"),
   ]);
@@ -199,8 +205,18 @@ export async function queryTodayFeed(
       }
     }
 
+    // Feature 052: separate original legs from refund legs. Method/total
+    // describe the sale (originals); refunds reduce the net.
+    const originalPayments = ticketPayments.filter((p) => p.kind !== "refund");
+    const refundedCents = ticketPayments
+      .filter((p) => p.kind === "refund")
+      .reduce((sum, p) => sum + p.amount_cents, 0);
+    const reversal: TransactionRow["reversal"] =
+      ticket.status === "refunded" || ticket.status === "partially_refunded" ? ticket.status : null;
+    const netTotal = Math.max(0, ticket.total_cents - refundedCents) / 100;
+
     // method — single succeeded method, or 'split' for ≥2 distinct methods.
-    const distinctMethods = Array.from(new Set(ticketPayments.map((p) => p.method)));
+    const distinctMethods = Array.from(new Set(originalPayments.map((p) => p.method)));
     let method: PaymentMethod;
     if (distinctMethods.length >= 2) {
       method = "split";
@@ -225,6 +241,8 @@ export async function queryTodayFeed(
       techIds,
       method,
       total: ticket.total_cents / 100,
+      reversal,
+      netTotal,
     });
   }
 

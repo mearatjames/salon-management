@@ -277,9 +277,11 @@ export type Database = {
           method: Database["public"]["Enums"]["payment_method"];
           processed_at: string;
           raw: Json | null;
+          refunds_payment_id: string | null;
           square_gift_card_payment_id: string | null;
           square_order_id: string | null;
           square_payment_id: string | null;
+          square_refund_id: string | null;
           square_terminal_checkout_id: string | null;
           status: Database["public"]["Enums"]["payment_status"];
           taken_by_staff_id: string;
@@ -296,9 +298,11 @@ export type Database = {
           method: Database["public"]["Enums"]["payment_method"];
           processed_at?: string;
           raw?: Json | null;
+          refunds_payment_id?: string | null;
           square_gift_card_payment_id?: string | null;
           square_order_id?: string | null;
           square_payment_id?: string | null;
+          square_refund_id?: string | null;
           square_terminal_checkout_id?: string | null;
           status: Database["public"]["Enums"]["payment_status"];
           taken_by_staff_id: string;
@@ -315,9 +319,11 @@ export type Database = {
           method?: Database["public"]["Enums"]["payment_method"];
           processed_at?: string;
           raw?: Json | null;
+          refunds_payment_id?: string | null;
           square_gift_card_payment_id?: string | null;
           square_order_id?: string | null;
           square_payment_id?: string | null;
+          square_refund_id?: string | null;
           square_terminal_checkout_id?: string | null;
           status?: Database["public"]["Enums"]["payment_status"];
           taken_by_staff_id?: string;
@@ -330,6 +336,13 @@ export type Database = {
             columns: ["gift_card_id"];
             isOneToOne: false;
             referencedRelation: "gift_cards";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "payments_refunds_payment_id_fkey";
+            columns: ["refunds_payment_id"];
+            isOneToOne: false;
+            referencedRelation: "payments";
             referencedColumns: ["id"];
           },
           {
@@ -1004,6 +1017,14 @@ export type Database = {
         };
         Returns: string;
       };
+      pos_finalize_refund: {
+        Args: { p_refund_results: Json; p_ticket_id: string };
+        Returns: undefined;
+      };
+      pos_finalize_void: {
+        Args: { p_refund_results: Json; p_ticket_id: string };
+        Returns: undefined;
+      };
       pos_record_card_payment: {
         Args: {
           p_failure_reason: string;
@@ -1033,6 +1054,16 @@ export type Database = {
           ticket_id: string;
         }[];
       };
+      pos_refund_payments: {
+        Args: { p_lines: Json; p_operator: string; p_ticket_id: string };
+        Returns: {
+          amount_cents: number;
+          method: Database["public"]["Enums"]["payment_method"];
+          original_payment_id: string;
+          refund_payment_id: string;
+          square_payment_id: string;
+        }[];
+      };
       pos_remove_payment_draft: {
         Args: { p_operator: string; p_payment_id: string };
         Returns: undefined;
@@ -1040,6 +1071,16 @@ export type Database = {
       pos_take_cash: {
         Args: { p_operator: string; p_ticket_id: string };
         Returns: string;
+      };
+      pos_void_ticket: {
+        Args: { p_operator: string; p_ticket_id: string };
+        Returns: {
+          amount_cents: number;
+          method: Database["public"]["Enums"]["payment_method"];
+          original_payment_id: string;
+          refund_payment_id: string;
+          square_payment_id: string;
+        }[];
       };
       read_square_oauth_decrypted: {
         Args: { vault_secret_name: string };
@@ -1059,12 +1100,12 @@ export type Database = {
     };
     Enums: {
       pay_period_status: "open" | "closed";
-      payment_kind: "payment";
+      payment_kind: "payment" | "refund";
       payment_method: "cash" | "card" | "gift";
       payment_status: "succeeded" | "pending" | "failed" | "draft";
       payout_method: "cash" | "zelle" | "check";
       ticket_item_kind: "service" | "discount";
-      ticket_status: "open" | "paid" | "discarded";
+      ticket_status: "open" | "paid" | "discarded" | "void" | "refunded" | "partially_refunded";
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -1194,12 +1235,12 @@ export const Constants = {
   public: {
     Enums: {
       pay_period_status: ["open", "closed"],
-      payment_kind: ["payment"],
+      payment_kind: ["payment", "refund"],
       payment_method: ["cash", "card", "gift"],
       payment_status: ["succeeded", "pending", "failed", "draft"],
       payout_method: ["cash", "zelle", "check"],
       ticket_item_kind: ["service", "discount"],
-      ticket_status: ["open", "paid", "discarded"],
+      ticket_status: ["open", "paid", "discarded", "void", "refunded", "partially_refunded"],
     },
   },
 } as const;

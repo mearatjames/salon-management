@@ -42,8 +42,15 @@ export const AFFECTED_MAP = {
     "tests/e2e/card-payment-*.spec.ts",
     "tests/e2e/gift-card-*.spec.ts",
     "tests/e2e/concurrent-charge-blocked.spec.ts",
+    // Feature 052 — void/refund Server Actions live in the checkout +
+    // transactions actions modules.
+    "tests/e2e/void-sale.spec.ts",
+    "tests/e2e/refund-ticket.spec.ts",
   ],
   "lib/pos/**": ["tests/e2e/checkout-*.spec.ts", "tests/e2e/split-tender-*.spec.ts"],
+
+  // Feature 052 — pure ticket-status math used by the void/refund flows.
+  "lib/payments/**": ["tests/e2e/void-sale.spec.ts", "tests/e2e/refund-ticket.spec.ts"],
 
   // Ephemeral-draft persistence RPC (migration 0020). Every draft-path
   // payment runs `pos_create_ticket_from_draft`, so a change to the
@@ -73,6 +80,10 @@ export const AFFECTED_MAP = {
     "tests/e2e/split-tender-*.spec.ts",
     "tests/e2e/concurrent-charge-blocked.spec.ts",
     "tests/e2e/square-oauth.spec.ts",
+    // Feature 052 — `lib/square/refunds.ts` is exercised by the
+    // void/refund flows.
+    "tests/e2e/void-sale.spec.ts",
+    "tests/e2e/refund-ticket.spec.ts",
   ],
   "app/(studio)/settings/square/**": ["tests/e2e/square-oauth.spec.ts"],
   "components/lacquer/settings/square/**": ["tests/e2e/square-oauth.spec.ts"],
@@ -161,8 +172,14 @@ export const AFFECTED_MAP = {
     "tests/e2e/report.spec.ts",
   ],
 
-  // Transactions page (feature 045).
-  "app/(studio)/transactions/**": ["tests/e2e/transactions.spec.ts"],
+  // Transactions page (feature 045). Feature 052 adds the void/refund
+  // Server Actions here (the transactions surface is where past sales are
+  // reversed), so a change pulls the reversal specs too.
+  "app/(studio)/transactions/**": [
+    "tests/e2e/transactions.spec.ts",
+    "tests/e2e/void-sale.spec.ts",
+    "tests/e2e/refund-ticket.spec.ts",
+  ],
   "components/lacquer/transactions/**": ["tests/e2e/transactions.spec.ts"],
   "lib/transactions/**": ["tests/e2e/transactions.spec.ts"],
 

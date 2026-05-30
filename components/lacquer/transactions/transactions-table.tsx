@@ -46,6 +46,15 @@ export type TransactionsTableProps = {
   onClearFilters?: () => void;
 };
 
+// Feature 052: compact badge label per reversal outcome for the dense table
+// row — "Partial" keeps the pill inside the fixed-width client column (the
+// receipt drawer spells out "Partially refunded"). Sentence case (Principle I).
+const REVERSAL_LABEL: Record<NonNullable<TransactionDetail["reversal"]>, string> = {
+  void: "Voided",
+  refunded: "Refunded",
+  partially_refunded: "Partial",
+};
+
 // The non-discount service names of a transaction, summarised to one cell.
 function serviceSummary(transaction: TransactionDetail): string {
   const names = transaction.items
@@ -147,13 +156,38 @@ export function TransactionsTable({
                 <tr
                   key={transaction.id}
                   data-tx-id={transaction.id}
-                  className={selectedId === transaction.id ? "selected" : undefined}
+                  // `refunded` (a prototype row treatment: muted + struck
+                  // amounts) flags any reversal — the `.tp-net` span opts back
+                  // out of the strike to show the retained net.
+                  className={
+                    [
+                      selectedId === transaction.id ? "selected" : "",
+                      transaction.reversal ? "refunded" : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || undefined
+                  }
                   onClick={() => onRowClick?.(transaction)}
                 >
                   <td className="time">{transaction.time}</td>
                   <td className="id">{transaction.displayId}</td>
                   <td className="client">
-                    <b>{transaction.client}</b>
+                    {/* The reversal badge lives here (not the fixed 96px mono
+                        ID column, where it overflowed into this cell): the
+                        client column can wrap, so the badge stacks under the
+                        name. */}
+                    <span className="tp-client-cell">
+                      <b>{transaction.client}</b>
+                      {transaction.reversal ? (
+                        <span
+                          className="tp-reversal-badge"
+                          data-slot="tx-reversal-badge"
+                          data-reversal={transaction.reversal}
+                        >
+                          {REVERSAL_LABEL[transaction.reversal]}
+                        </span>
+                      ) : null}
+                    </span>
                   </td>
                   <td className="services">{serviceSummary(transaction)}</td>
                   <td>
@@ -164,7 +198,24 @@ export function TransactionsTable({
                   </td>
                   <td className="num">{formatCurrency(transaction.subtotalCents / 100)}</td>
                   <td className="num">{formatCurrency(transaction.tipCents / 100)}</td>
-                  <td className="num total">{formatCurrency(transaction.totalCents / 100)}</td>
+                  <td className="num total">
+                    {transaction.reversal ? (
+                      <>
+                        {/* Only the ORIGINAL total is struck (it was reduced);
+                            the net below is the real current value and stays
+                            un-struck — even at $0 it reads "net $0", not a
+                            crossed-out number. */}
+                        <span className="tp-orig-total">
+                          {formatCurrency(transaction.totalCents / 100)}
+                        </span>
+                        <span className="tp-net" data-slot="tx-net">
+                          net {formatCurrency(transaction.netTotalCents / 100)}
+                        </span>
+                      </>
+                    ) : (
+                      formatCurrency(transaction.totalCents / 100)
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

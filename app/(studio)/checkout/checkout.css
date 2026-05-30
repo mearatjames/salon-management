@@ -324,6 +324,15 @@
   border-color: color-mix(in oklch, var(--primary) 92%, black);
 }
 
+/* Feature 052 (US1) — privileged "Void sale" affordance, set apart below
+   the primary action row so it reads as a distinct, infrequent action. */
+.checkout-done-void {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: var(--space-4);
+}
+
 /* ==========================================================================
    013-cart-polish — Price sheet (modal). Adapted 1:1 from
    `design-system/prototypes/transaction/transaction.css` § "Price sheet

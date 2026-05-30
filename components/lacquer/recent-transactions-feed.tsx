@@ -1,14 +1,23 @@
 import Link from "next/link";
 
 import type { Technician, TransactionRow } from "@/lib/dashboard/aggregate";
+import type { StudioRole } from "@/lib/auth/session";
 import { formatCurrency } from "@/lib/dashboard/format";
 import { EmptyFeedState } from "@/components/lacquer/empty-feed-state";
 import { MethodPill } from "@/components/lacquer/method-pill";
 import { TechStack } from "@/components/lacquer/tech-stack";
+import { RefundEntry } from "@/components/lacquer/transactions/refund-entry.client";
 
 export type RecentTransactionsFeedProps = {
   rows: readonly TransactionRow[];
   staff: readonly Technician[];
+  /**
+   * Feature 052 (US2): the viewer's role. Owner + manager get a per-row
+   * "Refund" affordance (opens the shared refund composition sheet for that
+   * ticket); every other role sees the row exactly as before. The server
+   * action re-checks the role (Principle II); this only gates the affordance.
+   */
+  viewerRole: StudioRole;
 };
 
 // Server component — applies the `.tx-feed` chrome (background / border /
@@ -25,7 +34,8 @@ export type RecentTransactionsFeedProps = {
 //
 // The "View all" control is a `next/link` `<Link>` styled as a link via
 // `.tx-link`; it navigates to the `/transactions` page (feature 045).
-export function RecentTransactionsFeed({ rows, staff }: RecentTransactionsFeedProps) {
+export function RecentTransactionsFeed({ rows, staff, viewerRole }: RecentTransactionsFeedProps) {
+  const canRefund = viewerRole === "owner" || viewerRole === "manager";
   return (
     <div className="tx-feed" data-slot="recent-transactions-feed">
       <div className="tx-feed-h">
@@ -52,7 +62,33 @@ export function RecentTransactionsFeed({ rows, staff }: RecentTransactionsFeedPr
                 <TechStack staff={staff} ids={row.techIds} size={20} />
               </span>
               <MethodPill method={row.method} />
-              <span className="amt tnum">{formatCurrency(row.total)}</span>
+              <span
+                className="amt tnum"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "flex-end",
+                  gap: "var(--space-2)",
+                }}
+              >
+                {row.reversal ? (
+                  <span
+                    className="tx-feed-badge"
+                    data-slot="feed-reversal-badge"
+                    data-reversal={row.reversal}
+                  >
+                    {row.reversal === "partially_refunded" ? "Partial" : "Refunded"}
+                  </span>
+                ) : null}
+                {/* Reversed rows show the net kept; a fully-refunded sale has
+                    nothing left to refund, so its affordance is hidden. */}
+                {formatCurrency(row.reversal ? row.netTotal : row.total)}
+                <RefundEntry
+                  ticketId={row.id}
+                  canRefund={canRefund && row.reversal !== "refunded"}
+                  variant="feed"
+                />
+              </span>
             </div>
           ))}
         </div>

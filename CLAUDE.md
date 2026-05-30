@@ -263,5 +263,5 @@ Spec Kit (`/speckit-specify`, `/speckit-plan`, etc.) inside the worktree
 instead of trying to ship it in one PR.
 
 <!-- SPECKIT START -->
-Active plan: `specs/051-square-itemized-order/plan.md`
+Active plan: `specs/052-privileged-action-overrides/plan.md`
 <!-- SPECKIT END -->

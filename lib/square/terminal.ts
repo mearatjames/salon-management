@@ -48,6 +48,28 @@ export function buildIdempotencyKey(ticketId: string, paymentId: string): string
   return createHash("sha256").update(`${ticketId}:${paymentId}`).digest("hex").slice(0, 32);
 }
 
+/**
+ * Deterministic Square `idempotency_key` for a refund, derived from
+ * `(originalPaymentId, refundPaymentId)` per Constitution Principle III
+ * (contracts/square-refund.contract.md).
+ *
+ * Same canonical input ⇒ same key, so a retried `refundPayment` network
+ * call (same refund-leg row) dedupes at Square; a fresh refund-leg row
+ * yields a brand-new key. We SHA-256 the canonical
+ * `${originalPaymentId}:refund:${refundPaymentId}` and emit the first 45
+ * hex chars — comfortably under Square's documented refund idempotency
+ * cap while preserving the deterministic key form.
+ */
+export function buildRefundIdempotencyKey(
+  originalPaymentId: string,
+  refundPaymentId: string
+): string {
+  return createHash("sha256")
+    .update(`${originalPaymentId}:refund:${refundPaymentId}`)
+    .digest("hex")
+    .slice(0, 45);
+}
+
 export type TerminalDevice = {
   squareDeviceId: string;
   providedName: string;

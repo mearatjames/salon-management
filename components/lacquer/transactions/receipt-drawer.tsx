@@ -34,6 +34,7 @@ import { formatDayLabel } from "@/lib/transactions/format";
 import { MethodPill } from "@/components/lacquer/method-pill";
 import { TechStack } from "@/components/lacquer/tech-stack";
 import { ReceiptLineTechChip } from "@/components/lacquer/transactions/receipt-line-tech-chip";
+import { RefundEntry } from "@/components/lacquer/transactions/refund-entry.client";
 
 export type ReceiptDrawerProps = {
   /** The transaction to render the receipt for. */
@@ -64,6 +65,13 @@ const METHOD_LABEL: Record<TransactionDetail["method"], string> = {
   cash: "Cash",
   gift: "Gift card",
   split: "Split payment",
+};
+
+// Feature 052: reversal-status badge label (sentence case, Principle I).
+const REVERSAL_LABEL: Record<NonNullable<TransactionDetail["reversal"]>, string> = {
+  void: "Voided",
+  refunded: "Refunded",
+  partially_refunded: "Partially refunded",
 };
 
 export function ReceiptDrawer({
@@ -135,6 +143,16 @@ export function ReceiptDrawer({
             <div className="sub">
               {transaction.displayId} · {dayLabel} · {transaction.time}
             </div>
+            {transaction.reversal ? (
+              <span
+                className="tp-reversal-badge"
+                data-slot="receipt-reversal-badge"
+                data-reversal={transaction.reversal}
+                style={{ marginTop: "var(--space-2)", display: "inline-flex" }}
+              >
+                {REVERSAL_LABEL[transaction.reversal]}
+              </span>
+            ) : null}
           </div>
           <button
             type="button"
@@ -251,6 +269,24 @@ export function ReceiptDrawer({
                   {formatCurrency(transaction.totalCents / 100)}
                 </span>
               </div>
+              {/* Feature 052: a reversed sale shows what was refunded and the
+                  net it kept, beneath the original total. */}
+              {transaction.reversal ? (
+                <>
+                  <div className="row">
+                    <span className="k">Refunded</span>
+                    <span data-slot="receipt-refunded">
+                      −{formatCurrency(transaction.refundedCents / 100)}
+                    </span>
+                  </div>
+                  <div className="row total">
+                    <span>Net</span>
+                    <span data-slot="receipt-net">
+                      {formatCurrency(transaction.netTotalCents / 100)}
+                    </span>
+                  </div>
+                </>
+              ) : null}
             </div>
           </div>
 
@@ -294,6 +330,18 @@ export function ReceiptDrawer({
               </div>
             </div>
           </div>
+
+          {/* Refund — feature 052 (US2). Owner/manager only, within the
+              still-open pay period (`canEdit`). Hidden once the sale is fully
+              reversed (void/refunded — nothing remains to refund); a
+              partially-refunded sale keeps it so the remainder can be
+              refunded. The shared RefundCompositionSheet + server RPC are the
+              authority on the per-payment remainder. */}
+          {canEdit && transaction.reversal !== "void" && transaction.reversal !== "refunded" ? (
+            <div className="tp-d-section" data-slot="receipt-refund-section">
+              <RefundEntry ticketId={transaction.id} canRefund variant="drawer" />
+            </div>
+          ) : null}
         </div>
       </aside>
     </>

@@ -40,6 +40,12 @@ export type TransactionRow = {
   method: PaymentMethod;
   total: number;
   // NB: no `client` field (FR-023).
+  // Feature 052: the live feed surfaces refunded sales (partial or full).
+  // `reversal` is the refund outcome (a voided sale is NOT shown in the
+  // feed — it's a same-day cancellation, not a sale); `netTotal` is what the
+  // sale kept after refunds (== total for a normal sale).
+  reversal: "refunded" | "partially_refunded" | null;
+  netTotal: number;
 };
 
 export type QuickAction = {

@@ -13,6 +13,7 @@
 // forward-compat for the refund-flow feature.
 
 import type { TechBadge } from "@/lib/end-of-day/aggregate";
+import { RefundEntry } from "@/components/lacquer/transactions/refund-entry.client";
 
 export type CashRowProps = {
   kind: "payment" | "refund";
@@ -24,6 +25,13 @@ export type CashRowProps = {
   techs: TechBadge[];
   amountCents: number;
   tipCents: number;
+  /**
+   * Feature 052 (US2): the ticket id for the refund affordance. When
+   * `canRefund` is true and this is a `payment` row, an owner/manager
+   * "Refund" control renders in the amount column.
+   */
+  ticketId?: string;
+  canRefund?: boolean;
 };
 
 function formatDollarsAbs(cents: number): string {
@@ -39,15 +47,24 @@ export function CashRow({
   techs,
   amountCents,
   tipCents,
+  ticketId,
+  canRefund = false,
 }: CashRowProps) {
   const isRefund = kind === "refund";
   const className = isRefund ? "eod-tx-row refund" : "eod-tx-row";
   const amountLabel = isRefund
     ? `−$${formatDollarsAbs(amountCents)}`
     : `$${formatDollarsAbs(amountCents)}`;
+  // The refund affordance only attaches to original payment rows.
+  const showRefund = canRefund && !isRefund && Boolean(ticketId);
 
   return (
-    <div className={className} data-slot="eod-cash-row" data-kind={kind}>
+    <div
+      className={className}
+      data-slot={showRefund ? "eod-refund-row" : "eod-cash-row"}
+      data-kind={kind}
+      data-tx-id={ticketId}
+    >
       <div className="eod-tx-time">{time}</div>
       <div className="eod-tx-body">
         <div className="eod-tx-client">{client}</div>
@@ -65,11 +82,21 @@ export function CashRow({
           ))}
         </div>
       </div>
-      <div className="eod-tx-amt-col">
-        <div className="eod-tx-total tnum">{amountLabel}</div>
-        {tipCents > 0 ? (
-          <div className="eod-tx-tip tnum">incl. ${(tipCents / 100).toFixed(2)} tip</div>
-        ) : null}
+      <div
+        className="eod-tx-amt-col"
+        style={
+          showRefund
+            ? { display: "flex", flexDirection: "row", alignItems: "center", gap: "var(--space-2)" }
+            : undefined
+        }
+      >
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end" }}>
+          <div className="eod-tx-total tnum">{amountLabel}</div>
+          {tipCents > 0 ? (
+            <div className="eod-tx-tip tnum">incl. ${(tipCents / 100).toFixed(2)} tip</div>
+          ) : null}
+        </div>
+        {showRefund ? <RefundEntry ticketId={ticketId!} canRefund variant="feed" /> : null}
       </div>
     </div>
   );
