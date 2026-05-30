@@ -1,9 +1,9 @@
 // @vitest-environment node
 
-// Unit test for `emailBillStub` (T033 / T036) — feature 013-cart-polish.
+// Unit test for `emailReceiptStub` (T033 / T036) — feature 013-cart-polish.
 //
 // The action wraps the stub contract from `contracts/server-actions.md § 4`:
-//   (a) valid address → returns { ok: true } AND recordAudit("bill.emailed",
+//   (a) valid address → returns { ok: true } AND recordAudit("receipt.emailed",
 //       deviceUserId, ticketId, { address, line_snapshot }, staffId) was
 //       called exactly once
 //   (b) invalid address "not an email" → throws EmailAddressInvalidError AND
@@ -36,7 +36,7 @@ import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 import { requireStudioSession } from "@/lib/auth/session";
 import { recordAudit } from "@/lib/auth/audit";
 
-import { emailBillStub } from "@/app/(studio)/checkout/actions";
+import { emailReceiptStub } from "@/app/(studio)/checkout/actions";
 import { EmailAddressInvalidError } from "@/app/(studio)/checkout/_errors";
 
 const TICKET_ID = "11111111-1111-1111-1111-111111111111";
@@ -64,7 +64,7 @@ function mockSupabase() {
   });
 }
 
-function makeSnapshot(overrides: Partial<Parameters<typeof emailBillStub>[0]["snapshot"]> = {}) {
+function makeSnapshot(overrides: Partial<Parameters<typeof emailReceiptStub>[0]["snapshot"]> = {}) {
   return {
     lines: [
       {
@@ -94,7 +94,7 @@ function makeSnapshot(overrides: Partial<Parameters<typeof emailBillStub>[0]["sn
   };
 }
 
-describe("emailBillStub", () => {
+describe("emailReceiptStub", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockSession();
@@ -107,7 +107,7 @@ describe("emailBillStub", () => {
 
   it("(a) valid address → returns { ok: true } AND recordAudit called exactly once with correct args", async () => {
     const snapshot = makeSnapshot();
-    const result = await emailBillStub({
+    const result = await emailReceiptStub({
       ticketId: TICKET_ID,
       address: "you@example.com",
       snapshot,
@@ -119,7 +119,7 @@ describe("emailBillStub", () => {
     const [verb, deviceUserId, entityId, payload, actingAsStaffId] = (
       recordAudit as unknown as ReturnType<typeof vi.fn>
     ).mock.calls[0];
-    expect(verb).toBe("bill.emailed");
+    expect(verb).toBe("receipt.emailed");
     expect(deviceUserId).toBe(DEVICE_USER_ID);
     expect(entityId).toBe(TICKET_ID);
     expect(actingAsStaffId).toBe(STAFF_ID);
@@ -133,7 +133,7 @@ describe("emailBillStub", () => {
     const snapshot = makeSnapshot();
 
     await expect(
-      emailBillStub({
+      emailReceiptStub({
         ticketId: TICKET_ID,
         address: "not an email",
         snapshot,
@@ -147,7 +147,7 @@ describe("emailBillStub", () => {
     const snapshot = makeSnapshot();
 
     await expect(
-      emailBillStub({
+      emailReceiptStub({
         ticketId: TICKET_ID,
         address: "",
         snapshot,
@@ -185,7 +185,7 @@ describe("emailBillStub", () => {
       capturedAt: "2026-05-16T15:00:00.000Z",
     });
 
-    await emailBillStub({
+    await emailReceiptStub({
       ticketId: TICKET_ID,
       address: "manager@tangnails.dev",
       snapshot,

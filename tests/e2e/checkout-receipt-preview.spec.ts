@@ -1,32 +1,32 @@
-// E2E for US4 of feature 013-cart-polish — bill preview, print, and email stub.
+// E2E for US4 of feature 013-cart-polish — receipt preview, print, and email stub.
 //
 // Covers US4 acceptance scenarios 1–7 from spec.md:
-//   (a) `Bill` opens the sheet overlay
+//   (a) `Receipt` opens the sheet overlay
 //   (b) sheet renders salon masthead + items + service subtotal + discount
 //       lines (if any) + total + 3 suggested-gratuity rows at 18/20/25
 //   (c) print stylesheet hides chrome — `page.emulateMedia({ media: 'print' })`
-//       then `.lacquer-bill-doc` is visible and the studio chrome elements
+//       then `.lacquer-receipt-doc` is visible and the studio chrome elements
 //       have `visibility: hidden`
 //   (d) snapshot semantics — add a service line while the sheet is open;
 //       the sheet's content does NOT change; close + re-open → snapshot
 //       now reflects the new line
 //   (e) Email submit with `you@example.com` → success toast — see the
-//       feature-043 note below; the email-bill server round-trip is a
+//       feature-043 note below; the email-receipt server round-trip is a
 //       persisted-mode-only flow and is not reachable from the ephemeral
 //       pre-payment cart, so this scenario is fixme'd.
 //   (f) Email submit with `not-an-email` → inline error AND no toast
 //       (the invalid-address rejection is client-side, so this still
 //       holds in the ephemeral cart)
-//   (g) closing the bill sheet leaves the ephemeral cart untouched — no
+//   (g) closing the receipt sheet leaves the ephemeral cart untouched — no
 //       `tickets` / `payments` rows are written
 //
 // Feature 043-checkout-ephemeral-draft: the in-progress cart is now an
-// ephemeral in-memory draft. Entry is the paramless `/checkout`; the bill
+// ephemeral in-memory draft. Entry is the paramless `/checkout`; the receipt
 // PREVIEW (masthead, items, totals, print stylesheet, snapshot freeze) is
 // pure client UI that reads local cart state — it works unchanged. The
-// email-bill SERVER action (`emailBillStub`) is, per the feature contract
+// email-receipt SERVER action (`emailReceiptStub`) is, per the feature contract
 // (`contracts/server-actions.md § Unchanged actions`), persisted-mode-
-// only — it requires a real ticket id. Emailing a bill from the ephemeral
+// only — it requires a real ticket id. Emailing a receipt from the ephemeral
 // pre-payment cart is therefore not a supported flow; the email-success
 // scenario (e) is fixme'd accordingly.
 
@@ -90,7 +90,7 @@ async function waitForConfirmedLine(
     .toBe("ready");
 }
 
-test.describe("US4: Bill preview", () => {
+test.describe("US4: Receipt preview", () => {
   let supabaseUp = false;
 
   test.beforeAll(async () => {
@@ -98,12 +98,12 @@ test.describe("US4: Bill preview", () => {
     if (!supabaseUp) {
       test.skip(
         true,
-        "Supabase not reachable at 127.0.0.1:54321 — skipping US4 bill specs (Docker unavailable)."
+        "Supabase not reachable at 127.0.0.1:54321 — skipping US4 receipt specs (Docker unavailable)."
       );
     }
   });
 
-  test("(a, b) Bill opens sheet with masthead + items + totals + 3 suggested-gratuity rows", async ({
+  test("(a, b) Receipt opens sheet with masthead + items + totals + 3 suggested-gratuity rows", async ({
     page,
   }) => {
     await page.goto("/dashboard");
@@ -119,30 +119,30 @@ test.describe("US4: Bill preview", () => {
       .first();
     await waitForConfirmedLine(serviceLine);
 
-    // (a) Click Bill → sheet opens.
-    const billBtn = page.locator("[data-slot='bill-button']");
-    await expect(billBtn).toBeVisible();
-    await billBtn.click();
+    // (a) Click Receipt → sheet opens.
+    const receiptBtn = page.locator("[data-slot='receipt-button']");
+    await expect(receiptBtn).toBeVisible();
+    await receiptBtn.click();
 
-    const billSheet = page.locator("[data-slot='bill-sheet']");
-    await expect(billSheet).toBeVisible({ timeout: 5_000 });
+    const receiptSheet = page.locator("[data-slot='receipt-sheet']");
+    await expect(receiptSheet).toBeVisible({ timeout: 5_000 });
 
     // (b) Sheet renders salon masthead from the seeded settings.
-    const mast = page.locator("[data-slot='bill-mast']");
+    const mast = page.locator("[data-slot='receipt-mast']");
     await expect(mast).toContainText("Tang Nails");
 
     // Items list contains the Classic manicure row.
-    const billItems = page.locator("[data-slot='bill-item']");
-    await expect(billItems).toHaveCount(1);
-    await expect(billItems.first()).toContainText("Classic manicure");
-    await expect(billItems.first()).toContainText("$25.00");
+    const receiptItems = page.locator("[data-slot='receipt-item']");
+    await expect(receiptItems).toHaveCount(1);
+    await expect(receiptItems.first()).toContainText("Classic manicure");
+    await expect(receiptItems.first()).toContainText("$25.00");
 
     // Totals block: service subtotal $25.00, total $25.00, tax $0.00.
-    await expect(page.locator("[data-slot='bill-subtotal']")).toHaveText("$25.00");
-    await expect(page.locator("[data-slot='bill-total']")).toHaveText("$25.00");
+    await expect(page.locator("[data-slot='receipt-subtotal']")).toHaveText("$25.00");
+    await expect(page.locator("[data-slot='receipt-total']")).toHaveText("$25.00");
 
     // Suggested-gratuity block: 3 rows at 18/20/25%.
-    const tipRows = page.locator("[data-slot='bill-tip-row']");
+    const tipRows = page.locator("[data-slot='receipt-tip-row']");
     await expect(tipRows).toHaveCount(3);
     // 18% of $25 = $4.50; total $29.50.
     await expect(tipRows.nth(0)).toContainText("18%");
@@ -155,7 +155,7 @@ test.describe("US4: Bill preview", () => {
     await expect(tipRows.nth(2)).toContainText("$6.25");
   });
 
-  test("(c) print stylesheet hides chrome — only the bill doc is visible under print media", async ({
+  test("(c) print stylesheet hides chrome — only the receipt doc is visible under print media", async ({
     page,
   }) => {
     await page.goto("/dashboard");
@@ -170,15 +170,17 @@ test.describe("US4: Bill preview", () => {
       .first();
     await waitForConfirmedLine(serviceLine);
 
-    await page.locator("[data-slot='bill-button']").click();
-    const billDoc = page.locator(".lacquer-bill-doc");
-    await expect(billDoc).toBeVisible({ timeout: 5_000 });
+    await page.locator("[data-slot='receipt-button']").click();
+    const receiptDoc = page.locator(".lacquer-receipt-doc");
+    await expect(receiptDoc).toBeVisible({ timeout: 5_000 });
 
     await page.emulateMedia({ media: "print" });
 
-    // Bill doc remains visible under print media.
-    const billVis = await billDoc.evaluate((el) => getComputedStyle(el as Element).visibility);
-    expect(billVis).toBe("visible");
+    // Receipt doc remains visible under print media.
+    const receiptVis = await receiptDoc.evaluate(
+      (el) => getComputedStyle(el as Element).visibility
+    );
+    expect(receiptVis).toBe("visible");
 
     // Studio shell / cart elements have computed visibility:hidden under print.
     const shellVis = await page
@@ -206,12 +208,12 @@ test.describe("US4: Bill preview", () => {
       .first();
     await waitForConfirmedLine(firstService);
 
-    // Open the bill — snapshot captures the single $25 item.
-    await page.locator("[data-slot='bill-button']").click();
-    const billSheet = page.locator("[data-slot='bill-sheet']");
-    await expect(billSheet).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator("[data-slot='bill-item']")).toHaveCount(1);
-    await expect(page.locator("[data-slot='bill-total']")).toHaveText("$25.00");
+    // Open the receipt — snapshot captures the single $25 item.
+    await page.locator("[data-slot='receipt-button']").click();
+    const receiptSheet = page.locator("[data-slot='receipt-sheet']");
+    await expect(receiptSheet).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator("[data-slot='receipt-item']")).toHaveCount(1);
+    await expect(page.locator("[data-slot='receipt-total']")).toHaveText("$25.00");
 
     // Add a second service WHILE the sheet is open. We need to close the sheet
     // first to access the catalog (the backdrop traps clicks); instead, we
@@ -223,12 +225,12 @@ test.describe("US4: Bill preview", () => {
     // the cart underneath changes, the rendered list inside the sheet
     // doesn't. We assert this by snapshotting the rendered count BEFORE
     // close+reopen.
-    const itemCountWhileOpen = await page.locator("[data-slot='bill-item']").count();
+    const itemCountWhileOpen = await page.locator("[data-slot='receipt-item']").count();
     expect(itemCountWhileOpen).toBe(1);
 
     // Close the sheet and add a Gel polish line.
-    await page.locator("[data-slot='bill-sheet-back']").click();
-    await expect(billSheet).toBeHidden({ timeout: 5_000 });
+    await page.locator("[data-slot='receipt-sheet-back']").click();
+    await expect(receiptSheet).toBeHidden({ timeout: 5_000 });
 
     await page
       .locator(`[data-slot='service-tile'][data-service-id='${GEL_POLISH_SERVICE_ID}']`)
@@ -240,24 +242,24 @@ test.describe("US4: Bill preview", () => {
     await waitForConfirmedLine(gelLine);
 
     // Re-open the sheet — snapshot now reflects both lines.
-    await page.locator("[data-slot='bill-button']").click();
-    await expect(billSheet).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator("[data-slot='bill-item']")).toHaveCount(2);
+    await page.locator("[data-slot='receipt-button']").click();
+    await expect(receiptSheet).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator("[data-slot='receipt-item']")).toHaveCount(2);
     // $25 + $35 = $60
-    await expect(page.locator("[data-slot='bill-total']")).toHaveText("$60.00");
+    await expect(page.locator("[data-slot='receipt-total']")).toHaveText("$60.00");
   });
 
-  // Feature 043: `emailBillStub` is persisted-mode-only (see file header).
-  // Emailing a bill from the ephemeral pre-payment cart is not a supported
-  // flow — there is no ticket id to attach the `bill.emailed` audit row
+  // Feature 043: `emailReceiptStub` is persisted-mode-only (see file header).
+  // Emailing a receipt from the ephemeral pre-payment cart is not a supported
+  // flow — there is no ticket id to attach the `receipt.emailed` audit row
   // to, so the server action would reject. Fixme'd until/unless the
-  // email-bill flow is re-scoped onto the post-payment surface.
-  test.fixme("(e) Email submit with a valid address → success toast + bill.emailed audit row", async ({
+  // email-receipt flow is re-scoped onto the post-payment surface.
+  test.fixme("(e) Email submit with a valid address → success toast + receipt.emailed audit row", async ({
     page,
   }) => {
-    // Intentionally minimal — fixme'd: the email-bill server round-trip
+    // Intentionally minimal — fixme'd: the email-receipt server round-trip
     // requires a persisted ticket, which the ephemeral cart has not yet
-    // created. Restore this assertion when email-bill is re-homed.
+    // created. Restore this assertion when email-receipt is re-homed.
     await page.goto("/dashboard");
     await openFreshTicket(page, "Jordan Lee");
   });
@@ -275,16 +277,16 @@ test.describe("US4: Bill preview", () => {
       .first();
     await waitForConfirmedLine(serviceLine);
 
-    await page.locator("[data-slot='bill-button']").click();
-    await page.locator("[data-slot='bill-sheet-email']").click();
-    const emailDialog = page.locator("[data-slot='email-bill-dialog']");
+    await page.locator("[data-slot='receipt-button']").click();
+    await page.locator("[data-slot='receipt-sheet-email']").click();
+    const emailDialog = page.locator("[data-slot='email-receipt-dialog']");
     await expect(emailDialog).toBeVisible({ timeout: 5_000 });
 
-    await emailDialog.locator("[data-slot='email-bill-input']").fill("not-an-email");
-    await emailDialog.locator("[data-slot='email-bill-send']").click();
+    await emailDialog.locator("[data-slot='email-receipt-input']").fill("not-an-email");
+    await emailDialog.locator("[data-slot='email-receipt-send']").click();
 
     // Inline error visible.
-    const inlineError = emailDialog.locator("[data-slot='email-bill-error']");
+    const inlineError = emailDialog.locator("[data-slot='email-receipt-error']");
     await expect(inlineError).toBeVisible({ timeout: 5_000 });
 
     // Dialog remains open.
@@ -292,10 +294,10 @@ test.describe("US4: Bill preview", () => {
 
     // No toast — the invalid address is rejected client-side, the server
     // action is never reached.
-    await expect(page.getByText(/Bill emailed to/)).toHaveCount(0);
+    await expect(page.getByText(/Receipt emailed to/)).toHaveCount(0);
   });
 
-  test("(g) closing the bill sheet writes nothing — the ephemeral cart is untouched", async ({
+  test("(g) closing the receipt sheet writes nothing — the ephemeral cart is untouched", async ({
     page,
   }) => {
     await page.goto("/dashboard");
@@ -310,13 +312,13 @@ test.describe("US4: Bill preview", () => {
       .first();
     await waitForConfirmedLine(serviceLine);
 
-    await page.locator("[data-slot='bill-button']").click();
-    const billSheet = page.locator("[data-slot='bill-sheet']");
-    await expect(billSheet).toBeVisible({ timeout: 5_000 });
-    await page.locator("[data-slot='bill-sheet-back']").click();
-    await expect(billSheet).toBeHidden({ timeout: 5_000 });
+    await page.locator("[data-slot='receipt-button']").click();
+    const receiptSheet = page.locator("[data-slot='receipt-sheet']");
+    await expect(receiptSheet).toBeVisible({ timeout: 5_000 });
+    await page.locator("[data-slot='receipt-sheet-back']").click();
+    await expect(receiptSheet).toBeHidden({ timeout: 5_000 });
 
-    // Feature 043: opening + closing the bill never persists anything —
+    // Feature 043: opening + closing the receipt never persists anything —
     // the cart is still an ephemeral draft. The URL stays paramless
     // `/checkout` (no `/checkout/[ticketId]` route) and the shell stays
     // `data-ephemeral="true"`. Both are per-page signals that hold
