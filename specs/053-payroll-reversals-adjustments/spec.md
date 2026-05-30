@@ -19,6 +19,14 @@ This feature has two related parts:
 
 The owner picks adjustments through a **centered dialog** entry style. The explanatory "refund-preserved" note/flag shown in the design mockup is intentionally **omitted** from this build (the underlying commission-preservation behavior still applies).
 
+## Clarifications
+
+### Session 2026-05-30
+
+- Q: Who may create, edit, and delete payout adjustments? → A: Owner and manager (same gate as the existing record/undo payout actions; no PIN override).
+- Q: Can an adjustment be added to a staff member with no computed work this period (e.g. front desk, $0 earnings)? → A: No — adjustments are available only on a technician who has computed earnings this period, matching the design mockup.
+- Q: When an owner removes an adjustment on an open period, what happens to the record? → A: Hard delete — the row is removed and disappears from the list; the audit log preserves the create + delete history.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Refunds keep technician commission; voids pay $0 (Priority: P1)
@@ -79,7 +87,7 @@ After a pay period is closed, or after a technician's payout has been recorded, 
 
 - **Refund larger than original / over-refund**: payroll still credits commission on the original service amount only; it never goes negative or exceeds the original.
 - **Discarded / open / unpaid tickets**: only sales that were actually completed (and then refunded/partially-refunded) preserve commission; voided and never-completed sales pay $0 and do not appear in payroll.
-- **A technician with no work but a manual adjustment**: an adjustment can still be recorded against a technician who has $0 computed earnings for the period; their net payout becomes the adjustment amount (it may be negative).
+- **A technician with no computed work**: the adjustments affordance is **not** offered for a staff member with $0 computed earnings this period (consistent with the design mockup); adjustments target only technicians who have computed earnings.
 - **Adjustment that drives net payout negative**: a deduction larger than computed earnings is allowed; the net payout is shown as a negative figure (the owner is choosing to dock the technician).
 - **Concurrent edit**: if two operators act on the same adjustment, the surface reflects the latest committed state; an edit/delete against an already-removed adjustment is a no-op/refused.
 - **Period boundary**: a sale's refund issued in a later period does not retroactively change a closed period's frozen payout.
@@ -100,11 +108,11 @@ After a pay period is closed, or after a technician's payout has been recorded, 
 
 **Part 2 — Manual payout adjustments**
 
-- **FR-007**: An owner or manager MUST be able to add one or more adjustment lines to a specific technician's payout for a given pay period.
+- **FR-007**: An **owner or manager** (the same roles permitted to record/undo payouts) MUST be able to add one or more adjustment lines to a specific technician's payout for a given pay period. The adjustments affordance is offered **only** for a technician with computed earnings in that period; a no-work / $0 staff row offers no adjustments. No PIN/privileged-action override is required.
 - **FR-008**: Each adjustment MUST capture a target technician, a signed amount (an **addition** or a **deduction**), a required non-empty **reason** note, and a record of **who** created it and **when**.
 - **FR-009**: The system MUST reject an adjustment with a non-positive amount or an empty reason (the confirm control is disabled until both are valid).
 - **FR-010**: A technician's **net payout** for the period MUST equal their computed cash payment plus the sum of their adjustments for that period.
-- **FR-011**: Owners/managers MUST be able to **edit** and **delete** an adjustment while the period is open; an edit MUST update the amount, direction, and/or reason and record that the line was modified.
+- **FR-011**: Owners/managers MUST be able to **edit** and **delete** an adjustment while the period is open; an edit MUST update the amount, direction, and/or reason and record that the line was modified. A **delete** is a hard delete — the adjustment row is removed and no longer appears in the list (its create + delete history is preserved only in the audit trail per FR-016).
 - **FR-012**: Adjustments MUST be allowed **only while the pay period is open**. Once the period is **closed** or the technician's payout has been **recorded/paid out**, no adjustment for that scope may be added, edited, or deleted; such attempts MUST be refused server-side, not only hidden in the UI.
 - **FR-013**: The adjustment entry experience MUST use a **centered dialog** containing: an Add/Deduct direction toggle, a dollar amount field, reason preset chips plus a free-text reason input, a live before/after net-payout preview, and Cancel / confirm actions.
 - **FR-014**: Adjustments MUST be visible in the payroll surface alongside computed earnings: the technician's **detail** shows each adjustment line (reason, signed amount, creator, timestamp), a net-adjustment subtotal, and a net-payout total that folds them in; the **ledger** shows a signed adjustments column and a net-payout column, and the period totals/KPIs reflect the adjustment sum.
@@ -135,7 +143,7 @@ After a pay period is closed, or after a technician's payout has been recorded, 
 - **Entry style**: The adjustment add/edit experience uses the centered **Dialog** variant from the design (not the inline or right-side-sheet variants), per the user's instruction.
 - **Refund note omitted**: The "refund-preserved" note/banner/flag and the reversal explainer banner from the mockup are intentionally not built; only the silent commission-preservation behavior ships, per the user's instruction.
 - **Reason presets**: The dialog offers the design's reason preset chips (e.g. Bonus, Redo on the house, Supply dock, Goodwill, Correction, Late / no-show) plus a free-text field; the presets are a convenience, the stored value is the chosen/typed text.
-- **Permissions**: Adjustment create/edit/delete is restricted to owner and manager roles, consistent with existing payroll mutations (record/undo payout). The precise gate (and whether deletion is owner-only) is finalized in planning.
+- **Permissions**: Adjustment create/edit/delete is restricted to **owner and manager** roles, consistent with existing payroll mutations (record/undo payout); no PIN/privileged-action override is required. (Resolved in Clarifications.)
 - **No automatic refund→pay coupling**: There is no per-refund "should this affect pay?" prompt; owners use manual adjustments for any discretionary docking. (Explicitly out of scope per the issue.)
 - **No clawback**: Closed/paid-out periods are immutable; adjustments cannot be applied retroactively. (Explicitly out of scope.)
 - **No per-individual refund attribution on multi-tech tickets**: refund preservation operates on each technician's original service line; the feature does not attempt to attribute a single refund to one technician on a shared ticket. (Explicitly out of scope.)
