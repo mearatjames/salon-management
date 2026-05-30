@@ -314,6 +314,22 @@
   font-variant-numeric: tabular-nums;
   font-weight: 600;
 }
+/* Feature 052: refund badge on a live-feed row (a refunded sale still shows,
+   with the net it kept). Neutral chip — tokens only. */
+.tx-feed-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  font-variant-numeric: normal;
+  line-height: 1;
+  white-space: nowrap;
+}
 .tx-feed-row .meth {
   color: var(--muted-foreground);
   display: inline-flex;

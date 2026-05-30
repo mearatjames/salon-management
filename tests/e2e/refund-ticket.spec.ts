@@ -277,12 +277,20 @@ test.describe("US2: owner refunds a past sale from the dashboard feed", () => {
       "partially_refunded"
     );
 
-    // ── Scenario 2: refund the remaining 4000 → refunded. After the partial
-    //    refund the ticket is `partially_refunded`, so it leaves the
-    //    paid-only dashboard feed; the End-of-Day cash list still surfaces the
-    //    original cash payment (keyed on `processed_at`, not ticket status),
-    //    so the second refund opens from there — exercising the same shared
-    //    sheet from a different entry point.
+    // Feature 052 follow-up: the partially-refunded sale stays in the live
+    // dashboard feed (it's still a real sale today) with a "Partial" badge.
+    await page.goto("/dashboard");
+    const feedRow = page.locator(`.tx-feed-row[data-tx-id="${tk}"]`);
+    await expect(feedRow).toBeVisible({ timeout: 15_000 });
+    await expect(feedRow.locator('[data-slot="feed-reversal-badge"]')).toHaveAttribute(
+      "data-reversal",
+      "partially_refunded"
+    );
+
+    // ── Scenario 2: refund the remaining 4000 → refunded. The second refund
+    //    is opened from the End-of-Day cash list — a different entry point to
+    //    the same shared sheet (the EOD list keys on payment `processed_at`,
+    //    not ticket status).
     const cursor2 = newAuditCursor();
     await page.goto("/end-of-day");
     const row2 = page.locator(`[data-slot="eod-refund-row"][data-tx-id="${tk}"]`);

@@ -71,8 +71,23 @@ export function RecentTransactionsFeed({ rows, staff, viewerRole }: RecentTransa
                   gap: "var(--space-2)",
                 }}
               >
-                {formatCurrency(row.total)}
-                <RefundEntry ticketId={row.id} canRefund={canRefund} variant="feed" />
+                {row.reversal ? (
+                  <span
+                    className="tx-feed-badge"
+                    data-slot="feed-reversal-badge"
+                    data-reversal={row.reversal}
+                  >
+                    {row.reversal === "partially_refunded" ? "Partial" : "Refunded"}
+                  </span>
+                ) : null}
+                {/* Reversed rows show the net kept; a fully-refunded sale has
+                    nothing left to refund, so its affordance is hidden. */}
+                {formatCurrency(row.reversal ? row.netTotal : row.total)}
+                <RefundEntry
+                  ticketId={row.id}
+                  canRefund={canRefund && row.reversal !== "refunded"}
+                  variant="feed"
+                />
               </span>
             </div>
           ))}
