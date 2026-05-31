@@ -16,7 +16,7 @@ function SubmitButton() {
       aria-busy={pending || undefined}
     >
       <Repeat size={16} strokeWidth={1.5} aria-hidden="true" />
-      Switch staff
+      <span className="studio-switch-staff-label">Switch staff</span>
     </button>
   );
 }

@@ -122,6 +122,7 @@ export const AFFECTED_MAP = {
   "components/lacquer/switch-staff-button.tsx": [
     "tests/e2e/staff*.spec.ts",
     "tests/e2e/auth.spec.ts",
+    "tests/e2e/mobile-shell.spec.ts",
   ],
   "app/(studio)/settings/staff/**": ["tests/e2e/staff*.spec.ts"],
 
@@ -165,12 +166,25 @@ export const AFFECTED_MAP = {
   ],
 
   // Sidebar chrome. The transactions + report nav items are role-gated via the
-  // sidebar, so sidebar changes also exercise those specs' role gating.
+  // sidebar, so sidebar changes also exercise those specs' role gating. The
+  // shared `studio-nav-list` also drives the mobile drawer (Issue #160).
   "components/lacquer/sidebar/**": [
     "tests/e2e/sidebar.spec.ts",
     "tests/e2e/transactions.spec.ts",
     "tests/e2e/report.spec.ts",
+    "tests/e2e/mobile-shell.spec.ts",
   ],
+
+  // Responsive studio shell (Issue #160) — topbar hamburger + off-canvas
+  // drawer. The shell layout, the chrome CSS, and the topbar controls all feed
+  // the mobile shell spec.
+  "components/lacquer/mobile-nav.tsx": ["tests/e2e/mobile-shell.spec.ts"],
+  "components/lacquer/operator-chip.tsx": [
+    "tests/e2e/mobile-shell.spec.ts",
+    "tests/e2e/auth.spec.ts",
+  ],
+  "app/(studio)/layout.tsx": ["tests/e2e/mobile-shell.spec.ts", "tests/e2e/sidebar.spec.ts"],
+  "styles/studio.css": ["tests/e2e/mobile-shell.spec.ts", "tests/e2e/sidebar.spec.ts"],
 
   // Transactions page (feature 045). Feature 052 adds the void/refund
   // Server Actions here (the transactions surface is where past sales are

@@ -40,6 +40,8 @@
   justify-content: space-between;
   gap: var(--space-4);
   padding: var(--space-3) var(--space-6);
+  /* Extend under the notch on phones; resolves to var(--space-3) on desktop. */
+  padding-top: max(var(--space-3), env(safe-area-inset-top));
   border-bottom: 1px solid var(--border);
   background: var(--card);
   color: var(--card-foreground);
@@ -53,6 +55,17 @@
   font-weight: 500;
   letter-spacing: var(--tracking-snug);
   color: var(--foreground);
+  min-width: 0;
+}
+
+.studio-topbar-brand svg {
+  flex-shrink: 0;
+}
+
+.studio-topbar-brand-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .studio-topbar-center {
@@ -89,6 +102,7 @@
   font-family: var(--font-sans);
   font-size: var(--text-sm);
   cursor: pointer;
+  flex-shrink: 0;
   transition:
     background-color 150ms var(--ease-out),
     color 150ms var(--ease-out),
@@ -106,10 +120,63 @@
   opacity: 0.6;
 }
 
+.studio-switch-staff svg {
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Operator chip — the topbar operator control (components/lacquer/operator-
+   chip.tsx). Class-based (not inline styles) so the phone breakpoint can
+   condense it to the avatar alone via the `.studio-operator-*` hooks below.
+   ========================================================================== */
+.studio-operator {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: var(--space-1) var(--space-3) var(--space-1) var(--space-1);
+  color: var(--card-foreground);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  flex-shrink: 0;
+  transition: border-color 150ms var(--ease-out);
+}
+
+.studio-operator:hover {
+  border-color: var(--ring);
+}
+
+.studio-operator-name {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.studio-operator-role {
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.studio-operator-caret {
+  color: var(--muted-foreground);
+  flex-shrink: 0;
+}
+
 .studio-main {
   display: flex;
   flex-direction: column;
   min-height: 100%;
+  /* Let the content column shrink below its intrinsic width so wide children
+     can't force a horizontal scroll on phone (Issue #160 acceptance). */
+  min-width: 0;
 }
 
 /* ==========================================================================
@@ -300,4 +367,194 @@
 [data-studio-sidebar-collapsed="true"] .studio-sidebar-footer {
   justify-content: center;
   padding: var(--space-3) 0;
+}
+
+/* ==========================================================================
+   Mobile shell (Issue #160) — below the shared phone breakpoint the persistent
+   sidebar is replaced by a hamburger in the topbar that opens an off-canvas
+   drawer. Mirrors prototypes/shell/Responsive Studio Shell.html. Every value
+   resolves to a token; `min(86%, 288px)` and the breakpoint itself are layout
+   dimensions (same exemption the 224px / 56px grid columns rely on).
+   ========================================================================== */
+
+/* Hamburger — hidden on desktop/tablet, shown on phone. Opens the drawer
+   (components/lacquer/mobile-nav.tsx). */
+.studio-topbar-hamburger {
+  display: none;
+  width: var(--space-10);
+  height: var(--space-10);
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  transition:
+    background-color 150ms var(--ease-out),
+    border-color 150ms var(--ease-out);
+}
+
+.studio-topbar-hamburger:hover {
+  background: var(--accent);
+  border-color: var(--ring);
+}
+
+/* Scrim — covers the viewport behind the open drawer. Inert (no pointer
+   events, transparent) until `data-open="true"`. */
+.studio-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgb(0 0 0 / 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms var(--ease-out);
+}
+
+.studio-scrim[data-open="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Drawer — off-canvas nav surface. `visibility: hidden` keeps it out of the
+   tab order while closed (it's present in the DOM at every width). */
+.studio-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 50;
+  width: min(86%, 288px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  background: var(--card);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-3);
+  padding-top: max(var(--space-3), env(safe-area-inset-top));
+  padding-left: max(var(--space-3), env(safe-area-inset-left));
+  padding-bottom: max(var(--space-3), env(safe-area-inset-bottom));
+  transform: translateX(-101%);
+  transition: transform 300ms var(--ease-out);
+  visibility: hidden;
+  overflow-y: auto;
+}
+
+.studio-drawer[data-open="true"] {
+  transform: translateX(0);
+  visibility: visible;
+}
+
+.studio-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  height: var(--space-10);
+  padding: 0 var(--space-1) 0 var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.studio-drawer-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: var(--tracking-snug);
+  color: var(--foreground);
+}
+
+.studio-drawer-close {
+  width: var(--space-8);
+  height: var(--space-8);
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition:
+    background-color 150ms var(--ease-out),
+    color 150ms var(--ease-out);
+}
+
+.studio-drawer-close:hover {
+  background: var(--accent);
+  color: var(--foreground);
+}
+
+/* ==========================================================================
+   Phone portrait — max-width: 640px is the single shared mobile breakpoint
+   every (studio) page reuses. Below it the sidebar is removed, the grid
+   collapses to one full-width column, the hamburger appears, and the topbar
+   controls condense so nothing overflows at 375 / 430px.
+   ========================================================================== */
+@media (max-width: 640px) {
+  .studio-shell,
+  [data-studio-sidebar-collapsed="true"] .studio-shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: 56px 1fr;
+  }
+
+  /* Persistent sidebar is removed — nav lives in the drawer. */
+  .studio-sidebar {
+    display: none;
+  }
+
+  .studio-topbar {
+    padding: var(--space-3) var(--space-4);
+    padding-top: max(var(--space-3), env(safe-area-inset-top));
+    gap: var(--space-3);
+  }
+
+  .studio-topbar-hamburger {
+    display: inline-flex;
+  }
+
+  /* The reconnecting/status center slot drops out on phone. */
+  .studio-topbar-center {
+    display: none;
+  }
+
+  /* Condense switch-staff + operator chip to icon / avatar only. Scoped to the
+     topbar so the checkout done-screen's switch-staff button is unaffected. */
+  .studio-topbar .studio-switch-staff {
+    width: var(--space-8);
+    padding: 0;
+    justify-content: center;
+  }
+
+  .studio-topbar .studio-switch-staff-label {
+    display: none;
+  }
+
+  .studio-topbar .studio-operator {
+    padding: var(--space-1);
+  }
+
+  .studio-topbar .studio-operator-name,
+  .studio-topbar .studio-operator-role,
+  .studio-topbar .studio-operator-caret {
+    display: none;
+  }
+
+  .studio-topbar-sep {
+    display: none;
+  }
+}
+
+/* Honour reduced-motion — drop the grid resize + drawer/scrim transitions. */
+@media (prefers-reduced-motion: reduce) {
+  .studio-shell,
+  .studio-scrim,
+  .studio-drawer {
+    transition: none;
+  }
 }

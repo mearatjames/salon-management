@@ -4,9 +4,11 @@ import "@/styles/dashboard.css";
 import type { ReactNode } from "react";
 
 import { LacquerMark } from "@/components/lacquer/lacquer-mark";
+import { MobileNav } from "@/components/lacquer/mobile-nav";
 import { OperatorChip } from "@/components/lacquer/operator-chip";
 import { OperatorMenu } from "@/components/lacquer/operator-menu";
 import { ReconnectingBanner } from "@/components/lacquer/reconnecting-banner";
+import { SidebarFooter } from "@/components/lacquer/sidebar/sidebar-footer";
 import { StudioSidebar } from "@/components/lacquer/sidebar/studio-sidebar";
 import { SwitchStaffButton } from "@/components/lacquer/switch-staff-button";
 import { Toaster } from "@/components/ui/sonner";
@@ -38,9 +40,13 @@ export default async function StudioLayout({ children }: Readonly<{ children: Re
           <StudioSidebar staff={staff} degraded={degraded} />
         </aside>
         <header className="studio-topbar">
+          <MobileNav
+            role={staff.role}
+            footer={<SidebarFooter staff={staff} degraded={degraded} />}
+          />
           <div className="studio-topbar-brand">
             <LacquerMark size={20} />
-            Tang Nails Studio
+            <span className="studio-topbar-brand-text">Tang Nails Studio</span>
           </div>
           <div className="studio-topbar-center">
             <ReconnectingBanner />
