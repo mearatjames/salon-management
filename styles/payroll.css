@@ -1729,3 +1729,443 @@
 .pl-bd-row.total .pl-bd-r.negative {
   color: var(--destructive);
 }
+
+/* ==========================================================================
+   Tang Nails — Payroll · MOBILE responsive rules
+   Issue #165 · drop-in addition for `styles/payroll.css`
+
+   Paste this block at the END of `styles/payroll.css`. Every rule is wrapped in
+   `@media (max-width: 640px)` so desktop is untouched, and every value resolves
+   to a `var(--*)` token (Constitution Principle I — the raw-literal grep in the
+   file header still returns zero matches).
+
+   It targets the EXISTING markup — no component / TSX changes are required. It
+   covers BOTH payroll surfaces, which share this stylesheet:
+
+     • `/payroll`            — period overview, KPI band, per-tech ledger table
+     • `/payroll/[staffId]`  — tech detail (header + daily chart + breakdown)
+
+   What changes at ≤640px:
+     • Page header        → stacks; period switch + actions wrap full-width
+     • KPI band           → 5-up / 4-up collapses to 2 columns (last odd tile
+                            spans), hairline dividers become a 1px grid gap
+     • Ledger table       → each `.pl-row-link` row restacks into a labelled
+                            card (option (b) in the issue). The 12-column table
+                            is unreadable in a horizontal scroller on phone, so
+                            every money column gets an inline ::before label and
+                            reflows into a 2-up grid; Net payout is the full-
+                            width headline; the chevron column is dropped (the
+                            whole card is the tap target — the stretched row
+                            <Link> still routes to the tech detail). The totals
+                            <tfoot> row becomes a matching summary card.
+     • Detail header      → stacks identity over the net-payout block
+     • Detail grid        → the `1fr 360px` two-column layout becomes one column
+     • Daily chart        → header stacks; per-bar currency + ticket labels hide
+                            (the best-day / avg stats already carry those); bars
+                            + day/weekday remain
+     • Pay method tabs    → the `repeat(3, 1fr)` picker stays 3-up (short labels,
+                            full-card width) — reads as a segmented control
+
+   Tabular numerals are preserved on every currency / count cell (the desktop
+   `font-variant-numeric: tabular-nums` on `.num` / `.tnum` is never cleared).
+   The matching visual target is the mockup in `Mobile Payroll.html`.
+   ========================================================================== */
+
+@media (max-width: 640px) {
+  /* ----- Shell: let the page flow as one scrolling column ----- */
+  .pr-app.dr-app-page {
+    height: auto;
+    overflow: visible;
+  }
+
+  /* ===== Page header → stacked ========================================== */
+  .pr-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-4) 0;
+  }
+  .pr-h1 {
+    font-size: var(--text-2xl);
+  }
+  .pr-header-actions {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+  /* The period switcher takes its own full-width row above the buttons. The
+     segmented control can list several pay periods, each a `white-space: nowrap`
+     chip — more than fit a phone row. `min-width: 0` lets the flex item shrink
+     below its content so `overflow-x: auto` contains the chips in a local
+     scroller (page-level scroll stays clipped); the chips keep their intrinsic
+     width rather than squishing their date labels. */
+  .pr-period-switch {
+    flex-basis: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .pr-period-switch::-webkit-scrollbar {
+    display: none;
+  }
+  .pr-period-switch a {
+    flex: 0 0 auto;
+  }
+
+  /* ===== KPI band → 2-up, hairline grid gap ============================= */
+  .pr-kpis {
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--border);
+    margin: 0 var(--space-4);
+  }
+  .pr-kpi {
+    background: var(--card);
+    border-right: 0;
+    padding: var(--space-4);
+  }
+  /* A lone trailing tile (5-up band → odd count) spans the full width. */
+  .pr-kpi:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+  .pr-kpi-value {
+    font-size: var(--text-2xl);
+  }
+
+  /* ===== Ledger body + table-card chrome ================================ */
+  .pp-ledger-body {
+    padding: var(--space-4) var(--space-4) var(--space-6);
+  }
+  .pl-table-head {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
+  /* ===== Ledger table → one card per technician ========================= */
+  .pl-table-wrap {
+    overflow: visible;
+  }
+  .pl-table {
+    display: block;
+    font-size: var(--text-sm);
+  }
+  /* Column headers are reintroduced inline (::before) on each card cell. */
+  .pl-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .pl-table tbody,
+  .pl-table tfoot {
+    display: block;
+  }
+
+  /* The technician card. `position: relative` is kept from desktop so the
+     stretched row <Link> overlays the whole card and the tap-through to the
+     tech detail survives the restack. */
+  .pl-table tbody tr.pl-row-link {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: var(--space-4);
+    row-gap: var(--space-3);
+    align-items: end;
+    padding: var(--space-4);
+    margin-top: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--card);
+    box-shadow: var(--shadow-xs);
+  }
+  .pl-table tbody tr.pl-row-link:hover {
+    background: var(--card);
+  }
+  .pl-table tbody tr.pl-row-link > td {
+    padding: 0;
+    border: 0;
+    vertical-align: baseline;
+  }
+
+  /* Employee = full-width headline (avatar + name + rate). */
+  .pl-table tbody tr.pl-row-link > td:nth-child(1) {
+    grid-column: 1 / -1;
+    order: 1;
+  }
+  /* State pill = full-width, left-aligned, directly under the name. */
+  .pl-table tbody tr.pl-row-link > td:nth-child(11) {
+    grid-column: 1 / -1;
+    order: 2;
+    text-align: left;
+  }
+
+  /* Money / count cells → stacked label-over-value tiles in a 2-up grid. */
+  .pl-table tbody tr.pl-row-link > td.num {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    text-align: left;
+    font-size: var(--text-sm);
+    font-weight: 500;
+  }
+  .pl-table tbody tr.pl-row-link > td.num::before {
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(2) {
+    order: 3;
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(2)::before {
+    content: "Tickets";
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(3) {
+    order: 4;
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(3)::before {
+    content: "Income";
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(4) {
+    order: 5;
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(4)::before {
+    content: "After split";
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(5) {
+    order: 6;
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(5)::before {
+    content: "Card tips";
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(6) {
+    order: 7;
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(6)::before {
+    content: "Tips after split";
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(7) {
+    order: 8;
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(7)::before {
+    content: "Check";
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(8) {
+    order: 9;
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(8)::before {
+    content: "Cash";
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(9) {
+    order: 10;
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(9)::before {
+    content: "Adjustment";
+  }
+
+  /* Net payout = the full-width headline figure (label left, value right). */
+  .pl-table tbody tr.pl-row-link > td:nth-child(10) {
+    grid-column: 1 / -1;
+    order: 11;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-top: var(--space-1);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+    font-size: var(--text-lg);
+    font-weight: 600;
+  }
+  .pl-table tbody tr.pl-row-link > td:nth-child(10)::before {
+    content: "Net payout";
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    align-self: center;
+  }
+  /* The chevron column is redundant — the whole card is the tap target. */
+  .pl-table tbody tr.pl-row-link > td:nth-child(12) {
+    display: none;
+  }
+
+  /* ----- Totals <tfoot> row → matching summary card ----- */
+  .pl-table tfoot tr {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    column-gap: var(--space-4);
+    row-gap: var(--space-3);
+    margin-top: var(--space-3);
+    padding: var(--space-4);
+    border-radius: var(--radius-md);
+    background: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .pl-table tfoot td {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    text-align: left;
+  }
+  .pl-table tfoot td:nth-child(1) {
+    grid-column: 1 / -1;
+    order: 1;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+    color: var(--muted-foreground);
+  }
+  .pl-table tfoot td.num::before {
+    color: var(--muted-foreground);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-wide);
+  }
+  .pl-table tfoot td:nth-child(2) {
+    order: 2;
+  }
+  .pl-table tfoot td:nth-child(2)::before {
+    content: "Tickets";
+  }
+  .pl-table tfoot td:nth-child(3) {
+    order: 3;
+  }
+  .pl-table tfoot td:nth-child(3)::before {
+    content: "Income";
+  }
+  .pl-table tfoot td:nth-child(4) {
+    order: 4;
+  }
+  .pl-table tfoot td:nth-child(4)::before {
+    content: "After split";
+  }
+  .pl-table tfoot td:nth-child(5) {
+    order: 5;
+  }
+  .pl-table tfoot td:nth-child(5)::before {
+    content: "Card tips";
+  }
+  .pl-table tfoot td:nth-child(6) {
+    order: 6;
+  }
+  .pl-table tfoot td:nth-child(6)::before {
+    content: "Tips after split";
+  }
+  .pl-table tfoot td:nth-child(7) {
+    order: 7;
+  }
+  .pl-table tfoot td:nth-child(7)::before {
+    content: "Check";
+  }
+  .pl-table tfoot td:nth-child(8) {
+    order: 8;
+  }
+  .pl-table tfoot td:nth-child(8)::before {
+    content: "Cash";
+  }
+  .pl-table tfoot td:nth-child(9) {
+    order: 9;
+  }
+  .pl-table tfoot td:nth-child(9)::before {
+    content: "Adjustment";
+  }
+  .pl-table tfoot td:nth-child(10) {
+    grid-column: 1 / -1;
+    order: 10;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-top: var(--space-1);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+    font-size: var(--text-lg);
+  }
+  .pl-table tfoot td:nth-child(10)::before {
+    content: "Net payout";
+    align-self: center;
+  }
+  .pl-table tfoot td:nth-child(11),
+  .pl-table tfoot td:nth-child(12) {
+    display: none;
+  }
+
+  /* ===== Tech detail — `/payroll/[staffId]` ============================= */
+  .pp-detail-topbar {
+    padding: var(--space-3) var(--space-4) var(--space-2);
+  }
+
+  /* Header band → identity stacked over the net-payout block. */
+  .pp-detail-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-4);
+    padding: var(--space-4);
+  }
+  .pp-detail-header-l {
+    gap: var(--space-3);
+    align-items: center;
+  }
+  .pp-detail-name {
+    font-size: var(--text-3xl);
+  }
+  .pp-detail-header-r {
+    min-width: 0;
+    align-items: stretch;
+  }
+  .pp-detail-bignum {
+    min-width: 0;
+    text-align: left;
+  }
+  .pp-detail-bignum-v {
+    font-size: var(--text-4xl);
+  }
+
+  /* Two-column main grid → single column. `minmax(0, 1fr)` (not `1fr`) so the
+     track can shrink below its content's min-content width — otherwise the
+     16-column daily chart forces the column wider than the viewport and the
+     whole page scrolls horizontally. */
+  .pp-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-4) var(--space-8);
+  }
+  .pp-detail-chart-card,
+  .pp-detail-side,
+  .pp-detail-card {
+    min-width: 0;
+  }
+
+  /* Daily-activity chart → tighten chrome; drop per-bar micro-labels that are
+     unreadable at phone column width (the best-day / avg header stats carry
+     those numbers). Bars + day + weekday stay. */
+  .pp-detail-chart-card {
+    padding: var(--space-4) var(--space-3) var(--space-3);
+  }
+  .pp-detail-chart-card-head {
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .pp-detail-chart-stats {
+    gap: var(--space-4);
+  }
+  /* The 16-day chart keeps a ~370px min-content floor (day + weekday labels);
+     let it scroll locally rather than widen the page (chart-local scroll is
+     permitted by the issue, page-level scroll is not). */
+  .pp-detail-chart-grid-big {
+    gap: 2px;
+    overflow-x: auto;
+  }
+  .pp-detail-col-amt,
+  .pp-detail-tkts {
+    display: none;
+  }
+}
