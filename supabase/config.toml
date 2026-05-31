@@ -255,17 +255,24 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Customize the staff invite email (local dev only — hosted preview/prod
-# templates are updated manually; there is no CI sync for email templates).
+# Customize the auth emails (local dev only — hosted preview/prod templates
+# are updated manually; there is no CI sync for email templates).
 [auth.email.template.invite]
 subject = "You're invited to Tang Nails"
 content_path = "./supabase/templates/invite.html"
 
-# Uncomment to customize notification email template
-# [auth.email.notification.password_changed]
-# enabled = true
-# subject = "Your password has been changed"
-# content_path = "./templates/password_changed_notification.html"
+[auth.email.template.recovery]
+subject = "Reset your Tang Nails password"
+content_path = "./supabase/templates/recovery.html"
+
+[auth.email.template.magic_link]
+subject = "Sign in to Tang Nails Studio"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.notification.password_changed]
+enabled = true
+subject = "Your password was changed"
+content_path = "./supabase/templates/password_changed_notification.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.
