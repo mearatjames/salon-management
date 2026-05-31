@@ -92,12 +92,16 @@ export const AFFECTED_MAP = {
   "components/lacquer/eod/**": [
     "tests/e2e/end-of-day-cash.spec.ts",
     "tests/e2e/past-cash-counts.spec.ts",
+    "tests/e2e/end-of-day-mobile.spec.ts",
   ],
   "app/(studio)/end-of-day/**": [
     "tests/e2e/end-of-day-cash.spec.ts",
     "tests/e2e/past-cash-counts.spec.ts",
+    "tests/e2e/end-of-day-mobile.spec.ts",
   ],
   "lib/end-of-day/**": ["tests/e2e/end-of-day-cash.spec.ts", "tests/e2e/past-cash-counts.spec.ts"],
+  // The phone EOD layout lives entirely in this stylesheet's @media block.
+  "styles/end-of-day.css": ["tests/e2e/end-of-day-mobile.spec.ts"],
 
   // Services catalog + supply types.
   "components/lacquer/services/**": [

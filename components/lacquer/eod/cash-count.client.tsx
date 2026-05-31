@@ -19,10 +19,18 @@
 // `./numpad-reduce.ts` (no `"use client"`, pure helper, Vitest-testable).
 // It now also handles the `"clear"` key — used by the new Clear text-
 // link surfaced in the eyebrow row (visible only when `counted !== ""`).
+//
+// Issue #164 (mobile): on phone (≤640px) the desktop left-hand cash list
+// is hidden and reached through a bottom sheet instead — the "Count first"
+// layout. This island renders the sheet trigger (a summary bar showing the
+// expected total) and the sheet itself; both are CSS-gated to phone widths
+// (`.eod-summary-bar` / `.eod-scrim` are `display:none` on desktop). The
+// sheet content is the server-rendered `cashList` passed down from the page.
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
+import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Check } from "lucide-react";
+import { Check, ChevronRight, Receipt, X } from "lucide-react";
 
 import { NumpadButtons, type NumpadKey } from "@/components/lacquer/eod/numpad-buttons";
 import { numpadReduce, type NumpadState } from "@/components/lacquer/eod/numpad-reduce";
@@ -32,6 +40,18 @@ import { Spinner } from "@/components/ui/spinner";
 
 export type CashCountProps = {
   expectedCents: number;
+  /**
+   * Issue #164: count of today's cash transactions, shown in the phone
+   * summary bar ("N transactions · expected"). Defaults to 0 so the prop is
+   * optional for callers/tests that only exercise the numpad.
+   */
+  txCount?: number;
+  /**
+   * Issue #164: the server-rendered cash list, displayed inside the phone
+   * bottom sheet. On desktop the page renders its own copy in the left
+   * panel, so this is only mounted when the sheet opens on phone.
+   */
+  cashList?: ReactNode;
 };
 
 // `deriveComparison` lives in `lib/end-of-day/comparison.ts` (extracted
@@ -39,15 +59,28 @@ export type CashCountProps = {
 // edit-form island share a single math source. Behavior is verbatim —
 // the existing close-screen e2e is the regression authority.
 
-export function CashCount({ expectedCents }: CashCountProps) {
+export function CashCount({ expectedCents, txCount = 0, cashList }: CashCountProps) {
   const router = useRouter();
   const [state, setState] = useState<NumpadState>({ counted: "", fresh: true });
   const [notes, setNotes] = useState<string>("");
   // Transient banner state for the EXPECTED_CHANGED branch. Cleared on
   // the next non-error keystroke (the press handler wipes it).
   const [banner, setBanner] = useState<string | null>(null);
+  // Issue #164: phone-only cash-list bottom sheet open state.
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const { counted } = state;
+
+  // Close the sheet on Escape — matches the dismiss-on-scrim-tap affordance
+  // for keyboard users on the rare phone-with-keyboard / desktop-narrow case.
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSheetOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [sheetOpen]);
 
   const cmp = deriveComparison(counted, expectedCents);
   // US2 rule (spec FR-006): the close action accepts a match OR a
@@ -104,176 +137,236 @@ export function CashCount({ expectedCents }: CashCountProps) {
   };
 
   return (
-    <div className="eod-right" data-slot="eod-cash-count">
-      {/* Transient banner (EXPECTED_CHANGED + other action errors). Token-
-          only warning tint. */}
-      {banner !== null && (
-        <div
-          role="status"
-          data-slot="eod-banner"
-          style={{
-            padding: "10px 14px",
-            borderRadius: 10,
-            border: "1px solid color-mix(in oklch, var(--warning) 40%, var(--border))",
-            background: "color-mix(in oklch, var(--warning) 10%, var(--card))",
-            color: "var(--foreground)",
-            fontSize: 13,
-            fontWeight: 500,
-            lineHeight: 1.4,
-            flexShrink: 0,
-          }}
-        >
-          {banner}
-        </div>
-      )}
-
-      {/* Eyebrow row — Clear link revealed when there's content to clear.
-          Token-only styling (no raw hex); subtle text-link Lacquer pattern. */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span className="eyebrow">Count your drawer</span>
-        {counted !== "" && (
-          <button
-            type="button"
-            data-slot="eod-clear"
-            onClick={() => press("clear")}
-            disabled={pending}
-            style={{
-              appearance: "none",
-              background: "transparent",
-              border: "none",
-              padding: 0,
-              cursor: pending ? "not-allowed" : "pointer",
-              fontFamily: "var(--font-sans)",
-              fontSize: 12,
-              fontWeight: 500,
-              letterSpacing: "0.04em",
-              textTransform: "uppercase",
-              color: "var(--muted-foreground)",
-              transition: "color 150ms var(--ease-out)",
-            }}
-            onMouseEnter={(e) => {
-              if (!pending) e.currentTarget.style.color = "var(--foreground)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = "var(--muted-foreground)";
-            }}
-          >
-            Clear
-          </button>
-        )}
-      </div>
-
-      {/* Amount display — border tints by state via the .eod-display class. */}
-      <div
-        className={`eod-display ${cmp.state}`.trim()}
-        data-slot="eod-display"
-        data-state={cmp.state || "empty"}
-      >
-        <span className="eod-display-sym">$</span>
-        <span className="eod-display-val tnum" data-slot="eod-display-val">
-          {counted || "0"}
-        </span>
-      </div>
-
-      <NumpadButtons onPress={press} disabled={pending} />
-
-      {/* Comparison block. */}
-      <div
-        className={`eod-comparison ${cmp.state}`.trim()}
-        data-slot="eod-comparison"
-        data-state={cmp.state || "empty"}
-      >
-        <div className="eod-comp-row">
-          <span className="eod-comp-lbl">Expected</span>
-          <span className="eod-comp-num tnum">${(expectedCents / 100).toFixed(2)}</span>
-        </div>
-        <div className="eod-comp-row">
-          <span className="eod-comp-lbl">Counted</span>
-          <span className="eod-comp-num tnum">
-            {cmp.hasCounted ? `$${(cmp.countedCents / 100).toFixed(2)}` : "—"}
-          </span>
-        </div>
-        <div className="eod-comp-divider" />
-        <div className={`eod-comp-row eod-diff-row ${cmp.state}`.trim()}>
-          <span className="eod-diff-lbl">
-            {!cmp.hasCounted && (
-              <span style={{ color: "var(--muted-foreground)", fontWeight: 400 }}>Difference</span>
-            )}
-            {cmp.isMatch && (
-              <span className="eod-diff-exact">
-                <Check size={13} strokeWidth={2.5} aria-hidden="true" />
-                Exact match
-              </span>
-            )}
-            {cmp.isOver && <span className="eod-diff-over">Over</span>}
-            {cmp.isShort && <span className="eod-diff-short">Short</span>}
-          </span>
-          <span className="eod-diff-num tnum">
-            {!cmp.hasCounted && <span style={{ color: "var(--muted-foreground)" }}>—</span>}
-            {cmp.isOver && <span className="eod-diff-over">+${(cmp.diff / 100).toFixed(2)}</span>}
-            {cmp.isShort && (
-              <span className="eod-diff-short">−${(Math.abs(cmp.diff) / 100).toFixed(2)}</span>
-            )}
-          </span>
-        </div>
-      </div>
-
-      {/* Discrepancy note — only when the count doesn't match. The
-          destructive hint mirrors the prototype copy. */}
-      {cmp.hasDiff && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
-          <textarea
-            data-slot="eod-note"
-            className="eod-note"
-            placeholder="What happened? (e.g. forgot to log a refund, customer tipped extra in cash, drawer was off at open.)"
-            rows={3}
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            disabled={pending}
-          />
-          <span
-            style={{
-              fontSize: 11,
-              color: "var(--destructive)",
-              fontWeight: 500,
-            }}
-          >
-            Required to close out
-          </span>
-        </div>
-      )}
-
-      {/* CTA — pinned to the bottom of the right column. */}
-      <div style={{ marginTop: "auto" }}>
+    <>
+      <div className="eod-right" data-slot="eod-cash-count">
+        {/* Phone-only summary bar (issue #164). Hidden on desktop via CSS
+            (`.eod-summary-bar { display: none }`); on phone it opens the
+            bottom sheet holding today's cash list. */}
         <button
           type="button"
-          data-slot="eod-close-cta"
-          disabled={!canSubmit}
-          aria-busy={pending || undefined}
-          onClick={submit}
-          style={{
-            width: "100%",
-            height: 48,
-            border: "1px solid transparent",
-            borderRadius: 12,
-            background: canSubmit ? "var(--primary)" : "var(--muted)",
-            color: canSubmit ? "var(--primary-foreground)" : "var(--muted-foreground)",
-            fontFamily: "var(--font-sans)",
-            fontSize: 15,
-            fontWeight: 600,
-            letterSpacing: "-0.005em",
-            cursor: canSubmit ? "pointer" : "not-allowed",
-            transition: "background 150ms var(--ease-out)",
-            display: "inline-flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "var(--space-2)",
-          }}
+          className="eod-summary-bar"
+          data-slot="eod-cash-sheet-trigger"
+          aria-haspopup="dialog"
+          aria-expanded={sheetOpen}
+          onClick={() => setSheetOpen(true)}
         >
-          {pending && <Spinner size={16} strokeWidth={2} />}
-          {pending ? "Closing…" : "Close Out Day"}
+          <span className="eod-summary-icon" aria-hidden="true">
+            <Receipt size={20} strokeWidth={1.5} />
+          </span>
+          <span className="eod-summary-text">
+            <span className="eod-summary-title">Cash today</span>
+            <span className="eod-summary-sub">
+              {txCount} {txCount === 1 ? "transaction" : "transactions"} · expected
+            </span>
+          </span>
+          <span className="eod-summary-amt tnum">${(expectedCents / 100).toFixed(2)}</span>
+          <ChevronRight size={20} strokeWidth={1.5} aria-hidden="true" />
         </button>
+
+        {/* Transient banner (EXPECTED_CHANGED + other action errors). Token-
+          only warning tint. */}
+        {banner !== null && (
+          <div
+            role="status"
+            data-slot="eod-banner"
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid color-mix(in oklch, var(--warning) 40%, var(--border))",
+              background: "color-mix(in oklch, var(--warning) 10%, var(--card))",
+              color: "var(--foreground)",
+              fontSize: 13,
+              fontWeight: 500,
+              lineHeight: 1.4,
+              flexShrink: 0,
+            }}
+          >
+            {banner}
+          </div>
+        )}
+
+        {/* Eyebrow row — Clear link revealed when there's content to clear.
+          Token-only styling (no raw hex); subtle text-link Lacquer pattern. */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span className="eyebrow">Count your drawer</span>
+          {counted !== "" && (
+            <button
+              type="button"
+              data-slot="eod-clear"
+              onClick={() => press("clear")}
+              disabled={pending}
+              style={{
+                appearance: "none",
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: pending ? "not-allowed" : "pointer",
+                fontFamily: "var(--font-sans)",
+                fontSize: 12,
+                fontWeight: 500,
+                letterSpacing: "0.04em",
+                textTransform: "uppercase",
+                color: "var(--muted-foreground)",
+                transition: "color 150ms var(--ease-out)",
+              }}
+              onMouseEnter={(e) => {
+                if (!pending) e.currentTarget.style.color = "var(--foreground)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = "var(--muted-foreground)";
+              }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {/* Amount display — border tints by state via the .eod-display class. */}
+        <div
+          className={`eod-display ${cmp.state}`.trim()}
+          data-slot="eod-display"
+          data-state={cmp.state || "empty"}
+        >
+          <span className="eod-display-sym">$</span>
+          <span className="eod-display-val tnum" data-slot="eod-display-val">
+            {counted || "0"}
+          </span>
+        </div>
+
+        <NumpadButtons onPress={press} disabled={pending} />
+
+        {/* Comparison block. */}
+        <div
+          className={`eod-comparison ${cmp.state}`.trim()}
+          data-slot="eod-comparison"
+          data-state={cmp.state || "empty"}
+        >
+          <div className="eod-comp-row">
+            <span className="eod-comp-lbl">Expected</span>
+            <span className="eod-comp-num tnum">${(expectedCents / 100).toFixed(2)}</span>
+          </div>
+          <div className="eod-comp-row">
+            <span className="eod-comp-lbl">Counted</span>
+            <span className="eod-comp-num tnum">
+              {cmp.hasCounted ? `$${(cmp.countedCents / 100).toFixed(2)}` : "—"}
+            </span>
+          </div>
+          <div className="eod-comp-divider" />
+          <div className={`eod-comp-row eod-diff-row ${cmp.state}`.trim()}>
+            <span className="eod-diff-lbl">
+              {!cmp.hasCounted && (
+                <span style={{ color: "var(--muted-foreground)", fontWeight: 400 }}>
+                  Difference
+                </span>
+              )}
+              {cmp.isMatch && (
+                <span className="eod-diff-exact">
+                  <Check size={13} strokeWidth={2.5} aria-hidden="true" />
+                  Exact match
+                </span>
+              )}
+              {cmp.isOver && <span className="eod-diff-over">Over</span>}
+              {cmp.isShort && <span className="eod-diff-short">Short</span>}
+            </span>
+            <span className="eod-diff-num tnum">
+              {!cmp.hasCounted && <span style={{ color: "var(--muted-foreground)" }}>—</span>}
+              {cmp.isOver && <span className="eod-diff-over">+${(cmp.diff / 100).toFixed(2)}</span>}
+              {cmp.isShort && (
+                <span className="eod-diff-short">−${(Math.abs(cmp.diff) / 100).toFixed(2)}</span>
+              )}
+            </span>
+          </div>
+        </div>
+
+        {/* Discrepancy note — only when the count doesn't match. The
+          destructive hint mirrors the prototype copy. */}
+        {cmp.hasDiff && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+            <textarea
+              data-slot="eod-note"
+              className="eod-note"
+              placeholder="What happened? (e.g. forgot to log a refund, customer tipped extra in cash, drawer was off at open.)"
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              disabled={pending}
+            />
+            <span
+              style={{
+                fontSize: 11,
+                color: "var(--destructive)",
+                fontWeight: 500,
+              }}
+            >
+              Required to close out
+            </span>
+          </div>
+        )}
+
+        {/* CTA — pinned to the bottom of the right column. */}
+        <div style={{ marginTop: "auto" }}>
+          <button
+            type="button"
+            data-slot="eod-close-cta"
+            disabled={!canSubmit}
+            aria-busy={pending || undefined}
+            onClick={submit}
+            style={{
+              width: "100%",
+              height: 48,
+              border: "1px solid transparent",
+              borderRadius: 12,
+              background: canSubmit ? "var(--primary)" : "var(--muted)",
+              color: canSubmit ? "var(--primary-foreground)" : "var(--muted-foreground)",
+              fontFamily: "var(--font-sans)",
+              fontSize: 15,
+              fontWeight: 600,
+              letterSpacing: "-0.005em",
+              cursor: canSubmit ? "pointer" : "not-allowed",
+              transition: "background 150ms var(--ease-out)",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "var(--space-2)",
+            }}
+          >
+            {pending && <Spinner size={16} strokeWidth={2} />}
+            {pending ? "Closing…" : "Close Out Day"}
+          </button>
+        </div>
       </div>
-    </div>
+
+      {/* Phone-only cash-list bottom sheet (issue #164). The scrim is
+          `display:none` on desktop, so this only ever shows on phone where
+          the trigger is visible. Tapping the scrim or the close button — or
+          pressing Escape — dismisses it. */}
+      {sheetOpen && (
+        <div
+          className="eod-scrim"
+          data-slot="eod-cash-sheet-scrim"
+          onClick={() => setSheetOpen(false)}
+        >
+          <div
+            className="eod-sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Cash today"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="eod-sheet-grip" aria-hidden="true" />
+            <button
+              type="button"
+              className="eod-sheet-close"
+              data-slot="eod-cash-sheet-close"
+              aria-label="Close"
+              onClick={() => setSheetOpen(false)}
+            >
+              <X size={18} strokeWidth={1.5} aria-hidden="true" />
+            </button>
+            {cashList}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
