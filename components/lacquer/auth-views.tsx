@@ -119,12 +119,7 @@ export function SignInView({ next, error }: SignInViewProps) {
           </div>
 
           <div className="auth-field">
-            <div className="auth-field-row">
-              <label htmlFor="signin-password">Password</label>
-              <a href={forgotHref} className="auth-link-btn auth-link-btn-xs">
-                Forgot password?
-              </a>
-            </div>
+            <label htmlFor="signin-password">Password</label>
             <div className="auth-input-wrap">
               <input
                 id="signin-password"
@@ -153,6 +148,11 @@ export function SignInView({ next, error }: SignInViewProps) {
                   <Eye size={16} strokeWidth={1.5} />
                 )}
               </button>
+            </div>
+            <div className="auth-pw-meta">
+              <a href={forgotHref} className="auth-link-btn auth-link-btn-xs">
+                Forgot password?
+              </a>
             </div>
           </div>
 
