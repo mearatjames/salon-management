@@ -1190,3 +1190,50 @@ test.describe("US5: print and export the report", () => {
     await page.emulateMedia({ media: "screen" });
   });
 });
+
+// ─── US6 (issue #166): the Report page is responsive on a phone ──────────────
+//
+// Phone-portrait (390×844) layer. The `@media (max-width: 640px)` block in
+// `styles/report.css` stacks the summary strip to 1-up, drops the body to a
+// single column (staff list above the report panel), and keeps the wide report
+// table scrolling INSIDE its own `.dr-table-wrap` so the PAGE never scrolls
+// sideways. No production code path changed — CSS-only — so this reuses the
+// existing seeded technicians (no fixture extension).
+
+test.describe("US6: the Report page is responsive on a phone", () => {
+  test.use({
+    viewport: { width: 390, height: 844 },
+    storageState: async ({ authState }, provide) => {
+      await provide(authState.owner);
+    },
+  });
+
+  test("(u) core content renders and the page never scrolls horizontally", async ({ page }) => {
+    await page.goto("/report");
+
+    // Title + the header actions (Print / Export) render.
+    await expect(page.getByRole("heading", { name: "Report", level: 1 })).toBeVisible();
+    await expect(page.locator('[data-slot="report-actions"]')).toBeVisible();
+
+    // Summary strip with its metrics is visible (tabular numerals intact — the
+    // strip stacks 1-up but every metric still renders).
+    await expect(page.locator('[data-slot="report-summary"]')).toBeVisible();
+
+    // The body's two panels both render, stacked: the left staff list (the
+    // "All staff" card) above the right report panel (the all-staff overview).
+    await expect(page.locator('[data-slot="all-staff"]')).toBeVisible();
+    await expect(page.locator('[data-slot="all-staff-overview"]')).toBeVisible();
+
+    // The period controls render and are usable.
+    await expect(page.locator('[data-slot="period-controls"]')).toBeVisible();
+
+    // No full-PAGE horizontal scroll. The wide report table is allowed to scroll
+    // inside its `.dr-table-wrap`, but the document itself must not overflow.
+    const overflows = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth > document.documentElement.clientWidth ||
+        document.body.scrollWidth > document.body.clientWidth
+    );
+    expect(overflows).toBe(false);
+  });
+});
