@@ -72,6 +72,7 @@ export async function GET(request: NextRequest): Promise<Response> {
   const supabase = await createSupabaseServerClient();
 
   let userId: string | null = null;
+  let userEmail: string | null = null;
   let provider: string | undefined;
   try {
     const { data, error } = await supabase.auth.exchangeCodeForSession(code!);
@@ -88,6 +89,9 @@ export async function GET(request: NextRequest): Promise<Response> {
       redirect("/login?error=oauth_failed");
     }
     userId = data!.user.id;
+    // Captured for the link-by-email back-fill below — a staff row that was
+    // never linked to this auth user (user_id IS NULL) is matched by email.
+    userEmail = data!.user.email ?? null;
     // `app_metadata.provider` carries the provider Supabase resolved the
     // session against. For magic links this is `'email'`; for Google OAuth
     // it is `'google'`; for recovery exchanges it is whatever the user's
@@ -118,14 +122,36 @@ export async function GET(request: NextRequest): Promise<Response> {
   if (userId) {
     try {
       const admin = createSupabaseServiceRoleClient();
-      await admin
+      const nowIso = new Date().toISOString();
+      const { data: linked, error: linkErr } = await admin
         .from("staff")
-        .update({
-          last_sign_in_at: new Date().toISOString(),
-          state: "active",
-          active: true,
-        })
-        .eq("user_id", userId);
+        .update({ last_sign_in_at: nowIso, state: "active", active: true })
+        .eq("user_id", userId)
+        .is("removed_at", null)
+        .select("id");
+
+      // Back-fill the link for a staff row that predates its auth account. A
+      // row created without going through `inviteUser` (a seeded roster row,
+      // for instance) has user_id IS NULL, so the match above touches nothing
+      // and the row stays stuck `state='invited'` forever — even after the
+      // invitee signs in and uses the app (they pick the staff tile by PIN,
+      // which never reads user_id). When nothing matched by user_id, link the
+      // still-unlinked, invited row whose email matches the just-authenticated
+      // user, stamping user_id so every later sign-in matches directly. The
+      // `user_id IS NULL` + `state='invited'` + `removed_at IS NULL` guards
+      // keep this from ever touching an already-linked, active, offboarded, or
+      // removed row; `staff_email_lower_unique` bounds the email match to one
+      // row. (Fixes the "stuck pending invite" report.)
+      if (!linkErr && (linked?.length ?? 0) === 0 && userEmail) {
+        const escapedEmail = userEmail.replace(/[%_]/g, "\\$&");
+        await admin
+          .from("staff")
+          .update({ user_id: userId, last_sign_in_at: nowIso, state: "active", active: true })
+          .is("user_id", null)
+          .is("removed_at", null)
+          .eq("state", "invited")
+          .ilike("email", escapedEmail);
+      }
     } catch (err) {
       console.error("callback: staff sign-in mark failed", err);
     }

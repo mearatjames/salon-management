@@ -58,7 +58,7 @@ function makeRequest(query: string): NextRequest {
 }
 
 function mockServerExchange(opts: {
-  user?: { id: string; app_metadata?: { provider?: string } } | null;
+  user?: { id: string; email?: string; app_metadata?: { provider?: string } } | null;
   error?: unknown;
 }) {
   const exchangeCodeForSession = vi.fn(async () => ({
@@ -71,15 +71,43 @@ function mockServerExchange(opts: {
   return { exchangeCodeForSession };
 }
 
-function mockAdminStaffUpdate() {
-  const update = vi.fn((_payload: Record<string, unknown>) => ({
-    eq: vi.fn(async (_col: string, _val: unknown) => ({ data: null, error: null })),
-  }));
-  const from = vi.fn((_table: string) => ({ update }));
+type QueryResult = { data: Array<{ id: string }> | null; error: unknown };
+
+// A chainable, awaitable staff-query builder. update/eq/is/ilike all return
+// the same builder; `.select()` resolves to the configured result, and the
+// builder itself is thenable so a chain that ends in a filter (the email
+// back-fill) resolves too. Each `from()` call returns the next builder so the
+// primary (by user_id) and fallback (by email) chains are asserted separately.
+function makeBuilder(result: QueryResult) {
+  const resolved = Promise.resolve(result);
+  const builder: Record<string, unknown> = {
+    update: vi.fn(() => builder),
+    eq: vi.fn(() => builder),
+    is: vi.fn(() => builder),
+    ilike: vi.fn(() => builder),
+    select: vi.fn(() => resolved),
+    then: (res: (v: QueryResult) => unknown, rej?: (e: unknown) => unknown) =>
+      resolved.then(res, rej),
+  };
+  return builder as {
+    update: ReturnType<typeof vi.fn>;
+    eq: ReturnType<typeof vi.fn>;
+    is: ReturnType<typeof vi.fn>;
+    ilike: ReturnType<typeof vi.fn>;
+    select: ReturnType<typeof vi.fn>;
+  };
+}
+
+function mockAdminStaffUpdate(opts: { primary?: QueryResult; fallback?: QueryResult } = {}) {
+  const primary = makeBuilder(opts.primary ?? { data: [{ id: "staff-1" }], error: null });
+  const fallback = makeBuilder(opts.fallback ?? { data: [{ id: "staff-2" }], error: null });
+  const builders = [primary, fallback];
+  let i = 0;
+  const from = vi.fn((_table: string) => builders[Math.min(i++, builders.length - 1)]);
   (createSupabaseServiceRoleClient as unknown as Mocked<() => unknown>).mockReturnValue({
     from,
   });
-  return { from, update };
+  return { from, primary, fallback };
 }
 
 function redirectUrlFrom(err: unknown): string {
@@ -162,11 +190,12 @@ describe("auth/callback staff sign-in mark (all types)", () => {
     }
 
     expect(admin.from).toHaveBeenCalledWith("staff");
-    expect(admin.update).toHaveBeenCalledTimes(1);
-    const payload = admin.update.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(admin.primary.update).toHaveBeenCalledTimes(1);
+    const payload = admin.primary.update.mock.calls[0][0] as unknown as Record<string, unknown>;
     expect(payload.state).toBe("active");
     expect(payload.active).toBe(true);
     expect(typeof payload.last_sign_in_at).toBe("string");
+    expect(admin.primary.eq).toHaveBeenCalledWith("user_id", "user-77");
   });
 
   it("still UPDATEs on the invite branch", async () => {
@@ -181,9 +210,51 @@ describe("auth/callback staff sign-in mark (all types)", () => {
       // expected NEXT_REDIRECT
     }
 
-    expect(admin.update).toHaveBeenCalledTimes(1);
-    const payload = admin.update.mock.calls[0][0] as unknown as Record<string, unknown>;
+    expect(admin.primary.update).toHaveBeenCalledTimes(1);
+    const payload = admin.primary.update.mock.calls[0][0] as unknown as Record<string, unknown>;
     expect(payload.state).toBe("active");
     expect(payload.active).toBe(true);
+  });
+
+  it("does NOT back-fill by email when the user_id match already updated a row", async () => {
+    mockServerExchange({
+      user: { id: "user-55", email: "linked@example.com", app_metadata: { provider: "email" } },
+    });
+    const admin = mockAdminStaffUpdate({ primary: { data: [{ id: "s1" }], error: null } });
+
+    try {
+      await GET(makeRequest("?code=abc"));
+    } catch {
+      // expected NEXT_REDIRECT
+    }
+
+    // Only the primary (by user_id) query ran — no second from() for the email path.
+    expect(admin.from).toHaveBeenCalledTimes(1);
+    expect(admin.fallback.update).not.toHaveBeenCalled();
+  });
+
+  it("back-fills user_id by email when no staff row matches by user_id (stuck pending invite)", async () => {
+    mockServerExchange({
+      user: { id: "user-66", email: "Seed_Owner@example.com", app_metadata: { provider: "email" } },
+    });
+    const admin = mockAdminStaffUpdate({ primary: { data: [], error: null } });
+
+    try {
+      await GET(makeRequest("?code=abc&type=invite"));
+    } catch {
+      // expected NEXT_REDIRECT
+    }
+
+    // The fallback query linked user_id + flipped the invited row to active…
+    expect(admin.from).toHaveBeenCalledTimes(2);
+    expect(admin.fallback.update).toHaveBeenCalledWith(
+      expect.objectContaining({ user_id: "user-66", state: "active", active: true })
+    );
+    // …guarded to an unlinked, invited row matched by (escaped) email only.
+    expect(admin.fallback.is).toHaveBeenCalledWith("user_id", null);
+    expect(admin.fallback.is).toHaveBeenCalledWith("removed_at", null);
+    expect(admin.fallback.eq).toHaveBeenCalledWith("state", "invited");
+    // `_` is a SQL LIKE wildcard — it must be escaped so the match stays exact.
+    expect(admin.fallback.ilike).toHaveBeenCalledWith("email", "Seed\\_Owner@example.com");
   });
 });
