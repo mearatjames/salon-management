@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
+  <title>You're invited to Tang Nails</title>
+  <style>
+    /* Client-specific resets */
+    body,
+    table,
+    td,
+    a {
+      -webkit-text-size-adjust: 100%;
+      -ms-text-size-adjust: 100%;
+    }
+
+    table,
+    td {
+      mso-table-lspace: 0pt;
+      mso-table-rspace: 0pt;
+    }
+
+    img {
+      -ms-interpolation-mode: bicubic;
+      border: 0;
+      outline: none;
+      text-decoration: none;
+    }
+
+    body {
+      margin: 0 !important;
+      padding: 0 !important;
+      width: 100% !important;
+    }
+
+    /* Dark mode (Apple Mail, iOS, Outlook for Mac) */
+    @media (prefers-color-scheme: dark) {
+      .bg-page {
+        background-color: #1a1816 !important;
+      }
+
+      .bg-card {
+        background-color: #22201d !important;
+      }
+
+      .text-fg {
+        color: #fbfaf7 !important;
+      }
+
+      .text-muted {
+        color: #aea9a1 !important;
+      }
+
+      .border-hair {
+        border-color: #34322e !important;
+      }
+
+      .divider {
+        background-color: #34322e !important;
+      }
+
+      .chip {
+        background-color: #2a2825 !important;
+        color: #fbfaf7 !important;
+      }
+
+      .footer-link {
+        color: #aea9a1 !important;
+      }
+    }
+
+    /* Mobile */
+    @media only screen and (max-width: 620px) {
+      .container {
+        width: 100% !important;
+      }
+
+      .px-gutter {
+        padding-left: 24px !important;
+        padding-right: 24px !important;
+      }
+
+      .h1 {
+        font-size: 24px !important;
+        line-height: 1.2 !important;
+      }
+
+      .btn {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+      }
+    }
+  </style>
+</head>
+
+<body class="bg-page"
+  style="margin: 0; padding: 0; background-color: #fbfaf7; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #22201d;">
+  <!-- Preview text shown in inbox list -->
+  <div
+    style="display: none; max-height: 0; overflow: hidden; opacity: 0; visibility: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #fbfaf7;">
+    {{ .Data.invited_by_name }} added you to {{ .Data.salon_name }} on Tang Nails. Accept by {{ .Data.expires_human }}.
+  </div>
+
+  <table role="presentation" class="bg-page" width="100%" cellpadding="0" cellspacing="0" border="0"
+    style="background-color: #fbfaf7;">
+    <tr>
+      <td align="center" style="padding: 48px 16px;">
+        <table role="presentation" class="container" width="560" cellpadding="0" cellspacing="0" border="0"
+          style="width: 560px; max-width: 560px;">
+
+          <!-- Brand -->
+          <tr>
+            <td class="px-gutter" style="padding: 0 8px 32px 8px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="vertical-align: middle;">
+                    <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                      <tr>
+                        <td style="vertical-align: middle; padding-right: 10px;">
+                          <!-- Tang Nails mark, hosted PNG by absolute URL: Gmail/Outlook strip inline
+                               <svg>, so the brand mark is served from the stable prod alias. The
+                               "Tang Nails Studio" wordmark beside it is the images-blocked fallback,
+                               so the brand always reads even when the image is suppressed. Transparent
+                               PNG renders on both the light and dark-mode card backgrounds. Asset
+                               source: public/email/tang-nails-logo.svg (regen the PNG with
+                               `node scripts/build-email-logo.mjs`). -->
+                          <img src="https://salon-management-taupe.vercel.app/email/tang-nails-logo.png"
+                            width="24" height="24" alt="Tang Nails"
+                            style="display:block; border:0;" />
+                        </td>
+                        <td class="text-fg"
+                          style="vertical-align: middle; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; color: #22201d;">
+                          Tang Nails Studio
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                  <td align="right" class="text-muted"
+                    style="font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: #aea9a1;">
+                    Staff invitation
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Card -->
+          <tr>
+            <td class="bg-card border-hair"
+              style="background-color: #ffffff; border: 1px solid #e8e5df; border-radius: 12px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+
+                <!-- Title block -->
+                <tr>
+                  <td class="px-gutter" style="padding: 40px 40px 8px 40px;">
+                    <h1 class="h1 text-fg"
+                      style="margin: 0; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 28px; line-height: 1.15; letter-spacing: -0.02em; font-weight: 600; color: #22201d;">
+                      You're invited to {{ .Data.salon_name }}
+                    </h1>
+                  </td>
+                </tr>
+                <tr>
+                  <td class="px-gutter text-muted"
+                    style="padding: 12px 40px 24px 40px; font-size: 15px; line-height: 1.55; color: #5a554d;">
+                    {{ .Data.invited_by_name }} added you to the {{ .Data.salon_name }} team on Tang Nails. Accept below
+                    to set up your account.
+                  </td>
+                </tr>
+
+                <!-- Detail rows -->
+                <tr>
+                  <td class="px-gutter" style="padding: 0 40px;">
+                    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+                      class="bg-page border-hair"
+                      style="background-color: #f4f2ee; border: 1px solid #e8e5df; border-radius: 8px;">
+                      <tr>
+                        <td style="padding: 14px 16px; border-bottom: 1px solid #e8e5df;" class="border-hair">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td class="text-muted" style="font-size: 13px; color: #7a746a; width: 90px;">Salon</td>
+                              <td class="text-fg" style="font-size: 14px; font-weight: 500; color: #22201d;">{{
+                                .Data.salon_name }}</td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 14px 16px; border-bottom: 1px solid #e8e5df;" class="border-hair">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td class="text-muted" style="font-size: 13px; color: #7a746a; width: 90px;">Role</td>
+                              <td class="text-fg" style="font-size: 14px; font-weight: 500; color: #22201d;">{{
+                                .Data.role }}</td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 14px 16px;">
+                          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                            <tr>
+                              <td class="text-muted" style="font-size: 13px; color: #7a746a; width: 90px;">Invited by
+                              </td>
+                              <td class="text-fg" style="font-size: 14px; font-weight: 500; color: #22201d;">{{
+                                .Data.invited_by_name }}</td>
+                            </tr>
+                          </table>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+
+                <!-- CTA -->
+                <tr>
+                  <td class="px-gutter" align="left" style="padding: 32px 40px 8px 40px;">
+                    <!--[if mso]>
+                      <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{ .ConfirmationURL }}" style="height:44px;v-text-anchor:middle;width:200px;" arcsize="14%" strokecolor="#b95466" fillcolor="#b95466">
+                        <w:anchorlock/>
+                        <center style="color:#ffffff;font-family:Inter,Arial,sans-serif;font-size:14px;font-weight:600;">Accept invitation</center>
+                      </v:roundrect>
+                      <![endif]-->
+                    <!--[if !mso]><!-- -->
+                    <a class="btn" href="{{ .ConfirmationURL }}"
+                      style="background-color: #b95466; border: 1px solid #b95466; color: #ffffff; display: inline-block; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 600; line-height: 1; padding: 14px 22px; text-decoration: none; border-radius: 6px; text-align: center;">
+                      Accept invitation
+                    </a>
+                    <!--<![endif]-->
+                  </td>
+                </tr>
+
+                <!-- Expiry + fallback link -->
+                <tr>
+                  <td class="px-gutter text-muted"
+                    style="padding: 16px 40px 32px 40px; font-size: 13px; line-height: 1.55; color: #7a746a;">
+                    This invitation expires in 7 days. If the button doesn't work, paste this link into your
+                    browser:<br />
+                    <a href="{{ .ConfirmationURL }}" class="footer-link"
+                      style="color: #7a746a; word-break: break-all;">{{ .ConfirmationURL }}</a>
+                  </td>
+                </tr>
+
+                <!-- Divider -->
+                <tr>
+                  <td class="px-gutter" style="padding: 0 40px;">
+                    <div class="divider"
+                      style="height: 1px; line-height: 1px; font-size: 1px; background-color: #e8e5df;">&nbsp;</div>
+                  </td>
+                </tr>
+
+                <!-- Reassurance -->
+                <tr>
+                  <td class="px-gutter text-muted"
+                    style="padding: 24px 40px 36px 40px; font-size: 13px; line-height: 1.6; color: #7a746a;">
+                    Not expecting this? You can safely ignore the email — no account will be created until you accept.
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td class="px-gutter text-muted" align="center"
+              style="padding: 24px 8px 0 8px; font-size: 12px; line-height: 1.6; color: #aea9a1;">
+              Sent to {{ .Email }} by {{ .Data.salon_name }} on Tang Nails Studio.<br />
+              <a href="{{ .SiteURL }}" class="footer-link" style="color: #aea9a1; text-decoration: none;">{{ .SiteURL
+                }}</a>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+
+</html>
