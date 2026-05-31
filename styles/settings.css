@@ -963,6 +963,147 @@
   opacity: 0.7;
 }
 
+/* === 167-mobile-services (phone-portrait master → detail) ===
+   Adapted from the design handoff deliverable `mobile/services.responsive.css`.
+   A phone-portrait layer on top of the desktop `.services-two-pane` /
+   `.services-edit-panel` rules above — the desktop and `<= 1023px` tablet
+   branches are untouched. On phones the two panes collapse to one-at-a-time
+   (master → detail), driven entirely by the existing `[data-panel-mode]`
+   attribute on `.services-two-pane`:
+
+     • closed   → catalog list full-screen, edit panel removed from flow
+     • edit/add → edit panel promoted to a fixed full-screen layer with its
+                  own internal scroll and a pinned footer (Save / Cancel /
+                  Archive always reachable), plus a back control in the header
+
+   Every value resolves to a Lacquer token. The single 640px phone breakpoint
+   matches the studio shell (#160 / PR #175).
+
+   The back control is phone-only; hide it by default so desktop/tablet never
+   show it. The media query below flips it to inline-flex. */
+.services-edit-panel__back {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  /* Tighter page gutters on phones. */
+  .settings-services-grid {
+    padding: var(--space-4);
+    gap: var(--space-3);
+  }
+
+  /* Single column (the <= 1023px branch already collapses the grid; restated
+     here for clarity alongside the master/detail toggles below). */
+  .services-two-pane {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    align-items: stretch;
+    gap: var(--space-3);
+  }
+
+  /* Taller touch targets for catalog rows. */
+  [data-slot="service-row"] {
+    min-height: 60px;
+  }
+
+  /* ---- List mode: catalog full-screen, inspector removed ---- */
+  .services-two-pane[data-panel-mode="closed"] > .services-edit-panel {
+    display: none;
+  }
+
+  /* ---- Detail mode: remove the catalog from flow so it is neither focusable
+          behind the promoted panel (a11y) nor a source of horizontal overflow.
+          `!important` is required because the `<section data-slot="services-list">`
+          carries an inline `display: flex` (set in catalog-list.client.tsx for
+          the desktop row-fill), which a stylesheet rule cannot otherwise
+          override. ---- */
+  .services-two-pane[data-panel-mode="edit"] > [data-slot="services-list"],
+  .services-two-pane[data-panel-mode="add"] > [data-slot="services-list"] {
+    display: none !important;
+  }
+
+  /* ---- Detail mode: promote the edit panel to a fixed full-screen layer.
+          It sheds its desktop card chrome and slides in from the right. ---- */
+  .services-two-pane[data-panel-mode="edit"] > .services-edit-panel,
+  .services-two-pane[data-panel-mode="add"] > .services-edit-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    height: 100%;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    gap: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: var(--card);
+    animation: services-detail-in var(--duration-slow) var(--ease-out);
+  }
+
+  @keyframes services-detail-in {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+
+  /* Header becomes the detail bar: back control + swatch + name, pinned top. */
+  .services-edit-panel__header {
+    flex-shrink: 0;
+    padding: var(--space-4);
+    /* clear the iOS / shell status-bar inset */
+    padding-top: max(var(--space-4), env(safe-area-inset-top));
+  }
+
+  /* The back control — Lucide chevron + "Services". Shown only on phones (it is
+     `display: none` above), and only ever rendered in edit/add modes. */
+  .services-edit-panel__back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex-shrink: 0;
+    margin-right: var(--space-1);
+    padding: var(--space-1) var(--space-2);
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--primary);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background var(--duration-fast) var(--ease-out);
+  }
+
+  .services-edit-panel__back:hover {
+    background: var(--accent);
+  }
+
+  /* The form (`__body`) fills the layer; its `__scroll` child scrolls and the
+     footer pins to the bottom. Note: in production the footer is a sibling of
+     `__scroll` INSIDE the `__body` <form> (the deliverable's flat harness
+     lumped body+scroll), so overflow lives on `__scroll` only — this is the
+     "adapt the prototype" step. */
+  .services-edit-panel__scroll {
+    padding: var(--space-4);
+  }
+
+  .services-edit-panel__footer {
+    flex-shrink: 0;
+    padding: var(--space-3) var(--space-4);
+    /* clear the iOS / shell home-indicator inset */
+    padding-bottom: max(var(--space-3), env(safe-area-inset-bottom));
+    background: var(--card);
+  }
+
+  /* Comfortable footer action height on touch (40px == --space-10). */
+  .services-edit-panel__action {
+    min-height: var(--space-10);
+  }
+}
+
 /* === 022-supply-types-catalog === */
 
 /* .supply-type-picker* — inline combobox + create-new for supply-type
