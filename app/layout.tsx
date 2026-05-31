@@ -22,8 +22,13 @@ export const metadata: Metadata = {
 // Tints the mobile browser address bar and the installed-app title bar with
 // the app's own warm near-white background, so the chrome blends into the
 // studio surface. Mirrors `theme_color` in `app/manifest.ts`.
+//
+// `viewportFit: "cover"` lets the layout extend under the notch / home
+// indicator so `env(safe-area-inset-*)` resolves to real values — the studio
+// topbar, drawer, and main slot pad themselves with those insets on phones.
 export const viewport: Viewport = {
   themeColor: "#FCFCF9",
+  viewportFit: "cover",
 };
 
 // Studio sidebar collapse preference is persisted in a cookie so the root

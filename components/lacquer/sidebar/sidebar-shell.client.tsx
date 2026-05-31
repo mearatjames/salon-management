@@ -9,29 +9,21 @@
 // Treating the static config as a module-level import keeps the icon
 // references on the client where they're rendered.
 //
-// Renders the full shell shape: header slot + Dashboard + divider +
-// grouped items + spacer + footer slot (children).
+// Renders the full shell shape: header slot + nav list + spacer + footer slot
+// (children). The nav list itself (Dashboard + divider + grouped items, with
+// URL-driven active state) lives in the shared `<StudioNavList>` so the mobile
+// drawer (`MobileNav`) renders the exact same navigation.
 //
 // Constitution Principle II: pure UI plumbing — no business logic, no
-// mutations, no auth. Just pathname → `data-active` mapping.
+// mutations, no auth. Just the collapse toggle + the shared nav list.
 //
 // DOM attribute contract: see
 //   specs/007-left-panel-nav/contracts/nav-items.contract.md § 4.
-//
-// Deviation note: the original task text suggested re-using the server
-// `<NavItem>` component from inside this client island. Server Components
-// cannot be rendered from Client Components in App Router, so we inline the
-// same markup here (Option 1 in the phase brief). This matches the precedent
-// in `components/lacquer/settings/tab-bar.tsx`. The server `<NavItem>` file
-// is deleted in this phase.
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { useSyncExternalStore, type ReactNode } from "react";
 
-import { isActiveSection } from "./is-active-section";
-import { NAV_CONFIG, type NavItem } from "./nav-items";
+import { StudioNavList } from "./studio-nav-list";
 
 export type SidebarShellProps = {
   /**
@@ -79,59 +71,7 @@ function getCollapsedServerSnapshot(): boolean {
   return false;
 }
 
-function renderItem(item: NavItem, isActive: boolean) {
-  const Icon = item.icon;
-
-  if (item.disabled === true) {
-    return (
-      <span
-        key={item.id}
-        className="studio-nav-item"
-        data-nav-id={item.id}
-        data-active="false"
-        data-disabled="true"
-        aria-disabled="true"
-        tabIndex={-1}
-        title="Coming soon"
-      >
-        <Icon size={16} strokeWidth={1.5} aria-hidden="true" />
-        <span className="studio-nav-label">{item.label}</span>
-      </span>
-    );
-  }
-
-  // Non-disabled items per the contract MUST have a non-null href.
-  // `validateNavConfig` enforces this at module load.
-  const href = item.href as string;
-
-  return (
-    <Link
-      key={item.id}
-      href={href}
-      className="studio-nav-item"
-      data-nav-id={item.id}
-      data-active={String(isActive)}
-      data-disabled="false"
-      aria-current={isActive ? "page" : undefined}
-      title={item.label}
-    >
-      <Icon size={16} strokeWidth={1.5} aria-hidden="true" />
-      <span className="studio-nav-label">{item.label}</span>
-    </Link>
-  );
-}
-
-// An item is rendered when it is not `hidden` (its page isn't built yet) AND
-// it is visible to the viewer's role — it carries no `roles` allow-list, or
-// its allow-list includes the viewer's role.
-function isItemVisible(item: NavItem, role: string): boolean {
-  if (item.hidden === true) return false;
-  return item.roles === undefined || item.roles.includes(role as never);
-}
-
 export function SidebarShell({ role, children }: SidebarShellProps) {
-  const pathname = usePathname() ?? "";
-
   // Reads the `<html data-studio-sidebar-collapsed>` attribute (seeded by the
   // pre-paint init script). SSR returns false to match the layout's default
   // markup so hydration sees a consistent tree; the client immediately reads
@@ -172,20 +112,7 @@ export function SidebarShell({ role, children }: SidebarShellProps) {
         </button>
       </div>
 
-      {NAV_CONFIG.top
-        .filter((item) => isItemVisible(item, role))
-        .map((item) => renderItem(item, isActiveSection(pathname, item.href)))}
-
-      <hr className="studio-nav-divider" />
-
-      {NAV_CONFIG.groups.map((group) => (
-        <div key={group.id}>
-          <div className="studio-nav-section">{group.label}</div>
-          {group.items
-            .filter((item) => isItemVisible(item, role))
-            .map((item) => renderItem(item, isActiveSection(pathname, item.href)))}
-        </div>
-      ))}
+      <StudioNavList role={role} />
 
       <div className="studio-sidebar-spacer" />
 
