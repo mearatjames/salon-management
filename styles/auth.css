@@ -11,7 +11,7 @@
      • The five-view UI state machine pieces (`.auth-view-pane` with the
        reduced-motion-gated `viewIn` keyframe, `.auth-form-header`,
        `.auth-form-title`, `.auth-form-subtitle`, `.auth-form-body`,
-       `.auth-field`, `.auth-field-row`, `.auth-text-input`,
+       `.auth-field`, `.auth-pw-meta`, `.auth-text-input`,
        `.auth-input-wrap`, `.auth-suffix-btn`, `.auth-btn` family,
        `.auth-divider`, `.auth-link-btn`, `.auth-back-btn`, `.auth-alert`,
        `.auth-confirm-card`, `.auth-solo-mark`).
@@ -181,10 +181,13 @@
   flex-direction: column;
   gap: var(--space-2);
 }
-.auth-field-row {
+/* Forgot-password link sits on its own row below the password field,
+   right-aligned — so the label never competes with the link for width on a
+   phone, and the field reads as one clean block (mobile-auth mockup, #171). */
+.auth-pw-meta {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
+  margin-top: var(--space-1);
 }
 
 .auth-form-well label {
@@ -398,5 +401,41 @@
   }
   .auth-solo-mark {
     display: flex;
+  }
+}
+
+/* ---------- Phone-width polish (≤ 640px, #171) ----------
+   The 720px branch above already drops to a single column and hides the
+   brand panel (where the only fixed-width decorations live, so nothing
+   overflows at 375px). This block layers the phone-specific touch polish on
+   top, gated at the project's 640px phone breakpoint:
+     · inputs / buttons / icon hit-targets ≥ 44px tall
+     · 16px input text so iOS doesn't zoom the viewport on focus
+     · 24px side gutters (was 40px) for comfortable margins at 375px, widened
+       to clear the notch / home indicator on safe-area devices
+   Desktop sign-in is left untouched. */
+@media (max-width: 640px) {
+  .auth-form-panel {
+    padding-top: max(var(--space-12), env(safe-area-inset-top));
+    padding-right: max(var(--space-6), env(safe-area-inset-right));
+    padding-bottom: max(var(--space-12), env(safe-area-inset-bottom));
+    padding-left: max(var(--space-6), env(safe-area-inset-left));
+  }
+
+  .auth-text-input {
+    height: 44px;
+    font-size: var(--text-lg);
+  }
+  .auth-text-input.auth-text-input-suffixed {
+    padding-right: 44px;
+  }
+
+  .auth-suffix-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .auth-btn {
+    height: 44px;
   }
 }
