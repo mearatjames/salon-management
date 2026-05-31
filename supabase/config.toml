@@ -255,10 +255,11 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# Customize the staff invite email (local dev only — hosted preview/prod
+# templates are updated manually; there is no CI sync for email templates).
+[auth.email.template.invite]
+subject = "You're invited to Tang Nails"
+content_path = "./supabase/templates/invite.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
