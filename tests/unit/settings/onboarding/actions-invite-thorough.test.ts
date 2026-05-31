@@ -63,6 +63,10 @@ vi.mock("@/lib/db/admin", () => ({
   createSupabaseServiceRoleClient: vi.fn(),
 }));
 
+vi.mock("@/lib/onboarding/invite-metadata", () => ({
+  buildInviteMetadata: vi.fn(),
+}));
+
 // ── Imports of the SUT and the mocked modules ──────────────────────────────
 
 import { recordAudit } from "@/lib/auth/audit";
@@ -74,10 +78,21 @@ import {
   generateMagicLinkInvite,
   sendPasswordInvite,
 } from "@/lib/onboarding/invite";
+import { buildInviteMetadata } from "@/lib/onboarding/invite-metadata";
 
 import { inviteUser } from "@/app/(studio)/settings/onboarding/actions";
 
 type Mocked<T> = T & ReturnType<typeof vi.fn>;
+
+/** The resolved invite metadata the action forwards to the invite helper. */
+const INVITE_META = {
+  display_name: "Hana Soto",
+  role: "technician",
+  invited_by: "staff-owner-1",
+  invited_by_name: "Maya Patel",
+  salon_name: "Tang Nails",
+  expires_human: "June 6, 2026",
+};
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -174,6 +189,9 @@ describe("inviteUser (mode='thorough')", () => {
     (requireStudioSession as unknown as Mocked<() => Promise<StudioViewer>>).mockResolvedValue(
       OWNER_VIEWER
     );
+    (buildInviteMetadata as unknown as Mocked<() => Promise<unknown>>).mockResolvedValue(
+      INVITE_META
+    );
   });
 
   afterEach(() => {
@@ -192,6 +210,15 @@ describe("inviteUser (mode='thorough')", () => {
       thrown = err;
     }
 
+    // Metadata is built from the invitee + owner viewer (carrying the
+    // salon_name / invited_by_name / expires_human the template renders —
+    // issue #159) and forwarded to the password-invite helper.
+    expect(buildInviteMetadata).toHaveBeenCalledWith({
+      displayName: "Hana Soto",
+      role: "technician",
+      inviterId: OWNER_VIEWER.staff.id,
+      inviterName: OWNER_VIEWER.staff.display_name,
+    });
     expect(sendPasswordInvite).toHaveBeenCalledTimes(1);
     const [emailArg, metaArg] = (sendPasswordInvite as unknown as Mocked<() => unknown>).mock
       .calls[0];
@@ -200,6 +227,9 @@ describe("inviteUser (mode='thorough')", () => {
       display_name: "Hana Soto",
       role: "technician",
       invited_by: OWNER_VIEWER.staff.id,
+      invited_by_name: "Maya Patel",
+      salon_name: "Tang Nails",
+      expires_human: "June 6, 2026",
     });
     expect(generateMagicLinkInvite).not.toHaveBeenCalled();
 

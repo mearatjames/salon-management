@@ -43,6 +43,7 @@ import { requireStudioSession, type StudioRole, type StudioViewer } from "@/lib/
 
 import { getNextAnonPlaceholder } from "@/lib/onboarding/anon-counter";
 import { checkEmailConflict } from "@/lib/onboarding/email-conflict";
+import { buildInviteMetadata } from "@/lib/onboarding/invite-metadata";
 import {
   deleteInviteUser,
   generateMagicLinkInvite,
@@ -151,24 +152,27 @@ export async function inviteUser(formData: FormData): Promise<void> {
 
   // 5: create auth user via the method-appropriate helper. Genuine SDK
   // failures throw; a duplicate-email collision returns the typed sentinel.
+  //
+  // The metadata becomes the auth user's user_metadata, which the hosted
+  // invite email template renders via `{{ .Data.* }}` — salon_name,
+  // invited_by_name and expires_human MUST be populated here or those rows
+  // render blank (issue #159).
   let userId: string;
   try {
+    const inviteMetadata = await buildInviteMetadata({
+      displayName,
+      role,
+      inviterId: viewer.staff.id,
+      inviterName: viewer.staff.display_name,
+    });
     if (extras.method === "password") {
-      const result = await sendPasswordInvite(email, {
-        display_name: displayName,
-        role,
-        invited_by: viewer.staff.id,
-      });
+      const result = await sendPasswordInvite(email, inviteMetadata);
       if (!result.user_id) {
         redirect(`${ONB_PATH}?error=already_invited`);
       }
       userId = result.user_id;
     } else {
-      const result = await generateMagicLinkInvite(email, {
-        display_name: displayName,
-        role,
-        invited_by: viewer.staff.id,
-      });
+      const result = await generateMagicLinkInvite(email, inviteMetadata);
       if (!result.user_id) {
         redirect(`${ONB_PATH}?error=already_invited`);
       }
