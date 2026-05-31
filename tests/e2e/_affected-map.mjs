@@ -221,14 +221,22 @@ export const AFFECTED_MAP = {
   "supabase/migrations/0029_payout_adjustments.sql": ["tests/e2e/payroll.spec.ts"],
 
   // Dashboard.
-  "app/(studio)/dashboard/**": ["tests/e2e/dashboard.spec.ts"],
+  "app/(studio)/dashboard/**": [
+    "tests/e2e/dashboard.spec.ts",
+    "tests/e2e/dashboard-mobile.spec.ts",
+  ],
+  // Phone-layout chrome (issue #161) — restacks the feed, stat grid, and CTA
+  // at the 640px breakpoint; the mobile spec asserts that layout.
+  "styles/dashboard.css": ["tests/e2e/dashboard.spec.ts", "tests/e2e/dashboard-mobile.spec.ts"],
   "components/lacquer/period-summary.client.tsx": ["tests/e2e/dashboard.spec.ts"],
   "components/lacquer/period-toggle.tsx": ["tests/e2e/dashboard.spec.ts"],
   "components/lacquer/payment-mix-card.tsx": ["tests/e2e/dashboard.spec.ts"],
   // The dashboard feed's "View all" links to /transactions, so changes here
-  // affect both the dashboard spec and the transactions spec.
+  // affect both the dashboard spec and the transactions spec; the phone card
+  // layout adds the mobile spec.
   "components/lacquer/recent-transactions-feed.tsx": [
     "tests/e2e/dashboard.spec.ts",
+    "tests/e2e/dashboard-mobile.spec.ts",
     "tests/e2e/transactions.spec.ts",
   ],
   "components/lacquer/stat-card.tsx": ["tests/e2e/dashboard.spec.ts"],

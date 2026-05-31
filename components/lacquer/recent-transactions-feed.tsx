@@ -22,8 +22,11 @@ export type RecentTransactionsFeedProps = {
 
 // Server component — applies the `.tx-feed` chrome (background / border /
 // radius all tokenised via the CSS class). DOM order per row matches the
-// grid in `styles/dashboard.css` (`.tx-feed-row` is a 5-col grid):
-//   .time | .svc | <TechStack /> | <MethodPill /> | .amt
+// grid in `styles/dashboard.css` (`.tx-feed-row` is a 5-col grid on desktop):
+//   .time | .svc | .techs (<TechStack />) | <MethodPill /> | .amt
+// The `.techs` wrapper carries a class purely so the phone breakpoint
+// (issue #161, `max-width: 640px`) can place it via `grid-template-areas`
+// when the row restacks into a card layout.
 //
 // FR-023: the client-name column is removed.
 // FR-014a: the method pill renders via `<MethodPill />` so the `split`
@@ -53,6 +56,7 @@ export function RecentTransactionsFeed({ rows, staff, viewerRole }: RecentTransa
               <span className="time tnum">{row.time}</span>
               <span className="svc">{row.serviceLabel}</span>
               <span
+                className="techs"
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
