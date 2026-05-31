@@ -1108,3 +1108,333 @@
   opacity: 0.5;
   cursor: default;
 }
+
+/* ==========================================================================
+   Transactions ledger — MOBILE responsive rules (issue #168)
+
+   Phone-portrait (≤640px) layer for `/transactions`. Every rule lives inside
+   `@media (max-width: 640px)` so desktop/tablet are untouched, and every value
+   resolves to a `var(--*)` token (Constitution Principle I — no raw colours).
+
+   CSS-only — targets the EXISTING `.tp-*` markup, no component/TSX change:
+     • KPI strip   → 2-up grid, "Avg ticket" spans full width
+     • Filter row  → search full-width, method chips scroll, tech/status stack
+     • Period row  → tabs + range stepper stack full-width
+     • Day header  → date over a 3-stat row
+     • Ledger      → each `.tp-table` row restacks into a card via
+                     grid-template-areas (issue option (b))
+     • Receipt     → the right `.tp-drawer` becomes a bottom sheet
+
+   Visual target: `Mobile Transactions.html` in the Claude Design handoff. The
+   mockup's Cards/Table view toggle is an optional affordance, not required by
+   the issue — we ship the cards restack only.
+   ========================================================================== */
+
+@media (max-width: 640px) {
+  /* ----- Page shell: the page scrolls as one column ----- */
+  .tp-page {
+    height: auto;
+    min-height: 0;
+  }
+
+  /* ----- Header ----- */
+  .tp-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    padding: var(--space-4) var(--space-4) 0;
+  }
+  .tp-head h1 {
+    font-size: var(--text-2xl);
+  }
+  .tp-head .sub {
+    font-size: var(--text-xs);
+    max-width: none;
+  }
+  .tp-head .actions {
+    justify-content: flex-start;
+  }
+
+  /* ----- Period row → stacked, full-width ----- */
+  .tp-period-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-4) 0;
+  }
+  .tp-period-row .tx-period {
+    display: flex;
+    width: 100%;
+  }
+  .tp-period-row .tx-period a {
+    flex: 1;
+  }
+  .tp-range {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .tp-range .arrow {
+    width: 36px;
+    height: 36px;
+  }
+  .tp-range .lbl {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+  }
+
+  /* ----- KPI strip → 2-up, "Avg ticket" full-width ----- */
+  .tp-kpis {
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+    padding: var(--space-4);
+  }
+  .tp-kpi {
+    padding: var(--space-3);
+  }
+  .tp-kpi:last-child {
+    grid-column: 1 / -1;
+  }
+  .tp-kpi .val {
+    font-size: var(--text-xl);
+  }
+  .tp-kpi .lbl > span:first-child {
+    white-space: nowrap;
+  }
+  .tp-kpi .sub {
+    flex-wrap: wrap;
+  }
+
+  /* ----- Filter row → stacked, full-width ----- */
+  .tp-filters {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+    padding: 0 var(--space-4) var(--space-3);
+  }
+  .tp-search {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+  .tp-search input {
+    height: 38px;
+  }
+  /* method chips bleed to the screen edges and scroll horizontally */
+  .tp-chipgroup {
+    width: max-content;
+    max-width: none;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .tp-chipgroup::-webkit-scrollbar {
+    display: none;
+  }
+  .tp-chipgroup button {
+    height: 32px;
+    padding: 0 var(--space-3);
+  }
+  /* tech-filter trigger + active pills + clear go full-width below */
+  .tp-filter-btn {
+    height: 38px;
+    justify-content: center;
+  }
+  .tp-filter-spacer {
+    display: none;
+  }
+
+  /* ----- Ledger container: no inner scroll region on phone ----- */
+  .tp-table-scroll {
+    flex: none;
+    min-height: 0;
+    overflow: visible;
+    padding: 0 var(--space-4) var(--space-12);
+  }
+  .tp-day-group {
+    margin-top: var(--space-5);
+  }
+
+  /* ----- Day-group header → date over a 3-stat row ----- */
+  .tp-day-h {
+    grid-template-columns: repeat(3, auto);
+    justify-content: start;
+    gap: var(--space-1) var(--space-4);
+    padding: var(--space-2) 2px var(--space-3);
+  }
+  .tp-day-h .date {
+    grid-column: 1 / -1;
+    font-size: var(--text-md);
+  }
+
+  /* ======================================================================
+     LEDGER RESTACK — each `.tp-table` row becomes a card (CSS-only).
+     Columns (source order):
+       1 Time · 2 ID · 3 Client · 4 Services · 5 Techs · 6 Method
+       7 Subtotal · 8 Tip · 9 Total
+     ====================================================================== */
+  .tp-table {
+    table-layout: auto;
+    font-size: var(--text-sm);
+  }
+  /* hide the header row (labels are reintroduced inline below) */
+  .tp-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  .tp-table,
+  .tp-table tbody {
+    display: block;
+  }
+  /* every per-day <table> stacks its own card list */
+  .tp-table + .tp-table,
+  .tp-day-group .tp-table {
+    width: 100%;
+  }
+
+  .tp-table tbody tr {
+    display: grid;
+    grid-template-columns: auto auto 1fr auto;
+    grid-template-areas:
+      "client client client total"
+      "time   id     .      total"
+      "svc    svc    svc    svc"
+      "techs  meth   sub    tip";
+    align-items: center;
+    column-gap: var(--space-2);
+    row-gap: var(--space-2);
+    padding: var(--space-4);
+    margin-top: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--card);
+    box-shadow: var(--shadow-xs);
+  }
+  .tp-table tbody tr:hover {
+    background: var(--card);
+  }
+  .tp-table tbody tr:active {
+    background: var(--accent);
+  }
+  .tp-table tbody td {
+    border-bottom: 0;
+    padding: 0;
+    white-space: normal;
+  }
+
+  .tp-table tbody td:nth-child(1) {
+    grid-area: time;
+  }
+  .tp-table tbody td:nth-child(2) {
+    grid-area: id;
+  }
+  .tp-table tbody td:nth-child(3) {
+    grid-area: client;
+  }
+  .tp-table tbody td:nth-child(4) {
+    grid-area: svc;
+  }
+  .tp-table tbody td:nth-child(5) {
+    grid-area: techs;
+  }
+  .tp-table tbody td:nth-child(6) {
+    grid-area: meth;
+  }
+  .tp-table tbody td:nth-child(7) {
+    grid-area: sub;
+  }
+  .tp-table tbody td:nth-child(8) {
+    grid-area: tip;
+  }
+  .tp-table tbody td:nth-child(9) {
+    grid-area: total;
+  }
+
+  /* client — prominent name (the reversal badge already stacks beneath it) */
+  .tp-table tbody td.client {
+    align-self: start;
+  }
+  .tp-table tbody td.client b {
+    font-size: var(--text-md);
+    font-weight: 600;
+    letter-spacing: var(--tracking-snug);
+  }
+  /* time + id — small muted meta on line 2 */
+  .tp-table tbody td.time,
+  .tp-table tbody td.id {
+    font-size: var(--text-xs);
+    color: var(--muted-foreground);
+  }
+  /* services — full-width muted line, allowed to wrap */
+  .tp-table tbody td.services {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    padding-top: var(--space-3);
+    border-top: 1px dashed var(--border);
+    line-height: var(--leading-snug);
+  }
+  /* total — big right-aligned amount spanning the meta rows */
+  .tp-table tbody td.total {
+    align-self: start;
+    text-align: right;
+    font-size: var(--text-lg);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  /* subtotal / tip — small labelled amounts on the meta row */
+  .tp-table tbody td.num:nth-child(7),
+  .tp-table tbody td.num:nth-child(8) {
+    text-align: right;
+    font-size: var(--text-xs);
+    color: var(--muted-foreground);
+  }
+  .tp-table tbody td.num:nth-child(7)::before {
+    content: "Sub ";
+  }
+  .tp-table tbody td.num:nth-child(8)::before {
+    content: "Tip ";
+  }
+
+  /* ======================================================================
+     RECEIPT — the 460px right drawer becomes a bottom sheet
+     ====================================================================== */
+  .tp-drawer {
+    width: 100%;
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    height: auto;
+    max-height: 90%;
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    border-top-left-radius: var(--radius-xl);
+    border-top-right-radius: var(--radius-xl);
+    animation: tpSheetUp var(--duration-slow) var(--ease-out);
+  }
+  @keyframes tpSheetUp {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+  .tp-drawer-foot {
+    flex-wrap: wrap;
+    padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
+  }
+  .tp-drawer-foot .tp-btn-outline {
+    flex: 1 1 40%;
+  }
+  .tp-drawer-foot .tp-btn-danger {
+    flex: 1 1 100%;
+    justify-content: center;
+    height: 40px;
+  }
+}
