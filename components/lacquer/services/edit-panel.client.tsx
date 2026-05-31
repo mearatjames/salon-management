@@ -26,7 +26,7 @@
 // Header: 26px color swatch + name + secondary `{category} · {duration} ·
 // {price}` line. No Close (X) per Clarifications Q1 / FR-002.
 
-import { Info } from "lucide-react";
+import { ChevronLeft, Info } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
@@ -384,6 +384,20 @@ export function EditPanel({
       >
         {/* Header — color swatch + name + secondary line. No Close (X). */}
         <header className="services-edit-panel__header" data-slot="services-edit-panel-header">
+          {/* Phone-only back control (issue #167). On the phone master → detail
+              flow the edit panel fills the viewport; this returns to the catalog
+              list. It clears the selection via the same handler as Cancel, so a
+              dirty draft still triggers the discard guard. Hidden on
+              desktop/tablet via `.services-edit-panel__back { display: none }`. */}
+          <button
+            type="button"
+            className="services-edit-panel__back"
+            data-slot="services-edit-back"
+            onClick={handleCancel}
+          >
+            <ChevronLeft size={16} strokeWidth={1.5} aria-hidden="true" />
+            Services
+          </button>
           <span
             aria-hidden="true"
             className="services-edit-panel__header-swatch"
