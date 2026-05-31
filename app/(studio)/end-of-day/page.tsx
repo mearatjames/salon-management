@@ -109,12 +109,28 @@ export default async function EndOfDayPage() {
         </div>
       </div>
 
-      {/* Two-column body. */}
+      {/* Two-column body. On desktop the cash list sits in the left panel
+          beside the count column. On phone (≤640px) the left panel + divider
+          are hidden by CSS and the same list is reached through a bottom
+          sheet — the "Count first" layout (issue #164): the numpad is the
+          primary surface and the list is one tap away. We render a second
+          <CashList /> instance for that sheet (the sheet copy only mounts in
+          the DOM when the operator opens it on phone). */}
       <div className="eod-body">
         <CashList rows={snapshot.rows} expectedCents={snapshot.expectedCents} canRefund />
-        <div style={{ width: 1, background: "var(--border)", flexShrink: 0 }} aria-hidden="true" />
+        <div
+          data-slot="eod-divider"
+          style={{ width: 1, background: "var(--border)", flexShrink: 0 }}
+          aria-hidden="true"
+        />
         {isOpen ? (
-          <CashCount expectedCents={snapshot.expectedCents} />
+          <CashCount
+            expectedCents={snapshot.expectedCents}
+            txCount={snapshot.rows.length}
+            cashList={
+              <CashList rows={snapshot.rows} expectedCents={snapshot.expectedCents} canRefund />
+            }
+          />
         ) : (
           <DoneScreen
             expectedCents={snapshot.closedSession!.expectedCents}

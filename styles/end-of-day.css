@@ -749,3 +749,275 @@
   color: var(--muted-foreground);
   line-height: 1.4;
 }
+
+/*
+ * ── Mobile (issue 164) ────────────────────────────────────────────────
+ *
+ * Phone-portrait surfaces at the shared studio breakpoint (max-width:
+ * 640px, established by issue 160 / PR 175). Adapts the "Count first" layout
+ * from `design-system/prototypes/transaction/Mobile End of Day.html`
+ * (the `.meod-*` styles), mapped onto the production `.eod-*` classes.
+ *
+ * Three surfaces collapse to one column:
+ *   1. Cash count — numpad is primary; the left cash list moves into a
+ *      bottom sheet opened by `.eod-summary-bar`.
+ *   2. History list — fixed-grid rows restack into cards.
+ *   3. History detail — single column; before/after diff blocks stack.
+ *
+ * Tokens only (Constitution Principle I). The scrim's neutral overlay
+ * mirrors `.studio-scrim` (`rgb(0 0 0 / 0.5)`) — it carries no hex literal
+ * so the `grep -nE '#[0-9a-fA-F]{3,8}'` audit still returns zero matches.
+ */
+
+/* The summary bar (count sheet trigger) and the scrim are phone-only —
+   hidden by default, revealed inside the breakpoint below. */
+.eod-summary-bar {
+  display: none;
+}
+.eod-scrim {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  /* ── Count page: single column, numpad-first ─────────────────────── */
+  .eod-body {
+    flex-direction: column;
+    position: relative; /* containing block for the bottom sheet scrim */
+  }
+  /* Desktop left list + its divider are replaced by the bottom sheet. */
+  .eod-body > [data-slot="eod-cash-list"],
+  .eod-body > [data-slot="eod-divider"] {
+    display: none;
+  }
+  .eod-right {
+    padding: 16px;
+    gap: 12px;
+  }
+
+  /* Larger one-handed numpad + display. */
+  .eod-numpad {
+    gap: 8px;
+  }
+  .eod-nk {
+    height: 56px;
+    font-size: 22px;
+    border-radius: 12px;
+  }
+  .eod-nk.fn {
+    font-size: 18px;
+  }
+  .eod-display {
+    padding: 12px 16px;
+    border-radius: 16px;
+  }
+  .eod-display-val {
+    font-size: 44px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Summary bar — opens the cash-list sheet. */
+  .eod-summary-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-family: var(--font-sans);
+    text-align: left;
+    color: var(--foreground);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 150ms var(--ease-out);
+  }
+  .eod-summary-bar:active {
+    background: var(--accent);
+  }
+  .eod-summary-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 8px;
+    background: var(--muted);
+    color: var(--muted-foreground);
+  }
+  .eod-summary-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .eod-summary-title {
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .eod-summary-sub {
+    font-size: 12px;
+    color: var(--muted-foreground);
+    margin-top: 2px;
+  }
+  .eod-summary-amt {
+    flex-shrink: 0;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .eod-summary-bar > svg {
+    flex-shrink: 0;
+    color: var(--muted-foreground);
+  }
+
+  /* Bottom sheet holding the cash list. */
+  .eod-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    background: rgb(0 0 0 / 0.5);
+    animation: eodScrimFade 200ms var(--ease-out);
+  }
+  .eod-sheet {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    max-height: 86%;
+    background: var(--card);
+    border-radius: 16px 16px 0 0;
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+    animation: eodSheetRise 300ms var(--ease-out);
+  }
+  .eod-sheet-grip {
+    flex-shrink: 0;
+    width: 40px;
+    height: 4px;
+    margin: 8px auto 0;
+    border-radius: 9999px;
+    background: var(--neutral-300);
+  }
+  .eod-sheet-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    border: none;
+    background: transparent;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    transition: background 150ms var(--ease-out);
+  }
+  .eod-sheet-close:active {
+    background: var(--accent);
+  }
+  /* The cash list fills the sheet; its own panel head doubles as the
+     sheet title, and its footer keeps the expected total in view. */
+  .eod-sheet .eod-left {
+    width: 100%;
+    flex: 1;
+    min-height: 0;
+    background: transparent;
+  }
+  .eod-sheet .eod-list-foot {
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+  }
+
+  /* ── History list: cards ─────────────────────────────────────────── */
+  .eod-history-scroll {
+    padding: 12px 16px;
+  }
+  .eod-history-row {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+  }
+  /* Reorder within the card: date, then closer meta, then the three
+     amounts spread across a divided bottom row. */
+  .eod-history-closer {
+    order: 1;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+  .eod-history-closer-time {
+    margin-left: auto;
+  }
+  .eod-history-amounts {
+    order: 2;
+    gap: 12px;
+    justify-content: space-between;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
+  .eod-history-amounts > div {
+    flex: 1;
+  }
+
+  /* ── History detail + closed-day done screen ─────────────────────── */
+  .eod-detail-shell {
+    padding: 20px 16px 32px;
+    align-items: stretch;
+  }
+  .eod-done {
+    padding: 32px 20px;
+  }
+  /* Drop the 320px floor so the breakdown card can't force a sideways
+     scroll at 375 / 320; let it fill the column instead. */
+  .eod-done-card {
+    min-width: 0;
+    width: 100%;
+  }
+  .eod-change-history {
+    max-width: none;
+  }
+  .eod-change-history-blocks {
+    grid-template-columns: 1fr;
+  }
+  .eod-detail-actions {
+    justify-content: center;
+  }
+}
+
+@keyframes eodScrimFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes eodSheetRise {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* Honour reduced-motion — drop the sheet rise + scrim fade. */
+@media (prefers-reduced-motion: reduce) {
+  .eod-scrim,
+  .eod-sheet {
+    animation: none;
+  }
+}
