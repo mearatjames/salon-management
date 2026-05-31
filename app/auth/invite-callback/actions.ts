@@ -48,10 +48,36 @@ export async function acceptInvite(
   // UPDATE failure must not block a legitimate sign-in.
   try {
     const admin = createSupabaseServiceRoleClient();
-    await admin
+    const nowIso = new Date().toISOString();
+    const { data: linked, error: linkErr } = await admin
       .from("staff")
-      .update({ last_sign_in_at: new Date().toISOString(), state: "active", active: true })
-      .eq("user_id", user.id);
+      .update({ last_sign_in_at: nowIso, state: "active", active: true })
+      .eq("user_id", user.id)
+      .is("removed_at", null)
+      .select("id");
+
+    // Back-fill the link for a staff row that predates its auth account. A row
+    // created without going through `inviteUser` (a seeded roster row, for
+    // instance) has user_id IS NULL, so the match above touches nothing and
+    // the row stays stuck `state='invited'` forever — even after the invitee
+    // signs in and uses the app (they pick the staff tile by PIN, which never
+    // reads user_id). When nothing matched by user_id, link the still-unlinked,
+    // invited row whose email matches the just-authenticated user, stamping
+    // user_id so every later sign-in matches directly. The `user_id IS NULL` +
+    // `state='invited'` + `removed_at IS NULL` guards keep this from ever
+    // touching an already-linked, active, offboarded, or removed row;
+    // `staff_email_lower_unique` bounds the email match to one row. Mirrors the
+    // same back-fill in `/auth/callback`. (Fixes the "stuck pending invite".)
+    if (!linkErr && (linked?.length ?? 0) === 0 && user.email) {
+      const escapedEmail = user.email.replace(/[%_]/g, "\\$&");
+      await admin
+        .from("staff")
+        .update({ user_id: user.id, last_sign_in_at: nowIso, state: "active", active: true })
+        .is("user_id", null)
+        .is("removed_at", null)
+        .eq("state", "invited")
+        .ilike("email", escapedEmail);
+    }
   } catch (err) {
     console.error("acceptInvite: staff sign-in mark failed", err);
   }
