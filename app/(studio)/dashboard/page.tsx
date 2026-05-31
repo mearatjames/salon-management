@@ -32,34 +32,13 @@ export default async function DashboardPage() {
               {data.greeting.subtitle}
             </div>
           </div>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "flex-end",
-              gap: 10,
-            }}
-          >
+          <div className="tx-landing-actions">
             <PeriodToggle />
             <NewTransactionCTA />
           </div>
         </div>
 
-        <div
-          style={{
-            flex: 1,
-            minHeight: 0,
-            padding: "16px 24px 20px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 16,
-            // FR-012: the body must clip — when the feed has many rows, the
-            // overflow happens INSIDE `.tx-feed-list`, not on this wrapper.
-            // If this were `overflow: auto` the wrapper would absorb the
-            // scroll and the feed would grow unbounded.
-            overflow: "hidden",
-          }}
-        >
+        <div className="tx-landing-body">
           <PeriodSummary />
           <div className="tx-landing-bottom">
             <div className="tx-landing-bottom-left">

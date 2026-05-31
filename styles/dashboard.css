@@ -394,6 +394,31 @@
   border: 1px solid var(--border);
 }
 
+/* ---------- Landing body + header-action column ---------- */
+/* These two layouts were inline styles on the dashboard page (their flex /
+   gap / overflow co-located with the JSX that emits them). They moved here so
+   the phone breakpoint below can override their padding / alignment — inline
+   styles win over any stylesheet rule, media queries included, so a class is
+   the only way to make them responsive. */
+.tx-landing-body {
+  flex: 1;
+  min-height: 0;
+  padding: 16px 24px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  /* FR-012: the body must clip — when the feed has many rows, the overflow
+     happens INSIDE `.tx-feed-list`, not on this wrapper. `overflow: auto` here
+     would absorb the scroll and let the feed grow unbounded. */
+  overflow: hidden;
+}
+.tx-landing-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
 /* ---------- Lower split (quick actions / techs / feed) ---------- */
 .tx-landing-bottom {
   display: grid;
@@ -465,5 +490,115 @@
   }
   .tx-stat-card .val {
     font-size: 22px;
+  }
+}
+
+/* ---------- Phone portrait (issue #161) ----------
+ * `max-width: 640px` is the single shared phone breakpoint #160 established
+ * for every (studio) surface (see `styles/studio.css`). Below it the dashboard
+ * tightens to a phone-first layout, adapting
+ * `design-system/prototypes/transaction/Landing.jsx` → `PhoneLanding`:
+ *   - body + header padding trims to 16px so nothing crowds the edges at 375px;
+ *   - the period toggle keeps its natural pill width (top-left) and the primary
+ *     CTA spans the full width below it;
+ *   - the recent-transactions feed restacks from a 5-column grid into a
+ *     card-style row — tech avatars left, service (primary) over time
+ *     (secondary) in the middle, amount (primary) over method pill on the right.
+ * The 2-column stat grid + single-column lower split carry over from the 720px
+ * tablet query above (which also matches every width ≤ 640). Tokens / on-scale
+ * spacing only (Constitution Principle I).
+ */
+@media (max-width: 640px) {
+  /* Scroll model — on desktop the surface is pinned to the viewport and the
+     feed scrolls inside its own card (FR-012). On a phone that buries the feed
+     below the fold, so let the whole dashboard scroll as one column instead
+     (matching `PhoneLanding`'s `overflow: auto`). The scroll stays inside
+     `.tx-landing` — the topbar above it is unaffected and nothing forces a
+     horizontal scroll. The desktop inner-feed-scroll behaviour is untouched
+     because these overrides only apply at ≤ 640px. */
+  .tx-landing {
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .tx-feed-list {
+    max-height: none;
+    overflow: visible;
+  }
+  /* Desktop sizes the body + lower split to fill the viewport (`flex: 1`) and
+     lets the feed scroll inside its allotment. With that inner scroll removed
+     on phone, those flex items must size to their content instead — otherwise
+     the quick-actions stack and the feed get crushed into the leftover height
+     and overflow on top of each other. `.tx-landing` owns the scroll now. */
+  .tx-landing-body {
+    flex: 0 0 auto;
+  }
+  .tx-landing-bottom {
+    flex: 0 0 auto;
+  }
+
+  /* Trim the page gutters — `.tx-landing-top` sets its bottom padding inline,
+     so override only the horizontal longhands here. */
+  .tx-landing-top {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .tx-landing-body {
+    padding-left: 16px;
+    padding-right: 16px;
+    /* Grow with content so `.tx-landing` (not this clip box) owns the scroll. */
+    overflow: visible;
+  }
+
+  /* Header actions: full-width CTA, period toggle stays pill-sized top-left. */
+  .tx-landing-actions {
+    align-items: stretch;
+  }
+  .tx-landing-actions .tx-period {
+    align-self: flex-start;
+  }
+  .tx-landing-actions .tx-cta-primary {
+    width: 100%;
+  }
+
+  /* Recent-transactions feed → card-style rows.
+     DOM order per row: .time · .svc · .techs (avatars) · .tx-meth-pill · .amt.
+     `grid-template-areas` repositions them without touching markup:
+       ┌────────┬──────┬──────┐
+       │ techs  │ svc  │ amt  │   service + amount are the primary line
+       │ techs  │ time │ pill │   time + method are the secondary line
+       └────────┴──────┴──────┘ */
+  .tx-feed-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "techs svc  amt"
+      "techs time pill";
+    gap: 4px 12px;
+    padding: 12px 16px;
+  }
+  .tx-feed-row .techs {
+    grid-area: techs;
+    align-self: center;
+  }
+  .tx-feed-row .svc {
+    grid-area: svc;
+    /* Promote the service label to the primary line on phone (it carries the
+       row's identity now that the client column is gone — FR-023). */
+    color: var(--foreground);
+    font-weight: 500;
+    align-self: end;
+  }
+  .tx-feed-row .time {
+    grid-area: time;
+    align-self: start;
+  }
+  .tx-feed-row .amt {
+    grid-area: amt;
+    justify-self: end;
+    align-self: end;
+  }
+  .tx-feed-row .tx-meth-pill {
+    grid-area: pill;
+    justify-self: end;
+    align-self: start;
   }
 }
