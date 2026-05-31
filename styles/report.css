@@ -844,6 +844,159 @@
   padding-bottom: 0;
 }
 
+/* ==========================================================================
+   Daily Report — MOBILE responsive rules (issue #166)
+
+   Phone-portrait (≤640px) layer for `/report`. The page is otherwise framed
+   for a tablet bezel (3-up summary strip, side-by-side staff list + table).
+   Every rule lives inside `@media (max-width: 640px)` so desktop/tablet are
+   untouched, and every value resolves to a `var(--*)` token (Constitution
+   Principle I — no raw colours, on-scale spacing only). Matches the single
+   640px breakpoint convention established by #164 (end-of-day) and #168
+   (transactions).
+
+   CSS-only — targets the EXISTING `.tp-*` / `.dr-*` markup, no component/TSX
+   change:
+     • Header (.tp-head)        → stacks, title + actions full-width
+     • Period row (.tp-period-row) → tabs + range stepper stack full-width
+       (identical to the Transactions phone treatment — same shared classes)
+     • Summary strip (.dr-summary) → 1-up stacked cards, divider becomes
+       a bottom border so the rows read cleanly with tabular numerals intact
+     • Body (.dr-body)          → single column: staff list stacks ABOVE the
+       report panel instead of sitting beside it
+     • Report table (.dr-table-wrap) → scrolls horizontally INSIDE its wrap;
+       no full-page horizontal scroll
+     • Detail head totals (.dr-head-totals) → wrap to a 2-up-ish flow row
+
+   The Print stylesheet below is unaffected — `@media print` and
+   `@media (max-width: 640px)` never both apply on paper.
+   ========================================================================== */
+@media (max-width: 640px) {
+  /* The report root scrolls as one column on phone instead of clipping to a
+     fixed-height bezel; the body card grows to its content. */
+  .dr-app-page {
+    height: auto;
+    overflow: visible;
+  }
+
+  /* ----- Header → stacked, full-width ----- */
+  .tp-head {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    padding: var(--space-4) var(--space-4) 0;
+  }
+  .tp-head h1 {
+    font-size: var(--text-2xl);
+  }
+  .tp-head .sub {
+    font-size: var(--text-xs);
+    max-width: none;
+  }
+  .tp-head .actions {
+    justify-content: flex-start;
+  }
+
+  /* ----- Period row → stacked, full-width (mirrors Transactions) ----- */
+  .tp-period-row,
+  .dr-app-page .tp-period-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-3);
+    padding: var(--space-4) var(--space-4) 0;
+  }
+  .tp-period-row .tx-period {
+    display: flex;
+    width: 100%;
+  }
+  .tp-period-row .tx-period a {
+    flex: 1;
+    text-align: center;
+  }
+  .tp-range {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .tp-range .arrow {
+    width: 36px;
+    height: 36px;
+  }
+  .tp-range .lbl {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+  }
+
+  /* ----- Summary strip → 1-up stacked cards ----- */
+  .dr-summary,
+  .dr-app-page .dr-summary {
+    grid-template-columns: 1fr;
+    margin: var(--space-4) var(--space-4) 0;
+  }
+  /* The 3-up strip separated cards with right borders; stacked, the divider
+     becomes a bottom border so each metric reads as its own row. */
+  .dr-stat {
+    padding: var(--space-3) var(--space-4);
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  .dr-stat.last {
+    border-bottom: none;
+  }
+  .dr-stat-v {
+    /* Slightly smaller than the tablet 3xl so long currency stays on one line;
+       tabular numerals are inherited from the base `.dr-stat-v` rule. */
+    font-size: var(--text-2xl);
+  }
+
+  /* ----- Empty state → tighter gutter ----- */
+  .dr-empty {
+    margin: var(--space-4) var(--space-4) var(--space-6);
+    padding: var(--space-8) var(--space-5);
+  }
+
+  /* ----- Body → single column: staff list ABOVE the report panel ----- */
+  .dr-body,
+  .dr-app-page .dr-body {
+    flex-direction: column;
+    margin: var(--space-4) var(--space-4) var(--space-6);
+  }
+  /* Left panel (staff list) → full-width, bottom border instead of right;
+     it caps its own height so the report panel below it stays reachable. */
+  .dr-left,
+  .dr-app-page .dr-left {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    max-height: 280px;
+  }
+  /* Right panel (report table) → fills the rest of the column. */
+  .dr-right {
+    min-height: 0;
+  }
+
+  /* ----- Detail head → totals wrap below the title ----- */
+  .dr-detail-head,
+  .dr-app-page .dr-detail-head {
+    padding: var(--space-3) var(--space-4);
+  }
+  .dr-head-totals {
+    flex-wrap: wrap;
+    gap: var(--space-3) var(--space-4);
+    text-align: left;
+  }
+  .dr-htotal {
+    min-width: 64px;
+  }
+
+  /* ----- Report table → scrolls horizontally inside its wrap ----- *
+     The wrap already owns the vertical scroll; adding horizontal scroll keeps
+     the wide column set inside the card so the PAGE never scrolls sideways. */
+  .dr-table-wrap {
+    overflow: auto;
+  }
+}
+
 /* ──────────────────────────────────────────────────────────────────
  * Print stylesheet (FR-027 / research R13)
  * `window.print()` (the header's Print action) captures the live DOM,
