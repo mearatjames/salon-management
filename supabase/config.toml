@@ -272,7 +272,9 @@ content_path = "./supabase/templates/magic_link.html"
 [auth.email.notification.password_changed]
 enabled = true
 subject = "Your password was changed"
-content_path = "./supabase/templates/password_changed_notification.html"
+# NOTE: unlike [auth.email.template.*] (resolved from the repo root), the
+# notification block's content_path is resolved relative to supabase/.
+content_path = "./templates/password_changed_notification.html"
 
 [auth.sms]
 # Allow/disallow new user signups via SMS to your project.
