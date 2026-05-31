@@ -17,6 +17,11 @@ package-lock.json
 # Vendored design-system handoff — re-exported, never hand-edited or reformatted
 design-system/
 
+# Auth email templates — format-sensitive HTML mirrored byte-for-byte into the
+# hosted Supabase dashboard (no CI sync). Prettier's quote-escaping and tag
+# reflow would make this a poor paste-back source of truth, so leave it alone.
+supabase/templates/
+
 # Project docs and Spec Kit tooling/artifacts — not app source, leave formatting untouched
 docs/
 specs/
