@@ -376,3 +376,51 @@
    classes so the login keypad and the staff-settings Set/Change-PIN keypad
    render identically. `pin-pad.tsx` carries the `.keypad` / `.keypad-key`
    classes directly. */
+
+/* ==========================================================================
+   Phone portrait — max-width: 640px is the single shared mobile breakpoint
+   every Tang Nails surface reuses (established by #160; mirrors the auth
+   surfaces' phone block in `styles/auth.css`, #171). #172 — the select-staff
+   device picker.
+
+   The screen is already fluid above this breakpoint: the auto-fill grid
+   (`minmax(120px, 1fr)`) reflows to 2-up at 375/390/430 without overflow, and
+   the PIN modal is the shadcn `DialogContent` (`w-full max-w-[calc(100%-2rem)]`
+   below `sm`), so it never exceeds the viewport and the shared 72px keypad keys
+   already clear the 44px tap-target floor. This block layers phone polish on
+   top — it does NOT restructure the layout:
+     · header + body side gutters tightened from 32/48px to 20px so the grid
+       and tiles breathe at 375px (2-up tiles widen from ~131px to ~159px);
+       widened to clear the notch / home indicator on safe-area devices
+     · the search field drops its 400px desktop cap and goes full-width
+     · the search input is 16px (was 14px) so iOS doesn't zoom on focus
+   The avatar grid columns and the shared keypad are left untouched — neither
+   needs a phone override (issue Scope). Constitution Principle I. */
+@media (max-width: 640px) {
+  /* Pinned header — clear the status bar / dynamic island, tighten gutters. */
+  .select-staff-header {
+    padding-top: max(var(--space-4), env(safe-area-inset-top));
+    padding-right: max(var(--space-5), env(safe-area-inset-right));
+    padding-bottom: var(--space-4);
+    padding-left: max(var(--space-5), env(safe-area-inset-left));
+  }
+
+  /* Body gutters to 20px; bottom clears the home indicator. */
+  .select-staff-body {
+    padding-top: var(--space-6);
+    padding-right: max(var(--space-5), env(safe-area-inset-right));
+    padding-bottom: max(var(--space-6), env(safe-area-inset-bottom));
+    padding-left: max(var(--space-5), env(safe-area-inset-left));
+  }
+
+  /* Full-width search on phone — the 400px desktop cap never binds at these
+     widths, but dropping it keeps the field edge-aligned with the grid. */
+  .select-staff-search {
+    max-width: none;
+  }
+
+  /* 16px so iOS doesn't zoom the viewport when the field takes focus. */
+  .select-staff-search-input {
+    font-size: var(--text-lg);
+  }
+}
