@@ -22,6 +22,21 @@ export function formatTime(d: Date, tz: string): string {
 }
 
 /**
+ * Long human-readable date (e.g. "June 6, 2026") for the staff-invite
+ * email's inbox preview text (`{{ .Data.expires_human }}`). Formatted in
+ * the salon's timezone so the calendar day matches the operator's locale
+ * rather than UTC.
+ */
+export function formatExpiry(d: Date, tz: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: tz,
+  }).format(d);
+}
+
+/**
  * Returns a YYYY-MM-DD string for the local date that contains `date` in
  * the salon's timezone. Used by the End-of-Day close Server Action to
  * derive `p_business_day` from the operator's "now" — the date math is

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatSubtitle, formatTime, salonDateString } from "@/lib/time/format";
+import { formatExpiry, formatSubtitle, formatTime, salonDateString } from "@/lib/time/format";
 
 const LA = "America/Los_Angeles";
 const TYO = "Asia/Tokyo";
@@ -26,6 +26,20 @@ describe("formatTime", () => {
   it("returns '5:00 PM' for the previous-day instant 2026-05-16T00:00Z in America/Los_Angeles", () => {
     const d = new Date("2026-05-16T00:00:00.000Z");
     expect(formatTime(d, LA)).toBe("5:00 PM");
+  });
+});
+
+describe("formatExpiry", () => {
+  it("returns a long human date 'June 6, 2026' in America/Los_Angeles", () => {
+    const d = new Date("2026-06-06T18:00:00.000Z");
+    expect(formatExpiry(d, LA)).toBe("June 6, 2026");
+  });
+
+  it("honors the timezone arg — same instant near midnight rolls a day in Tokyo", () => {
+    // 2026-06-06T23:30Z is 2026-06-06 16:30 PT but 2026-06-07 08:30 JST.
+    const d = new Date("2026-06-06T23:30:00.000Z");
+    expect(formatExpiry(d, LA)).toBe("June 6, 2026");
+    expect(formatExpiry(d, TYO)).toBe("June 7, 2026");
   });
 });
 

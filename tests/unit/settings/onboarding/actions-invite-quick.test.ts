@@ -58,6 +58,10 @@ vi.mock("@/lib/onboarding/invite", () => ({
   deleteInviteUser: vi.fn(async () => undefined),
 }));
 
+vi.mock("@/lib/onboarding/invite-metadata", () => ({
+  buildInviteMetadata: vi.fn(),
+}));
+
 vi.mock("@/lib/db/admin", () => ({
   createSupabaseServiceRoleClient: vi.fn(),
 }));
@@ -71,10 +75,21 @@ import { requireStudioSession, type StudioViewer } from "@/lib/auth/session";
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 import { checkEmailConflict } from "@/lib/onboarding/email-conflict";
 import { deleteInviteUser, generateMagicLinkInvite } from "@/lib/onboarding/invite";
+import { buildInviteMetadata } from "@/lib/onboarding/invite-metadata";
 
 import { inviteUser } from "@/app/(studio)/settings/onboarding/actions";
 
 type Mocked<T> = T & ReturnType<typeof vi.fn>;
+
+/** The resolved invite metadata the action forwards to the invite helper. */
+const INVITE_META = {
+  display_name: "Hana Soto",
+  role: "technician",
+  invited_by: "staff-owner-1",
+  invited_by_name: "Maya Patel",
+  salon_name: "Tang Nails",
+  expires_human: "June 6, 2026",
+};
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -198,6 +213,9 @@ describe("inviteUser (mode='quick')", () => {
       user_id: "auth-user-new",
       link: "https://example.test/magic",
     });
+    (buildInviteMetadata as unknown as Mocked<() => Promise<unknown>>).mockResolvedValue(
+      INVITE_META
+    );
   });
 
   afterEach(() => {
@@ -216,7 +234,17 @@ describe("inviteUser (mode='quick')", () => {
       thrown = err;
     }
 
-    // 1. magic-link helper called exactly once with the right shape.
+    // 1. invite metadata is built from the invitee + the owner viewer, then
+    //    the magic-link helper is called once with that full payload — which
+    //    includes the salon_name / invited_by_name / expires_human fields the
+    //    hosted email template renders (issue #159).
+    expect(buildInviteMetadata).toHaveBeenCalledTimes(1);
+    expect(buildInviteMetadata).toHaveBeenCalledWith({
+      displayName: "Hana Soto",
+      role: "technician",
+      inviterId: OWNER_VIEWER.staff.id,
+      inviterName: OWNER_VIEWER.staff.display_name,
+    });
     expect(generateMagicLinkInvite).toHaveBeenCalledTimes(1);
     const [emailArg, metaArg] = (generateMagicLinkInvite as unknown as Mocked<() => unknown>).mock
       .calls[0];
@@ -225,6 +253,9 @@ describe("inviteUser (mode='quick')", () => {
       display_name: "Hana Soto",
       role: "technician",
       invited_by: OWNER_VIEWER.staff.id,
+      invited_by_name: "Maya Patel",
+      salon_name: "Tang Nails",
+      expires_human: "June 6, 2026",
     });
 
     // 2. INSERT shape: state='invited', active=false, magic_link method,
