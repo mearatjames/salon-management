@@ -99,10 +99,9 @@ test.describe("#169: settings shell + form sub-pages on phone portrait", () => {
         // cold paths can be slow under parallel load.
         await expect(page.locator(ready).first()).toBeVisible({ timeout: 15_000 });
         const doc = await horizontalOverflow(page);
-        expect(
-          doc.scrollWidth,
-          `${path} overflows horizontally at ${width}px`
-        ).toBeLessThanOrEqual(doc.clientWidth + 1);
+        expect(doc.scrollWidth, `${path} overflows horizontally at ${width}px`).toBeLessThanOrEqual(
+          doc.clientWidth + 1
+        );
       }
     });
   }
