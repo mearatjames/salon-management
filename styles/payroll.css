@@ -25,13 +25,20 @@
 /* ===== Page header (eyebrow + title + period switch + actions) ===== */
 .pr-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--space-6);
   padding: var(--space-6) var(--space-8) var(--space-4);
 }
 .pr-header-titles {
-  min-width: 0;
+  /* A real min-width floor (not 0) keeps the title column from collapsing to
+     one-word-per-line in the cramped 641px–desktop band (sidebar open): when
+     the title and the actions group can no longer share a row, the actions
+     wrap below instead of squeezing the date H1. Capped at 100% so the floor
+     never forces page overflow on the narrowest phones. */
+  min-width: min(100%, 280px);
+  flex: 1 1 auto;
 }
 .pr-eyebrow {
   font-size: var(--text-xs);
@@ -59,20 +66,34 @@
 }
 .pr-header-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  flex-shrink: 0;
+  /* Allow the actions group to yield width (was flex-shrink: 0) so a cramped
+     band scrolls the period switcher rather than overflowing the page; the
+     title's min-width floor — not this group — is what protects the H1. */
+  min-width: 0;
 }
 
 /* ===== Period switcher (segmented control of recent periods) ===== */
 .pr-period-switch {
   display: inline-flex;
+  /* Let the segmented control shrink and scroll its (nowrap) chips locally
+     when the header band is cramped, instead of forcing page overflow. */
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
   padding: var(--space-1);
   background: var(--muted);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
 }
+.pr-period-switch::-webkit-scrollbar {
+  display: none;
+}
 .pr-period-switch a {
+  flex: 0 0 auto;
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   font-size: var(--text-xs);
@@ -345,12 +366,14 @@
   font-size: var(--text-sm);
   font-weight: 500;
   line-height: var(--leading-snug);
+  white-space: nowrap;
 }
 .pl-person-rate {
   font-size: var(--text-xs);
   color: var(--muted-foreground);
   margin-top: 2px;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* State pill. */
@@ -1781,6 +1804,10 @@
   /* ===== Page header → stacked ========================================== */
   .pr-header {
     flex-direction: column;
+    /* Cancel the base `flex-wrap: wrap`: in this column direction it would wrap
+       items into a second *column* (the period switcher's `flex-basis: 100%`
+       can't share a column), blowing the header out to its content width. */
+    flex-wrap: nowrap;
     align-items: stretch;
     gap: var(--space-3);
     padding: var(--space-4) var(--space-4) 0;
@@ -1792,23 +1819,11 @@
     flex-wrap: wrap;
     gap: var(--space-2);
   }
-  /* The period switcher takes its own full-width row above the buttons. The
-     segmented control can list several pay periods, each a `white-space: nowrap`
-     chip — more than fit a phone row. `min-width: 0` lets the flex item shrink
-     below its content so `overflow-x: auto` contains the chips in a local
-     scroller (page-level scroll stays clipped); the chips keep their intrinsic
-     width rather than squishing their date labels. */
+  /* The period switcher takes its own full-width row above the buttons (the
+     base rule already provides the local chip scroller via `min-width: 0` +
+     `overflow-x: auto`). */
   .pr-period-switch {
     flex-basis: 100%;
-    min-width: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .pr-period-switch::-webkit-scrollbar {
-    display: none;
-  }
-  .pr-period-switch a {
-    flex: 0 0 auto;
   }
 
   /* ===== KPI band → 2-up, hairline grid gap ============================= */
@@ -1816,7 +1831,9 @@
     grid-template-columns: 1fr 1fr;
     gap: 1px;
     background: var(--border);
-    margin: 0 var(--space-4);
+    /* Top margin gives the KPI band breathing room from the header buttons
+       above (the stacked `.pr-header` ends with bottom padding 0). */
+    margin: var(--space-4) var(--space-4) 0;
   }
   .pr-kpi {
     background: var(--card);
@@ -1834,6 +1851,15 @@
   /* ===== Ledger body + table-card chrome ================================ */
   .pp-ledger-body {
     padding: var(--space-4) var(--space-4) var(--space-6);
+  }
+  /* Each ledger row restacks into its own bordered, shadowed card below, so the
+     outer table-card chrome would read as a nested/double border around the
+     list. Strip it to a flush container; the filter head keeps its own divider. */
+  .pl-table-card {
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    overflow: visible;
   }
   .pl-table-head {
     flex-wrap: wrap;

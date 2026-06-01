@@ -485,6 +485,32 @@ declare
   v_sam    uuid := '10000000-0000-0000-0000-000000000003';
   v_open_period   uuid := '70000000-0000-0000-0000-000000000001';
   v_closed_period uuid := '70000000-0000-0000-0000-000000000002';
+
+  -- Semi-monthly windows derived from the salon-local "today" so the seeded
+  -- periods always land where the page's offset math expects them — open at
+  -- offset 0, closed (the previous half) at offset -1 — no matter which
+  -- calendar day the seed runs on. (Pinned May-2026 dates silently drifted out
+  -- of those offsets every 1st/16th and broke the US4 closed-period e2e.)
+  -- Mirrors `semiMonthlyWindowAt` (lib/time/period-windows.ts): halves are
+  -- [1..15] and [16..end-of-month]; pay date = end + 2 days.
+  v_today        date    := (now() at time zone 'America/Los_Angeles')::date;
+  v_month_start  date    := date_trunc('month', v_today)::date;
+  v_second_half  boolean := extract(day from v_today) > 15;
+
+  v_open_start   date := case when v_second_half then v_month_start + 15 else v_month_start end;
+  v_open_end     date := case when v_second_half
+                              then (date_trunc('month', v_today) + interval '1 month' - interval '1 day')::date
+                              else v_month_start + 14 end;
+  v_open_pay     date := v_open_end + 2;
+
+  -- Previous half-month → the seeded closed period (offset -1).
+  v_closed_start date := case when v_second_half
+                              then v_month_start
+                              else (date_trunc('month', v_today - interval '1 month') + interval '15 days')::date end;
+  v_closed_end   date := v_open_start - 1;
+  v_closed_pay   date := (v_open_start - 1) + 2;
+  v_closed_at    timestamptz := (((v_open_start - 1) + 2)::timestamp + interval '11 hours')
+                                  at time zone 'America/Los_Angeles';
 begin
   if not exists (select 1 from public.staff where id = v_owner) then
     return;
@@ -504,18 +530,17 @@ begin
      set service_commission_pct = 0.6500, tip_split_pct = 0.9000, check_portion_cents = 100300
    where id = v_sam;
 
-  -- 2) Open pay period: May 16 – 31, 2026, pay date June 2, 2026.
+  -- 2) Open pay period: the current half-month (offset 0).
   insert into public.pay_periods (id, starts_on, ends_on, pay_date, status)
-  values (v_open_period, '2026-05-16', '2026-05-31', '2026-06-02', 'open')
+  values (v_open_period, v_open_start, v_open_end, v_open_pay, 'open')
   on conflict (id) do nothing;
 
-  -- 3) Closed pay period: May 1 – 15, 2026, pay date May 17, 2026.
+  -- 3) Closed pay period: the previous half-month (offset -1), pay date + 2 days.
   insert into public.pay_periods (
     id, starts_on, ends_on, pay_date, status, closed_at, closed_by_staff_id
   ) values (
-    v_closed_period, '2026-05-01', '2026-05-15', '2026-05-17', 'closed',
-    ('2026-05-17'::timestamp + interval '11 hours') at time zone 'America/Los_Angeles',
-    v_owner
+    v_closed_period, v_closed_start, v_closed_end, v_closed_pay, 'closed',
+    v_closed_at, v_owner
   ) on conflict (id) do nothing;
 
   -- 4) Frozen payouts for the closed period.
@@ -530,8 +555,8 @@ begin
     service_commission_pct, tip_split_pct
   ) values (
     '70000000-0000-0000-0000-000000000101', v_closed_period, v_owner, true, 'zelle',
-    '2026-05-17', v_owner,
-    ('2026-05-17'::timestamp + interval '11 hours') at time zone 'America/Los_Angeles',
+    v_closed_pay, v_owner,
+    v_closed_at,
     800000, 720000, 50000, 50000, 250000, 520000, 0.9000, 1.0000
   ) on conflict (pay_period_id, staff_id) do nothing;
 
@@ -546,8 +571,8 @@ begin
     service_commission_pct, tip_split_pct
   ) values (
     '70000000-0000-0000-0000-000000000102', v_closed_period, v_jordan, true, 'cash',
-    '2026-05-17', v_owner,
-    ('2026-05-17'::timestamp + interval '11 hours') at time zone 'America/Los_Angeles',
+    v_closed_pay, v_owner,
+    v_closed_at,
     600000, 510000, 40000, 40000, 150000, 400000, 0.8500, 1.0000
   ) on conflict (pay_period_id, staff_id) do nothing;
 
