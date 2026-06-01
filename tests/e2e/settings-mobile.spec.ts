@@ -1,9 +1,9 @@
 // E2E for the phone-portrait Settings shell + form sub-pages (issue #169).
 //
 // At `max-width: 640px` (the single shared mobile breakpoint #160 established):
-//   - the settings tab bar (General · Staff · Onboarding · Square ·
-//     Notifications · Billing) becomes a horizontal scroller and the TabBar
-//     client island scrolls the active tab into view on navigation;
+//   - the settings tab bar (Staff · Onboarding · Square) becomes a horizontal
+//     scroller and the TabBar client island scrolls the active tab into view
+//     on navigation;
 //   - the onboarding roster rows drop their 5-column desktop grid and reflow
 //     across three rows so nothing overflows;
 //   - every settings sub-page fits within the viewport with no horizontal
@@ -68,9 +68,6 @@ const SUB_PAGES = [
   { path: "/settings/staff", ready: ".staff-row, .settings-staff-roster" },
   { path: "/settings/onboarding", ready: ".onb-page" },
   { path: "/settings/square", ready: '[data-slot="square-settings-page"]' },
-  { path: "/settings/general", ready: ".settings-content" },
-  { path: "/settings/notifications", ready: ".settings-content" },
-  { path: "/settings/billing", ready: ".settings-content" },
 ] as const;
 
 test.describe("#169: settings shell + form sub-pages on phone portrait", () => {
@@ -106,13 +103,13 @@ test.describe("#169: settings shell + form sub-pages on phone portrait", () => {
     });
   }
 
-  test("the active tab is scrolled into view on the rightmost (Billing) tab", async ({ page }) => {
+  test("the active tab is scrolled into view on the rightmost (Square) tab", async ({ page }) => {
     await signInAsMaya(page);
-    await page.goto("/settings/billing");
+    await page.goto("/settings/square");
 
     const tabBar = page.locator(".settings-tab-bar");
     const activeTab = tabBar.locator('[data-active="true"]');
-    await expect(activeTab).toHaveText("Billing");
+    await expect(activeTab).toHaveText("Square");
 
     // The active tab sits within the tab bar's visible box (the scroller has
     // brought it into view rather than leaving it clipped past the right edge).
@@ -124,21 +121,14 @@ test.describe("#169: settings shell + form sub-pages on phone portrait", () => {
     expect(tabBox!.x + tabBox!.width).toBeLessThanOrEqual(barBox!.x + barBox!.width + 1);
   });
 
-  test("all six settings tabs are reachable within the scroller", async ({ page }) => {
+  test("all settings tabs are reachable in the bar", async ({ page }) => {
     await signInAsMaya(page);
     await page.goto("/settings/staff");
 
     const tabBar = page.locator(".settings-tab-bar");
-    // The bar overflows its own box (six tabs > 375px) but is scrollable — so
-    // its scrollWidth exceeds its clientWidth while the document does not.
-    const metrics = await tabBar.evaluate((el) => ({
-      scrollWidth: el.scrollWidth,
-      clientWidth: el.clientWidth,
-    }));
-    expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
-
-    // Every tab label is present in the DOM (reachable by scrolling).
-    for (const label of ["General", "Staff", "Onboarding", "Square", "Notifications", "Billing"]) {
+    // Every tab label is present in the DOM (the bar is a horizontal scroller
+    // at this width, so any tab past the edge is reachable by scrolling).
+    for (const label of ["Staff", "Onboarding", "Square"]) {
       await expect(tabBar.getByRole("link", { name: label, exact: true })).toBeVisible();
     }
   });
