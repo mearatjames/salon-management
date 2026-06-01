@@ -257,6 +257,16 @@ export function CheckoutScreen({
   );
   const [lines, setLines] = useState<CartLineView[]>(initialItems);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | null>(null);
+  // Issue #163 — phone-portrait segmented layout. At ≤640px the two-column
+  // body collapses to a single pane and this toggles which one shows
+  // ("Add services" catalog ⇄ "Cart"). A fresh ticket opens on the catalog
+  // (you add services first); reopening one that already has lines opens on
+  // the cart. The control + the `data-mobile-view` hook it drives are inert
+  // above 640px (the segmented toggle + sticky footer are `display:none`
+  // there, so desktop/tablet keep the existing two-column layout untouched).
+  const [mobileView, setMobileView] = useState<"catalog" | "cart">(
+    initialItems.some((l) => l.kind === "service") ? "cart" : "catalog"
+  );
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [inflight, setInflight] = useState(false);
   // 013-cart-polish US1/US2: the price sheet replaces phase-2's placeholder
@@ -401,6 +411,9 @@ export function CheckoutScreen({
   // The card CTA is no longer injected inside `PaymentTiles`.
   const chargeMethodIsCard = paymentMethod === "card";
   const hasUnpricedLines = lines.some((l) => l.priceUnconfirmed);
+  // Issue #163 — count only service rows (not discount rows) for the mobile
+  // segmented toggle's "Cart" badge and the sticky footer's running summary.
+  const serviceLineCount = lines.filter((l) => l.kind === "service").length;
   const chargeButtonEnabled = chargeMethodIsCard
     ? !inflight && totals.chargeEligible && !hasUnpricedLines
     : takeCashEnabled;
@@ -2010,7 +2023,45 @@ export function CheckoutScreen({
           onClear={handleClearTech}
         />
       </div>
-      <div className="checkout-body">
+      {/* Issue #163 — phone-only segmented toggle. Swaps which pane the
+          single-column body shows at ≤640px ("Add services" ⇄ "Cart").
+          `display:none` above 640px, so the desktop two-column body is
+          untouched. The sliding thumb is driven by the `data-view` hook. */}
+      <div
+        className="checkout-mobile-seg"
+        data-slot="checkout-mobile-seg"
+        data-view={mobileView}
+        role="tablist"
+        aria-label="Checkout view"
+      >
+        <span className="checkout-mobile-seg-thumb" aria-hidden="true" />
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mobileView === "catalog"}
+          className="checkout-mobile-seg-btn"
+          data-slot="checkout-mobile-seg-catalog"
+          data-active={mobileView === "catalog" ? "true" : undefined}
+          onClick={() => setMobileView("catalog")}
+        >
+          <Plus size={16} strokeWidth={1.5} aria-hidden="true" /> Add services
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mobileView === "cart"}
+          className="checkout-mobile-seg-btn"
+          data-slot="checkout-mobile-seg-cart"
+          data-active={mobileView === "cart" ? "true" : undefined}
+          onClick={() => setMobileView("cart")}
+        >
+          Cart
+          {serviceLineCount > 0 ? (
+            <span className="checkout-mobile-seg-count">{serviceLineCount}</span>
+          ) : null}
+        </button>
+      </div>
+      <div className="checkout-body" data-mobile-view={mobileView}>
         {/* LEFT: service catalog column */}
         <section className="checkout-catalog" aria-label="Service catalog">
           <ServiceTiles
@@ -2213,6 +2264,8 @@ export function CheckoutScreen({
                   overlay. The Receipt button is enabled even when Charge isn't —
                   the operator can print/email a receipt at any point before payment. */}
               <div
+                className="checkout-charge-row"
+                data-slot="checkout-charge-row"
                 style={{
                   display: "flex",
                   gap: "var(--space-2)",
@@ -2274,6 +2327,83 @@ export function CheckoutScreen({
             </>
           )}
         </section>
+      </div>
+
+      {/* Issue #163 — phone-only sticky charge footer. `display:none` above
+          640px. Contextual by the segmented view:
+            • catalog → running total + "Review & pay" (flips to the cart);
+            • cart    → the charge action (the inline desktop Receipt+Charge
+              row, `.checkout-charge-row`, is hidden on phone so this is the
+              single charge control; it reuses the same handlers + enablement
+              with a distinct `data-slot` so it never collides with the
+              desktop button in e2e strict-mode selectors);
+            • split mode → the running total only, since the per-leg controls
+              live inline in the cart pane. */}
+      <div className="checkout-mobile-foot" data-slot="checkout-mobile-foot" data-view={mobileView}>
+        {mobileView === "catalog" ? (
+          <div className="checkout-mobile-foot-row">
+            <div className="checkout-mobile-foot-summary">
+              <span className="amt">{fmt(totals.totalCents)}</span>
+              <span className="meta">
+                {serviceLineCount === 0
+                  ? "No services yet"
+                  : `${serviceLineCount} ${
+                      serviceLineCount === 1 ? "service" : "services"
+                    } · tax incl.`}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="checkout-mobile-foot-cta"
+              data-slot="mobile-review-pay-button"
+              disabled={lines.length === 0}
+              onClick={() => setMobileView("cart")}
+            >
+              {"Review & pay"}
+            </button>
+          </div>
+        ) : splitMode ? (
+          <div className="checkout-mobile-foot-summary">
+            <span className="amt">{fmt(totals.totalCents)}</span>
+            <span className="meta">Split payment in progress</span>
+          </div>
+        ) : (
+          <div className="checkout-mobile-foot-row">
+            <button
+              type="button"
+              className="checkout-mobile-foot-cta is-secondary"
+              onClick={handleOpenReceipt}
+              disabled={inflight || lines.length === 0}
+              data-slot="mobile-receipt-button"
+            >
+              <Printer size={16} strokeWidth={1.5} aria-hidden="true" /> Bill
+            </button>
+            <button
+              type="button"
+              className="checkout-mobile-foot-cta"
+              onClick={chargeMethodIsCard ? handleSendCard : handleTakeCash}
+              disabled={!chargeButtonEnabled}
+              data-slot="mobile-charge-button"
+              data-method={chargeMethodIsCard ? "card" : "cash"}
+              aria-busy={inflight || undefined}
+            >
+              {inflight ? (
+                <>
+                  <Spinner size={20} strokeWidth={2} />
+                  {chargeMethodIsCard ? "Sending to terminal…" : "Charging…"}
+                </>
+              ) : hasUnpricedLines ? (
+                "Set price on highlighted items"
+              ) : !paymentMethod ? (
+                "Pick a payment method"
+              ) : chargeMethodIsCard ? (
+                `Send to Square · ${fmt(totals.totalCents)}`
+              ) : (
+                `Take cash · ${fmt(totals.totalCents)}`
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {priceSheet && priceSheetLine ? (

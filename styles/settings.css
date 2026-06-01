@@ -217,6 +217,30 @@
     border-color var(--duration-fast) var(--ease-out);
 }
 
+/* Service name — flex-grows so the trailing pills hug the right edge. On
+   desktop/tablet it stays a single nowrap line with an ellipsis; the phone
+   media query below relaxes that so the full name wraps (issue #186). */
+.service-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--foreground);
+  font-weight: 500;
+  font-size: var(--text-sm);
+}
+
+/* Trailing pill group (deduction chips + duration + price + archived badge).
+   Hugs the right edge on desktop/tablet; the phone media query drops it to a
+   second line beneath the name (issue #186). */
+.service-row-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
 .service-list-row:hover {
   background: var(--accent);
   border-color: var(--ring);
@@ -1033,9 +1057,34 @@
     gap: var(--space-3);
   }
 
-  /* Taller touch targets for catalog rows. */
+  /* Taller touch targets for catalog rows. The row also wraps so the trailing
+     pill group can drop to a second line (issue #186), and the swatch + name
+     top-align on the first line when a long name wraps. */
   [data-slot="service-row"] {
     min-height: 60px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  /* On phone there isn't room for both the name and its chips on one row, so
+     the name reclaims the full width and wraps instead of truncating behind
+     the pills (issue #186). */
+  .service-row-name {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  /* Force the pill group onto its own line beneath the name: a 100% flex-basis
+     can't share the first line, so it wraps. The chips themselves wrap within
+     that line if they overflow, and the left padding aligns the line under the
+     name (past the swatch + row gap). Padding (not margin) keeps the 100% basis
+     from overflowing the row — `box-sizing: border-box` absorbs it, so there's
+     no horizontal scroll. */
+  .service-row-meta {
+    flex-basis: 100%;
+    flex-wrap: wrap;
+    padding-left: calc(var(--space-5) + var(--space-3));
   }
 
   /* ---- List mode: catalog full-screen, inspector removed ---- */

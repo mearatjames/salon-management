@@ -51,35 +51,21 @@ export function CatalogRow({ service, isSelected }: CatalogRowProps) {
         style={{ background: `var(${service.color_token})` }}
       />
 
-      {/* Service name — flex-grows so the trailing pills hug the right edge. */}
-      <span
-        data-slot="service-name"
-        style={{
-          flex: "1 1 auto",
-          minWidth: 0,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-          color: "var(--foreground)",
-          fontWeight: 500,
-          fontSize: "var(--text-sm)",
-        }}
-      >
+      {/* Service name — flex-grows so the trailing pills hug the right edge.
+          On phone-portrait (`@media (max-width: 640px)`) the `.service-row-name`
+          class drops the nowrap/ellipsis so the full name wraps to the row's
+          width instead of truncating behind the chips (issue #186). */}
+      <span data-slot="service-name" className="service-row-name">
         {service.name}
       </span>
 
       {/* Trailing group: deduction chips + duration + price + (optional)
           archived badge. The chips appear immediately before the duration
           token with a 4px gap (the prototype's 6px snaps to `--space-1`)
-          per `contracts/ui.contract.md § 3 / § 4`. */}
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: "var(--space-2)",
-          flex: "0 0 auto",
-        }}
-      >
+          per `contracts/ui.contract.md § 3 / § 4`. On phone-portrait the
+          `.service-row-meta` class drops this group onto a second line
+          beneath the name (issue #186). */}
+      <span data-slot="service-row-meta" className="service-row-meta">
         <DeductionChips
           card_fee_mode={service.card_fee_mode}
           card_fee_custom_cents={service.card_fee_custom_cents}

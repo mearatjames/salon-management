@@ -866,6 +866,330 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ==========================================================================
+   Checkout — phone-portrait (≤640px). Issue #163.
+   Implements the SEGMENTED option from the design handoff
+   (`design-system` → `mobile-checkout/checkout-mobile.css`): a sticky
+   "Add services ⇄ Cart" toggle swaps which pane the single-column body
+   shows, and a contextual sticky footer carries the charge action. Every
+   rule is wrapped in `@media (max-width: 640px)` so desktop/tablet keep the
+   two-column layout, and every value resolves to a `var(--*)` token
+   (Constitution Principle I) — the only literal px are the iOS notch /
+   home-indicator clearances, which have no token.
+   ========================================================================== */
+
+/* Mobile-only chrome — hidden on tablet/desktop, revealed in the media block. */
+.checkout-mobile-seg,
+.checkout-mobile-foot {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  /* ---- Header: title + actions may wrap; keep actions tappable ---- */
+  .checkout-header {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+  }
+  .checkout-header-title {
+    font-size: var(--text-base);
+  }
+  .checkout-header-actions {
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+  .checkout-header-actions > * {
+    min-height: 44px;
+  }
+
+  /* ---- Tech band: wrap instead of overflowing; comfortable height ---- */
+  .checkout-tech-band {
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    min-height: 44px;
+  }
+  /* The pre-pick state lists every active tech in one avatar row, which on a
+     full roster runs wider than 375px. Constrain it to the viewport and let
+     that inner row scroll horizontally (mirrors the handoff's
+     `.mco-tech-scroll`) instead of pushing the whole page sideways. The
+     post-pick state is a compact `.checkout-tech-chip`, so it never overflows
+     and isn't touched here. */
+  .checkout-tech-band [data-slot="checkout-tech-row"] {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+  }
+  .checkout-tech-band [data-slot="checkout-tech-row"] > div {
+    flex: 1 1 100%;
+    min-width: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .checkout-tech-band [data-slot="checkout-tech-row"] > div::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* ---- Segmented toggle (Add services ⇄ Cart), sticky under the band ---- */
+  .checkout-mobile-seg {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    margin: var(--space-3) var(--space-4) 0;
+    padding: 3px;
+    background: var(--muted);
+    border-radius: var(--radius-lg);
+  }
+  .checkout-mobile-seg-thumb {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    width: calc(50% - 3px);
+    border-radius: calc(var(--radius-lg) - 3px);
+    background: var(--card);
+    box-shadow: var(--shadow-xs);
+    transition: transform var(--duration-base) var(--ease-out);
+  }
+  .checkout-mobile-seg[data-view="catalog"] .checkout-mobile-seg-thumb {
+    transform: translateX(0);
+  }
+  .checkout-mobile-seg[data-view="cart"] .checkout-mobile-seg-thumb {
+    transform: translateX(100%);
+  }
+  .checkout-mobile-seg-btn {
+    position: relative;
+    z-index: 1;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--muted-foreground);
+    border-radius: calc(var(--radius-lg) - 3px);
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+  .checkout-mobile-seg-btn[data-active="true"] {
+    color: var(--foreground);
+  }
+  .checkout-mobile-seg-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: var(--radius-full);
+    background: var(--primary);
+    color: var(--primary-foreground);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .checkout-mobile-seg-btn:not([data-active="true"]) .checkout-mobile-seg-count {
+    background: var(--neutral-300);
+    color: var(--neutral-700);
+  }
+
+  /* ---- Body: one column; show only the pane the toggle selects ---- */
+  .checkout-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  .checkout-body[data-mobile-view="catalog"] .checkout-cart {
+    display: none;
+  }
+  .checkout-body[data-mobile-view="cart"] .checkout-catalog {
+    display: none;
+  }
+
+  /* Panes go full-bleed (drop the desktop card chrome) and own their scroll. */
+  .checkout-catalog,
+  .checkout-cart {
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    min-height: 0;
+    padding: var(--space-4);
+  }
+  .checkout-catalog {
+    overflow: hidden; /* the tile grid inside scrolls on its own */
+  }
+  .checkout-cart {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* The whole cart pane scrolls as one — its line list no longer needs its
+     own inner scroll region. */
+  .checkout-cart-lines {
+    flex: none;
+    overflow: visible;
+    min-height: 0;
+  }
+
+  /* Lock the catalog tiles to 2-up at 375px (auto-fill could drop to 1-up). */
+  .checkout-catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+
+  /* ---- Payment tiles: 4-up → 2-up ---- */
+  .checkout-payment-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+
+  /* ---- Touch targets ≥ 44px on the interactive cart bits ---- */
+  .checkout-line {
+    min-height: 44px;
+  }
+  .checkout-line-price-edit {
+    min-height: 36px;
+    padding: var(--space-2) var(--space-3);
+  }
+
+  /* The inline desktop Receipt+Charge row is replaced by the sticky footer.
+     `!important` overrides the element's inline `display:flex` (an inline
+     style outranks any selector) — same approach the print block below uses. */
+  .checkout-charge-row {
+    display: none !important;
+  }
+
+  /* ---- Totals read large enough to scan one-handed ---- */
+  .checkout-total-row.is-grand {
+    font-size: var(--text-xl);
+  }
+
+  /* ---- Sticky contextual footer ---- */
+  .checkout-mobile-foot {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    border-top: 1px solid var(--border);
+    background: color-mix(in oklch, var(--card) 88%, transparent);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    padding: var(--space-3) var(--space-4);
+    /* Literal 26px clears the iOS home indicator (no spacing token covers it). */
+    padding-bottom: max(26px, env(safe-area-inset-bottom));
+  }
+  .checkout-mobile-foot-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .checkout-mobile-foot-summary {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+  .checkout-mobile-foot-summary .amt {
+    font-size: var(--text-xl);
+    font-weight: 600;
+    letter-spacing: var(--tracking-tight);
+    font-variant-numeric: tabular-nums;
+  }
+  .checkout-mobile-foot-summary .meta {
+    font-size: var(--text-xs);
+    color: var(--muted-foreground);
+  }
+  .checkout-mobile-foot-cta {
+    flex: 1;
+    min-height: 48px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    padding: 0 var(--space-4);
+    border: none;
+    border-radius: var(--radius-md);
+    background: var(--primary);
+    color: var(--primary-foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: background var(--duration-fast) var(--ease-out);
+  }
+  /* On the catalog view the CTA hugs its label so the running total reads
+     first; on the cart view it spans the row. */
+  .checkout-mobile-foot[data-view="catalog"] .checkout-mobile-foot-cta {
+    flex: 0 0 auto;
+  }
+  .checkout-mobile-foot-cta:hover {
+    background: color-mix(in oklch, var(--primary) 92%, black);
+  }
+  .checkout-mobile-foot-cta:disabled {
+    background: var(--muted);
+    color: var(--muted-foreground);
+    cursor: not-allowed;
+  }
+  /* Secondary footer action (Bill / receipt) — hugs its label beside the
+     primary charge CTA, mirrors the handoff's `.mco-btn.secondary`. */
+  .checkout-mobile-foot-cta.is-secondary {
+    flex: 0 0 auto;
+    min-width: 48px;
+    padding: 0 var(--space-3);
+    background: var(--secondary);
+    color: var(--secondary-foreground);
+    border: 1px solid var(--border);
+  }
+  .checkout-mobile-foot-cta.is-secondary:hover {
+    background: var(--accent);
+  }
+  .checkout-mobile-foot-cta.is-secondary:disabled {
+    background: var(--muted);
+    color: var(--muted-foreground);
+    border-color: var(--border);
+  }
+
+  /* ---- Modals: price / receipt sheets go near-full-width, slide up ---- */
+  .tx-sheet-backdrop {
+    padding: var(--space-4);
+    align-items: flex-end;
+  }
+  .tx-sheet,
+  .tx-receipt-sheet {
+    max-width: none;
+    max-height: 88vh;
+  }
+  .tx-sheet-foot {
+    padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
+  }
+  /* Numpad keys keep a generous hit area. */
+  .tx-numkey {
+    height: var(--space-12);
+  }
+
+  /* ---- Done / waiting full-screen states breathe on a narrow screen ---- */
+  .checkout-done {
+    padding: var(--space-8) var(--space-5);
+  }
+  .checkout-done-amount {
+    font-size: var(--text-4xl);
+  }
+  .checkout-done-actions {
+    width: 100%;
+  }
+  .checkout-done-action {
+    min-height: 44px;
+    flex: 1 1 auto;
+  }
+}
+
 /* Receipt print stylesheet (FR-024, FR-025).
    The receipt route at `/checkout/[ticketId]/receipt/` already breaks out
    of the studio shell via its local `layout.tsx` override, so the

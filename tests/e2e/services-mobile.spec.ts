@@ -121,6 +121,33 @@ test.describe("#167: services catalog master → detail on phone portrait", () =
     await expect(page.locator('[data-slot="services-list"]')).toBeVisible();
   });
 
+  // #186: on phone-portrait the name and its pill group must not share one
+  // row — the name reclaims the full width (no ellipsis truncation) and the
+  // chips drop to a second line beneath it.
+  test("the service name uses the full row width; chips wrap to a second line", async ({
+    page,
+  }) => {
+    await signInAsMaya(page);
+
+    const row = page.locator('[data-slot="service-row"]').first();
+    await expect(row).toBeVisible({ timeout: 15_000 });
+
+    const name = row.locator('[data-slot="service-name"]');
+    const meta = row.locator('[data-slot="service-row-meta"]');
+
+    // The name no longer truncates: with the phone restack it wraps rather
+    // than clipping, so its rendered width covers its content.
+    const nameOverflow = await name.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(nameOverflow).toBeLessThanOrEqual(1);
+
+    // The chip group sits on a line below the name, not beside it.
+    const nameBox = await name.boundingBox();
+    const metaBox = await meta.boundingBox();
+    expect(nameBox).not.toBeNull();
+    expect(metaBox).not.toBeNull();
+    expect(metaBox!.y).toBeGreaterThanOrEqual(nameBox!.y + nameBox!.height - 2);
+  });
+
   for (const width of NO_SCROLL_WIDTHS) {
     test(`no horizontal scroll at ${width}px in list and detail modes`, async ({ page }) => {
       await signInAsMaya(page);
