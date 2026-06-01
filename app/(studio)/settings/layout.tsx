@@ -1,12 +1,12 @@
 // Settings shell layout — wraps every `/settings/*` route with the studio
 // auth gate (any authenticated operator) and the horizontal tab bar
-// (General · Staff · Notifications · Billing).
+// (Staff · Onboarding · Square).
 //
-// Restricted subroutes (Staff / General / Billing / Notifications) gate
-// themselves inside their `page.tsx`, so the layout stays open to every
-// authenticated role. Services lives at `/services` (top-level studio
-// route reached from the sidebar) — not under Settings — and gates itself
-// per feature 008-services-catalog.
+// Restricted subroutes (Staff / Onboarding / Square) gate themselves inside
+// their `page.tsx`, so the layout stays open to every authenticated role.
+// Services lives at `/services` (top-level studio route reached from the
+// sidebar) — not under Settings — and gates itself per feature
+// 008-services-catalog.
 
 import type { ReactNode } from "react";
 

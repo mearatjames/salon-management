@@ -1,6 +1,6 @@
 "use client";
 
-// Settings tab bar — General · Staff · Notifications · Billing.
+// Settings tab bar — Staff · Onboarding · Square.
 //
 // Deviation from task T015's "Server Component" guidance: making this a
 // small client island (~30 lines) is cleaner than the alternatives
@@ -24,16 +24,13 @@ type Tab = {
 };
 
 const TABS: readonly Tab[] = [
-  { id: "general", label: "General", href: "/settings/general" },
   { id: "staff", label: "Staff", href: "/settings/staff" },
-  // 012-user-onboarding FR-001 — Onboarding tab sits between Staff and
-  // Notifications. The page enforces the owner-only role gate inline.
+  // 012-user-onboarding FR-001 — Onboarding tab sits after Staff. The
+  // page enforces the owner-only role gate inline.
   { id: "onboarding", label: "Onboarding", href: "/settings/onboarding" },
   // 015-square-terminal-payment FR-001 — Square tab gates owner/manager
   // inline on the page; layout stays open.
   { id: "square", label: "Square", href: "/settings/square" },
-  { id: "notifications", label: "Notifications", href: "/settings/notifications" },
-  { id: "billing", label: "Billing", href: "/settings/billing" },
 ] as const;
 
 export function TabBar() {
@@ -41,10 +38,9 @@ export function TabBar() {
 
   // On phone portrait (#169) the tab bar is a horizontal scroller (see the
   // `@media (max-width: 640px)` block in styles/settings.css). Scroll the
-  // active tab into view on navigation so a tab past the right edge (e.g.
-  // Billing) is never stranded off-screen. `block: "nearest"` keeps it from
-  // nudging the page vertically; on desktop the bar doesn't overflow, so this
-  // is a no-op.
+  // active tab into view on navigation so a tab past the right edge is never
+  // stranded off-screen. `block: "nearest"` keeps it from nudging the page
+  // vertically; on desktop the bar doesn't overflow, so this is a no-op.
   const navRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const active = navRef.current?.querySelector<HTMLElement>('[data-active="true"]');
