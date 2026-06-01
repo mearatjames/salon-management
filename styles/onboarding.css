@@ -1786,3 +1786,68 @@
   border-color: var(--ring);
   box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 35%, transparent);
 }
+
+/* ==========================================================================
+   Phone portrait (#169) — onboarding form sub-page at the shared 640px
+   breakpoint (#160). The desktop hero is a space-between row and each roster
+   line is a 5-column grid (person · role · meta · status · actions) that
+   overflows a 375px screen. On phone the hero stacks and the roster row drops
+   to a 2-column grid that reflows the five cells across three rows. Every
+   value still resolves to a token.
+   ========================================================================== */
+@media (max-width: 640px) {
+  .onb-page {
+    padding: var(--space-5) var(--space-4) var(--space-8);
+    gap: var(--space-5);
+  }
+
+  /* Hero: heading + stats on top, then the search + Onboard CTA full-width. */
+  .onb-hero {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-4);
+  }
+  .onb-hero-cta {
+    display: flex;
+    gap: var(--space-2);
+  }
+  /* Search grows to fill the row; bump to a 44px tap target. */
+  .onb-search {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+    height: 44px;
+  }
+
+  /* Roster row: person + ⋯ actions on line 1, role + status on line 2, and
+     the metadata ("Invited 2d ago" / "Signed in 5h ago") full-width on line 3.
+     Explicit placement on all five children so nothing auto-flows out of the
+     two tracks. */
+  .onb-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-3);
+  }
+  .onb-person {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .onb-row-actions {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+  }
+  .onb-role-chip {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .onb-status-cell {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: end;
+  }
+  .onb-meta {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+}

@@ -85,7 +85,10 @@ export const AFFECTED_MAP = {
     "tests/e2e/void-sale.spec.ts",
     "tests/e2e/refund-ticket.spec.ts",
   ],
-  "app/(studio)/settings/square/**": ["tests/e2e/square-oauth.spec.ts"],
+  "app/(studio)/settings/square/**": [
+    "tests/e2e/square-oauth.spec.ts",
+    "tests/e2e/settings-mobile.spec.ts",
+  ],
   "components/lacquer/settings/square/**": ["tests/e2e/square-oauth.spec.ts"],
 
   // End-of-day cash.
@@ -130,14 +133,24 @@ export const AFFECTED_MAP = {
   ],
   "app/(studio)/settings/staff/**": ["tests/e2e/staff*.spec.ts"],
 
+  // Settings shell chrome (#169 mobile — tab bar scroller + phone gutters).
+  // No spec imports the layout/tab-bar directly, and the @media block lives
+  // in these stylesheets, so map them explicitly to the phone-portrait spec.
+  "app/(studio)/settings/layout.tsx": ["tests/e2e/settings-mobile.spec.ts"],
+  "components/lacquer/settings/tab-bar.tsx": ["tests/e2e/settings-mobile.spec.ts"],
+  "styles/settings.css": ["tests/e2e/settings-mobile.spec.ts", "tests/e2e/staff*.spec.ts"],
+  "styles/onboarding.css": ["tests/e2e/settings-mobile.spec.ts", "tests/e2e/onboarding.spec.ts"],
+
   // Onboarding (staff invite/onboard flows + kiosk).
   "components/lacquer/onboarding/**": [
     "tests/e2e/onboarding.spec.ts",
     "tests/e2e/staff-add-wizard.spec.ts",
+    "tests/e2e/settings-mobile.spec.ts",
   ],
   "app/(studio)/settings/onboarding/**": [
     "tests/e2e/onboarding.spec.ts",
     "tests/e2e/staff-add-wizard.spec.ts",
+    "tests/e2e/settings-mobile.spec.ts",
   ],
   "lib/onboarding/**": ["tests/e2e/onboarding.spec.ts", "tests/e2e/staff-add-wizard.spec.ts"],
   "app/kiosk/**": ["tests/e2e/onboarding.spec.ts"],
