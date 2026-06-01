@@ -17,7 +17,14 @@ import { expect, test } from "./_fixtures";
 import type { StaffFixture } from "./_fixtures";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { laParts, utcFromLaWall } from "./_la-time";
+import { laParts, utcFromLaWall, SALON_TZ } from "./_la-time";
+import { resolvePayPeriod } from "@/lib/payroll/window";
+
+// The seeded closed period is the previous half-month (offset -1). The seed
+// derives its dates from "now", so derive the expected header label the same
+// way instead of pinning a calendar date that drifts out of offset -1 every
+// 1st/16th (see supabase/seed.sql — "Semi-monthly windows derived from … today").
+const SEEDED_CLOSED_PERIOD_LABEL = resolvePayPeriod(SALON_TZ, new Date(), -1).label;
 
 const SUPABASE_HEALTH_URL = "http://127.0.0.1:54321/auth/v1/health";
 
@@ -672,10 +679,10 @@ test.describe("US3: record and undo a payout", () => {
 // ─── US4: close a pay period and browse payroll history ──────────────────────
 //
 // Closing a period is TERMINAL — it can never be reopened. So this block must
-// not close the salon-wide seeded open period (May 16 – 31), which other specs
-// depend on. Two parallel-safe strategies are used:
+// not close the salon-wide seeded open period (the current half-month), which
+// other specs depend on. Two parallel-safe strategies are used:
 //   - Read-only + history RENDER checks run against the already-seeded closed
-//     period (May 1 – 15, 2026 — offset -1). They assert presence, never a
+//     period (the previous half-month — offset -1). They assert presence, never a
 //     salon-wide count, so they stay concurrency-safe.
 //   - The close MUTATION is exercised on a DISPOSABLE worker-scoped pay period
 //     (a unique non-standard `starts_on` per worker) by calling the
@@ -725,7 +732,7 @@ test.describe("US4: close a period and browse history", () => {
     });
 
     test("(a) the seeded closed period renders read-only — no close control", async ({ page }) => {
-      // Offset -1 is the seeded closed period (May 1 – 15, 2026).
+      // Offset -1 is the seeded closed period (the previous half-month).
       await page.goto("/payroll?offset=-1");
       await expect(page.locator('[data-slot="payroll-header"]')).toBeVisible();
 
@@ -765,7 +772,7 @@ test.describe("US4: close a period and browse history", () => {
         '[data-slot="payroll-history-row"][data-period-id="70000000-0000-0000-0000-000000000002"]'
       );
       await expect(seededRow).toBeVisible();
-      await expect(seededRow).toContainText("May 1 – 15, 2026");
+      await expect(seededRow).toContainText(SEEDED_CLOSED_PERIOD_LABEL);
 
       // Following the row link lands on that period's read-only ledger with its
       // frozen figures unchanged.
