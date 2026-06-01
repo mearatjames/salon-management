@@ -13,6 +13,7 @@
 //
 // All visual values resolve to Lacquer tokens via `styles/settings.css`.
 
+import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -37,8 +38,21 @@ const TABS: readonly Tab[] = [
 
 export function TabBar() {
   const pathname = usePathname() ?? "/settings/staff";
+
+  // On phone portrait (#169) the tab bar is a horizontal scroller (see the
+  // `@media (max-width: 640px)` block in styles/settings.css). Scroll the
+  // active tab into view on navigation so a tab past the right edge (e.g.
+  // Billing) is never stranded off-screen. `block: "nearest"` keeps it from
+  // nudging the page vertically; on desktop the bar doesn't overflow, so this
+  // is a no-op.
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const active = navRef.current?.querySelector<HTMLElement>('[data-active="true"]');
+    active?.scrollIntoView({ inline: "center", block: "nearest" });
+  }, [pathname]);
+
   return (
-    <nav className="settings-tab-bar" aria-label="Settings sections">
+    <nav ref={navRef} className="settings-tab-bar" aria-label="Settings sections">
       {TABS.map((tab) => {
         const isActive = pathname === tab.href || pathname.startsWith(`${tab.href}/`);
         return (

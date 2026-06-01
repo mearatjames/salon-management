@@ -62,7 +62,7 @@ export function UserRow({ user, meta, menu }: Props) {
         {roleLabel(user.role)}
       </div>
       <div className="onb-meta">{meta}</div>
-      <div>
+      <div className="onb-status-cell">
         <span className={badge.className}>
           <span className="dot" aria-hidden />
           {badge.label}

@@ -105,6 +105,38 @@
   flex-shrink: 0;
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   Phone portrait (#169) — settings shell at the shared 640px breakpoint (#160).
+   The tab bar (General · Staff · Onboarding · Square · Notifications · Billing)
+   can't fit six tabs across a 375px screen, so it becomes a horizontal
+   scroller; the TabBar client island scrolls the active tab into view on
+   navigation. Content gutters drop to the phone scale. No edge-fade gradient —
+   Constitution § 6 forbids gradients in chrome; the scroll + scroll-into-view
+   carry the affordance instead.
+   ────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .settings-tab-bar {
+    overflow-x: auto;
+    /* Hide the scrollbar so the tab strip reads as clean chrome (Firefox). */
+    scrollbar-width: none;
+    padding: 0 var(--space-4);
+  }
+  /* WebKit/Blink scrollbar removal. */
+  .settings-tab-bar::-webkit-scrollbar {
+    display: none;
+  }
+  /* Tabs keep their intrinsic width inside the scroller — no shrink, no wrap. */
+  .settings-tab-bar > a {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  /* Phone gutters for the content column under the tab bar. */
+  .settings-content {
+    padding: var(--space-5) var(--space-4) var(--space-10);
+    gap: var(--space-4);
+  }
+}
+
 /* ==========================================================================
    Services catalog (Settings → Services)
    Layout rules for the catalog list, the edit/add drawer, the per-row
@@ -2500,6 +2532,9 @@
   overflow-y: auto;
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   padding: var(--space-4) var(--space-5) var(--space-5);
+  /* Clear the iOS home-indicator inset so the Save row never sits under it
+     (#170 — verify/polish). Falls back to --space-5 where no inset exists. */
+  padding-bottom: max(var(--space-5), env(safe-area-inset-bottom));
   gap: var(--space-3);
 }
 
@@ -2523,7 +2558,9 @@
    the breakpoint block below owns the show/hide gesture. */
 .staff-fab {
   position: fixed;
-  bottom: var(--space-6);
+  /* Clear the iOS home-indicator inset on phones so the FAB stays tappable
+     above the safe area (#170 — verify/polish). */
+  bottom: max(var(--space-6), env(safe-area-inset-bottom) + var(--space-4));
   right: var(--space-6);
   width: 56px;
   height: 56px;
