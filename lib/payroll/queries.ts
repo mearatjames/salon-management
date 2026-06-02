@@ -363,12 +363,17 @@ export async function loadPayrollHistory(
   supabase: AnySupabase,
   tz: string
 ): Promise<readonly PayrollHistoryEntry[]> {
-  // 1. Every closed period, newest first.
+  // 1. Recent closed periods, newest first. Bounded to `HISTORY_OFFSET_SEARCH`
+  //    (two years of semi-monthly cycles) — a closed period older than that
+  //    window has no resolvable switcher offset anyway (step 4 falls its link
+  //    back to "/payroll"), so fetching beyond it only grows the payload for
+  //    no UI gain. The History list surfaces these recent periods (#196).
   const periodsRes = await supabase
     .from("pay_periods")
     .select("id, starts_on, ends_on, pay_date, status, closed_at, closed_by_staff_id")
     .eq("status", "closed")
-    .order("starts_on", { ascending: false });
+    .order("starts_on", { ascending: false })
+    .limit(HISTORY_OFFSET_SEARCH);
 
   type ClosedPeriodRow = {
     id: string;

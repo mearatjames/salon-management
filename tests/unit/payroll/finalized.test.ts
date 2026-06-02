@@ -10,7 +10,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { payPeriodForClosedAt, isPayPeriodFinalized } from "@/lib/payroll/finalized";
+import {
+  payPeriodForClosedAt,
+  isPayPeriodFinalized,
+  payPeriodsFinalizedByStartsOn,
+} from "@/lib/payroll/finalized";
 
 const TZ = "America/Los_Angeles";
 
@@ -152,5 +156,79 @@ describe("isPayPeriodFinalized — four branches", () => {
     const result = await isPayPeriodFinalized(supabase, REF);
     expect(result).toBe(false);
     expect(payoutQueriedFor).toBe("pp-3");
+  });
+});
+
+// ─── payPeriodsFinalizedByStartsOn — batch RPC (#196) ────────────────────────
+
+type RpcResult = { data: { starts_on: string; finalized: boolean }[] | null; error: unknown };
+
+function buildRpcSupabase(opts: {
+  result: RpcResult;
+  onRpc?: (fn: string, args: { p_starts_on: string[] }) => void;
+}) {
+  return {
+    async rpc(fn: string, args: { p_starts_on: string[] }): Promise<RpcResult> {
+      opts.onRpc?.(fn, args);
+      return opts.result;
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+}
+
+describe("payPeriodsFinalizedByStartsOn", () => {
+  it("returns an empty map and issues no query for an empty list", async () => {
+    let called = false;
+    const supabase = buildRpcSupabase({
+      result: { data: [], error: null },
+      onRpc: () => {
+        called = true;
+      },
+    });
+    const map = await payPeriodsFinalizedByStartsOn(supabase, []);
+    expect(map.size).toBe(0);
+    expect(called).toBe(false);
+  });
+
+  it("calls the batch RPC once with all distinct startsOn and maps the rows", async () => {
+    let rpcFn: string | null = null;
+    let rpcArgs: { p_starts_on: string[] } | null = null;
+    const supabase = buildRpcSupabase({
+      result: {
+        data: [
+          { starts_on: "2026-05-16", finalized: true },
+          { starts_on: "2026-05-01", finalized: false },
+        ],
+        error: null,
+      },
+      onRpc: (fn, args) => {
+        rpcFn = fn;
+        rpcArgs = args;
+      },
+    });
+    const map = await payPeriodsFinalizedByStartsOn(supabase, ["2026-05-16", "2026-05-01"]);
+    expect(rpcFn).toBe("payroll_periods_finalized");
+    expect(rpcArgs).toEqual({ p_starts_on: ["2026-05-16", "2026-05-01"] });
+    expect(map.get("2026-05-16")).toBe(true);
+    expect(map.get("2026-05-01")).toBe(false);
+  });
+
+  it("treats a period absent from the RPC result as a miss (caller defaults false)", async () => {
+    const supabase = buildRpcSupabase({
+      result: { data: [{ starts_on: "2026-05-16", finalized: true }], error: null },
+    });
+    const map = await payPeriodsFinalizedByStartsOn(supabase, ["2026-05-16", "2026-04-16"]);
+    expect(map.get("2026-05-16")).toBe(true);
+    expect(map.has("2026-04-16")).toBe(false);
+    expect(map.get("2026-04-16") ?? false).toBe(false);
+  });
+
+  it("throws when the RPC returns an error", async () => {
+    const supabase = buildRpcSupabase({
+      result: { data: null, error: { message: "boom" } },
+    });
+    await expect(payPeriodsFinalizedByStartsOn(supabase, ["2026-05-16"])).rejects.toEqual({
+      message: "boom",
+    });
   });
 });

@@ -1035,6 +1035,10 @@ export type Database = {
         };
         Returns: string;
       };
+      payroll_periods_finalized: {
+        Args: { p_starts_on: string[] };
+        Returns: { starts_on: string; finalized: boolean }[];
+      };
       payroll_record_payout: {
         Args: {
           p_card_tips_cents: number;

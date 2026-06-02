@@ -237,6 +237,15 @@ export const AFFECTED_MAP = {
   // Server Actions; no spec imports the SQL, so map it explicitly.
   "supabase/migrations/0029_payout_adjustments.sql": ["tests/e2e/payroll.spec.ts"],
 
+  // Issue #196 — perf migration: hot-FK covering indexes + the
+  // `payroll_periods_finalized` batch RPC. No spec imports the SQL. The RPC is
+  // driven only over Supabase by the Transactions page load (the finalized
+  // chip); the indexes back the payroll read paths — so map it to both.
+  "supabase/migrations/0030_perf_hot_fk_indexes_and_finalized_batch.sql": [
+    "tests/e2e/transactions.spec.ts",
+    "tests/e2e/payroll.spec.ts",
+  ],
+
   // Dashboard.
   "app/(studio)/dashboard/**": [
     "tests/e2e/dashboard.spec.ts",
