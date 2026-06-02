@@ -1,16 +1,18 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 import "@/styles/globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Inter is the Lacquer body + heading face. Loaded via `next/font/google` so
+// it is self-hosted, auto-preloaded, and subset to latin — no render-blocking
+// external `@import` to fonts.googleapis.com. Inter is a variable font, so a
+// single woff2 covers the design system's 400/500/600 weights (and anything
+// between) without enumerating static instances. The `--font-sans` token in
+// `styles/tokens.css` leads with this `--font-inter` variable.
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -47,7 +49,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${inter.variable} h-full antialiased`}
       data-studio-sidebar-collapsed={collapsed ? "true" : "false"}
     >
       <body className="min-h-full flex flex-col">{children}</body>
