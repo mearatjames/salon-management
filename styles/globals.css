@@ -67,3 +67,24 @@
     @apply font-sans;
   }
 }
+
+/* Pending region — the calm loading affordance for search-param (soft)
+   navigations on Transactions / Report / Payroll. `loading.tsx` only fires on
+   the initial segment load; a param-only soft navigation keeps the stale UI on
+   screen with no feedback (issue #197). `<PendingContent>` flags its wrapper
+   while the re-fetch is in flight; we dim the data area to signal "loading".
+
+   The wrapper is `display: contents` so it adds no box to the page's flex
+   layout — the dim + pointer-lock fall on its children. Opacity transitions on
+   the 150ms `--duration-fast` / `--ease-out` curve (Constitution Principle I:
+   no spinner, no bounce, tokens only). */
+[data-slot="pending-region"] {
+  display: contents;
+}
+[data-slot="pending-region"] > * {
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+[data-slot="pending-region"][data-pending="true"] > * {
+  opacity: 0.5;
+  pointer-events: none;
+}

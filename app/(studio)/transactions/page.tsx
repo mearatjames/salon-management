@@ -13,6 +13,7 @@ import { loadTransactionsPage } from "@/lib/transactions/queries";
 import { parsePeriodParams, resolveWindow } from "@/lib/transactions/window";
 import { PeriodControls } from "@/components/lacquer/transactions/period-controls";
 import { TransactionsView } from "@/components/lacquer/transactions/transactions-view.client";
+import { PendingContent, PendingNavProvider } from "@/components/lacquer/pending-nav.client";
 
 // Every navigation re-queries Supabase — the page browses live historical
 // periods, so no static caching. Mirrors `dashboard/page.tsx` and
@@ -99,16 +100,24 @@ export default async function TransactionsPage({
         </div>
       </div>
 
-      <PeriodControls window={window} />
+      {/* The period toggle + range stepper drive `?period=&offset=` soft
+          navigations; `PendingNavProvider` wraps the click in a transition and
+          `PendingContent` dims the data region while the re-fetch runs, since
+          `loading.tsx` does not re-fire on a param-only soft nav (issue #197). */}
+      <PendingNavProvider>
+        <PeriodControls window={window} />
 
-      <TransactionsView
-        transactions={stampedTransactions}
-        staff={staff}
-        previousPeriodCount={previousPeriodCount}
-        todayKey={todayKey}
-        periodLabel={window.label.toLowerCase()}
-        viewerRole={viewer.staff.role}
-      />
+        <PendingContent>
+          <TransactionsView
+            transactions={stampedTransactions}
+            staff={staff}
+            previousPeriodCount={previousPeriodCount}
+            todayKey={todayKey}
+            periodLabel={window.label.toLowerCase()}
+            viewerRole={viewer.staff.role}
+          />
+        </PendingContent>
+      </PendingNavProvider>
     </div>
   );
 }
