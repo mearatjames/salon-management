@@ -22,6 +22,7 @@ import {
 import { PayrollKpis } from "@/components/lacquer/payroll/payroll-kpis";
 import { PayrollLedger } from "@/components/lacquer/payroll/payroll-ledger";
 import { PayrollPeriodSwitcher } from "@/components/lacquer/payroll/payroll-period-switcher.client";
+import { PendingContent, PendingNavProvider } from "@/components/lacquer/pending-nav.client";
 
 // Every navigation re-queries Supabase — the page browses live payroll
 // periods, so no static caching. Mirrors `report/page.tsx`.
@@ -110,48 +111,61 @@ export default async function PayrollPage({
 
   return (
     <div className="pr-app dr-app-page" data-slot="payroll-page">
-      <div className="pr-header">
-        <PayrollHeader model={model} />
-        <div className="pr-header-actions">
-          <PayrollPeriodSwitcher periods={model.recentPeriods} activeOffset={model.period.offset} />
-          <PayrollHistory items={historyItems} />
-          {canClose ? (
-            <ClosePeriodDialog
-              payPeriodId={model.period.id as string}
-              periodLabel={model.period.label}
+      {/* The period switcher (header) and ledger filters drive `?offset=` /
+          `?filter=` soft navigations; `PendingNavProvider` wraps the click in a
+          transition and `PendingContent` dims the kpis + ledger while the
+          re-fetch runs, since `loading.tsx` does not re-fire on a param-only
+          soft nav (issue #197). The header stays outside `PendingContent` so
+          the switcher remains live and undimmed while the body loads. */}
+      <PendingNavProvider>
+        <div className="pr-header">
+          <PayrollHeader model={model} />
+          <div className="pr-header-actions">
+            <PayrollPeriodSwitcher
+              periods={model.recentPeriods}
+              activeOffset={model.period.offset}
             />
-          ) : model.readOnly ? (
-            <span className="pr-readonly-badge" data-slot="period-readonly-badge">
-              <Lock size={16} strokeWidth={1.5} aria-hidden="true" />
-              Closed
-            </span>
-          ) : null}
+            <PayrollHistory items={historyItems} />
+            {canClose ? (
+              <ClosePeriodDialog
+                payPeriodId={model.period.id as string}
+                periodLabel={model.period.label}
+              />
+            ) : model.readOnly ? (
+              <span className="pr-readonly-badge" data-slot="period-readonly-badge">
+                <Lock size={16} strokeWidth={1.5} aria-hidden="true" />
+                Closed
+              </span>
+            ) : null}
+          </div>
         </div>
-      </div>
 
-      <PayrollKpis model={model} />
+        <PendingContent>
+          <PayrollKpis model={model} />
 
-      {/* The empty state is for an OPEN period with no completed sales yet. A
-          CLOSED period always renders its ledger — the figures come from the
-          frozen `payroll_payouts` snapshots, not from live ticket data, so a
-          period with no tickets but recorded payouts is not "empty". */}
-      {model.isEmpty && !model.readOnly ? (
-        <PayrollEmptyState />
-      ) : (
-        <div className="pp-ledger-body">
-          <div className="pl-table-card">
-            <div className="pl-table-head">
-              <PayrollFilters active={filter} counts={counts} />
-              <PayrollExport model={model} />
+          {/* The empty state is for an OPEN period with no completed sales yet. A
+              CLOSED period always renders its ledger — the figures come from the
+              frozen `payroll_payouts` snapshots, not from live ticket data, so a
+              period with no tickets but recorded payouts is not "empty". */}
+          {model.isEmpty && !model.readOnly ? (
+            <PayrollEmptyState />
+          ) : (
+            <div className="pp-ledger-body">
+              <div className="pl-table-card">
+                <div className="pl-table-head">
+                  <PayrollFilters active={filter} counts={counts} />
+                  <PayrollExport model={model} />
+                </div>
+                <PayrollLedger model={model} rows={filteredRows} periodQuery={periodQuery} />
+              </div>
+              <div className="pp-ledger-hint">
+                Each row is one technician&apos;s earnings, tips, and cash payment for this pay
+                period. The totals row reconciles every column.
+              </div>
             </div>
-            <PayrollLedger model={model} rows={filteredRows} periodQuery={periodQuery} />
-          </div>
-          <div className="pp-ledger-hint">
-            Each row is one technician&apos;s earnings, tips, and cash payment for this pay period.
-            The totals row reconciles every column.
-          </div>
-        </div>
-      )}
+          )}
+        </PendingContent>
+      </PendingNavProvider>
     </div>
   );
 }

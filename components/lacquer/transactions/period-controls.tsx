@@ -1,3 +1,5 @@
+"use client";
+
 // PeriodControls — the period toggle + range stepper for the Transactions page.
 //
 // Adapted from `design-system/prototypes/transaction/TransactionsPage.jsx`
@@ -7,15 +9,25 @@
 // stepping re-fetches the server component (research R3 — mirrors the
 // dashboard's `force-dynamic` "re-query on every navigation" model).
 //
-// Server Component. Chrome lives in `styles/transactions.css` under
-// `.tp-period*` / `.tp-range`. The "next" arrow is disabled at `isCurrent`
-// (forward stepping past the current period is forbidden — data-model.md § 4).
-// Icons are Lucide at 13px, 1.5px stroke (Constitution Principle I).
+// Client Component: each `<Link>` keeps its real `href` (bookmarkable,
+// middle-click, a11y) but intercepts the plain left-click into
+// `usePendingNav().navigate(href)` so the soft navigation runs inside a
+// transition and the sibling `<PendingContent>` data region dims while the
+// re-fetch is in flight (issue #197). The clicked granularity also flips active
+// instantly via local optimistic state — no dead-click feeling — and resets
+// once the new server `window` arrives.
+//
+// Chrome lives in `styles/transactions.css` under `.tp-period*` / `.tp-range`.
+// The "next" arrow is disabled at `isCurrent` (forward stepping past the
+// current period is forbidden — data-model.md § 4). Icons are Lucide at 13px,
+// 1.5px stroke (Constitution Principle I).
 
+import { useState, type MouseEvent } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import type { PeriodGranularity, PeriodWindow } from "@/lib/transactions/window";
+import { isModifiedClick, usePendingNav } from "@/components/lacquer/pending-nav.client";
 
 export type PeriodControlsProps = {
   window: PeriodWindow;
@@ -36,13 +48,43 @@ function periodHref(granularity: PeriodGranularity, offset: number): string {
 }
 
 export function PeriodControls({ window }: PeriodControlsProps) {
+  const { navigate } = usePendingNav();
+
+  // Optimistic granularity so the clicked tab activates instantly: while the
+  // transition is pending the server still holds the OLD `window`, so without
+  // this the active tab wouldn't move until the re-fetch resolved. Cleared the
+  // moment a new resolved `window` arrives (the re-fetch landed, or browser
+  // back/forward) via the render-phase reset pattern — React "You Might Not
+  // Need an Effect" — so there is no effect and no stale highlight.
+  const [optimistic, setOptimistic] = useState<PeriodGranularity | null>(null);
+  const windowKey = `${window.granularity}:${window.offset}`;
+  const [prevWindowKey, setPrevWindowKey] = useState(windowKey);
+  if (windowKey !== prevWindowKey) {
+    setPrevWindowKey(windowKey);
+    setOptimistic(null);
+  }
+  const activeGranularity = optimistic ?? window.granularity;
+
   // Switching the granularity always resets to the current period (offset 0):
   // a "this week"/"this month" offset has no meaning under a new granularity.
+  const handleTab = (e: MouseEvent, granularity: PeriodGranularity) => {
+    if (isModifiedClick(e)) return;
+    e.preventDefault();
+    setOptimistic(granularity);
+    navigate(periodHref(granularity, 0));
+  };
+
+  const handleStep = (e: MouseEvent, href: string) => {
+    if (isModifiedClick(e)) return;
+    e.preventDefault();
+    navigate(href);
+  };
+
   return (
     <div className="tp-period-row" data-slot="period-controls">
       <div className="tx-period" role="group" aria-label="Period">
         {PERIOD_TABS.map((tab) => {
-          const active = window.granularity === tab.granularity;
+          const active = activeGranularity === tab.granularity;
           return (
             <Link
               key={tab.granularity}
@@ -50,6 +92,7 @@ export function PeriodControls({ window }: PeriodControlsProps) {
               className={active ? "active" : undefined}
               data-period={tab.granularity}
               aria-current={active ? "true" : undefined}
+              onClick={(e) => handleTab(e, tab.granularity)}
             >
               {tab.label}
             </Link>
@@ -63,6 +106,7 @@ export function PeriodControls({ window }: PeriodControlsProps) {
           href={periodHref(window.granularity, window.offset - 1)}
           aria-label="Previous period"
           data-slot="period-prev"
+          onClick={(e) => handleStep(e, periodHref(window.granularity, window.offset - 1))}
         >
           <ChevronLeft size={13} strokeWidth={1.5} aria-hidden="true" />
         </Link>
@@ -85,6 +129,7 @@ export function PeriodControls({ window }: PeriodControlsProps) {
             href={periodHref(window.granularity, window.offset + 1)}
             aria-label="Next period"
             data-slot="period-next"
+            onClick={(e) => handleStep(e, periodHref(window.granularity, window.offset + 1))}
           >
             <ChevronRight size={13} strokeWidth={1.5} aria-hidden="true" />
           </Link>
