@@ -489,6 +489,75 @@ test.describe("053-US1: a refunded sale preserves the tech's commission on /payr
   });
 });
 
+// ─── Mobile: the refund surface is a content-height bottom sheet ─────────────
+//
+// Phone bug (iOS keyboard): the shared `RefundCompositionSheet` was a
+// `side="right"`, full-layout-viewport-height Sheet with the submit button
+// pinned to the bottom via `mt-auto`. On iOS the on-screen keyboard overlays
+// the bottom of the layout viewport without shrinking it, so the button sat
+// behind the keyboard — invisible until the user pinch-zoomed out.
+//
+// At ≤640px (the shared phone breakpoint) the sheet now renders as a
+// content-height BOTTOM sheet (`data-side="bottom"`, `h-auto`) so the action
+// button flows directly under the inputs instead of being anchored to the
+// layout-viewport bottom. (The actual keyboard lift is driven by the
+// VisualViewport API at runtime — not observable in headless Chromium — so
+// this spec asserts the structural switch that makes the lift possible.)
+
+test.describe("mobile: refund surface renders as a content-height bottom sheet", () => {
+  test.use({
+    storageState: async ({ authState }, provide) => {
+      await provide(authState.owner);
+    },
+  });
+
+  test.afterEach(async ({ staffFixture }) => {
+    if (!supabaseUp) return;
+    await clearTicket(staffFixture, "f1");
+    await staffFixture.reset();
+  });
+
+  test("at 390px the sheet is a bottom sheet sized to its content, not a full-height right drawer", async ({
+    page,
+    staffFixture,
+  }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const { tk, paymentId } = await seedPaidCashTicket({
+      fixture: staffFixture,
+      tag: "f1",
+      amountCents: 6000,
+    });
+
+    await page.goto("/dashboard");
+    const row = page.locator(`.tx-feed-row[data-tx-id="${tk}"]`);
+    await expect(row).toBeVisible({ timeout: 15_000 });
+    await row.locator(REFUND_BTN).click();
+
+    const sheet = page.locator(REFUND_SHEET);
+    await expect(sheet).toBeVisible();
+
+    // It opens from the bottom (the mobile affordance), not the right edge.
+    await expect(sheet).toHaveAttribute("data-side", "bottom");
+
+    // It is sized to its content, not the full layout-viewport height — so the
+    // footer button is not stranded at the bottom of an 844px panel.
+    const sheetHeight = await sheet.evaluate((el) => Math.round(el.getBoundingClientRect().height));
+    expect(sheetHeight).toBeLessThan(700);
+
+    // The submit button follows the input closely instead of being anchored
+    // ~700px below it via `mt-auto`. This is the property the iOS keyboard
+    // occlusion violated: with the button right under the field, lifting the
+    // sheet above the keyboard keeps both in view.
+    const inputBottom = await page
+      .locator(refundInput(paymentId))
+      .evaluate((el) => el.getBoundingClientRect().bottom);
+    const btnTop = await page
+      .locator(REFUND_SUBMIT)
+      .evaluate((el) => el.getBoundingClientRect().top);
+    expect(btnTop - inputBottom).toBeLessThan(160);
+  });
+});
+
 // ─── US2: technician sees no Refund affordance (role gate) ───────────────────
 
 test.describe("US2: technician sees no Refund affordance", () => {
