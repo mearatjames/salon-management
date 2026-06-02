@@ -76,3 +76,33 @@ export async function isPayPeriodFinalized(
   }>;
   return payouts.length > 0;
 }
+
+/**
+ * Batched form of {@link isPayPeriodFinalized}: resolves the finalized status
+ * for many pay periods in a single round-trip. The Transactions page stamps a
+ * `payPeriodFinalized` flag on every paid line, and a busy period can span
+ * dozens of distinct pay periods — issuing one `isPayPeriodFinalized` query
+ * per period (even parallelised) is N round-trips. This collapses them into a
+ * single `payroll_periods_finalized` RPC call (#196).
+ *
+ * Returns a `Map` keyed by `startsOn` (salon-local `YYYY-MM-DD`). A period the
+ * RPC doesn't report (no matching `pay_periods` row) is simply absent from the
+ * map — callers treat a miss as `false`, matching branch (a) of the per-period
+ * helper. Passing an empty list short-circuits with no query.
+ */
+export async function payPeriodsFinalizedByStartsOn(
+  supabase: AnySupabase,
+  startsOnList: readonly string[]
+): Promise<Map<string, boolean>> {
+  const result = new Map<string, boolean>();
+  if (startsOnList.length === 0) return result;
+
+  const { data, error } = await supabase.rpc("payroll_periods_finalized", {
+    p_starts_on: [...startsOnList],
+  });
+  if (error) throw error;
+
+  const rows = (data ?? []) as ReadonlyArray<{ starts_on: string; finalized: boolean }>;
+  for (const row of rows) result.set(row.starts_on, row.finalized);
+  return result;
+}
