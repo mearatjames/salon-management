@@ -18,7 +18,7 @@
 
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
@@ -67,9 +67,57 @@ function dollarsToCents(value: string): number {
   return Math.round(n * 100);
 }
 
+// Phone detection + on-screen-keyboard awareness via the VisualViewport API.
+//
+// Why: on iOS the soft keyboard overlays the bottom of the *layout* viewport
+// without shrinking it, so a `position: fixed; bottom: 0` sheet — and the
+// "Issue refund" button pinned inside it — sits *behind* the keyboard
+// (invisible until the user pinch-zooms out). We read `visualViewport` to
+//   - `isPhone`: switch the sheet to a bottom sheet at the ≤640px breakpoint,
+//   - `keyboardInset`: how tall the keyboard is, so we can lift the sheet by
+//     that amount and keep its bottom edge just above the keyboard,
+//   - `visualHeight`: the area above the keyboard, so a tall payment list
+//     caps its height there and scrolls internally instead of overflowing.
+function usePhoneKeyboardSheet(): {
+  isPhone: boolean;
+  keyboardInset: number;
+  visualHeight: number | null;
+} {
+  const [isPhone, setIsPhone] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  const [visualHeight, setVisualHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    const mql = window.matchMedia("(max-width: 640px)");
+    const syncPhone = () => setIsPhone(mql.matches);
+    syncPhone();
+    mql.addEventListener("change", syncPhone);
+
+    const vv = window.visualViewport;
+    const syncViewport = () => {
+      if (!vv) return;
+      // Keyboard height = layout viewport − visual viewport (clamped ≥ 0).
+      setKeyboardInset(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
+      setVisualHeight(vv.height);
+    };
+    syncViewport();
+    vv?.addEventListener("resize", syncViewport);
+    vv?.addEventListener("scroll", syncViewport);
+
+    return () => {
+      mql.removeEventListener("change", syncPhone);
+      vv?.removeEventListener("resize", syncViewport);
+      vv?.removeEventListener("scroll", syncViewport);
+    };
+  }, []);
+
+  return { isPhone, keyboardInset, visualHeight };
+}
+
 export function RefundCompositionSheet({ open, ticket, onClose }: RefundCompositionSheetProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const { isPhone, keyboardInset, visualHeight } = usePhoneKeyboardSheet();
 
   // Per-payment input strings, keyed by payment id. Blank = no refund on
   // that line.
@@ -148,8 +196,20 @@ export function RefundCompositionSheet({ open, ticket, onClose }: RefundComposit
       }}
     >
       <SheetContent
-        side="right"
-        className="rounded-l-2xl sm:max-w-md"
+        side={isPhone ? "bottom" : "right"}
+        className={isPhone ? "rounded-t-2xl max-h-[90dvh]" : "rounded-l-2xl sm:max-w-md"}
+        // On a phone, lift the bottom sheet above the on-screen keyboard
+        // (`bottom`) and cap its height to the area above it (`maxHeight`) so
+        // the action button always clears the keyboard and a tall payment list
+        // scrolls internally rather than disappearing behind it.
+        style={
+          isPhone
+            ? {
+                bottom: keyboardInset,
+                maxHeight: visualHeight ? visualHeight - 16 : undefined,
+              }
+            : undefined
+        }
         data-slot="refund-composition-sheet"
       >
         <SheetHeader>
@@ -160,7 +220,7 @@ export function RefundCompositionSheet({ open, ticket, onClose }: RefundComposit
           </SheetDescription>
         </SheetHeader>
 
-        <div className="flex flex-col gap-3 overflow-y-auto px-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4">
           {ticket.payments.length === 0 ? (
             <p className="text-sm text-muted-foreground">This sale has no refundable payments.</p>
           ) : (
