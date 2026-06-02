@@ -13,6 +13,7 @@ import { ReportEmptyState } from "@/components/lacquer/report/report-empty-state
 import { ReportPeriodControls } from "@/components/lacquer/report/report-period-controls";
 import { ReportSummary } from "@/components/lacquer/report/report-summary";
 import { ReportView } from "@/components/lacquer/report/report-view.client";
+import { PendingContent, PendingNavProvider } from "@/components/lacquer/pending-nav.client";
 
 // Every navigation re-queries Supabase — the page browses live historical
 // reporting periods, so no static caching. Mirrors `transactions/page.tsx`.
@@ -61,16 +62,24 @@ export default async function ReportPage({
         <ReportActions report={report} window={window} />
       </div>
 
-      <ReportPeriodControls window={window} />
+      {/* The period toggle + range stepper drive `?period=&offset=` soft
+          navigations; `PendingNavProvider` wraps the click in a transition and
+          `PendingContent` dims the data region while the re-fetch runs, since
+          `loading.tsx` does not re-fire on a param-only soft nav (issue #197). */}
+      <PendingNavProvider>
+        <ReportPeriodControls window={window} />
 
-      {report.isEmpty ? (
-        <ReportEmptyState />
-      ) : (
-        <>
-          <ReportSummary totals={report.totals} />
-          <ReportView report={report} />
-        </>
-      )}
+        <PendingContent>
+          {report.isEmpty ? (
+            <ReportEmptyState />
+          ) : (
+            <>
+              <ReportSummary totals={report.totals} />
+              <ReportView report={report} />
+            </>
+          )}
+        </PendingContent>
+      </PendingNavProvider>
     </div>
   );
 }
