@@ -1439,34 +1439,12 @@
   border-color: var(--border);
 }
 
-.onb-row-menu {
-  min-width: 220px;
-  padding: var(--space-1);
-}
-
-.onb-row-menu [data-slot="dropdown-menu-item"] {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-2);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  color: var(--foreground);
-  cursor: pointer;
-}
-
-.onb-row-menu [data-slot="dropdown-menu-item"] svg {
-  color: var(--muted-foreground);
-  flex-shrink: 0;
-}
-
-.onb-row-menu [data-slot="dropdown-menu-item"][data-destructive="true"] {
-  color: var(--destructive);
-}
-
-.onb-row-menu [data-slot="dropdown-menu-item"][data-destructive="true"] svg {
-  color: var(--destructive);
-}
+/* Item layout (flex, gap, padding, radius, type, muted icons) and the
+   destructive treatment now come straight from the shadcn DropdownMenu
+   primitive, which is aligned to design-system/preview/dropdown-menu.html.
+   Destructive items use the base `variant="destructive"` prop instead of a
+   local `data-destructive` override. Only the genuinely custom pieces below
+   (kebab trigger, self-line, form-bound submit button) remain here. */
 
 .onb-row-menu-self {
   padding: var(--space-2) var(--space-2);
