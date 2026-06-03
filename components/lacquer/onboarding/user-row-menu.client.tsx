@@ -144,7 +144,7 @@ function ActiveMenu({ target, isLastOwner }: { target: UserRowMenuTarget; isLast
           ) : (
             <DropdownMenuItem
               data-slot="user-row-menu-item-offboard"
-              data-destructive="true"
+              variant="destructive"
               onSelect={(e) => {
                 e.preventDefault();
                 setOffboardOpen(true);
@@ -239,7 +239,7 @@ function OffboardedMenu({
 
           <DropdownMenuItem
             data-slot="user-row-menu-item-remove"
-            data-destructive="true"
+            variant="destructive"
             onSelect={(e) => {
               e.preventDefault();
               setRemoveOpen(true);
@@ -382,7 +382,7 @@ function PendingMenu({ target }: { target: UserRowMenuTarget }) {
           <DropdownMenuItem
             asChild
             data-slot="user-row-menu-item-cancel"
-            data-destructive="true"
+            variant="destructive"
             onSelect={(e) => {
               // Issue #125: single-submission path — see Active variant.
               e.preventDefault();

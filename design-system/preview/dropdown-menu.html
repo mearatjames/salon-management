@@ -1,0 +1,367 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="_card.css">
+<style>
+  body { padding: 24px; }
+
+  .stage { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+
+  .pane {
+    position: relative;
+    width: 458px;
+    min-height: 520px;
+    padding: 22px 24px 28px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--background);
+    color: var(--foreground);
+  }
+  .pane-label {
+    font-size: 11px; font-family: var(--font-mono);
+    text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted-foreground); margin-bottom: 20px;
+  }
+
+  .pane-top { display: flex; gap: 36px; align-items: flex-start; }
+  .col { display: flex; flex-direction: column; }
+  .col > .lbl {
+    font-size: 10px; font-family: var(--font-mono);
+    text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--muted-foreground); margin-bottom: 9px;
+  }
+  .field-label { font-size: var(--text-xs); font-weight: 500; margin-bottom: 6px; display: block; }
+
+  /* ── Dropdown wrapper ── */
+  .dd { position: relative; display: inline-block; }
+
+  /* ── Triggers ── */
+  .dd-trigger {
+    display: inline-flex; align-items: center; gap: 6px;
+    height: 32px; padding: 0 10px 0 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--secondary); color: var(--secondary-foreground);
+    font-family: var(--font-sans); font-size: var(--text-sm); font-weight: 500;
+    cursor: pointer; white-space: nowrap; outline: none;
+    transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+  }
+  .dd-trigger:hover { background: var(--accent); }
+  .dd-trigger:focus-visible { border-color: var(--ring); box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 22%, transparent); }
+  .dd-trigger .chev { width: 14px; height: 14px; color: var(--muted-foreground); transition: transform var(--duration-base) var(--ease-out); }
+  .dd[data-open] .dd-trigger .chev { transform: rotate(180deg); }
+
+  /* select-style trigger */
+  .dd-trigger.select {
+    height: 36px; width: 220px; padding: 0 10px 0 12px;
+    justify-content: space-between;
+    background: var(--card); border-color: var(--input); font-weight: 400;
+  }
+  .dd-trigger.select .val { color: var(--foreground); }
+  .dd-trigger.select.placeholder .val { color: var(--muted-foreground); }
+
+  /* ── Menu surface ── */
+  .menu {
+    position: absolute; z-index: 20;
+    min-width: 224px; padding: 4px;
+    background: var(--popover); color: var(--popover-foreground);
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    font-size: var(--text-sm);
+    opacity: 0; visibility: hidden;
+    transform: translateY(-4px) scale(0.98); transform-origin: top left;
+    transition: opacity var(--duration-base) var(--ease-out), transform var(--duration-base) var(--ease-out);
+  }
+  .menu.open { opacity: 1; visibility: visible; transform: none; }
+
+  /* top menu placement */
+  .dd > .menu { top: calc(100% + 6px); left: 0; }
+  .dd-trigger.select + .menu { width: 220px; min-width: 0; }
+
+  /* ── Menu items ── */
+  .menu-item {
+    position: relative;
+    display: flex; align-items: center; gap: 9px;
+    padding: 6px 8px; border-radius: var(--radius-xs);
+    color: var(--popover-foreground); cursor: pointer; user-select: none;
+    line-height: 1.3;
+  }
+  .menu-item:hover, .menu-item.hl { background: var(--accent); }
+  .menu-item .ico {
+    width: 15px; height: 15px; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--muted-foreground);
+  }
+  .menu-item .ico svg { width: 15px; height: 15px; }
+  .menu-item .txt { flex: 1; }
+  .menu-item .kbd {
+    margin-left: auto; padding-left: 12px;
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--muted-foreground); letter-spacing: 0.02em;
+  }
+
+  .menu-item.disabled { color: var(--muted-foreground); cursor: not-allowed; pointer-events: none; opacity: 0.55; }
+  .menu-item.disabled .ico { opacity: 0.6; }
+
+  .menu-item.danger { color: var(--destructive); }
+  .menu-item.danger .ico { color: var(--destructive); }
+  .menu-item.danger:hover, .menu-item.danger.hl { background: color-mix(in oklch, var(--destructive) 12%, transparent); }
+
+  /* indicator slot for checkbox / radio */
+  .menu-item .mark { width: 15px; height: 15px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; color: var(--primary); }
+  .menu-item .mark svg { width: 14px; height: 14px; opacity: 0; transform: scale(0.8); transition: opacity var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out); }
+  .menu-item[aria-checked="true"] .mark svg { opacity: 1; transform: none; }
+
+  /* chevron for submenu */
+  .menu-item.has-submenu > .submenu-chev { margin-left: auto; width: 14px; height: 14px; color: var(--muted-foreground); }
+
+  /* separators & group labels inside menus */
+  .menu-sep { height: 1px; background: var(--border); margin: 4px -1px; }
+  .menu-cap {
+    font-size: 10px; font-family: var(--font-mono);
+    text-transform: uppercase; letter-spacing: 0.07em;
+    color: var(--muted-foreground); padding: 7px 8px 3px;
+  }
+
+  /* ── Submenu flyout ── */
+  .submenu { top: -5px; left: calc(100% + 5px); min-width: 184px; transform-origin: top left; }
+  .flip .submenu { left: auto; right: calc(100% + 5px); transform-origin: top right; }
+
+  /* select option check sits on the left mark slot */
+  .menu-item.opt[aria-checked="true"] { color: var(--foreground); }
+</style>
+</head>
+<body>
+  <div class="stage" id="stage"></div>
+
+  <script>
+  /* ───────────────────────── icons (Lucide-style) ───────────────────────── */
+  const I = {
+    calPlus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4M12 13v5M9.5 15.5h5"/></svg>',
+    rotate:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9"/><path d="M3 4v5h5"/></svg>',
+    userChk: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M16 11l2 2 4-4"/></svg>',
+    move:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-4 4 4 4M16 7l4 4-4 4M4 11h16"/></svg>',
+    download:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>',
+    trash:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M6 6l1 14a2 2 0 002 2h6a2 2 0 002-2l1-14"/></svg>',
+    check:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+    dot:     '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><circle cx="12" cy="12" r="4.5"/></svg>',
+    chevR:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+    chevD:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>',
+    pin:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="10" r="3"/><path d="M12 21s7-6 7-11a7 7 0 10-14 0c0 5 7 11 7 11z"/></svg>',
+  };
+
+  const avatar = (initials) => `<span class="ico" style="background:var(--muted);border-radius:999px;font-size:9px;font-weight:600;color:var(--muted-foreground)">${initials}</span>`;
+
+  /* ───────────────────────── markup builders ───────────────────────── */
+  function actionMenu() {
+    return `
+    <div class="dd" data-dd data-open>
+      <button class="dd-trigger" type="button">
+        Manage <span class="chev">${I.chevD}</span>
+      </button>
+      <div class="menu open" role="menu">
+        <div class="menu-cap">Appointment</div>
+        <div class="menu-item" role="menuitem" data-close><span class="ico">${I.calPlus}</span><span class="txt">New booking</span><span class="kbd">⌘N</span></div>
+        <div class="menu-item" role="menuitem" data-close><span class="ico">${I.rotate}</span><span class="txt">Reschedule</span><span class="kbd">R</span></div>
+        <div class="menu-item" role="menuitem" data-close><span class="ico">${I.userChk}</span><span class="txt">Check in</span></div>
+
+        <div class="menu-sep"></div>
+        <div class="menu-cap">Display</div>
+        <div class="menu-item" role="menuitemcheckbox" aria-checked="false" data-check><span class="mark">${I.check}</span><span class="txt">Show cancelled</span></div>
+        <div class="menu-item" role="menuitemcheckbox" aria-checked="true" data-check><span class="mark">${I.check}</span><span class="txt">Highlight new clients</span></div>
+
+        <div class="menu-sep"></div>
+        <div class="menu-item has-submenu" role="menuitem" data-submenu>
+          <span class="ico">${I.move}</span><span class="txt">Move to tech</span><span class="submenu-chev">${I.chevR}</span>
+          <div class="menu submenu" role="menu">
+            <div class="menu-item" role="menuitem" data-close><span class="ico">${avatar('MP')}</span><span class="txt">Maya Patel</span></div>
+            <div class="menu-item" role="menuitem" data-close><span class="ico">${avatar('PS')}</span><span class="txt">Priya Sharma</span></div>
+            <div class="menu-item" role="menuitem" data-close><span class="ico">${avatar('JL')}</span><span class="txt">Jordan Lee</span></div>
+            <div class="menu-sep"></div>
+            <div class="menu-item" role="menuitem" data-close><span class="ico">${I.pin}</span><span class="txt">Any available</span></div>
+          </div>
+        </div>
+
+        <div class="menu-sep"></div>
+        <div class="menu-cap">Calendar view</div>
+        <div class="menu-item" role="menuitemradio" aria-checked="false" data-radio="view"><span class="mark">${I.dot}</span><span class="txt">Day</span></div>
+        <div class="menu-item" role="menuitemradio" aria-checked="true"  data-radio="view"><span class="mark">${I.dot}</span><span class="txt">Week</span></div>
+        <div class="menu-item" role="menuitemradio" aria-checked="false" data-radio="view"><span class="mark">${I.dot}</span><span class="txt">Month</span></div>
+
+        <div class="menu-sep"></div>
+        <div class="menu-item disabled" role="menuitem" aria-disabled="true"><span class="ico">${I.download}</span><span class="txt">Export — no permission</span></div>
+        <div class="menu-item danger" role="menuitem" data-close><span class="ico">${I.trash}</span><span class="txt">Cancel booking</span><span class="kbd">⌫</span></div>
+      </div>
+    </div>`;
+  }
+
+  function selectMenu() {
+    const opts = ['Classic manicure', 'Gel polish', 'Russian manicure', 'Pedicure', 'Dip powder'];
+    const sel = 'Gel polish';
+    return `
+    <div class="dd" data-dd data-select>
+      <button class="dd-trigger select" type="button">
+        <span class="val">${sel}</span><span class="chev">${I.chevD}</span>
+      </button>
+      <div class="menu" role="listbox">
+        ${opts.map(o => `<div class="menu-item opt" role="option" aria-checked="${o === sel ? 'true' : 'false'}" data-opt><span class="mark">${I.check}</span><span class="txt">${o}</span></div>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  function pane(label, dark, flip) {
+    return `
+    <div class="pane ${dark ? 'dark' : ''} ${flip ? 'flip' : ''}">
+      <div class="pane-label">${label}</div>
+      <div class="pane-top">
+        <div class="col">
+          <div class="lbl">Action menu</div>
+          ${actionMenu()}
+        </div>
+        <div class="col">
+          <div class="lbl">Select</div>
+          <label class="field-label">Service</label>
+          ${selectMenu()}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  document.getElementById('stage').innerHTML = pane('Light', false, false) + pane('Dark', true, false);
+
+  /* ───────────────────────── behavior ───────────────────────── */
+  function items(menu) {
+    return [...menu.children].filter(el =>
+      el.classList.contains('menu-item') && !el.classList.contains('disabled'));
+  }
+  function clearHl(menu) { items(menu).forEach(i => i.classList.remove('hl')); }
+  function activeMenu(dd) {
+    const sub = dd.querySelector('.menu.submenu.open');
+    return sub || dd.querySelector(':scope > .menu');
+  }
+
+  function closeSubmenus(dd) {
+    dd.querySelectorAll('.menu.submenu.open').forEach(s => {
+      s.classList.remove('open');
+      s.parentElement.removeAttribute('data-open');
+    });
+  }
+  function openDropdown(dd) {
+    document.querySelectorAll('[data-dd]').forEach(o => { if (o !== dd) closeDropdown(o); });
+    dd.setAttribute('data-open', '');
+    dd.querySelector(':scope > .menu').classList.add('open');
+  }
+  function closeDropdown(dd) {
+    dd.removeAttribute('data-open');
+    dd.querySelector(':scope > .menu').classList.remove('open');
+    closeSubmenus(dd);
+    clearHl(dd.querySelector(':scope > .menu'));
+  }
+
+  document.querySelectorAll('[data-dd]').forEach(dd => {
+    const trigger = dd.querySelector('.dd-trigger');
+    const topMenu = dd.querySelector(':scope > .menu');
+
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dd.hasAttribute('data-open') ? closeDropdown(dd) : openDropdown(dd);
+    });
+    trigger.addEventListener('keydown', (e) => {
+      if (dd.hasAttribute('data-open')) return;
+      if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openDropdown(dd);
+        const its = items(topMenu);
+        if (its[0]) { clearHl(topMenu); its[0].classList.add('hl'); }
+      }
+    });
+
+    /* submenu hover */
+    dd.querySelectorAll('.has-submenu').forEach(parent => {
+      const sub = parent.querySelector('.submenu');
+      parent.addEventListener('mouseenter', () => { closeSubmenus(dd); sub.classList.add('open'); parent.setAttribute('data-open',''); });
+      parent.addEventListener('mouseleave', () => { sub.classList.remove('open'); parent.removeAttribute('data-open'); clearHl(sub); });
+    });
+
+    /* click handling inside menus */
+    dd.addEventListener('click', (e) => {
+      const it = e.target.closest('.menu-item');
+      if (!it || it.classList.contains('disabled')) return;
+      e.stopPropagation();
+
+      if (it.hasAttribute('data-submenu')) {
+        const sub = it.querySelector('.submenu');
+        const isOpen = sub.classList.contains('open');
+        closeSubmenus(dd);
+        if (!isOpen) { sub.classList.add('open'); it.setAttribute('data-open',''); }
+        return;
+      }
+      if (it.hasAttribute('data-check')) {
+        it.setAttribute('aria-checked', it.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
+        return;
+      }
+      if (it.hasAttribute('data-radio')) {
+        const grp = it.getAttribute('data-radio');
+        dd.querySelectorAll(`[data-radio="${grp}"]`).forEach(r => r.setAttribute('aria-checked', 'false'));
+        it.setAttribute('aria-checked', 'true');
+        return;
+      }
+      if (it.hasAttribute('data-opt')) {
+        dd.querySelectorAll('[data-opt]').forEach(o => o.setAttribute('aria-checked', 'false'));
+        it.setAttribute('aria-checked', 'true');
+        dd.querySelector('.dd-trigger .val').textContent = it.querySelector('.txt').textContent;
+        closeDropdown(dd);
+        return;
+      }
+      if (it.hasAttribute('data-close')) { closeDropdown(dd); }
+    });
+
+    /* keyboard nav within open dropdown */
+    dd.addEventListener('keydown', (e) => {
+      if (!dd.hasAttribute('data-open')) return;
+      const menu = activeMenu(dd);
+      const its = items(menu);
+      const cur = its.findIndex(i => i.classList.contains('hl'));
+      if (e.key === 'ArrowDown') {
+        e.preventDefault(); clearHl(menu);
+        its[(cur + 1) % its.length]?.classList.add('hl');
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault(); clearHl(menu);
+        its[(cur - 1 + its.length) % its.length]?.classList.add('hl');
+      } else if (e.key === 'ArrowRight') {
+        const hit = its[cur];
+        if (hit?.classList.contains('has-submenu')) {
+          e.preventDefault();
+          const sub = hit.querySelector('.submenu');
+          closeSubmenus(dd); sub.classList.add('open'); hit.setAttribute('data-open','');
+          items(sub)[0]?.classList.add('hl');
+        }
+      } else if (e.key === 'ArrowLeft') {
+        const sub = dd.querySelector('.menu.submenu.open');
+        if (sub) { e.preventDefault(); clearHl(sub); sub.classList.remove('open'); sub.parentElement.removeAttribute('data-open'); sub.parentElement.classList.add('hl'); }
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        if (its[cur]) { e.preventDefault(); its[cur].click(); }
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        const sub = dd.querySelector('.menu.submenu.open');
+        if (sub) { sub.classList.remove('open'); sub.parentElement.removeAttribute('data-open'); }
+        else { closeDropdown(dd); dd.querySelector('.dd-trigger').focus(); }
+      }
+    });
+
+    /* make dd focusable target for key events */
+    dd.tabIndex = -1;
+  });
+
+  /* outside click + global esc */
+  document.addEventListener('click', () => {
+    document.querySelectorAll('[data-dd][data-open]').forEach(closeDropdown);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') document.querySelectorAll('[data-dd][data-open]').forEach(closeDropdown);
+  });
+  </script>
+</body>
+</html>

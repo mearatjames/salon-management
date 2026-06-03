@@ -1439,34 +1439,12 @@
   border-color: var(--border);
 }
 
-.onb-row-menu {
-  min-width: 220px;
-  padding: var(--space-1);
-}
-
-.onb-row-menu [data-slot="dropdown-menu-item"] {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-2);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  color: var(--foreground);
-  cursor: pointer;
-}
-
-.onb-row-menu [data-slot="dropdown-menu-item"] svg {
-  color: var(--muted-foreground);
-  flex-shrink: 0;
-}
-
-.onb-row-menu [data-slot="dropdown-menu-item"][data-destructive="true"] {
-  color: var(--destructive);
-}
-
-.onb-row-menu [data-slot="dropdown-menu-item"][data-destructive="true"] svg {
-  color: var(--destructive);
-}
+/* Item layout (flex, gap, padding, radius, type, muted icons) and the
+   destructive treatment now come straight from the shadcn DropdownMenu
+   primitive, which is aligned to design-system/preview/dropdown-menu.html.
+   Destructive items use the base `variant="destructive"` prop instead of a
+   local `data-destructive` override. Only the genuinely custom pieces below
+   (kebab trigger, self-line, form-bound submit button) remain here. */
 
 .onb-row-menu-self {
   padding: var(--space-2) var(--space-2);
@@ -1475,21 +1453,16 @@
   line-height: 1.5;
 }
 
-/* The "Send password reset" item wraps a form so the menu item submits when
-   selected. The button inside the form is invisible — clicks bubble from the
-   item's onSelect handler. */
-.onb-row-menu-form {
-  display: contents;
-}
-
+/* The "Send password reset" / Reactivate / Resend / Cancel items wrap a form
+   so the menu item submits when selected; clicks bubble from the item's
+   onSelect handler. `DropdownMenuItem asChild` composes the base menu-item
+   styles (flex, padding, radius, hover) onto the <form>, so the form MUST stay
+   a real box — making it display:contents would collapse the row to flush-left
+   with no hover highlight. The inner button becomes display:contents instead,
+   so its icon + label flow into the form's flex row and inherit the padding,
+   gap, radius, and hover from the primitive. */
 .onb-row-menu-form-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  background: transparent;
-  border: none;
-  padding: 0;
+  display: contents;
   font: inherit;
   color: inherit;
   cursor: pointer;

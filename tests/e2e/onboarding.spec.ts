@@ -1092,3 +1092,56 @@ test.describe("#120 regression: pin-less cancel + hard remove", () => {
     expect(await authUserGone(userId)).toBe(true);
   });
 });
+
+// Regression: the form-bound menu items (Send password reset / Reactivate /
+// Resend invite / Cancel invite) wrap their content in a <form> that
+// `DropdownMenuItem asChild` turns into the menuitem. The form must be the
+// real styled box; if it (or the inner button) collapses to display:contents
+// the row loses its left padding (flush-left, misaligned with plain items)
+// and its hover/focus highlight. See dropdown design-system alignment PR.
+test.describe("012: form-bound menu items render as proper menu items", () => {
+  let supabaseUp = false;
+
+  test.beforeAll(async () => {
+    supabaseUp = await supabaseIsReachable();
+    if (!supabaseUp) {
+      test.skip(true, "Supabase not reachable at 127.0.0.1:54321 — skipping.");
+    }
+  });
+
+  test.beforeEach(async ({ staffFixture }) => {
+    if (!supabaseUp) return;
+    await staffFixture.reset();
+    await deleteTangnailsTestStaff();
+  });
+
+  test("Send password reset aligns with plain items and shows a hover highlight", async ({
+    page,
+    staffFixture,
+  }) => {
+    await signInAsOwner(page, staffFixture);
+    await page.goto("/settings/onboarding");
+    await page.waitForURL(/\/settings\/onboarding(\?|$)/);
+    await openActiveRowMenu(page, staffFixture.manager.displayName);
+
+    const content = page.locator("[data-slot='user-row-menu-content']");
+    const plainIcon = content.locator("[data-slot='user-row-menu-item-reset-pin'] svg").first();
+    const formIcon = content.locator("[data-slot='user-row-menu-item-send-reset'] svg").first();
+
+    const plainBox = await plainIcon.boundingBox();
+    const formBox = await formIcon.boundingBox();
+    expect(plainBox, "plain item icon should be visible").not.toBeNull();
+    expect(formBox, "form-bound item icon should be visible").not.toBeNull();
+    // Both leading icons start at the same x → the form-bound row carries the
+    // same left padding as a plain row (not flush-left).
+    expect(Math.abs(formBox!.x - plainBox!.x)).toBeLessThan(1.5);
+
+    // Hovering the form-bound menuitem paints the accent highlight, proving the
+    // styled element is a real box (not display:contents).
+    const formItem = content.locator("[data-slot='user-row-menu-item-send-reset']");
+    await formItem.hover();
+    await expect
+      .poll(() => formItem.evaluate((el) => getComputedStyle(el).backgroundColor))
+      .not.toBe("rgba(0, 0, 0, 0)");
+  });
+});
