@@ -23,6 +23,7 @@
 // reads it from the locked row, not from the client view.
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 
 import { Plus, Printer } from "lucide-react";
@@ -76,23 +77,59 @@ import {
   TicketHasUnpricedItemsError,
   TicketNotOpenError,
 } from "@/app/(studio)/checkout/_errors";
-import { GanNumpadSheet } from "@/components/lacquer/checkout/gan-numpad-sheet";
-import { GiftCardBalanceSheet } from "@/components/lacquer/checkout/gift-card-balance-sheet";
 import { CardWaiting } from "@/components/lacquer/checkout/card-waiting";
-import { MethodPickerPopover } from "@/components/lacquer/checkout/method-picker-popover";
 import { SplitCartFooter } from "@/components/lacquer/checkout/split-cart-footer";
 import type { PaymentLegRowView } from "@/components/lacquer/checkout/payment-leg-row";
 import { subscribePaymentChanges } from "@/lib/realtime/payments";
 
-import { ReceiptSheet, type ReceiptSnapshot } from "@/components/lacquer/checkout/receipt-sheet";
+import type { ReceiptSnapshot } from "@/components/lacquer/checkout/receipt-sheet";
 import {
   CartRowWithTech,
   type CartLineView,
 } from "@/components/lacquer/checkout/cart-row-with-tech";
-import { DiscountSheet } from "@/components/lacquer/checkout/discount-sheet";
-import { EmailReceiptDialog } from "@/components/lacquer/checkout/email-receipt-dialog";
 import { PaymentTiles, type PaymentMethod } from "@/components/lacquer/checkout/payment-tiles";
-import { PriceSheet } from "@/components/lacquer/checkout/price-sheet";
+
+// Interaction-only overlays (issue #204). Each sheet/dialog below is mounted
+// only behind a `{cond ? <Sheet/> : null}` guard — never part of first paint —
+// so we lazy-load them with `next/dynamic` to keep their code out of the
+// checkout route's initial JS. `ssr: false` because these are client-only
+// (several read `VisualViewport`/keyboard state) and never server-rendered;
+// `loading: () => null` avoids a layout flash while the chunk streams in.
+const DiscountSheet = dynamic(
+  () => import("@/components/lacquer/checkout/discount-sheet").then((m) => m.DiscountSheet),
+  { ssr: false, loading: () => null }
+);
+const PriceSheet = dynamic(
+  () => import("@/components/lacquer/checkout/price-sheet").then((m) => m.PriceSheet),
+  { ssr: false, loading: () => null }
+);
+const GiftCardBalanceSheet = dynamic(
+  () =>
+    import("@/components/lacquer/checkout/gift-card-balance-sheet").then(
+      (m) => m.GiftCardBalanceSheet
+    ),
+  { ssr: false, loading: () => null }
+);
+const GanNumpadSheet = dynamic(
+  () => import("@/components/lacquer/checkout/gan-numpad-sheet").then((m) => m.GanNumpadSheet),
+  { ssr: false, loading: () => null }
+);
+const EmailReceiptDialog = dynamic(
+  () =>
+    import("@/components/lacquer/checkout/email-receipt-dialog").then((m) => m.EmailReceiptDialog),
+  { ssr: false, loading: () => null }
+);
+const MethodPickerPopover = dynamic(
+  () =>
+    import("@/components/lacquer/checkout/method-picker-popover").then(
+      (m) => m.MethodPickerPopover
+    ),
+  { ssr: false, loading: () => null }
+);
+const ReceiptSheet = dynamic(
+  () => import("@/components/lacquer/checkout/receipt-sheet").then((m) => m.ReceiptSheet),
+  { ssr: false, loading: () => null }
+);
 import { ServiceTiles, type ServiceTileService } from "@/components/lacquer/checkout/service-tiles";
 import { TechAvatarRow } from "@/components/lacquer/checkout/tech-avatar-row";
 import { Totals } from "@/components/lacquer/checkout/totals";
