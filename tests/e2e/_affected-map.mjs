@@ -211,7 +211,13 @@ export const AFFECTED_MAP = {
     "tests/e2e/void-sale.spec.ts",
     "tests/e2e/refund-ticket.spec.ts",
   ],
-  "components/lacquer/transactions/**": ["tests/e2e/transactions.spec.ts"],
+  // The receipt drawer + RefundEntry live here and are now the SOLE refund
+  // entry point (the dashboard feed + EOD controls were removed), so a change
+  // must exercise the refund spec too.
+  "components/lacquer/transactions/**": [
+    "tests/e2e/transactions.spec.ts",
+    "tests/e2e/refund-ticket.spec.ts",
+  ],
   "lib/transactions/**": ["tests/e2e/transactions.spec.ts"],
 
   // Report page (feature 046). Feature 053 (R1) decoupled revenue from

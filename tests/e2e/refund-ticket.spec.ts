@@ -1,21 +1,23 @@
 // E2E for `refundTicket` (feature 052 — Privileged Action Overrides, US2).
 //
-// Quickstart.md / US2 acceptance scenarios:
-//   1. Owner opens a past paid sale from the dashboard feed → the receipt
-//      drawer → "Refund" → the composition sheet, refunds part of a payment →
-//      ticket flips to `partially_refunded`, a refund row of the exact amount
-//      appears, and the payment's remaining = original − refunded.
+// The refund flow's sole entry point is the Transactions receipt drawer: an
+// owner/manager clicks a ledger row → the drawer opens → the "Refund" footer
+// action opens the shared composition sheet. (The dashboard feed + End-of-Day
+// cash list controls were removed; the receipt drawer is the one surface.)
+//
+// US2 acceptance scenarios:
+//   1. Owner refunds part of a payment → ticket flips to `partially_refunded`,
+//      a refund row of the exact amount appears, and the payment's remaining =
+//      original − refunded.
 //   2. A second refund for the rest → ticket flips to `refunded`.
-//   3. An over-remainder amount is server-refused (`refund_exceeds_remaining`
-//      → RefundExceedsRemainingError); the ticket is unchanged.
-//   4. A zero-total submission is blocked (the sheet disables submit; the
+//   3. An over-remainder amount is blocked (the sheet disables submit; the
 //      server is the backstop).
+//   4. A zero-total submission is blocked the same way.
 //   5. Exactly one `payment.refund_issued` audit row per action, with
 //      `resulting_status` matching each step.
-//   6. A technician sees no "Refund" affordance and a direct `refundTicket`
-//      call is refused (`PermissionDeniedError`).
-//   7. The same refund flow opened from the End-of-Day cash list behaves
-//      identically.
+//   6. The technician role gate (no access to the refund surface) is covered
+//      by `transactions.spec.ts` — "technician … /transactions redirects to
+//      /dashboard" — plus the server action's own role re-check.
 //
 // Parallel-safety in the `main` project: every scenario seeds DEDICATED
 // tickets under this worker's UUID prefix (`74<wHex>…`) — no seeded-ticket
@@ -23,6 +25,7 @@
 // trio via `getAuditLogRowsSince(cursor, action, [..ids])`.
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Page } from "@playwright/test";
 
 import { expect, test } from "./_fixtures";
 import type { StaffFixture } from "./_fixtures";
@@ -80,7 +83,8 @@ function todayInstant(): Date {
   // Before salon-local noon (e.g. just after midnight): anchor to the start
   // of the salon day. `now - 30min` would cross back to YESTERDAY right after
   // midnight, stamping the ticket on the prior salon day — which drops it from
-  // today's feed/EOD list and breaks the refund-entry assertions.
+  // the current period's Transactions ledger (and the dashboard feed badge
+  // check) and breaks the refund-entry assertions.
   return utcFromLaWall(t.year, t.month, t.day, 0);
 }
 
@@ -215,9 +219,25 @@ function refundInput(paymentId: string): string {
   return `[data-slot="refund-amount-input"][data-payment-id="${paymentId}"]`;
 }
 
+// Open the shared refund composition sheet through its sole entry point: the
+// Transactions receipt drawer. Clicking the ledger row opens the drawer; the
+// drawer's footer "Refund" action opens the sheet. Works at both desktop and
+// phone widths — the ledger restacks into cards via CSS but the `tr[data-tx-id]`
+// element and its row-click handler stay in the DOM.
+async function openRefundSheetViaDrawer(page: Page, tk: string): Promise<void> {
+  await page.goto("/transactions");
+  const row = page.locator(`tr[data-tx-id="${tk}"]`);
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await row.click();
+  const drawer = page.locator(`[data-slot="receipt-drawer"][data-tx-id="${tk}"]`);
+  await expect(drawer).toBeVisible();
+  await drawer.locator(REFUND_BTN).click();
+  await expect(page.locator(REFUND_SHEET)).toBeVisible();
+}
+
 // ─── US2: owner refunds a past sale, partial then full ───────────────────────
 
-test.describe("US2: owner refunds a past sale from the dashboard feed", () => {
+test.describe("US2: owner refunds a past sale from the receipt drawer", () => {
   test.use({
     storageState: async ({ authState }, provide) => {
       await provide(authState.owner);
@@ -240,18 +260,13 @@ test.describe("US2: owner refunds a past sale from the dashboard feed", () => {
       amountCents: 6000,
     });
 
-    // ── Scenario 1: partial refund (2000 of 6000) from the feed → drawer →
-    //    sheet → partially_refunded.
+    // ── Scenario 1: partial refund (2000 of 6000) via the drawer → sheet →
+    //    partially_refunded.
     const cursor1 = newAuditCursor();
-    await page.goto("/dashboard");
+    await openRefundSheetViaDrawer(page, tk);
 
-    const row = page.locator(`.tx-feed-row[data-tx-id="${tk}"]`);
-    await expect(row).toBeVisible({ timeout: 15_000 });
-    await row.locator(REFUND_BTN).click();
-
-    // The composition sheet opens listing the cash payment with a per-payment
-    // amount input.
-    await expect(page.locator(REFUND_SHEET)).toBeVisible();
+    // The composition sheet lists the cash payment with a per-payment amount
+    // input.
     const input = page.locator(refundInput(paymentId));
     await expect(input).toBeVisible();
     await input.fill("20.00");
@@ -287,16 +302,11 @@ test.describe("US2: owner refunds a past sale from the dashboard feed", () => {
       "partially_refunded"
     );
 
-    // ── Scenario 2: refund the remaining 4000 → refunded. The second refund
-    //    is opened from the End-of-Day cash list — a different entry point to
-    //    the same shared sheet (the EOD list keys on payment `processed_at`,
-    //    not ticket status).
+    // ── Scenario 2: refund the remaining 4000 → refunded. Re-opened from the
+    //    drawer; a partially-refunded sale keeps the affordance so the
+    //    remainder can be refunded.
     const cursor2 = newAuditCursor();
-    await page.goto("/end-of-day");
-    const row2 = page.locator(`[data-slot="eod-refund-row"][data-tx-id="${tk}"]`);
-    await expect(row2).toBeVisible({ timeout: 15_000 });
-    await row2.locator(REFUND_BTN).click();
-    await expect(page.locator(REFUND_SHEET)).toBeVisible();
+    await openRefundSheetViaDrawer(page, tk);
 
     const input2 = page.locator(refundInput(paymentId));
     // Remaining is now 40.00; fill the full remainder.
@@ -340,11 +350,7 @@ test.describe("US2: owner refunds a past sale from the dashboard feed", () => {
     });
     const cursor = newAuditCursor();
 
-    await page.goto("/dashboard");
-    const row = page.locator(`.tx-feed-row[data-tx-id="${tk}"]`);
-    await expect(row).toBeVisible({ timeout: 15_000 });
-    await row.locator(REFUND_BTN).click();
-    await expect(page.locator(REFUND_SHEET)).toBeVisible();
+    await openRefundSheetViaDrawer(page, tk);
 
     const input = page.locator(refundInput(paymentId));
 
@@ -365,41 +371,6 @@ test.describe("US2: owner refunds a past sale from the dashboard feed", () => {
       staffFixture.tech.id,
     ]);
     expect(audit).toEqual([]);
-  });
-
-  test("refund opened from the End-of-Day cash list behaves identically", async ({
-    page,
-    staffFixture,
-  }) => {
-    const { tk, paymentId } = await seedPaidCashTicket({
-      fixture: staffFixture,
-      tag: "f1",
-      amountCents: 6000,
-    });
-    const cursor = newAuditCursor();
-
-    await page.goto("/end-of-day");
-    const row = page.locator(`[data-slot="eod-refund-row"][data-tx-id="${tk}"]`);
-    await expect(row).toBeVisible({ timeout: 15_000 });
-    await row.locator(REFUND_BTN).click();
-    await expect(page.locator(REFUND_SHEET)).toBeVisible();
-
-    const input = page.locator(refundInput(paymentId));
-    await input.fill("60.00");
-    await page.locator(REFUND_SUBMIT).click();
-
-    await expect.poll(() => ticketStatus(tk), { timeout: 10_000 }).toBe("refunded");
-    const refunds = await refundRows(tk);
-    expect(refunds).toHaveLength(1);
-    expect(refunds[0].amount_cents).toBe(6000);
-
-    const audit = await getAuditLogRowsSince(cursor, "payment.refund_issued", [
-      staffFixture.owner.id,
-      staffFixture.manager.id,
-      staffFixture.tech.id,
-    ]);
-    expect(audit).toHaveLength(1);
-    expect((audit[0].payload as { resulting_status?: string }).resulting_status).toBe("refunded");
   });
 });
 
@@ -464,12 +435,8 @@ test.describe("053-US1: a refunded sale preserves the tech's commission on /payr
       amountCents: 6000,
     });
 
-    // Refund $20 of the $60 sale through the dashboard → drawer → sheet.
-    await page.goto("/dashboard");
-    const row = page.locator(`.tx-feed-row[data-tx-id="${tk}"]`);
-    await expect(row).toBeVisible({ timeout: 15_000 });
-    await row.locator(REFUND_BTN).click();
-    await expect(page.locator(REFUND_SHEET)).toBeVisible();
+    // Refund $20 of the $60 sale through the receipt drawer → sheet.
+    await openRefundSheetViaDrawer(page, tk);
     const input = page.locator(refundInput(paymentId));
     await input.fill("20.00");
     await page.locator(REFUND_SUBMIT).click();
@@ -528,10 +495,7 @@ test.describe("mobile: refund surface renders as a content-height bottom sheet",
       amountCents: 6000,
     });
 
-    await page.goto("/dashboard");
-    const row = page.locator(`.tx-feed-row[data-tx-id="${tk}"]`);
-    await expect(row).toBeVisible({ timeout: 15_000 });
-    await row.locator(REFUND_BTN).click();
+    await openRefundSheetViaDrawer(page, tk);
 
     const sheet = page.locator(REFUND_SHEET);
     await expect(sheet).toBeVisible();
@@ -558,37 +522,9 @@ test.describe("mobile: refund surface renders as a content-height bottom sheet",
   });
 });
 
-// ─── US2: technician sees no Refund affordance (role gate) ───────────────────
-
-test.describe("US2: technician sees no Refund affordance", () => {
-  test.use({
-    storageState: async ({ authState }, provide) => {
-      await provide(authState.tech);
-    },
-  });
-
-  test.afterEach(async ({ staffFixture }) => {
-    if (!supabaseUp) return;
-    await clearTicket(staffFixture, "f1");
-    await staffFixture.reset();
-  });
-
-  test("technician viewing the feed sees no Refund affordance", async ({ page, staffFixture }) => {
-    const { tk } = await seedPaidCashTicket({
-      fixture: staffFixture,
-      tag: "f1",
-      amountCents: 6000,
-    });
-
-    await page.goto("/dashboard");
-    const row = page.locator(`.tx-feed-row[data-tx-id="${tk}"]`);
-    await expect(row).toBeVisible({ timeout: 15_000 });
-    await expect(row.locator(REFUND_BTN)).toHaveCount(0);
-
-    // Defense-in-depth: a direct refundTicket invocation is server-refused.
-    // The Server Action dispatch id is brittle to forge from Playwright (see
-    // the void-sale spec's note), so the e2e asserts the integration surface
-    // — no affordance at render time + the ticket stays paid.
-    expect(await ticketStatus(tk)).toBe("paid");
-  });
-});
+// Note: the technician role gate is no longer exercised here. With the feed +
+// EOD refund controls removed, the only refund surface is the owner/manager-
+// only Transactions receipt drawer — a technician is redirected away from
+// /transactions before reaching it. That redirect is covered by
+// `transactions.spec.ts` ("technician … /transactions redirects to /dashboard")
+// and the server action's own `PermissionDeniedError` re-check is unit-tested.
