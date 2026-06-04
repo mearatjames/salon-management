@@ -15,13 +15,6 @@ import { CashRow } from "@/components/lacquer/eod/cash-row";
 export type CashListProps = {
   rows: CashRowType[];
   expectedCents: number;
-  /**
-   * Feature 052 (US2): when true (viewer is owner/manager), each payment row
-   * gets a "Refund" affordance opening the shared refund composition sheet.
-   * The End-of-Day page is already owner/manager-only, so this defaults true;
-   * threaded explicitly so the affordance has a single source of truth.
-   */
-  canRefund?: boolean;
 };
 
 const TIME_FMT = new Intl.DateTimeFormat("en-US", {
@@ -34,7 +27,7 @@ function formatTimeShort(d: Date): string {
   return TIME_FMT.format(d);
 }
 
-export function CashList({ rows, expectedCents, canRefund = false }: CashListProps) {
+export function CashList({ rows, expectedCents }: CashListProps) {
   const txCount = rows.length;
   const expected = (expectedCents / 100).toFixed(2);
   return (
@@ -60,8 +53,6 @@ export function CashList({ rows, expectedCents, canRefund = false }: CashListPro
               techs={row.techs}
               amountCents={row.amountCents}
               tipCents={row.tipCents}
-              ticketId={row.ticketId}
-              canRefund={canRefund}
             />
           ))
         )}

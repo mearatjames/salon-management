@@ -15,7 +15,9 @@ import { SecondaryActions } from "@/components/lacquer/secondary-actions";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const viewer = await requireStudioSession();
+  // Auth gate — redirects unauthenticated visitors. The dashboard is visible to
+  // every studio role, so the session value itself is no longer needed here.
+  await requireStudioSession();
   const supabase = await createSupabaseServerClient();
   const data = await loadDashboard(supabase);
 
@@ -45,11 +47,7 @@ export default async function DashboardPage() {
               <div className="muted">Quick actions</div>
               <SecondaryActions actions={data.quickActions} cols={1} />
             </div>
-            <RecentTransactionsFeed
-              rows={data.recent}
-              staff={data.staff}
-              viewerRole={viewer.staff.role}
-            />
+            <RecentTransactionsFeed rows={data.recent} staff={data.staff} />
           </div>
         </div>
       </div>

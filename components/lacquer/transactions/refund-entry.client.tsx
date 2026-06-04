@@ -1,16 +1,14 @@
-// RefundEntry — feature 052 (US2). The owner/manager "Refund" affordance
-// shared by all three refund entry points (dashboard feed, receipt drawer,
-// End-of-Day cash list). One surface, three entry points (D6).
+// RefundEntry — feature 052 (US2). The owner/manager "Refund" affordance,
+// rendered as the footer action inside the Transactions receipt drawer (the
+// sole refund entry point — the dashboard feed + End-of-Day cash list controls
+// were removed). The drawer gates rendering on `canEdit` (owner/manager within
+// an open pay period), so this component just renders the button.
 //
 // On click it loads the ticket's refundable payments + their live remaining
 // via the `getRefundableTicket` server action, then opens the
-// `RefundCompositionSheet`. Keeping the load behind the click means the
-// feed/EOD server components only have to thread a `ticketId` (+ the viewer's
-// role for the affordance gate) — they don't pre-project a full receipt model
-// per row.
-//
-// The button only renders for owner/manager (`canRefund`). The server action
-// re-checks the role (Principle II); this governs affordance visibility.
+// `RefundCompositionSheet`. Keeping the load behind the click means the drawer
+// only has to thread a `ticketId` — it doesn't pre-project a full receipt
+// model. The server action re-checks the role (Principle II).
 
 "use client";
 
@@ -24,20 +22,12 @@ import { RefundCompositionSheet } from "@/components/lacquer/transactions/refund
 export type RefundEntryProps = {
   /** The `tickets.id` to refund. */
   ticketId: string;
-  /** Resolved upstream: viewer role ∈ {owner, manager}. When false the
-   *  affordance is omitted entirely (technicians see nothing). */
-  canRefund: boolean;
-  /** Visual variant — `feed` is a compact ghost button; `drawer` is a full
-   *  footer action. Defaults to `feed`. */
-  variant?: "feed" | "drawer";
 };
 
-export function RefundEntry({ ticketId, canRefund, variant = "feed" }: RefundEntryProps) {
+export function RefundEntry({ ticketId }: RefundEntryProps) {
   const [ticket, setTicket] = useState<RefundableTicket | null>(null);
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-
-  if (!canRefund) return null;
 
   function handleOpen() {
     startTransition(async () => {
@@ -61,13 +51,11 @@ export function RefundEntry({ ticketId, canRefund, variant = "feed" }: RefundEnt
     });
   }
 
-  const className = variant === "drawer" ? "tp-d-refund-trigger" : "tx-feed-refund-trigger";
-
   return (
     <>
       <button
         type="button"
-        className={className}
+        className="tp-d-refund-trigger"
         data-slot="refund-entry-button"
         data-ticket-id={ticketId}
         disabled={pending}

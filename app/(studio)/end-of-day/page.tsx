@@ -117,7 +117,7 @@ export default async function EndOfDayPage() {
           <CashList /> instance for that sheet (the sheet copy only mounts in
           the DOM when the operator opens it on phone). */}
       <div className="eod-body">
-        <CashList rows={snapshot.rows} expectedCents={snapshot.expectedCents} canRefund />
+        <CashList rows={snapshot.rows} expectedCents={snapshot.expectedCents} />
         <div
           data-slot="eod-divider"
           style={{ width: 1, background: "var(--border)", flexShrink: 0 }}
@@ -127,9 +127,7 @@ export default async function EndOfDayPage() {
           <CashCount
             expectedCents={snapshot.expectedCents}
             txCount={snapshot.rows.length}
-            cashList={
-              <CashList rows={snapshot.rows} expectedCents={snapshot.expectedCents} canRefund />
-            }
+            cashList={<CashList rows={snapshot.rows} expectedCents={snapshot.expectedCents} />}
           />
         ) : (
           <DoneScreen

@@ -339,7 +339,7 @@ export function ReceiptDrawer({
               authority on the per-payment remainder. */}
           {canEdit && transaction.reversal !== "void" && transaction.reversal !== "refunded" ? (
             <div className="tp-d-section" data-slot="receipt-refund-section">
-              <RefundEntry ticketId={transaction.id} canRefund variant="drawer" />
+              <RefundEntry ticketId={transaction.id} />
             </div>
           ) : null}
         </div>
