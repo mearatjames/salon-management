@@ -20,7 +20,7 @@ import { useState } from "react";
 
 import { Plus } from "lucide-react";
 
-import { AddStaffWizard } from "@/components/lacquer/staff/add-staff-wizard.client";
+import { AddStaffWizard } from "@/components/lacquer/staff/add-staff-wizard.lazy";
 import type { StudioRole } from "@/app/(studio)/settings/staff/permissions";
 
 export type StaffFabProps = {
