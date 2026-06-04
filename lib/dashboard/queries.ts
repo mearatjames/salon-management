@@ -68,34 +68,71 @@ const QUICK_ACTIONS: readonly QuickAction[] = [
   },
 ];
 
-// ── querySummaryRows ──────────────────────────────────────────────────────
+// ── queryDashboardSummaries ───────────────────────────────────────────────
+//
+// The today / week / month windows all end at `now` and nest strictly
+// (today ⊂ week ⊂ month), so the month rows are a superset of the other two.
+// Rather than scan tickets/items/payments once per window (3× redundant row
+// transfer at scale), fetch once over the month window and bucket the rows in
+// memory. `summarizeRows` only aggregates over the tickets handed to it
+// (items/payments are looked up by ticket id), so feeding each bucket the full
+// month-wide items/payments yields exactly the per-window result (issue #205).
 
-function windowFor(tz: string, period: DashboardPeriod, now: Date): readonly [Date, Date] {
-  if (period === "today") return todayWindow(tz, now);
-  if (period === "week") return weekWindow(tz, now);
-  return monthWindow(tz, now);
+type SummariesByPeriod = Record<DashboardPeriod, DashboardSummary>;
+
+function emptySummaries(): SummariesByPeriod {
+  return {
+    today: summarizeRows({ tickets: [], items: [], payments: [] }, "today"),
+    week: summarizeRows({ tickets: [], items: [], payments: [] }, "week"),
+    month: summarizeRows({ tickets: [], items: [], payments: [] }, "month"),
+  };
 }
 
-export async function querySummaryRows(
+// Pure: split the month-wide rows into today / week / month summaries. A sale
+// whose `closed_at` is exactly at a window's start instant lands inside that
+// window (matching the live query's inclusive `.gte` lower bound).
+export function bucketSummaries(
+  tz: string,
+  now: Date,
+  tickets: readonly SummarizeTicket[],
+  items: readonly SummarizeItem[],
+  payments: readonly SummarizePayment[]
+): SummariesByPeriod {
+  const todayStartMs = todayWindow(tz, now)[0].getTime();
+  const weekStartMs = weekWindow(tz, now)[0].getTime();
+
+  const closedAtMs = (t: SummarizeTicket): number =>
+    t.closed_at ? new Date(t.closed_at).getTime() : Number.NaN;
+
+  const todayTickets = tickets.filter((t) => closedAtMs(t) >= todayStartMs);
+  const weekTickets = tickets.filter((t) => closedAtMs(t) >= weekStartMs);
+
+  return {
+    today: summarizeRows({ tickets: todayTickets, items, payments }, "today"),
+    week: summarizeRows({ tickets: weekTickets, items, payments }, "week"),
+    month: summarizeRows({ tickets, items, payments }, "month"),
+  };
+}
+
+export async function queryDashboardSummaries(
   supabase: AnySupabase,
   tz: string,
-  period: DashboardPeriod,
   now: Date
-): Promise<DashboardSummary> {
-  const [start, end] = windowFor(tz, period, now);
+): Promise<SummariesByPeriod> {
+  const [start] = monthWindow(tz, now);
 
   const ticketsRes = await supabase
     .from("tickets")
     .select("id, status, subtotal_cents, tax_cents, total_cents, closed_at")
     .eq("status", "paid")
     .gte("closed_at", start.toISOString())
-    .lte("closed_at", end.toISOString());
+    .lte("closed_at", now.toISOString());
 
   const tickets = ((ticketsRes as { data: SummarizeTicket[] | null }).data ??
     []) as readonly SummarizeTicket[];
 
   if (tickets.length === 0) {
-    return summarizeRows({ tickets: [], items: [], payments: [] }, period);
+    return emptySummaries();
   }
 
   const ticketIds = tickets.map((t) => t.id);
@@ -117,7 +154,7 @@ export async function querySummaryRows(
   const payments = ((paymentsRes as { data: SummarizePayment[] | null }).data ??
     []) as readonly SummarizePayment[];
 
-  return summarizeRows({ tickets, items, payments }, period);
+  return bucketSummaries(tz, now, tickets, items, payments);
 }
 
 // ── queryTodayFeed ────────────────────────────────────────────────────────
@@ -309,10 +346,8 @@ export async function loadDashboard(supabase: AnySupabase): Promise<DashboardDat
   const tz = await getSalonTimezone(supabase);
   const now = salonNow(tz);
 
-  const [todaySummary, weekSummary, monthSummary, recent, lastSale, staff] = await Promise.all([
-    querySummaryRows(supabase, tz, "today", now),
-    querySummaryRows(supabase, tz, "week", now),
-    querySummaryRows(supabase, tz, "month", now),
+  const [summaries, recent, lastSale, staff] = await Promise.all([
+    queryDashboardSummaries(supabase, tz, now),
     queryTodayFeed(supabase, tz, now),
     queryLastSaleTime(supabase, tz, now),
     queryStaffRoster(supabase),
@@ -327,11 +362,7 @@ export async function loadDashboard(supabase: AnySupabase): Promise<DashboardDat
       title: "Today at the salon",
       subtitle,
     },
-    summaries: {
-      today: todaySummary,
-      week: weekSummary,
-      month: monthSummary,
-    },
+    summaries,
     staff,
     recent,
     quickActions: QUICK_ACTIONS,
