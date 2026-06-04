@@ -69,7 +69,10 @@ export async function queryTransactions(
 
   const ticketIds = tickets.map((t) => t.id);
 
-  const [itemsRes, paymentsRes, staffRes] = await Promise.all([
+  // `items` feeds both the final projection and the dependent `services` fetch
+  // (its ids come from the line `ref_id`s). Wrap the builder in a real promise
+  // so both consumers share ONE round-trip rather than re-issuing the query.
+  const itemsPromise = Promise.resolve(
     supabase
       .from("ticket_items")
       // Feature 049 (T022): `id` + `discount_target_line_ids` are needed
@@ -77,7 +80,17 @@ export async function queryTransactions(
       .select(
         "id, ticket_id, kind, qty, name_snapshot, assigned_staff_id, unit_price_cents, ref_id, discount_target_line_ids"
       )
-      .in("ticket_id", ticketIds),
+      .in("ticket_id", ticketIds)
+  ).then(
+    (itemsRes) =>
+      ((itemsRes as { data: ProjectItemRow[] | null }).data ?? []) as readonly ProjectItemRow[]
+  );
+
+  // `services` genuinely depends on `items`, so it can't join the first batch —
+  // but chaining it off `items` lets it overlap with the `payments`/`staff`
+  // fetches instead of running as a trailing serial query tier (issue #205).
+  const [items, paymentsRes, staffRes, services] = await Promise.all([
+    itemsPromise,
     supabase
       // Feature 052: `kind` lets the projection separate original payment
       // legs from refund legs (the latter feed `refundedCents`, not the
@@ -87,27 +100,32 @@ export async function queryTransactions(
       .in("ticket_id", ticketIds)
       .eq("status", "succeeded"),
     supabase.from("staff").select("id, display_name, color_token"),
+    itemsPromise.then((rows) => fetchServiceCategories(supabase, rows)),
   ]);
 
-  const items = ((itemsRes as { data: ProjectItemRow[] | null }).data ??
-    []) as readonly ProjectItemRow[];
   const payments = ((paymentsRes as { data: ProjectPaymentRow[] | null }).data ??
     []) as readonly ProjectPaymentRow[];
   const staff = ((staffRes as { data: ProjectStaffRow[] | null }).data ??
     []) as readonly ProjectStaffRow[];
 
-  // Resolve service categories for the line items that reference a service.
+  return projectTransactions({ tz, tickets, items, payments, staff, services });
+}
+
+// Resolve service categories for the line items that reference a service.
+// Returns `[]` when no item references a service (skips the round-trip).
+async function fetchServiceCategories(
+  supabase: AnySupabase,
+  items: readonly ProjectItemRow[]
+): Promise<readonly ProjectServiceRow[]> {
   const serviceIds = Array.from(
     new Set(items.map((it) => it.ref_id).filter((id): id is string => id !== null))
   );
-  let services: readonly ProjectServiceRow[] = [];
-  if (serviceIds.length > 0) {
-    const servicesRes = await supabase.from("services").select("id, category").in("id", serviceIds);
-    services = ((servicesRes as { data: ProjectServiceRow[] | null }).data ??
-      []) as readonly ProjectServiceRow[];
+  if (serviceIds.length === 0) {
+    return [];
   }
-
-  return projectTransactions({ tz, tickets, items, payments, staff, services });
+  const servicesRes = await supabase.from("services").select("id, category").in("id", serviceIds);
+  return ((servicesRes as { data: ProjectServiceRow[] | null }).data ??
+    []) as readonly ProjectServiceRow[];
 }
 
 // ── queryPeriodCount ──────────────────────────────────────────────────────

@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { SummarizeTicket } from "@/lib/dashboard/aggregate";
 import {
+  bucketSummaries,
+  queryDashboardSummaries,
   queryLastSaleTime,
   queryStaffRoster,
-  querySummaryRows,
   queryTodayFeed,
 } from "@/lib/dashboard/queries";
 
@@ -89,8 +91,8 @@ function makeMockClient(handlers: Record<string, (rec: Recorded) => unknown>) {
 
 const LA = "America/Los_Angeles";
 
-describe("querySummaryRows", () => {
-  it("(a) 'today' uses todayWindow bounds and returns empty-summary on no rows", async () => {
+describe("queryDashboardSummaries", () => {
+  it("(a) scans tickets ONCE over the month window (status=paid, [month_start, now]) and returns empty summaries on no rows", async () => {
     const { client, records } = makeMockClient({
       tickets: () => [],
       ticket_items: () => [],
@@ -98,43 +100,98 @@ describe("querySummaryRows", () => {
     });
     const now = new Date("2026-05-16T22:14:00.000Z");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const out = await querySummaryRows(client as any, LA, "today", now);
-    expect(out.count).toBe(0);
-    expect(out.byMethod).toEqual({ card: 0, cash: 0, gift: 0 });
+    const out = await queryDashboardSummaries(client as any, LA, now);
 
-    const ticketsRec = records.find((r) => r.table === "tickets");
-    expect(ticketsRec).toBeTruthy();
-    expect(ticketsRec!.eqs).toContainEqual(["status", "paid"]);
-    // today_start = 2026-05-16T07:00:00.000Z (per period-windows tests)
-    expect(ticketsRec!.gtes).toContainEqual(["closed_at", "2026-05-16T07:00:00.000Z"]);
-    expect(ticketsRec!.ltes).toContainEqual(["closed_at", now.toISOString()]);
+    // All three periods come back as empty summaries.
+    expect(out.today.count).toBe(0);
+    expect(out.week.count).toBe(0);
+    expect(out.month.count).toBe(0);
+    expect(out.today.byMethod).toEqual({ card: 0, cash: 0, gift: 0 });
+
+    // Exactly one tickets scan, bounded by the month window — NOT three.
+    const ticketsRecs = records.filter((r) => r.table === "tickets");
+    expect(ticketsRecs.length).toBe(1);
+    expect(ticketsRecs[0].eqs).toContainEqual(["status", "paid"]);
+    // month_start = 2026-05-01T07:00:00.000Z (per period-windows tests)
+    expect(ticketsRecs[0].gtes).toContainEqual(["closed_at", "2026-05-01T07:00:00.000Z"]);
+    expect(ticketsRecs[0].ltes).toContainEqual(["closed_at", now.toISOString()]);
   });
 
-  it("(b) 'week' uses weekWindow bounds", async () => {
+  it("(b) on a non-empty month, issues ONE ticket scan + ONE items + ONE payments scan (not 3× each)", async () => {
+    const tickets = [
+      {
+        id: "t1",
+        status: "paid",
+        subtotal_cents: 5000,
+        tax_cents: 0,
+        total_cents: 5000,
+        closed_at: "2026-05-16T20:00:00.000Z",
+      },
+    ];
     const { client, records } = makeMockClient({
-      tickets: () => [],
+      tickets: () => tickets,
       ticket_items: () => [],
       payments: () => [],
     });
     const now = new Date("2026-05-16T22:14:00.000Z");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await querySummaryRows(client as any, LA, "week", now);
-    const ticketsRec = records.find((r) => r.table === "tickets");
-    // week_start (most recent Monday) = 2026-05-11T07:00:00.000Z
-    expect(ticketsRec!.gtes).toContainEqual(["closed_at", "2026-05-11T07:00:00.000Z"]);
+    await queryDashboardSummaries(client as any, LA, now);
+    expect(records.filter((r) => r.table === "tickets").length).toBe(1);
+    expect(records.filter((r) => r.table === "ticket_items").length).toBe(1);
+    expect(records.filter((r) => r.table === "payments").length).toBe(1);
+  });
+});
+
+describe("bucketSummaries — window-edge boundaries", () => {
+  const LA_NOW = new Date("2026-05-16T22:14:00.000Z");
+  // Per the period-windows tests, in America/Los_Angeles at this `now`:
+  //   today_start = 2026-05-16T07:00:00.000Z
+  //   week_start  = 2026-05-11T07:00:00.000Z  (most recent Monday)
+  //   month_start = 2026-05-01T07:00:00.000Z
+
+  function paidTicket(id: string, closed_at: string): SummarizeTicket {
+    return {
+      id,
+      status: "paid",
+      subtotal_cents: 10000,
+      tax_cents: 0,
+      total_cents: 10000,
+      closed_at,
+    };
+  }
+
+  it("(g) a sale exactly at a window start lands INSIDE that window (inclusive lower bound)", () => {
+    const tickets: SummarizeTicket[] = [
+      paidTicket("today_edge", "2026-05-16T07:00:00.000Z"), // == today_start → today, week, month
+      paidTicket("today_before", "2026-05-16T06:59:59.999Z"), // just before today → week, month
+      paidTicket("week_edge", "2026-05-11T07:00:00.000Z"), // == week_start → week, month
+      paidTicket("week_before", "2026-05-11T06:59:59.999Z"), // just before week → month only
+      paidTicket("month_edge", "2026-05-01T07:00:00.000Z"), // == month_start → month only
+    ];
+
+    const out = bucketSummaries(LA, LA_NOW, tickets, [], []);
+
+    // Counts nest: today ⊂ week ⊂ month.
+    expect(out.today.count).toBe(1);
+    expect(out.week.count).toBe(3);
+    expect(out.month.count).toBe(5);
+
+    // Subtotal aggregates per bucket ($100 each).
+    expect(out.today.subtotal).toBe(100);
+    expect(out.week.subtotal).toBe(300);
+    expect(out.month.subtotal).toBe(500);
+
+    // Period labels are carried through correctly.
+    expect(out.today.period).toBe("today");
+    expect(out.week.period).toBe("week");
+    expect(out.month.period).toBe("month");
   });
 
-  it("(c) 'month' uses monthWindow bounds", async () => {
-    const { client, records } = makeMockClient({
-      tickets: () => [],
-      ticket_items: () => [],
-      payments: () => [],
-    });
-    const now = new Date("2026-05-16T22:14:00.000Z");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await querySummaryRows(client as any, LA, "month", now);
-    const ticketsRec = records.find((r) => r.table === "tickets");
-    expect(ticketsRec!.gtes).toContainEqual(["closed_at", "2026-05-01T07:00:00.000Z"]);
+  it("(h) empty month rows → all three buckets are empty summaries", () => {
+    const out = bucketSummaries(LA, LA_NOW, [], [], []);
+    expect(out.today.count).toBe(0);
+    expect(out.week.count).toBe(0);
+    expect(out.month.count).toBe(0);
   });
 });
 

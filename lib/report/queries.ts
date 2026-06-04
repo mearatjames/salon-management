@@ -121,15 +121,6 @@ export async function loadReportPage(
         .filter((id): id is string => id !== null)
     )
   );
-  let services: readonly ReportServiceRow[] = [];
-  if (serviceIds.length > 0) {
-    const servicesRes = await supabase
-      .from("services")
-      .select("id, card_fee_mode, card_fee_custom_cents, supply_amount_cents, supply_type_id")
-      .in("id", serviceIds);
-    services = ((servicesRes as { data: ReportServiceRow[] | null }).data ??
-      []) as readonly ReportServiceRow[];
-  }
 
   // Resolve the performing technicians of the service-line items — by id, with
   // NO `active` filter, so a removed tech still appears in past periods (R8).
@@ -141,15 +132,33 @@ export async function loadReportPage(
         .filter((id): id is string => id !== null)
     )
   );
-  let staff: readonly ReportStaffRow[] = [];
-  if (performerIds.length > 0) {
-    const staffRes = await supabase
-      .from("staff")
-      .select("id, display_name, color_token, card_fee_exempt, supply_mode, supply_except")
-      .in("id", performerIds);
-    staff = ((staffRes as { data: ReportStaffRow[] | null }).data ??
-      []) as readonly ReportStaffRow[];
-  }
+
+  // `services` and `staff` both depend only on `items` and are independent of
+  // each other — fetch them concurrently rather than in two serial `await`s, so
+  // two trailing query tiers collapse into one (issue #205).
+  const [services, staff] = await Promise.all([
+    serviceIds.length > 0
+      ? supabase
+          .from("services")
+          .select("id, card_fee_mode, card_fee_custom_cents, supply_amount_cents, supply_type_id")
+          .in("id", serviceIds)
+          .then(
+            (res) =>
+              ((res as { data: ReportServiceRow[] | null }).data ??
+                []) as readonly ReportServiceRow[]
+          )
+      : Promise.resolve([] as readonly ReportServiceRow[]),
+    performerIds.length > 0
+      ? supabase
+          .from("staff")
+          .select("id, display_name, color_token, card_fee_exempt, supply_mode, supply_except")
+          .in("id", performerIds)
+          .then(
+            (res) =>
+              ((res as { data: ReportStaffRow[] | null }).data ?? []) as readonly ReportStaffRow[]
+          )
+      : Promise.resolve([] as readonly ReportStaffRow[]),
+  ]);
 
   const report = projectReport({ tz, tickets, items, payments, staff, services });
   return { report, tz };
