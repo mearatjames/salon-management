@@ -4,6 +4,8 @@
 //
 // Contract: specs/003-login-flow/contracts/session-helper.contract.md
 
+import { cache } from "react";
+
 import { cookies, headers } from "next/headers";
 
 import {
@@ -84,68 +86,81 @@ export function parseSidUnsafe(cookieValue: string | null): string | null {
   }
 }
 
-export async function requireStudioSession(): Promise<StudioViewer> {
-  const currentPath = await readCurrentPath();
+/**
+ * Per-request memoized session resolver. React's `cache()` dedupes the work
+ * within a single render: the studio layout (`getStudioSessionOrDegraded`)
+ * and the page each call this, but only the first pays the
+ * `auth.getUser()` round-trip + staff lookup — subsequent callers reuse the
+ * memoized result (issue #203). The memo also caches a thrown
+ * `AuthRedirectError`, so a rejected first call re-throws to every later
+ * caller (the layout / error boundary still navigates), preserving the
+ * redirect contract. The cache is scoped to the request, so it never leaks
+ * one viewer's session into another's.
+ */
+export const requireStudioSession: () => Promise<StudioViewer> = cache(
+  async function requireStudioSession(): Promise<StudioViewer> {
+    const currentPath = await readCurrentPath();
 
-  // Treat missing Supabase env vars as "no device session" — redirect to
-  // /login. Production deploys always have these set; this branch covers
-  // local dev where the developer hasn't yet wired Supabase, and prevents a
-  // 500 cascade from blocking the studio shell entirely.
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    throw new AuthRedirectError("/login", currentPath);
-  }
+    // Treat missing Supabase env vars as "no device session" — redirect to
+    // /login. Production deploys always have these set; this branch covers
+    // local dev where the developer hasn't yet wired Supabase, and prevents a
+    // 500 cascade from blocking the studio shell entirely.
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      throw new AuthRedirectError("/login", currentPath);
+    }
 
-  const supabase = await createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
-  // 1. Device user.
-  const { data: userData } = await supabase.auth.getUser();
-  const user = userData?.user ?? null;
-  if (!user) {
-    throw new AuthRedirectError("/login", currentPath);
-  }
+    // 1. Device user.
+    const { data: userData } = await supabase.auth.getUser();
+    const user = userData?.user ?? null;
+    if (!user) {
+      throw new AuthRedirectError("/login", currentPath);
+    }
 
-  // 2. Operator cookie present?
-  const cookieValue = await readCookieValue();
-  if (!cookieValue) {
-    throw new AuthRedirectError("/select-staff", currentPath);
-  }
-
-  // 3. Cookie verifies?
-  let sid: string;
-  try {
-    const payload = await verifyOperatorCookie(cookieValue);
-    sid = payload.sid;
-  } catch (err) {
-    if (err instanceof OperatorCookieInvalidError || err instanceof OperatorCookieExpiredError) {
+    // 2. Operator cookie present?
+    const cookieValue = await readCookieValue();
+    if (!cookieValue) {
       throw new AuthRedirectError("/select-staff", currentPath);
     }
-    throw err;
+
+    // 3. Cookie verifies?
+    let sid: string;
+    try {
+      const payload = await verifyOperatorCookie(cookieValue);
+      sid = payload.sid;
+    } catch (err) {
+      if (err instanceof OperatorCookieInvalidError || err instanceof OperatorCookieExpiredError) {
+        throw new AuthRedirectError("/select-staff", currentPath);
+      }
+      throw err;
+    }
+
+    // 4. Staff row resolves AND is active?
+    const { data: staffRow, error: staffErr } = await supabase
+      .from("staff")
+      .select("id, display_name, role, color_token")
+      .eq("id", sid)
+      .eq("active", true)
+      .single();
+
+    if (staffErr || !staffRow) {
+      // Note: PostgREST returns an error for "no rows" on `.single()`. Treat
+      // either path as "operator not found" and bounce to /select-staff.
+      throw new AuthRedirectError("/select-staff", currentPath);
+    }
+
+    return {
+      deviceUserId: user.id,
+      staff: {
+        id: staffRow.id,
+        display_name: staffRow.display_name,
+        role: staffRow.role as StudioRole,
+        color_token: staffRow.color_token,
+      },
+    };
   }
-
-  // 4. Staff row resolves AND is active?
-  const { data: staffRow, error: staffErr } = await supabase
-    .from("staff")
-    .select("id, display_name, role, color_token")
-    .eq("id", sid)
-    .eq("active", true)
-    .single();
-
-  if (staffErr || !staffRow) {
-    // Note: PostgREST returns an error for "no rows" on `.single()`. Treat
-    // either path as "operator not found" and bounce to /select-staff.
-    throw new AuthRedirectError("/select-staff", currentPath);
-  }
-
-  return {
-    deviceUserId: user.id,
-    staff: {
-      id: staffRow.id,
-      display_name: staffRow.display_name,
-      role: staffRow.role as StudioRole,
-      color_token: staffRow.color_token,
-    },
-  };
-}
+);
 
 export async function getStudioSessionOrDegraded(): Promise<StudioViewer | DegradedSession> {
   try {
