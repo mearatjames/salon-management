@@ -40,7 +40,7 @@ jobs:
       - name: Set up Node 24
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
@@ -65,7 +65,7 @@ jobs:
       - name: Set up Node 24
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
@@ -84,7 +84,7 @@ jobs:
       - name: Set up Node 24
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
@@ -111,7 +111,9 @@ jobs:
 
   e2e:
     name: E2E (shard ${{ matrix.shard }}/${{ strategy.job-total }})
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moved to 26.04, which Playwright 1.60 can't
+    # install Chromium on. Unpin once @playwright/test supports 26.04.
+    runs-on: ubuntu-24.04
     needs: build
     strategy:
       fail-fast: false
@@ -124,7 +126,7 @@ jobs:
       - name: Set up Node 24
         uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
@@ -194,7 +196,7 @@ jobs:
       # Cache the Playwright browser install keyed on the resolved
       # @playwright/test version pinned in package-lock.json. On a hit,
       # we skip `--with-deps` (system libs are already provisioned on
-      # ubuntu-latest images) and just run `playwright install` to ensure
+      # ubuntu-24.04 images) and just run `playwright install` to ensure
       # the binary symlinks are in place — fast no-op when files exist.
       - name: Resolve Playwright version
         id: pw-version
