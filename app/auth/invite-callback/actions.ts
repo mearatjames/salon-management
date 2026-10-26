@@ -11,6 +11,7 @@
 // same lifecycle work `/auth/callback` does for the PKCE `?code=` flow.
 
 import { recordAuth } from "@/lib/auth/audit";
+import { syncStaffEmailFromAuth } from "@/lib/auth/sync-staff-email";
 import { createSupabaseServerClient } from "@/lib/db/server";
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 
@@ -81,6 +82,8 @@ export async function acceptInvite(
   } catch (err) {
     console.error("acceptInvite: staff sign-in mark failed", err);
   }
+  // #220 — copy the auth email onto the linked row when it's missing/stale.
+  await syncStaffEmailFromAuth(user.id, user.email);
 
   // Password-method invites set a password first; magic-link invites are
   // passwordless and go straight to the staff picker.

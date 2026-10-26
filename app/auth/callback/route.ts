@@ -34,6 +34,7 @@ import { redirect } from "next/navigation";
 import type { NextRequest } from "next/server";
 
 import { recordAuth } from "@/lib/auth/audit";
+import { syncStaffEmailFromAuth } from "@/lib/auth/sync-staff-email";
 import { sanitizeNext } from "@/lib/auth/next-url";
 import { createSupabaseServerClient } from "@/lib/db/server";
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
@@ -155,6 +156,8 @@ export async function GET(request: NextRequest): Promise<Response> {
     } catch (err) {
       console.error("callback: staff sign-in mark failed", err);
     }
+    // #220 — copy the auth email onto the linked row when it's missing/stale.
+    await syncStaffEmailFromAuth(userId, userEmail);
   }
 
   if (type === "invite") {

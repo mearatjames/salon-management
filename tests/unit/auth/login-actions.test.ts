@@ -55,6 +55,10 @@ vi.mock("@/lib/auth/audit", () => ({
   recordAuth: vi.fn(async () => undefined),
 }));
 
+vi.mock("@/lib/auth/sync-staff-email", () => ({
+  syncStaffEmailFromAuth: vi.fn(async () => undefined),
+}));
+
 import { AuthRetryableFetchError } from "@supabase/supabase-js";
 
 import { createSupabaseServerClient } from "@/lib/db/server";

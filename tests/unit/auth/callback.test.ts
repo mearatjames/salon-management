@@ -35,6 +35,13 @@ vi.mock("@/lib/auth/audit", () => ({
   recordAuth: vi.fn(async () => undefined),
 }));
 
+// #220 — the email sync owns its own admin queries; covered in
+// sync-staff-email.test.ts. Mocked here so the staff-query builders above
+// only see the lifecycle flip.
+vi.mock("@/lib/auth/sync-staff-email", () => ({
+  syncStaffEmailFromAuth: vi.fn(async () => undefined),
+}));
+
 vi.mock("next/navigation", () => ({
   redirect: vi.fn((url: string) => {
     const err = new Error("NEXT_REDIRECT") as Error & { digest: string };
@@ -48,6 +55,7 @@ import { NextRequest } from "next/server";
 import { createSupabaseServerClient } from "@/lib/db/server";
 import { createSupabaseServiceRoleClient } from "@/lib/db/admin";
 import { recordAuth } from "@/lib/auth/audit";
+import { syncStaffEmailFromAuth } from "@/lib/auth/sync-staff-email";
 
 import { GET } from "@/app/auth/callback/route";
 
@@ -256,5 +264,20 @@ describe("auth/callback staff sign-in mark (all types)", () => {
     expect(admin.fallback.eq).toHaveBeenCalledWith("state", "invited");
     // `_` is a SQL LIKE wildcard — it must be escaped so the match stays exact.
     expect(admin.fallback.ilike).toHaveBeenCalledWith("email", "Seed\\_Owner@example.com");
+  });
+
+  it("syncs the auth email onto the linked staff row (#220)", async () => {
+    mockServerExchange({
+      user: { id: "user-44", email: "owner@example.com", app_metadata: { provider: "email" } },
+    });
+    mockAdminStaffUpdate();
+
+    try {
+      await GET(makeRequest("?code=abc"));
+    } catch {
+      // expected NEXT_REDIRECT
+    }
+
+    expect(syncStaffEmailFromAuth).toHaveBeenCalledWith("user-44", "owner@example.com");
   });
 });
