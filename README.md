@@ -9,7 +9,8 @@ Salon management web app for a single nail salon, built on the **Lacquer** desig
 
 ## Prerequisites
 
-- **Node.js 24 LTS** — pinned in [`.nvmrc`](.nvmrc); the `engines` field requires `>=24 <25`.
+- **Node.js 24 LTS** — pinned in [`.nvmrc`](.nvmrc); the `engines` field requires `>=24.22.1 <25`
+  (24.22.1 is the first 24.x release with the CVE-2026-111497 Brotli fix).
   With nvm: `nvm use`.
 - **npm 10+** (ships with Node 24).
 - **Supabase CLI** — `brew install supabase/tap/supabase`. Required to boot the local Postgres +
