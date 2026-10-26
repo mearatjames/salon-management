@@ -22,6 +22,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Delete } from "lucide-react";
 
+import { KeypadKey } from "@/components/lacquer/keypad-key.client";
+
 export type NumericKeypadProps = {
   /** Buffer length. Currently only 4 is used. */
   length?: 4;
@@ -188,44 +190,33 @@ export function NumericKeypad({
 
       {/* 12-key 3×4 keypad: 1-9, Clear, 0, Backspace. Uses the shared
           `.keypad*` classes from `styles/keypad.css` so this renders
-          identically to the select-staff login keypad (`PinPad`). */}
+          identically to the select-staff login keypad (`PinPad`). Keys
+          fire on touch `pointerdown`, not `click` (issue #214). */}
       <div className="keypad" role="group" aria-label="PIN keypad">
         {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
-          <button
+          <KeypadKey
             key={d}
-            type="button"
             className="keypad-key"
-            onClick={() => append(d)}
+            onPress={() => append(d)}
             aria-label={`Digit ${d}`}
           >
             {d}
-          </button>
+          </KeypadKey>
         ))}
         {/* Row 4: Clear, 0, Backspace. */}
-        <button
-          type="button"
-          className="keypad-key keypad-key--dim"
-          onClick={clearAll}
-          aria-label="Clear"
-        >
+        <KeypadKey className="keypad-key keypad-key--dim" onPress={clearAll} aria-label="Clear">
           Clear
-        </button>
-        <button
-          type="button"
-          className="keypad-key"
-          onClick={() => append("0")}
-          aria-label="Digit 0"
-        >
+        </KeypadKey>
+        <KeypadKey className="keypad-key" onPress={() => append("0")} aria-label="Digit 0">
           0
-        </button>
-        <button
-          type="button"
+        </KeypadKey>
+        <KeypadKey
           className="keypad-key keypad-key--dim"
-          onClick={removeLast}
+          onPress={removeLast}
           aria-label="Backspace"
         >
           <Delete size={20} strokeWidth={1.5} aria-hidden="true" />
-        </button>
+        </KeypadKey>
       </div>
     </div>
   );
