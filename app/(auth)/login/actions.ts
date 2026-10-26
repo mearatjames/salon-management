@@ -23,6 +23,7 @@ import { redirect } from "next/navigation";
 import { AuthRetryableFetchError } from "@supabase/supabase-js";
 
 import { recordAuth } from "@/lib/auth/audit";
+import { syncStaffEmailFromAuth } from "@/lib/auth/sync-staff-email";
 import { createSupabaseServerClient } from "@/lib/db/server";
 
 function encodeNext(next: string): string {
@@ -42,7 +43,7 @@ export async function signInWithPassword(formData: FormData): Promise<void> {
 
   const supabase = await createSupabaseServerClient();
 
-  let user: { id: string } | null = null;
+  let user: { id: string; email?: string } | null = null;
   try {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -65,6 +66,9 @@ export async function signInWithPassword(formData: FormData): Promise<void> {
   }
 
   await recordAuth("device.signed_in", user!.id, null, { method: "password" });
+  // #220 — password sign-in is the common path for an owner whose staff row
+  // was linked by hand; copy the auth email onto it when missing/stale.
+  await syncStaffEmailFromAuth(user!.id, user!.email);
   redirect(`/select-staff?next=${encodeNext(next)}`);
 }
 

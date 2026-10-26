@@ -18,6 +18,7 @@ import { Suspense } from "react";
 import { Info, Mail, UserCheck, UserMinus } from "lucide-react";
 import { redirect } from "next/navigation";
 
+import { isLastActiveOwner } from "@/app/(studio)/settings/onboarding/_owners";
 import { binAndSortRoster } from "@/app/(studio)/settings/onboarding/_sort";
 import type { OnboardingUser } from "@/app/(studio)/settings/onboarding/_types";
 import { OnboardCtaSheet } from "@/components/lacquer/onboarding/onboard-cta-sheet.client";
@@ -136,13 +137,21 @@ export default async function OnboardingSettingsPage({
 
   const buckets = binAndSortRoster(rows, viewer.deviceUserId);
 
-  // Compute active-owner count for the last-owner guard. Mirrors the
-  // staff-page approach: count active, non-removed owners; the target itself
-  // is the last owner when no OTHER owners exist.
-  const activeOwnerCount = buckets.active.filter((u) => u.role === "owner").length;
-  function isLastOwner(u: OnboardingUser): boolean {
-    return u.role === "owner" && activeOwnerCount <= 1;
+  // Last-owner guard (#218). Counted from an UNFILTERED query with the same
+  // predicate the server actions and `staff_assert_owner_present()` use —
+  // `role='owner' AND active AND removed_at IS NULL`, regardless of the
+  // lifecycle `state` — so neither a `?q=` search nor another owner stuck in
+  // `state='invited'` makes a non-last owner look like the last one.
+  const { data: ownerRows, error: ownerErr } = await supabase
+    .from("staff")
+    .select("id")
+    .eq("role", "owner")
+    .eq("active", true)
+    .is("removed_at", null);
+  if (ownerErr) {
+    throw new Error(`Failed to load onboarding owners: ${ownerErr.message}`);
   }
+  const activeOwnerIds = (ownerRows ?? []).map((r) => String((r as { id: string }).id));
 
   return (
     <div className="onb-page">
@@ -241,7 +250,7 @@ export default async function OnboardingSettingsPage({
                     color_token: u.color_token,
                     is_you: u.is_you,
                   }}
-                  isLastOwner={isLastOwner(u)}
+                  isLastOwner={isLastActiveOwner(u, activeOwnerIds)}
                 />
               }
             />

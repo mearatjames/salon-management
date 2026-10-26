@@ -50,7 +50,9 @@ export function UserRow({ user, meta, menu }: Props) {
             {user.display_name}
             {user.is_you ? <span className="onb-you-tag">You</span> : null}
           </div>
-          <div className="onb-person-email">{user.email ?? "—"}</div>
+          <div className="onb-person-email">
+            {user.email ?? (user.user_id ? "No email" : "PIN only")}
+          </div>
         </div>
       </div>
       <div className="onb-role-chip">

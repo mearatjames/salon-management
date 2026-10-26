@@ -1145,3 +1145,109 @@ test.describe("012: form-bound menu items render as proper menu items", () => {
       .not.toBe("rgba(0, 0, 0, 0)");
   });
 });
+
+// ── Issues #218 + #220 regressions ──────────────────────────────────────────
+//
+// #218: the Onboarding last-owner guard counted owners from the `?q=`-filtered
+// roster's Active bucket, so searching for a stray PIN-only owner made it look
+// like the only owner and its Offboard sheet showed "Promote another owner
+// first." The count now comes from an unfiltered `role='owner' AND active AND
+// removed_at IS NULL` query, matching the server and the DB trigger.
+//
+// #220: a linked owner row with `email = NULL` (bootstrapped / linked by hand)
+// never showed its email. Every sign-in now copies the auth email onto it.
+test.describe("#218 + #220: owner guard and email sync", () => {
+  let supabaseUp = false;
+
+  test.beforeAll(async () => {
+    supabaseUp = await supabaseIsReachable();
+    if (!supabaseUp) {
+      test.skip(true, "Supabase not reachable at 127.0.0.1:54321 — skipping #218/#220 specs.");
+      return;
+    }
+  });
+
+  test.beforeEach(async ({ staffFixture }) => {
+    if (!supabaseUp) return;
+    await staffFixture.reset();
+    await staffFixture.deleteExtras();
+  });
+
+  test.afterEach(async ({ staffFixture }) => {
+    if (!supabaseUp) return;
+    // Restores the fixture owner's email (#220 nulls it) and drops the stray
+    // owner (#218) — its `[wN]` suffix puts it in deleteExtras' namespace.
+    await staffFixture.reset();
+    await staffFixture.deleteExtras();
+  });
+
+  function serviceClient() {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) throw new Error("SUPABASE env vars missing — required for #218/#220");
+    return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  }
+
+  test("#218: searching for a PIN-only owner doesn't flag it as the last owner", async ({
+    page,
+    staffFixture,
+  }) => {
+    const c = serviceClient();
+    // Borrow the fixture tech's hash so the PIN-only row satisfies
+    // staff_pin_or_user without a user_id.
+    const { data: tech } = await c
+      .from("staff")
+      .select("pin_hash")
+      .eq("id", staffFixture.tech.id)
+      .single();
+    const prefix = `Stray Owner ${Date.now()}`;
+    const strayName = `${prefix} [w${staffFixture.workerIndex}]`;
+    const { error } = await c.from("staff").insert({
+      display_name: strayName,
+      role: "owner",
+      color_token: "--avatar-rose",
+      active: true,
+      state: "active",
+      pin_hash: (tech as { pin_hash: string }).pin_hash,
+      user_id: null,
+      email: null,
+    });
+    if (error) throw new Error(`#218 stray owner insert failed: ${error.message}`);
+
+    await signInAsOwner(page, staffFixture);
+    // The search leaves the stray owner as the only row in Active — the old
+    // filtered count saw 1 owner and blocked the offboard.
+    await page.goto(`/settings/onboarding?q=${encodeURIComponent(prefix)}`);
+    const row = page.locator(".onb-row", { hasText: strayName });
+    await expect(row).toBeVisible();
+    // PIN-only rows say so instead of rendering a bare dash.
+    await expect(row.locator(".onb-person-email")).toHaveText("PIN only");
+
+    await row.locator("[data-slot='user-row-menu-trigger']").click();
+    await page.locator("[data-slot='user-row-menu-item-offboard']").click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page.locator("[data-slot='offb-last-owner-alert']")).toHaveCount(0);
+  });
+
+  test("#220: signing in fills a linked owner's missing email, which then shows on Onboarding", async ({
+    page,
+    staffFixture,
+  }) => {
+    const c = serviceClient();
+    const { error } = await c.from("staff").update({ email: null }).eq("id", staffFixture.owner.id);
+    if (error) throw new Error(`#220 email null-out failed: ${error.message}`);
+
+    await signInAsOwner(page, staffFixture);
+
+    const { data: after } = await c
+      .from("staff")
+      .select("email")
+      .eq("id", staffFixture.owner.id)
+      .single();
+    expect((after as { email: string | null }).email).toBe(staffFixture.owner.email);
+
+    await page.goto("/settings/onboarding");
+    const row = page.locator(`.onb-row[data-user-id='${staffFixture.owner.id}']`);
+    await expect(row.locator(".onb-person-email")).toHaveText(staffFixture.owner.email!);
+  });
+});

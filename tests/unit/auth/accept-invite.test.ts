@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/lib/auth/audit", () => ({ recordAuth: vi.fn(async () => undefined) }));
 vi.mock("@/lib/db/server", () => ({ createSupabaseServerClient: vi.fn() }));
 vi.mock("@/lib/db/admin", () => ({ createSupabaseServiceRoleClient: vi.fn() }));
+vi.mock("@/lib/auth/sync-staff-email", () => ({
+  syncStaffEmailFromAuth: vi.fn(async () => undefined),
+}));
 
 import { recordAuth } from "@/lib/auth/audit";
 import { createSupabaseServerClient } from "@/lib/db/server";
