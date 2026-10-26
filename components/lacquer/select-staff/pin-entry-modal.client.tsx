@@ -13,10 +13,10 @@
 // digits). The 4-position indicator is driven off `buffer.length` and NEVER
 // renders the digits themselves (FR-012).
 //
-// When the buffer reaches the 4th digit, `submitPin` (the Server Action) is
-// invoked imperatively inside a `useTransition`. On a correct PIN `submitPin`
-// sets the operator cookie and `redirect()`s — the promise never resolves,
-// the Next runtime navigates away, and this modal unmounts with the page
+// When the buffer reaches the 4th digit, an effect invokes `submitPin` (the
+// Server Action) inside a `useTransition`. On a correct PIN `submitPin` sets
+// the operator cookie and `redirect()`s — the promise never resolves, the
+// Next runtime navigates away, and this modal unmounts with the page
 // (FR-015 / FR-016 / FR-025).
 //
 // On a resolved `{ ok: false }` (US3 / T018, FR-017) the modal stays OPEN for
@@ -33,7 +33,7 @@
 // All visuals trace to `select-staff-modal*` / `select-staff-pin-*` classes
 // in `styles/select-staff.css` (Constitution Principle I — FR-026).
 
-import { useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 import { submitPin } from "@/app/(device)/select-staff/actions";
 import { InitialsAvatar } from "@/components/lacquer/initials-avatar";
@@ -80,44 +80,56 @@ export function PinEntryModal({ staff, next, onClose }: PinEntryModalProps) {
   // NEXT_REDIRECT) and the runtime navigates away — this modal unmounts
   // with the page. On `{ ok: false }` clear the buffer for an immediate
   // retry (T018 adds the error-state paint).
-  function verify(pin: string) {
-    // One submission per attempt — see `submittedRef` above.
-    if (submittedRef.current) return;
-    submittedRef.current = true;
-    startTransition(async () => {
-      const formData = new FormData();
-      formData.set("staffId", staff.id);
-      formData.set("pin", pin);
-      formData.set("next", next);
-      const result = await submitPin(formData);
-      // Reached only on a resolved failure — the success path redirects.
-      // The modal stays open (FR-017); no audit attempt is made here, the
-      // server already wrote the failed-attempt row inside `submitPin`.
-      if (result.ok === false) {
-        // Allow the next attempt to submit.
-        submittedRef.current = false;
-        // Paint the indicator error state and clear the buffer.
-        setAttemptError(true);
-        setBuffer("");
-        // Bump the counter that keys `<PinPad>` — the keypad remounts so a
-        // repeated identical wrong PIN still clears (research R3/R4).
-        setAttemptCount((n) => n + 1);
-      }
-    });
-  }
+  const verify = useCallback(
+    (pin: string) => {
+      // One submission per attempt — see `submittedRef` above.
+      if (submittedRef.current) return;
+      submittedRef.current = true;
+      startTransition(async () => {
+        const formData = new FormData();
+        formData.set("staffId", staff.id);
+        formData.set("pin", pin);
+        formData.set("next", next);
+        const result = await submitPin(formData);
+        // Reached only on a resolved failure — the success path redirects.
+        // The modal stays open (FR-017); no audit attempt is made here, the
+        // server already wrote the failed-attempt row inside `submitPin`.
+        if (result.ok === false) {
+          // Allow the next attempt to submit.
+          submittedRef.current = false;
+          // Paint the indicator error state and clear the buffer.
+          setAttemptError(true);
+          setBuffer("");
+          // Bump the counter that keys `<PinPad>` — the keypad remounts so a
+          // repeated identical wrong PIN still clears (research R3/R4).
+          setAttemptCount((n) => n + 1);
+        }
+      });
+    },
+    [staff.id, next, startTransition]
+  );
+
+  // Fires the submit side effect once the buffer reaches PIN_LENGTH. Kept
+  // out of `handleDigit` / the `setBuffer` updater (issue #214): two digit
+  // taps dispatched in the same batch — e.g. two fast touches on an iPad,
+  // which React may not re-render in between — must not race on a buffer
+  // value computed from a closure. Driving the submit off the committed
+  // `buffer` state instead means it fires exactly once the buffer is
+  // actually 4 digits long, regardless of how the taps were batched.
+  useEffect(() => {
+    if (buffer.length === PIN_LENGTH) {
+      verify(buffer);
+    }
+  }, [buffer, verify]);
 
   function handleDigit(digit: string) {
     // Ignore input while a verification is in flight.
     if (isPending) return;
-    if (buffer.length >= PIN_LENGTH) return;
-    // Compute the next buffer value outside the updater so the submit
-    // side effect never lives inside a (must-be-pure) `setState` updater.
-    const nextBuffer = buffer + digit;
-    setBuffer(nextBuffer);
+    // Functional updater, not a computed-then-passed literal: two taps
+    // queued in the same batch both run against the previous updater's
+    // result in order, so neither can clobber the other (issue #214).
+    setBuffer((current) => (current.length >= PIN_LENGTH ? current : current + digit));
     setAttemptError(false);
-    if (nextBuffer.length === PIN_LENGTH) {
-      verify(nextBuffer);
-    }
   }
 
   function handleClear() {
