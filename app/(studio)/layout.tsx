@@ -11,6 +11,7 @@ import { ReconnectingBanner } from "@/components/lacquer/reconnecting-banner";
 import { SidebarFooter } from "@/components/lacquer/sidebar/sidebar-footer";
 import { StudioSidebar } from "@/components/lacquer/sidebar/studio-sidebar";
 import { SwitchStaffButton } from "@/components/lacquer/switch-staff-button";
+import { UpdatePrompt } from "@/components/lacquer/update-prompt.client";
 import { Toaster } from "@/components/ui/sonner";
 import { getStudioSessionOrDegraded } from "@/lib/auth/session";
 
@@ -62,6 +63,7 @@ export default async function StudioLayout({ children }: Readonly<{ children: Re
         <main className="studio-main">{children}</main>
       </div>
       <Toaster richColors closeButton position="top-center" />
+      <UpdatePrompt />
     </>
   );
 }

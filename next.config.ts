@@ -1,17 +1,16 @@
 import type { NextConfig } from "next";
 
+// Build identity, inlined into both the client and server bundles at build
+// time so `/api/version` and the running page can be compared (see
+// `components/lacquer/update-prompt.client.tsx`). Vercel provides both
+// system env vars at build time; the deployment ID changes on every deploy
+// (including a redeploy of the same commit), the commit SHA is the fallback.
+const buildId =
+  process.env.VERCEL_DEPLOYMENT_ID ?? process.env.VERCEL_GIT_COMMIT_SHA ?? "development";
+
 const nextConfig: NextConfig = {
-  // No browser source maps in production builds — they bloat the deploy and
-  // expose source to anyone with devtools open.
-  productionBrowserSourceMaps: false,
-  compiler: {
-    // Strip `console.*` calls from the production bundle.
-    removeConsole: process.env.NODE_ENV === "production",
-  },
-  experimental: {
-    // Tree-shake barrel imports so the ~100 individual Lucide icon imports and
-    // radix-ui re-exports only ship the symbols actually used.
-    optimizePackageImports: ["lucide-react", "radix-ui"],
+  env: {
+    NEXT_PUBLIC_BUILD_ID: buildId,
   },
 };
 
