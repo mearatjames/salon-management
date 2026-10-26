@@ -24,6 +24,9 @@
 // keydown-listener idiom, but PinPad has BOTH a Clear key AND a Backspace key
 // (12 keys, not 11) and owns no buffer at all.
 //
+// Keys are `<KeypadKey>`s, which fire on touch `pointerdown` rather than
+// `click` so fast taps on iOS aren't dropped (issue #214).
+//
 // All visuals trace to the shared `.keypad*` classes in `styles/keypad.css`
 // — the same stylesheet `numeric-keypad.client.tsx` uses, so the login
 // keypad and the staff-settings Set/Change-PIN keypad render identically
@@ -32,6 +35,8 @@
 import { useEffect, useRef } from "react";
 
 import { Delete } from "lucide-react";
+
+import { KeypadKey } from "@/components/lacquer/keypad-key.client";
 
 const DIGIT_KEYS = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"] as const;
 
@@ -77,40 +82,28 @@ export function PinPad({ onDigit, onClear, onBackspace }: PinPadProps) {
   return (
     <div className="keypad" role="group" aria-label="PIN keypad">
       {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((d) => (
-        <button
+        <KeypadKey
           key={d}
-          type="button"
           className="keypad-key"
           aria-label={`Digit ${d}`}
-          onClick={() => onDigit(d)}
+          onPress={() => onDigit(d)}
         >
           {d}
-        </button>
+        </KeypadKey>
       ))}
-      <button
-        type="button"
-        className="keypad-key keypad-key--dim"
-        aria-label="Clear"
-        onClick={onClear}
-      >
+      <KeypadKey className="keypad-key keypad-key--dim" aria-label="Clear" onPress={onClear}>
         Clear
-      </button>
-      <button
-        type="button"
-        className="keypad-key"
-        aria-label="Digit 0"
-        onClick={() => onDigit("0")}
-      >
+      </KeypadKey>
+      <KeypadKey className="keypad-key" aria-label="Digit 0" onPress={() => onDigit("0")}>
         0
-      </button>
-      <button
-        type="button"
+      </KeypadKey>
+      <KeypadKey
         className="keypad-key keypad-key--dim"
         aria-label="Backspace"
-        onClick={onBackspace}
+        onPress={onBackspace}
       >
         <Delete size={20} strokeWidth={1.5} aria-hidden="true" />
-      </button>
+      </KeypadKey>
     </div>
   );
 }

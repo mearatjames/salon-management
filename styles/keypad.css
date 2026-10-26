@@ -24,6 +24,11 @@
   width: 100%;
   max-width: 320px;
   margin: 0 auto;
+  /* Disable double-tap-to-zoom over the whole keypad (keys + gaps). Without
+     this, iOS Safari reads two fast taps as a zoom gesture and swallows the
+     second tap's `click`, so a digit never reaches the handler (issue #214).
+     Pinch-zoom elsewhere on the page is unaffected. */
+  touch-action: manipulation;
 }
 
 /* ---------- Keypad key ---------- */
